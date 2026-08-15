@@ -468,8 +468,22 @@ impl TuiModel {
                 self.status_line = "Enter Rarog model ID".to_string();
             }
             SettingsPickerTarget::TargetAgentModel => {
-                self.status_line =
-                    "Custom model entry is not available for thread-owned agents here".to_string();
+                let Some(pending) = self.pending_target_agent_config.as_ref() else {
+                    self.status_line = "No thread-owned agent target is active".to_string();
+                    return;
+                };
+                let current_model = pending.model.clone();
+                let target_agent_name = pending.target_agent_name.clone();
+                if self.modal.top() != Some(modal::ModalKind::Settings) {
+                    self.modal
+                        .reduce(modal::ModalAction::Push(modal::ModalKind::Settings));
+                }
+                self.settings
+                    .reduce(SettingsAction::SwitchTab(SettingsTab::Agent));
+                self.settings_navigate_to(3);
+                self.settings
+                    .start_editing("target_agent_model", &current_model);
+                self.status_line = format!("Enter custom model ID for {target_agent_name}");
             }
             _ => self.begin_custom_model_edit(),
         }

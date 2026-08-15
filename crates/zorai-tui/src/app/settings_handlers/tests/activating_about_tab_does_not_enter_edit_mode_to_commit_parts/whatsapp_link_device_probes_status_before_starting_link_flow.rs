@@ -46,7 +46,9 @@ fn database_sync_now_action_sends_sync_command() {
     model.activate_settings_field();
 
     assert!(matches!(
-        daemon_rx.try_recv().expect("expected database sync command"),
+        daemon_rx
+            .try_recv()
+            .expect("expected database sync command"),
         DaemonCommand::DatabaseSyncNow
     ));
     assert!(daemon_rx.try_recv().is_err());

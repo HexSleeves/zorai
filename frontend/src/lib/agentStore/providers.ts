@@ -64,8 +64,10 @@ const OPENAI_CHATGPT_SUBSCRIPTION_MODELS: ModelDefinition[] = [
 ];
 
 const XAI_MODELS: ModelDefinition[] = [
-  { id: "grok-4.5", name: "Grok 4.5", contextWindow: 1_000_000, modalities: M_TI },
+  { id: "grok-4.6", name: "Grok 4.6", contextWindow: 500_000, modalities: M_TI },
+  { id: "grok-4.5", name: "Grok 4.5", contextWindow: 500_000, modalities: M_TI },
   { id: "grok-4.3", name: "Grok 4.3", contextWindow: 1_000_000, modalities: M_TI },
+  { id: "grok-build-0.1", name: "Grok Build 0.1", contextWindow: 256_000, modalities: M_TI },
   { id: "grok-4", name: "Grok 4", contextWindow: 256_000, modalities: M_TI },
   { id: "grok-code-fast-1", name: "Grok Code Fast 1", contextWindow: 256_000 },
 ];
@@ -142,6 +144,9 @@ const ZAI_MODELS: ModelDefinition[] = [
 ];
 
 const ZAI_CODING_MODELS: ModelDefinition[] = [
+  { id: "glm-5.3", name: "GLM-5.3", contextWindow: 1_000_000 },
+  { id: "glm-5-turbo", name: "GLM-5 Turbo", contextWindow: 200_000 },
+  { id: "glm-4.7", name: "GLM-4.7", contextWindow: 200_000 },
   { id: "glm-5", name: "GLM-5", contextWindow: 128000 },
   { id: "glm-5.2", name: "GLM-5.2", contextWindow: 204800 },
   { id: "glm-5.1", name: "GLM-5.1", contextWindow: 204800 },
@@ -443,7 +448,7 @@ export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
   { id: "anthropic", name: "Anthropic", defaultBaseUrl: "https://api.anthropic.com", defaultModel: "claude-opus-4-7", apiType: "anthropic", authMethod: "x-api-key", models: ANTHROPIC_MODELS, supportsModelFetch: false, supportedTransports: CHAT_ONLY_TRANSPORTS, defaultTransport: "chat_completions", supportedAuthSources: API_KEY_ONLY_AUTH_SOURCES, defaultAuthSource: "api_key", supportsResponseContinuity: false },
   { id: "openai", name: "OpenAI / ChatGPT", defaultBaseUrl: "https://api.openai.com/v1", defaultModel: "gpt-5.5", apiType: "openai", authMethod: "bearer", models: OPENAI_API_MODELS, supportsModelFetch: true, supportedTransports: RESPONSES_AND_CHAT_TRANSPORTS, defaultTransport: "responses", supportedAuthSources: OPENAI_AUTH_SOURCES, defaultAuthSource: "api_key", supportsResponseContinuity: true },
   { id: "deepseek", name: "DeepSeek", defaultBaseUrl: "https://api.deepseek.com", defaultModel: "deepseek-v4-pro", apiType: "openai", authMethod: "bearer", models: DEEPSEEK_MODELS, supportsModelFetch: true, supportedTransports: CHAT_ONLY_TRANSPORTS, defaultTransport: "chat_completions", supportedAuthSources: API_KEY_ONLY_AUTH_SOURCES, defaultAuthSource: "api_key", supportsResponseContinuity: false },
-  { id: "xai", name: "xAI", defaultBaseUrl: "https://api.x.ai/v1", defaultModel: "grok-4.5", apiType: "openai", authMethod: "bearer", models: XAI_MODELS, supportsModelFetch: true, supportedTransports: RESPONSES_AND_CHAT_TRANSPORTS, defaultTransport: "responses", supportedAuthSources: API_KEY_ONLY_AUTH_SOURCES, defaultAuthSource: "api_key", supportsResponseContinuity: true },
+  { id: "xai", name: "xAI", defaultBaseUrl: "https://api.x.ai/v1", defaultModel: "grok-4.6", apiType: "openai", authMethod: "bearer", models: XAI_MODELS, supportsModelFetch: true, supportedTransports: RESPONSES_AND_CHAT_TRANSPORTS, defaultTransport: "responses", supportedAuthSources: API_KEY_ONLY_AUTH_SOURCES, defaultAuthSource: "api_key", supportsResponseContinuity: true },
   { id: "elevenlabs", name: "ElevenLabs", defaultBaseUrl: "https://api.elevenlabs.io", defaultModel: "scribe_v2", apiType: "openai", authMethod: "xi-api-key", models: ELEVENLABS_MODELS, supportsModelFetch: false, supportedTransports: CHAT_ONLY_TRANSPORTS, defaultTransport: "chat_completions", supportedAuthSources: API_KEY_ONLY_AUTH_SOURCES, defaultAuthSource: "api_key", supportsResponseContinuity: false },
   { id: "azure-openai", name: "Azure OpenAI", defaultBaseUrl: "https://YOUR-RESOURCE-NAME.openai.azure.com/openai/v1", defaultModel: "", apiType: "openai", authMethod: "bearer", models: EMPTY_MODELS, supportsModelFetch: true, supportedTransports: RESPONSES_AND_CHAT_TRANSPORTS, defaultTransport: "responses", supportedAuthSources: API_KEY_ONLY_AUTH_SOURCES, defaultAuthSource: "api_key", supportsResponseContinuity: true },
   { id: "github-copilot", name: "GitHub Copilot", defaultBaseUrl: "https://api.githubcopilot.com", defaultModel: "gpt-5.4", apiType: "openai", authMethod: "bearer", models: GITHUB_COPILOT_MODELS, supportsModelFetch: true, supportedTransports: RESPONSES_CHAT_AND_ANTHROPIC_TRANSPORTS, defaultTransport: "responses", supportedAuthSources: GITHUB_COPILOT_AUTH_SOURCES, defaultAuthSource: "github_copilot", supportsResponseContinuity: true },
@@ -452,7 +457,7 @@ export const PROVIDER_DEFINITIONS: ProviderDefinition[] = [
   { id: "kimi", name: "Kimi (Moonshot)", defaultBaseUrl: "https://api.moonshot.ai/v1", defaultModel: "moonshot-v1-32k", apiType: "openai", authMethod: "bearer", models: KIMI_MODELS, supportsModelFetch: true, supportedTransports: CHAT_ONLY_TRANSPORTS, defaultTransport: "chat_completions", supportedAuthSources: API_KEY_ONLY_AUTH_SOURCES, defaultAuthSource: "api_key", supportsResponseContinuity: false },
   { id: "kimi-coding-plan", name: "Kimi Coding Plan", defaultBaseUrl: "https://api.kimi.com/coding/v1", defaultModel: "k3", apiType: "openai", authMethod: "bearer", models: KIMI_CODING_MODELS, supportsModelFetch: false, supportedTransports: CHAT_ONLY_TRANSPORTS, defaultTransport: "chat_completions", supportedAuthSources: API_KEY_ONLY_AUTH_SOURCES, defaultAuthSource: "api_key", supportsResponseContinuity: false },
   { id: "z.ai", name: "Z.AI (GLM)", defaultBaseUrl: "https://api.z.ai/api/paas/v4", defaultModel: "glm-4-plus", apiType: "openai", authMethod: "bearer", models: ZAI_MODELS, supportsModelFetch: false, supportedTransports: CHAT_ONLY_TRANSPORTS, defaultTransport: "chat_completions", supportedAuthSources: API_KEY_ONLY_AUTH_SOURCES, defaultAuthSource: "api_key", supportsResponseContinuity: false },
-  { id: "z.ai-coding-plan", name: "Z.AI Coding Plan", defaultBaseUrl: "https://api.z.ai/api/coding/paas/v4", defaultModel: "glm-5", apiType: "openai", authMethod: "bearer", models: ZAI_CODING_MODELS, supportsModelFetch: false, supportedTransports: CHAT_ONLY_TRANSPORTS, defaultTransport: "chat_completions", supportedAuthSources: API_KEY_ONLY_AUTH_SOURCES, defaultAuthSource: "api_key", supportsResponseContinuity: false },
+  { id: "z.ai-coding-plan", name: "Z.AI Coding Plan", defaultBaseUrl: "https://api.z.ai/api/coding/paas/v4", defaultModel: "glm-5.3", apiType: "openai", authMethod: "bearer", models: ZAI_CODING_MODELS, supportsModelFetch: false, supportedTransports: CHAT_ONLY_TRANSPORTS, defaultTransport: "chat_completions", supportedAuthSources: API_KEY_ONLY_AUTH_SOURCES, defaultAuthSource: "api_key", supportsResponseContinuity: false },
   { id: "arcee", name: "Arcee", defaultBaseUrl: "https://api.arcee.ai/api/v1", defaultModel: "trinity-large-thinking", apiType: "openai", authMethod: "bearer", models: ARCEE_MODELS, supportsModelFetch: true, supportedTransports: CHAT_ONLY_TRANSPORTS, defaultTransport: "chat_completions", supportedAuthSources: API_KEY_ONLY_AUTH_SOURCES, defaultAuthSource: "api_key", supportsResponseContinuity: false },
   { id: "nvidia", name: "NVIDIA", defaultBaseUrl: "https://integrate.api.nvidia.com/v1", defaultModel: "minimaxai/minimax-m2.7", apiType: "openai", authMethod: "bearer", models: NVIDIA_MODELS, supportsModelFetch: true, supportedTransports: CHAT_ONLY_TRANSPORTS, defaultTransport: "chat_completions", supportedAuthSources: API_KEY_ONLY_AUTH_SOURCES, defaultAuthSource: "api_key", supportsResponseContinuity: false },
   { id: "poolside", name: "Poolside", defaultBaseUrl: "https://inference.poolside.ai/v1", defaultModel: "poolside/laguna-m.1", apiType: "openai", authMethod: "bearer", models: POOLSIDE_MODELS, supportsModelFetch: true, supportedTransports: CHAT_ONLY_TRANSPORTS, defaultTransport: "chat_completions", supportedAuthSources: API_KEY_ONLY_AUTH_SOURCES, defaultAuthSource: "api_key", supportsResponseContinuity: false },

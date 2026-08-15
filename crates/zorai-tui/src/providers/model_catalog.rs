@@ -114,8 +114,10 @@ pub(super) fn known_models_for_provider_auth(
             ("gemma2-9b-it", "Gemma 2 9B", 8_192),
         ],
         PROVIDER_ID_XAI => &[
-            ("grok-4.5", "Grok 4.5", 1_000_000),
+            ("grok-4.6", "Grok 4.6", 500_000),
+            ("grok-4.5", "Grok 4.5", 500_000),
             ("grok-4.3", "Grok 4.3", 1_000_000),
+            ("grok-build-0.1", "Grok Build 0.1", 256_000),
             ("grok-4", "Grok 4", 256_000),
             ("grok-code-fast-1", "Grok Code Fast 1", 256_000),
         ],
@@ -160,6 +162,9 @@ pub(super) fn known_models_for_provider_auth(
             ("glm-4-flash", "GLM-4 Flash", 128_000),
         ],
         PROVIDER_ID_Z_AI_CODING_PLAN => &[
+            ("glm-5.3", "GLM-5.3", 1_000_000),
+            ("glm-5-turbo", "GLM-5 Turbo", 200_000),
+            ("glm-4.7", "GLM-4.7", 200_000),
             ("glm-5", "GLM-5", 128_000),
             ("glm-5.1", "GLM-5.1", 204_800),
             ("glm-5.2", "GLM-5.2", 204_800),

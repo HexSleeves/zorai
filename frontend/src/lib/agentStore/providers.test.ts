@@ -100,10 +100,12 @@ describe("frontend xAI provider catalog", () => {
 
     expect(xai).toBeDefined();
     expect(xai?.defaultBaseUrl).toBe("https://api.x.ai/v1");
-    expect(xai?.defaultModel).toBe("grok-4.5");
+    expect(xai?.defaultModel).toBe("grok-4.6");
     expect(xai?.models.map((model) => model.id)).toEqual([
+      "grok-4.6",
       "grok-4.5",
       "grok-4.3",
+      "grok-build-0.1",
       "grok-4",
       "grok-code-fast-1",
     ]);
@@ -113,7 +115,7 @@ describe("frontend xAI provider catalog", () => {
 
   it("recognizes xAI as a valid provider id", () => {
     expect(normalizeAgentProviderId("xai")).toBe("xai");
-    expect(getDefaultModelForProvider("xai" as any)).toBe("grok-4.5");
+    expect(getDefaultModelForProvider("xai" as any)).toBe("grok-4.6");
   });
 });
 
@@ -175,7 +177,7 @@ describe("frontend xAI audio/provider settings coverage", () => {
   it("covers xAI settings normalization and daemon serialization in a collected test file", () => {
     expect(DEFAULT_AGENT_SETTINGS.xai).toMatchObject({
       base_url: "https://api.x.ai/v1",
-      model: "grok-4.5",
+      model: "grok-4.6",
       api_transport: "responses",
     });
 
@@ -442,7 +444,7 @@ describe("frontend curated media provider catalog", () => {
     expect(getDefaultModelForProvider("qwen")).toBe("qwen-max");
     expect(getDefaultModelForProvider("kimi")).toBe("moonshot-v1-32k");
     expect(getDefaultModelForProvider("z.ai")).toBe("glm-4-plus");
-    expect(getDefaultModelForProvider("z.ai-coding-plan")).toBe("glm-5");
+    expect(getDefaultModelForProvider("z.ai-coding-plan")).toBe("glm-5.3");
     expect(getDefaultModelForProvider("alibaba-coding-plan")).toBe("qwen3.6-plus");
     expect(getDefaultModelForProvider("alibaba-token-plan")).toBe("qwen3.7-max");
   });
@@ -463,6 +465,9 @@ describe("frontend curated media provider catalog", () => {
       "glm-4-flash",
     ]);
     expect(getProviderModels("z.ai-coding-plan").map((model) => model.id)).toEqual([
+      "glm-5.3",
+      "glm-5-turbo",
+      "glm-4.7",
       "glm-5",
       "glm-5.2",
       "glm-5.1",

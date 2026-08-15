@@ -401,6 +401,31 @@ impl TuiModel {
                                     );
                                 }
                             }
+                            "target_agent_model" => {
+                                let model_id = value.trim();
+                                if model_id.is_empty() {
+                                    self.status_line = "Model ID cannot be empty".to_string();
+                                    return false;
+                                }
+                                let Some(pending) = self.pending_target_agent_config.take() else {
+                                    self.status_line =
+                                        "No thread-owned agent target is active".to_string();
+                                    return false;
+                                };
+                                self.send_daemon_command(
+                                    DaemonCommand::SetTargetAgentProviderModel {
+                                        target_agent_id: pending.target_agent_id,
+                                        provider_id: pending.provider_id.clone(),
+                                        model: model_id.to_string(),
+                                    },
+                                );
+                                if let Some(thread) = self.chat.active_thread_mut() {
+                                    thread.runtime_provider = Some(pending.provider_id);
+                                    thread.runtime_model = Some(model_id.to_string());
+                                }
+                                self.status_line =
+                                    format!("{} model: {}", pending.target_agent_name, model_id);
+                            }
                             "gateway_prefix" => self.config.gateway_prefix = value,
                             "slack_token" => self.config.slack_token = value,
                             "slack_channel_filter" => self.config.slack_channel_filter = value,
@@ -930,6 +955,7 @@ impl TuiModel {
                                 | "concierge_huggingface_provider"
                                 | "concierge_base_url"
                                 | "subagent_system_prompt"
+                                | "target_agent_model"
                                 | "honcho_editor_api_key"
                                 | "honcho_editor_base_url"
                                 | "honcho_editor_workspace_id"
@@ -1025,7 +1051,9 @@ impl TuiModel {
                     let before = self.settings.field_cursor();
                     self.settings.navigate_field(1, self.settings_field_count());
                     if self.settings.field_cursor() == before {
-                        self.set_settings_modal_scroll(self.settings_modal_scroll.saturating_add(1));
+                        self.set_settings_modal_scroll(
+                            self.settings_modal_scroll.saturating_add(1),
+                        );
                     } else {
                         self.sync_settings_modal_scroll_to_selection();
                     }
@@ -1036,7 +1064,9 @@ impl TuiModel {
                     self.settings
                         .navigate_field(-1, self.settings_field_count());
                     if self.settings.field_cursor() == before {
-                        self.set_settings_modal_scroll(self.settings_modal_scroll.saturating_sub(1));
+                        self.set_settings_modal_scroll(
+                            self.settings_modal_scroll.saturating_sub(1),
+                        );
                     } else {
                         self.sync_settings_modal_scroll_to_selection();
                     }

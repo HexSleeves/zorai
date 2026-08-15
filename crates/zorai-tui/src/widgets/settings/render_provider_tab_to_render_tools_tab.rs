@@ -225,7 +225,10 @@ pub(crate) fn render_provider_tab<'a>(
         let is_editing = settings.is_editing()
             && (settings.editing_field() == Some(*field_name)
                 || (*field_name == "model"
-                    && settings.editing_field() == Some("custom_model_entry")));
+                    && matches!(
+                        settings.editing_field(),
+                        Some("custom_model_entry" | "target_agent_model")
+                    )));
 
         let marker = if is_selected { ">" } else { " " };
 

@@ -203,6 +203,24 @@ pub const ZAI_MODELS: &[ModelDefinition] = &[
 
 pub const ZAI_CODING_MODELS: &[ModelDefinition] = &[
     ModelDefinition {
+        id: "glm-5.3",
+        name: "GLM-5.3",
+        context_window: 1_000_000,
+        modalities: TEXT_ONLY,
+    },
+    ModelDefinition {
+        id: "glm-5-turbo",
+        name: "GLM-5 Turbo",
+        context_window: 200_000,
+        modalities: TEXT_ONLY,
+    },
+    ModelDefinition {
+        id: "glm-4.7",
+        name: "GLM-4.7",
+        context_window: 200_000,
+        modalities: TEXT_ONLY,
+    },
+    ModelDefinition {
         id: "glm-5",
         name: "GLM-5",
         context_window: 128000,

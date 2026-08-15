@@ -429,18 +429,25 @@ fn openai_curated_media_modalities_match_expectations() {
 }
 
 #[test]
-fn z_ai_coding_plan_catalog_keeps_glm_5_default_and_includes_glm_5_1() {
+fn z_ai_coding_plan_catalog_uses_current_supported_models() {
     let provider = get_provider_definition(PROVIDER_ID_Z_AI_CODING_PLAN).expect("z.ai provider");
 
-    assert_eq!(provider.default_model, "glm-5");
-    assert_eq!(provider.models.first().map(|model| model.id), Some("glm-5"));
+    assert_eq!(provider.default_model, "glm-5.3");
+    assert_eq!(
+        provider.models.first().map(|model| model.id),
+        Some("glm-5.3")
+    );
     assert_eq!(
         provider.models.get(1).map(|model| model.id),
-        Some("glm-5.1")
+        Some("glm-5-turbo")
     );
     assert_eq!(
         provider.models.get(1).map(|model| model.context_window),
-        Some(204800)
+        Some(200_000)
+    );
+    assert_eq!(
+        provider.models.get(2).map(|model| model.id),
+        Some("glm-4.7")
     );
 }
 
