@@ -5,6 +5,175 @@ use super::*;
 
 const PARTICIPANT_PROMPT_MAX_MESSAGES: usize = 48;
 const PARTICIPANT_PROMPT_MAX_TOKENS: usize = 16_000;
+const PARTICIPANT_DUPLICATE_MUTE_THRESHOLD: u32 = 3;
+const PARTICIPANT_RECENT_CONTRIBUTION_WINDOW: usize = 3;
+const PARTICIPANT_STATUS_ACK_MAX_WORDS: usize = 15;
+
+const PARTICIPANT_STATUS_ACK_WORDS: &[&str] = &[
+    "ack",
+    "acked",
+    "acknowledged",
+    "all",
+    "am",
+    "and",
+    "as",
+    "at",
+    "before",
+    "being",
+    "by",
+    "change",
+    "changed",
+    "changes",
+    "clean",
+    "continuing",
+    "currently",
+    "end",
+    "fine",
+    "for",
+    "from",
+    "further",
+    "good",
+    "got",
+    "have",
+    "healthy",
+    "here",
+    "hold",
+    "holding",
+    "i",
+    "idle",
+    "in",
+    "info",
+    "information",
+    "is",
+    "it",
+    "moment",
+    "monitor",
+    "monitoring",
+    "my",
+    "new",
+    "news",
+    "no",
+    "nominal",
+    "none",
+    "noted",
+    "nothing",
+    "observing",
+    "of",
+    "ok",
+    "okay",
+    "on",
+    "progress",
+    "quiet",
+    "remain",
+    "remains",
+    "report",
+    "running",
+    "same",
+    "side",
+    "since",
+    "stand",
+    "standing",
+    "status",
+    "steady",
+    "still",
+    "that",
+    "the",
+    "there",
+    "this",
+    "time",
+    "to",
+    "unchanged",
+    "understood",
+    "until",
+    "update",
+    "updated",
+    "updates",
+    "wait",
+    "waiting",
+    "watch",
+    "watching",
+    "will",
+    "working",
+    "yet",
+];
+
+fn normalize_participant_message_for_comparison(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| {
+            if c.is_alphanumeric() {
+                c.to_ascii_lowercase()
+            } else {
+                ' '
+            }
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+pub(super) fn participant_message_is_status_ack(value: &str) -> bool {
+    let normalized = normalize_participant_message_for_comparison(value);
+    if normalized.is_empty() {
+        return true;
+    }
+    let words = normalized.split_whitespace().collect::<Vec<_>>();
+    words.len() <= PARTICIPANT_STATUS_ACK_MAX_WORDS
+        && words
+            .iter()
+            .all(|word| PARTICIPANT_STATUS_ACK_WORDS.contains(word))
+}
+
+pub(super) fn participant_message_repeats_recent_contribution(
+    visible_messages: &[AgentMessage],
+    agent_id: &str,
+    candidate: &str,
+) -> bool {
+    let normalized_candidate = normalize_participant_message_for_comparison(candidate);
+    if normalized_candidate.is_empty() {
+        return true;
+    }
+    visible_messages
+        .iter()
+        .rev()
+        .filter(|message| {
+            message.role == MessageRole::Assistant
+                && message
+                    .author_agent_id
+                    .as_deref()
+                    .is_some_and(|author_id| author_id.eq_ignore_ascii_case(agent_id))
+        })
+        .take(PARTICIPANT_RECENT_CONTRIBUTION_WINDOW)
+        .any(|message| {
+            normalize_participant_message_for_comparison(&message.content) == normalized_candidate
+        })
+}
+
+pub(super) fn thread_novelty_epoch(messages: &[AgentMessage]) -> u64 {
+    messages
+        .iter()
+        .rev()
+        .find(|message| match message.role {
+            MessageRole::User | MessageRole::Tool => true,
+            MessageRole::Assistant => message
+                .tool_calls
+                .as_ref()
+                .is_some_and(|calls| !calls.is_empty()),
+            MessageRole::System => false,
+        })
+        .map(|message| message.timestamp)
+        .unwrap_or(0)
+}
+
+pub(super) fn latest_user_message_timestamp(messages: &[AgentMessage]) -> u64 {
+    messages
+        .iter()
+        .rev()
+        .find(|message| message.role == MessageRole::User)
+        .map(|message| message.timestamp)
+        .unwrap_or(0)
+}
 
 fn normalize_no_suggestion_candidate(value: &str) -> String {
     let mut current = value.trim();
@@ -138,7 +307,13 @@ fn build_participant_prompt_from_snapshot(
         "If the latest assistant message proposes next steps, ongoing work, or an unfinished plan, continue that flow when your participant role can help.\n",
     );
     prompt.push_str(
-        "Return NO_SUGGESTION only when the visible thread is naturally complete, blocked on external input, or the participant truly has nothing useful to add.\n\n",
+        "Return NO_SUGGESTION only when the visible thread is naturally complete, blocked on external input, or the participant truly has nothing useful to add.\n",
+    );
+    prompt.push_str(
+        "Never post status-only acknowledgements such as 'holding', 'still monitoring', or 'nothing new'. If you have no new information, decision, or concrete action to contribute, return NO_SUGGESTION.\n",
+    );
+    prompt.push_str(
+        "Never repeat a message you already posted on this thread. Silence is always better than filler.\n\n",
     );
     prompt.push_str("Visible thread:\n");
     for message in visible_messages {
@@ -811,11 +986,14 @@ impl AgentEngine {
             return Ok(());
         }
         let active_responder_agent_id = self.active_agent_id_for_thread(thread_id).await;
-        let visible_messages = self
+        let thread_messages = self
             .get_thread(thread_id)
             .await
             .ok_or_else(|| anyhow::anyhow!("thread not found: {thread_id}"))?
-            .messages
+            .messages;
+        let novelty_epoch = thread_novelty_epoch(&thread_messages);
+        let latest_user_timestamp = latest_user_message_timestamp(&thread_messages);
+        let visible_messages = thread_messages
             .into_iter()
             .filter(|message| !should_hide_participant_prompt_message(message))
             .collect::<Vec<_>>();
@@ -851,6 +1029,52 @@ impl AgentEngine {
             }) {
                 continue;
             }
+            if participant
+                .last_contributed_epoch
+                .is_some_and(|epoch| epoch >= novelty_epoch)
+            {
+                tracing::info!(
+                    thread_id = %thread_id,
+                    participant = %participant.agent_id,
+                    novelty_epoch,
+                    "skipping participant observer because no new thread activity since last contribution"
+                );
+                participant_state_changed |= self
+                    .mark_thread_participant_observed_visible_message(
+                        thread_id,
+                        &participant.agent_id,
+                        latest_visible_message_timestamp,
+                    )
+                    .await;
+                continue;
+            }
+            if participant.duplicate_suppression_streak >= PARTICIPANT_DUPLICATE_MUTE_THRESHOLD {
+                if participant
+                    .last_suppressed_at
+                    .is_some_and(|suppressed_at| suppressed_at >= latest_user_timestamp)
+                {
+                    tracing::info!(
+                        thread_id = %thread_id,
+                        participant = %participant.agent_id,
+                        streak = participant.duplicate_suppression_streak,
+                        "skipping muted participant observer until a new operator message arrives"
+                    );
+                    participant_state_changed |= self
+                        .mark_thread_participant_observed_visible_message(
+                            thread_id,
+                            &participant.agent_id,
+                            latest_visible_message_timestamp,
+                        )
+                        .await;
+                    continue;
+                }
+                participant_state_changed |= self
+                    .reset_thread_participant_duplicate_suppressions(
+                        thread_id,
+                        &participant.agent_id,
+                    )
+                    .await;
+            }
             let compacted_messages = self
                 .compact_participant_prompt_messages(&participant.agent_id, &visible_messages)
                 .await?;
@@ -881,14 +1105,65 @@ impl AgentEngine {
                         latest_visible_message_timestamp,
                     )
                     .await;
+                participant_state_changed |= self
+                    .mark_thread_participant_epoch_consumed(
+                        thread_id,
+                        &participant.agent_id,
+                        novelty_epoch,
+                    )
+                    .await;
                 continue;
             };
+            if participant_message_is_status_ack(&message)
+                || participant_message_repeats_recent_contribution(
+                    &visible_messages,
+                    &participant.agent_id,
+                    &message,
+                )
+            {
+                tracing::info!(
+                    thread_id = %thread_id,
+                    participant = %participant.agent_id,
+                    "suppressing status-only or repeated participant message"
+                );
+                participant_state_changed |= self
+                    .mark_thread_participant_observed_visible_message(
+                        thread_id,
+                        &participant.agent_id,
+                        latest_visible_message_timestamp,
+                    )
+                    .await;
+                participant_state_changed |= self
+                    .mark_thread_participant_epoch_consumed(
+                        thread_id,
+                        &participant.agent_id,
+                        novelty_epoch,
+                    )
+                    .await;
+                participant_state_changed |= self
+                    .record_thread_participant_duplicate_suppression(
+                        thread_id,
+                        &participant.agent_id,
+                    )
+                    .await;
+                continue;
+            }
             tracing::info!(
                 thread_id = %thread_id,
                 participant = %participant.agent_id,
                 force_send,
                 "participant observer produced suggestion"
             );
+            participant_state_changed |= self
+                .mark_thread_participant_epoch_consumed(
+                    thread_id,
+                    &participant.agent_id,
+                    novelty_epoch,
+                )
+                .await;
+            participant_state_changed |= self
+                .reset_thread_participant_duplicate_suppressions(thread_id, &participant.agent_id)
+                .await;
             if force_send {
                 self.append_visible_thread_participant_message(
                     thread_id,
@@ -933,7 +1208,99 @@ impl AgentEngine {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_participant_suggestion_response, participant_response_is_no_suggestion};
+    use super::{
+        latest_user_message_timestamp, parse_participant_suggestion_response,
+        participant_message_is_status_ack, participant_message_repeats_recent_contribution,
+        participant_response_is_no_suggestion, thread_novelty_epoch, AgentMessage, MessageRole,
+        ToolCall, ToolFunction,
+    };
+
+    fn message(role: MessageRole, content: &str, timestamp: u64) -> AgentMessage {
+        let mut message = AgentMessage::user(content, timestamp);
+        message.role = role;
+        message
+    }
+
+    fn participant_post(agent_id: &str, content: &str, timestamp: u64) -> AgentMessage {
+        let mut message = message_assistant(content, timestamp);
+        message.author_agent_id = Some(agent_id.to_string());
+        message
+    }
+
+    fn message_assistant(content: &str, timestamp: u64) -> AgentMessage {
+        message(MessageRole::Assistant, content, timestamp)
+    }
+
+    #[test]
+    fn status_acks_are_detected_so_they_never_wake_the_responder() {
+        assert!(participant_message_is_status_ack("Holding."));
+        assert!(participant_message_is_status_ack("Still monitoring."));
+        assert!(participant_message_is_status_ack("Nothing new to report."));
+        assert!(participant_message_is_status_ack("Nothing on my end."));
+        assert!(participant_message_is_status_ack(
+            "Standing by, no updates."
+        ));
+        assert!(participant_message_is_status_ack(""));
+    }
+
+    #[test]
+    fn substantive_messages_are_not_classified_as_status_acks() {
+        assert!(!participant_message_is_status_ack(
+            "Loss 5.82 at step 1125, run the eval harness when the checkpoint lands."
+        ));
+        assert!(!participant_message_is_status_ack(
+            "The gate measurement failed; rerun phase 1 with a lower learning rate."
+        ));
+    }
+
+    #[test]
+    fn repeated_participant_posts_are_suppressed_regardless_of_formatting() {
+        let visible = vec![
+            message(MessageRole::User, "start the run", 1),
+            participant_post(
+                "kimus",
+                "Escalate the checkpoint failure to the operator.",
+                2,
+            ),
+        ];
+        assert!(participant_message_repeats_recent_contribution(
+            &visible,
+            "kimus",
+            "**Escalate the checkpoint failure to the operator!**"
+        ));
+        assert!(!participant_message_repeats_recent_contribution(
+            &visible,
+            "kimus",
+            "Checkpoint 5000 landed; run the eval harness now."
+        ));
+        assert!(!participant_message_repeats_recent_contribution(
+            &visible,
+            "other-agent",
+            "Escalate the checkpoint failure to the operator."
+        ));
+    }
+
+    #[test]
+    fn responder_chatter_without_tools_does_not_create_a_new_novelty_epoch() {
+        let mut with_tools = message_assistant("checking status", 5);
+        with_tools.tool_calls = Some(vec![ToolCall {
+            id: "call-1".to_string(),
+            function: ToolFunction {
+                name: "bash_command".to_string(),
+                arguments: "{}".to_string(),
+            },
+            weles_review: None,
+        }]);
+        let messages = vec![
+            message(MessageRole::User, "start the run", 1),
+            with_tools,
+            message(MessageRole::Tool, "step 1125 loss 5.82", 6),
+            message_assistant("Still monitoring.", 9),
+            message_assistant("Holding.", 10),
+        ];
+        assert_eq!(thread_novelty_epoch(&messages), 6);
+        assert_eq!(latest_user_message_timestamp(&messages), 1);
+    }
 
     #[test]
     fn no_message_is_treated_like_no_suggestion() {

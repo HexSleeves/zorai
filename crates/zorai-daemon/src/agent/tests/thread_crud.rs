@@ -2780,6 +2780,9 @@ async fn restore_thread_from_db_preserves_custom_sub_agent_name_when_participant
             last_contribution_at: None,
             last_observed_visible_message_at: None,
             always_auto_response: false,
+            last_contributed_epoch: None,
+            duplicate_suppression_streak: 0,
+            last_suppressed_at: None,
         }],
     );
     engine

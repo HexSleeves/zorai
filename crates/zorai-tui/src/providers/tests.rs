@@ -142,21 +142,26 @@ fn known_models_openai_chatgpt_subscription_is_restricted() {
 #[test]
 fn xai_static_catalog_uses_current_grok_defaults() {
     let provider = find_by_id(PROVIDER_ID_XAI).unwrap();
-    assert_eq!(provider.default_model, "grok-4.5");
+    assert_eq!(provider.default_model, "grok-4.6");
     assert_eq!(
         default_model_for_provider_auth(PROVIDER_ID_XAI, "api_key"),
-        "grok-4.5"
+        "grok-4.6"
     );
     let models = known_models_for_provider(PROVIDER_ID_XAI);
     assert_eq!(
         models.first().map(|model| model.id.as_str()),
-        Some("grok-4.5")
+        Some("grok-4.6")
+    );
+    assert_eq!(
+        known_context_window_for(PROVIDER_ID_XAI, "grok-4.6"),
+        Some(500_000)
     );
     assert_eq!(
         known_context_window_for(PROVIDER_ID_XAI, "grok-4.3"),
         Some(1_000_000)
     );
     assert!(models.iter().any(|model| model.id == "grok-4"));
+    assert!(models.iter().any(|model| model.id == "grok-build-0.1"));
     assert!(models.iter().any(|model| model.id == "grok-code-fast-1"));
 }
 
@@ -249,16 +254,21 @@ fn z_ai_static_catalog_preserves_provider_default_model() {
 }
 
 #[test]
-fn z_ai_coding_static_catalog_preserves_provider_default_model() {
+fn z_ai_coding_static_catalog_uses_current_supported_models() {
     let models = known_models_for_provider(PROVIDER_ID_Z_AI_CODING_PLAN);
+    assert_eq!(
+        models.first().map(|model| model.id.as_str()),
+        Some("glm-5.3")
+    );
+    assert!(models.iter().any(|model| model.id == "glm-5-turbo"));
+    assert!(models.iter().any(|model| model.id == "glm-4.7"));
     assert!(models.iter().any(|model| model.id == "glm-5"));
     assert!(models.iter().any(|model| model.id == "glm-4-flash"));
-    assert!(!models.iter().any(|model| model.id == "glm-4.7"));
     assert!(!models.iter().any(|model| model.id == "glm-4.7-air"));
     assert!(!models.iter().any(|model| model.id == "glm-4.7-flash"));
     assert_eq!(
         default_model_for_provider_auth(PROVIDER_ID_Z_AI_CODING_PLAN, "api_key"),
-        "glm-5"
+        "glm-5.3"
     );
 }
 

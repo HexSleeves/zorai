@@ -46,6 +46,9 @@ async fn participant_thread_hydration_preserves_visible_thread_owner_agent_name(
             deactivated_at: None,
             last_contribution_at: None,
             always_auto_response: false,
+            last_contributed_epoch: None,
+            duplicate_suppression_streak: 0,
+            last_suppressed_at: None,
             last_observed_visible_message_at: None,
         }],
     );
@@ -287,6 +290,9 @@ async fn persisted_thread_metadata_reloads_thread_participants() {
                 last_contribution_at: Some(12),
                 last_observed_visible_message_at: Some(12),
                 always_auto_response: false,
+                last_contributed_epoch: None,
+                duplicate_suppression_streak: 0,
+                last_suppressed_at: None,
             },
             crate::agent::ThreadParticipantState {
                 agent_id: "rarog".to_string(),
@@ -299,6 +305,9 @@ async fn persisted_thread_metadata_reloads_thread_participants() {
                 last_contribution_at: None,
                 last_observed_visible_message_at: None,
                 always_auto_response: false,
+                last_contributed_epoch: None,
+                duplicate_suppression_streak: 0,
+                last_suppressed_at: None,
             },
         ],
     );

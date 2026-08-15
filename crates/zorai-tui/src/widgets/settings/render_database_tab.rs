@@ -51,7 +51,10 @@ pub(crate) fn render_database_tab<'a>(
         Line::from(vec![
             Span::styled(marker, action_style),
             Span::styled("Sync now", action_style),
-            Span::styled("  (sync the local replica with the remote server)", theme.fg_dim),
+            Span::styled(
+                "  (sync the local replica with the remote server)",
+                theme.fg_dim,
+            ),
         ]),
         Line::raw(""),
         Line::from(Span::styled("Configure in config.json:", theme.fg_active)),

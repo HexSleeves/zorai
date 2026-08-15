@@ -776,17 +776,18 @@ impl<'a> SendMessageRunner<'a> {
         }
         let memory = engine.current_memory_snapshot().await;
         let memory_paths = memory_paths_for_scope(&engine.data_dir, &agent_scope_id);
-        let base_prompt =
-            if let Some((_, _, Some(ref override_prompt), _, _, _, _, _)) = task_provider_override {
-                format!("{}\n\n{}", override_prompt, config.system_prompt)
-            } else if let Some(responder) = direct_thread_responder.as_ref() {
-                format!(
-                    "{}\n\n{}",
-                    responder.persona_prompt, responder.system_prompt
-                )
-            } else {
-                config.system_prompt.clone()
-            };
+        let base_prompt = if let Some((_, _, Some(ref override_prompt), _, _, _, _, _)) =
+            task_provider_override
+        {
+            format!("{}\n\n{}", override_prompt, config.system_prompt)
+        } else if let Some(responder) = direct_thread_responder.as_ref() {
+            format!(
+                "{}\n\n{}",
+                responder.persona_prompt, responder.system_prompt
+            )
+        } else {
+            config.system_prompt.clone()
+        };
         let operator_model_summary = engine.build_operator_model_prompt_summary().await;
         let operational_context = engine.build_operational_context_summary().await;
         let causal_guidance = engine.build_causal_guidance_summary().await;

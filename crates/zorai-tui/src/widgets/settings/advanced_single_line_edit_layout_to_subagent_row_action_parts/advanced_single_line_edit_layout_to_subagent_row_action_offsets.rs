@@ -78,7 +78,7 @@ pub(crate) fn single_line_edit_layout(
     match settings.active_tab() {
         SettingsTab::Provider => match field {
             "base_url" => Some((5, 19)),
-            "custom_model_entry" => Some((7, 19)),
+            "custom_model_entry" | "target_agent_model" => Some((7, 19)),
             "assistant_id" => Some((9, 19)),
             "context_window_tokens" => Some((11, 19)),
             _ => None,
@@ -120,7 +120,7 @@ pub(crate) fn single_line_edit_layout(
         SettingsTab::Auth => None,
         SettingsTab::Agent => match field {
             "base_url" => Some((5, 19)),
-            "custom_model_entry" => Some((7, 19)),
+            "custom_model_entry" | "target_agent_model" => Some((7, 19)),
             "assistant_id" => Some((9, 19)),
             "context_window_tokens" => Some((11, 19)),
             _ => None,

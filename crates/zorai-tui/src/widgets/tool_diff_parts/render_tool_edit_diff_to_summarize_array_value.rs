@@ -402,7 +402,31 @@ fn flatten_structured_value(
             empty_key(&prefix),
             summarize_string_value(tool_name, source, &prefix, text),
         )),
-        Value::Array(items) => fields.push((empty_key(&prefix), summarize_array_value(items))),
+        Value::Array(items) => {
+            if items.is_empty()
+                || items.iter().all(|item| {
+                    item.is_null() || item.is_boolean() || item.is_number() || item.is_string()
+                })
+            {
+                fields.push((empty_key(&prefix), summarize_array_value(items)));
+            } else {
+                let mut shown = 0usize;
+                for (index, item) in items.iter().enumerate() {
+                    if fields.len() >= MAX_STRUCTURED_FIELDS {
+                        break;
+                    }
+                    let next_prefix = format!("{prefix}[{index}]");
+                    flatten_structured_value(tool_name, source, next_prefix, item, fields);
+                    shown = index + 1;
+                }
+                if shown < items.len() {
+                    fields.push((
+                        empty_key(&prefix),
+                        format!("... (+{} more items)", items.len() - shown),
+                    ));
+                }
+            }
+        }
         Value::Object(entries) => {
             if entries.is_empty() {
                 fields.push((empty_key(&prefix), "{}".to_string()));

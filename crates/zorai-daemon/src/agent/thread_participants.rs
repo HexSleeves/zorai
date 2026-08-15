@@ -34,6 +34,16 @@ pub struct ThreadParticipantState {
     pub last_observed_visible_message_at: Option<u64>,
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub always_auto_response: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_contributed_epoch: Option<u64>,
+    #[serde(default, skip_serializing_if = "u32_is_zero")]
+    pub duplicate_suppression_streak: u32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_suppressed_at: Option<u64>,
+}
+
+fn u32_is_zero(value: &u32) -> bool {
+    *value == 0
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -315,6 +325,75 @@ impl AgentEngine {
         true
     }
 
+    pub(super) async fn mark_thread_participant_epoch_consumed(
+        &self,
+        thread_id: &str,
+        agent_id: &str,
+        epoch: u64,
+    ) -> bool {
+        let mut participants = self.thread_participants.write().await;
+        let Some(participant) = participants.get_mut(thread_id).and_then(|entry| {
+            entry
+                .iter_mut()
+                .find(|participant| participant.agent_id.eq_ignore_ascii_case(agent_id))
+        }) else {
+            return false;
+        };
+        if participant
+            .last_contributed_epoch
+            .is_some_and(|existing| existing >= epoch)
+        {
+            return false;
+        }
+        participant.last_contributed_epoch = Some(epoch);
+        participant.updated_at = now_millis();
+        true
+    }
+
+    pub(super) async fn record_thread_participant_duplicate_suppression(
+        &self,
+        thread_id: &str,
+        agent_id: &str,
+    ) -> bool {
+        let mut participants = self.thread_participants.write().await;
+        let Some(participant) = participants.get_mut(thread_id).and_then(|entry| {
+            entry
+                .iter_mut()
+                .find(|participant| participant.agent_id.eq_ignore_ascii_case(agent_id))
+        }) else {
+            return false;
+        };
+        let now = now_millis();
+        participant.duplicate_suppression_streak =
+            participant.duplicate_suppression_streak.saturating_add(1);
+        participant.last_suppressed_at = Some(now);
+        participant.updated_at = now;
+        true
+    }
+
+    pub(super) async fn reset_thread_participant_duplicate_suppressions(
+        &self,
+        thread_id: &str,
+        agent_id: &str,
+    ) -> bool {
+        let mut participants = self.thread_participants.write().await;
+        let Some(participant) = participants.get_mut(thread_id).and_then(|entry| {
+            entry
+                .iter_mut()
+                .find(|participant| participant.agent_id.eq_ignore_ascii_case(agent_id))
+        }) else {
+            return false;
+        };
+        if participant.duplicate_suppression_streak == 0 && participant.last_suppressed_at.is_none()
+        {
+            return false;
+        }
+        participant.duplicate_suppression_streak = 0;
+        participant.last_suppressed_at = None;
+        participant.updated_at = now_millis();
+        true
+    }
+
     pub(in crate::agent) async fn resolve_thread_participant_target(
         &self,
         alias: &str,
@@ -530,14 +609,14 @@ impl AgentEngine {
             .unwrap_or_default();
         if latest_operator_request.trim().is_empty() {
             format!(
-                "Continue the visible operator thread as {}. A thread participant ({}) just posted a visible message. Treat that participant contribution as the latest actionable context and continue the same task flow from there instead of restarting from an older user turn. Keep follow-up work visible from this thread: if specialist help is needed, prefer `spawn_subagent` or other visible thread-native actions over hidden internal DMs. Do not stop after only sending `message_agent`; produce visible progress on this thread.\n\nLatest participant contribution:\n{}",
+                "Continue the visible operator thread as {}. A thread participant ({}) just posted a visible message. Treat that participant contribution as the latest actionable context and continue the same task flow from there instead of restarting from an older user turn. Keep follow-up work visible from this thread: if specialist help is needed, prefer `spawn_subagent` or other visible thread-native actions over hidden internal DMs. Do not stop after only sending `message_agent`; produce visible progress on this thread. If the participant contribution contains no new actionable information, do not post a status update or acknowledgement in response; end the turn without a visible message.\n\nLatest participant contribution:\n{}",
                 target_agent_name,
                 participant_name.trim(),
                 participant_message.trim()
             )
         } else {
             format!(
-                "Continue the visible operator thread as {}. A thread participant ({}) just posted a visible message. Treat that participant contribution as the latest actionable context and continue the same task flow from there instead of restarting from an older user turn. Keep follow-up work visible from this thread: if specialist help is needed, prefer `spawn_subagent` or other visible thread-native actions over hidden internal DMs. Do not stop after only sending `message_agent`; produce visible progress on this thread.\n\nLatest participant contribution:\n{}\n\nLatest operator request already on this thread:\n{}",
+                "Continue the visible operator thread as {}. A thread participant ({}) just posted a visible message. Treat that participant contribution as the latest actionable context and continue the same task flow from there instead of restarting from an older user turn. Keep follow-up work visible from this thread: if specialist help is needed, prefer `spawn_subagent` or other visible thread-native actions over hidden internal DMs. Do not stop after only sending `message_agent`; produce visible progress on this thread. If the participant contribution contains no new actionable information, do not post a status update or acknowledgement in response; end the turn without a visible message.\n\nLatest participant contribution:\n{}\n\nLatest operator request already on this thread:\n{}",
                 target_agent_name,
                 participant_name.trim(),
                 participant_message.trim(),
@@ -1458,6 +1537,17 @@ impl AgentEngine {
             return;
         };
 
+        if crate::agent::thread_participant_runner::participant_message_is_status_ack(
+            &participant_message,
+        ) {
+            tracing::info!(
+                thread_id = %thread_id,
+                participant = %latest_participant_author_id,
+                "skipping responder continuation for status-only participant acknowledgement"
+            );
+            return;
+        }
+
         let continuation_agent_id = self
             .active_agent_id_for_thread(thread_id)
             .await
@@ -1569,7 +1659,10 @@ impl AgentEngine {
                         ) || crate::agent::thread_participant_runner::parse_participant_suggestion_response(
                             &suggestion.instruction,
                         )
-                        .is_none();
+                        .is_none()
+                            || crate::agent::thread_participant_runner::participant_message_is_status_ack(
+                                &suggestion.instruction,
+                            );
                         if !target_is_active
                             || stale_auto_response
                             || (suggestion.suggestion_kind
@@ -1664,6 +1757,9 @@ impl AgentEngine {
                 last_contribution_at: None,
                 last_observed_visible_message_at: None,
                 always_auto_response: false,
+                last_contributed_epoch: None,
+                duplicate_suppression_streak: 0,
+                last_suppressed_at: None,
             };
             entry.push(state.clone());
             state
@@ -2070,6 +2166,9 @@ mod tests {
             last_contribution_at: None,
             last_observed_visible_message_at: None,
             always_auto_response: false,
+            last_contributed_epoch: None,
+            duplicate_suppression_streak: 0,
+            last_suppressed_at: None,
         }
     }
 

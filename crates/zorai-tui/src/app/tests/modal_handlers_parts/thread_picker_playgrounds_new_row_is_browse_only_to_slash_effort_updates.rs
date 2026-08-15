@@ -374,6 +374,68 @@ fn slash_model_updates_active_thread_owner_model() {
 }
 
 #[test]
+fn slash_model_custom_entry_updates_active_thread_owner_model() {
+    let (mut model, mut daemon_rx) = make_model();
+    seed_active_weles_thread(&mut model);
+
+    assert!(model.execute_slash_command_line("/model"));
+    assert_eq!(model.modal.top(), Some(modal::ModalKind::ModelPicker));
+    let custom_index = model.filtered_model_picker_models().len();
+    model
+        .modal
+        .reduce(modal::ModalAction::Navigate(custom_index as i32));
+    model.handle_modal_enter(modal::ModalKind::ModelPicker);
+
+    assert_eq!(model.modal.top(), Some(modal::ModalKind::Settings));
+    assert_eq!(model.settings.active_tab(), SettingsTab::Agent);
+    assert_eq!(model.settings.current_field_name(), "model");
+    assert_eq!(model.settings.editing_field(), Some("target_agent_model"));
+    while !model.settings.edit_buffer().is_empty() {
+        model.handle_key_modal(
+            KeyCode::Backspace,
+            KeyModifiers::NONE,
+            modal::ModalKind::Settings,
+        );
+    }
+    for ch in "vendor/custom-model".chars() {
+        model.handle_key_modal(
+            KeyCode::Char(ch),
+            KeyModifiers::NONE,
+            modal::ModalKind::Settings,
+        );
+    }
+    model.handle_key_modal(
+        KeyCode::Enter,
+        KeyModifiers::NONE,
+        modal::ModalKind::Settings,
+    );
+
+    let mut saw_target_update = false;
+    while let Ok(command) = daemon_rx.try_recv() {
+        if matches!(
+            command,
+            DaemonCommand::SetTargetAgentProviderModel {
+                target_agent_id,
+                provider_id,
+                model,
+            } if target_agent_id == "weles"
+                && provider_id == PROVIDER_ID_OPENAI
+                && model == "vendor/custom-model"
+        ) {
+            saw_target_update = true;
+        }
+    }
+    assert!(saw_target_update);
+    assert_eq!(
+        model
+            .chat
+            .active_thread()
+            .and_then(|thread| thread.runtime_model.as_deref()),
+        Some("vendor/custom-model")
+    );
+}
+
+#[test]
 fn slash_provider_updates_active_thread_owner_provider_after_model_pick() {
     let (mut model, mut daemon_rx) = make_model();
     seed_active_weles_thread(&mut model);

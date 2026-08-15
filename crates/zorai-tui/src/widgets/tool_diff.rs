@@ -43,4 +43,54 @@ mod tests {
         let items = vec![json!({"k": 1}), json!({"k": 2})];
         assert_eq!(summarize_array_value(&items), "2 items");
     }
+
+    fn lines_to_text(lines: &[ratatui::text::Line<'static>]) -> String {
+        lines
+            .iter()
+            .map(|line| {
+                line.spans
+                    .iter()
+                    .map(|span| span.content.as_ref())
+                    .collect::<String>()
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+
+    #[test]
+    fn structured_result_expands_object_arrays_with_indices() {
+        let theme = crate::theme::ThemeTokens::default();
+        let raw = r#"[{"provider_id":"openai","authenticated":true},{"provider_id":"anthropic","authenticated":false}]"#;
+        let lines = render_tool_structured_json(
+            "fetch_authenticated_providers",
+            ToolStructuredValueSource::Result,
+            raw,
+            &theme,
+            120,
+        )
+        .expect("structured render should produce fields for an object array");
+        let text = lines_to_text(&lines);
+        assert!(text.contains("[0].provider_id: openai"), "{text}");
+        assert!(text.contains("[1].provider_id: anthropic"), "{text}");
+        assert!(!text.contains("2 items"), "{text}");
+    }
+
+    #[test]
+    fn structured_result_surfaces_truncation_for_large_object_arrays() {
+        let theme = crate::theme::ThemeTokens::default();
+        let items: Vec<Value> = (0..20)
+            .map(|n| json!({"provider_id": format!("p{n}"), "authenticated": true}))
+            .collect();
+        let raw = serde_json::to_string(&Value::Array(items)).unwrap();
+        let lines = render_tool_structured_json(
+            "fetch_authenticated_providers",
+            ToolStructuredValueSource::Result,
+            &raw,
+            &theme,
+            120,
+        )
+        .expect("structured render should produce fields for an object array");
+        let text = lines_to_text(&lines);
+        assert!(text.contains("more items"), "{text}");
+    }
 }
