@@ -37,6 +37,16 @@ async fn write_goal_step_review_record(
     verdict: GoalStepReviewVerdict,
     explanation: &str,
 ) {
+    write_goal_step_review_record_with_evidence(engine, task, verdict, explanation, None).await;
+}
+
+async fn write_goal_step_review_record_with_evidence(
+    engine: &AgentEngine,
+    task: &AgentTask,
+    verdict: GoalStepReviewVerdict,
+    explanation: &str,
+    evidence: Option<GoalVerdictEvidence>,
+) {
     let record = GoalStepReviewRecord {
         task_id: task.id.clone(),
         goal_run_id: task
@@ -49,6 +59,7 @@ async fn write_goal_step_review_record(
             .expect("task should have goal_step_id"),
         verdict,
         explanation: explanation.to_string(),
+        evidence,
         submitted_at: now_millis(),
     };
     engine
@@ -2232,6 +2243,22 @@ async fn verifier_completion_advances_goal_step_and_resolves_proof_checks() {
     .await;
     write_step_completion_marker(&engine, goal_run_id, 0).await;
 
+    {
+        let evidence_verifier_task = completed_verifier.clone();
+        write_goal_step_review_record_with_evidence(
+            &engine,
+            &evidence_verifier_task,
+            GoalStepReviewVerdict::Pass,
+            "all proof checks satisfied",
+            Some(GoalVerdictEvidence {
+                verifier: "cargo test -p zorai-daemon goal_planner -- --exact (exit 0)".to_string(),
+                coverage: "structured verdict handling and step advancement".to_string(),
+                gaps: None,
+            }),
+        )
+        .await;
+    }
+
     engine
         .handle_goal_run_step_completion(goal_run_id, &completed_verifier)
         .await
@@ -2248,6 +2275,13 @@ async fn verifier_completion_advances_goal_step_and_resolves_proof_checks() {
         "passed verification should clear stale step errors"
     );
     assert_eq!(updated.current_step_title.as_deref(), Some("step-2"));
+    assert!(
+        updated.steps[0]
+            .summary
+            .as_deref()
+            .is_some_and(|summary| summary.contains("verifier: cargo test")),
+        "step summary should carry the verdict evidence line"
+    );
 
     let dossier = updated.dossier.expect("verification should update dossier");
     assert_eq!(dossier.units[0].status, GoalProjectionState::Completed);

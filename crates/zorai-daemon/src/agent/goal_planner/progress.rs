@@ -106,6 +106,37 @@ fn structured_review_failure_reason(record: &GoalStepReviewRecord) -> String {
     }
 }
 
+fn format_goal_verdict_evidence(record: &GoalStepReviewRecord) -> Option<String> {
+    let evidence = record.evidence.as_ref()?;
+    let verifier = evidence.verifier.trim();
+    let coverage = evidence.coverage.trim();
+    if verifier.is_empty() && coverage.is_empty() {
+        return None;
+    }
+    let mut parts = Vec::new();
+    if !verifier.is_empty() {
+        parts.push(format!("verifier: {verifier}"));
+    }
+    if !coverage.is_empty() {
+        parts.push(format!("coverage: {coverage}"));
+    }
+    if let Some(gaps) = evidence
+        .gaps
+        .as_deref()
+        .map(str::trim)
+        .filter(|gaps| !gaps.is_empty())
+    {
+        parts.push(format!("gaps: {gaps}"));
+    }
+    Some(parts.join(" | "))
+}
+
+fn review_record_for_task(
+    record: &Option<GoalStepReviewRecord>,
+) -> Option<&GoalStepReviewRecord> {
+    record.as_ref()
+}
+
 fn legacy_review_failure_reason(review_result: String) -> String {
     if matches!(
         parse_goal_review_verdict(&review_result),
@@ -571,6 +602,7 @@ impl AgentEngine {
             "Review completed goal step `{}`.\n\n\
              You must call `submit_goal_step_verdict` exactly once before finishing.\n\
              Use verdict `pass` only when the current step satisfies its instructions, success criteria, todos, completion artifacts, and required proof checks.\n\
+             A `pass` verdict must include evidence arguments: `verifier` (what concretely ran: command + exit code, test name, review, or build), `coverage` (the scope that verifier exercised), and optional `gaps` (what it did not cover). The tool rejects a `pass` without verifier and coverage.\n\
              Use verdict `fail` with a concrete explanation when the step needs more work; that explanation is sent back to the responsible step agent.\n\n\
              Original instructions:\n{}\n\n\
              Success criteria:\n{}\n\n\
@@ -962,13 +994,15 @@ impl AgentEngine {
             ));
 
         let now = now_millis();
-        let thread_summary = match task.thread_id.as_deref() {
+        let mut thread_summary = match task.thread_id.as_deref() {
             Some(thread_id) => self.goal_thread_summary(thread_id).await,
             None => None,
         };
+        let mut review_record: Option<GoalStepReviewRecord> = None;
         if task.source == GOAL_VERIFICATION_SOURCE {
             if let Some(record) = self.load_goal_step_review_record(&task.id).await? {
                 Self::validate_goal_step_review_record(task, goal_run_id, &record)?;
+                review_record = Some(record.clone());
                 if matches!(record.verdict, GoalStepReviewVerdict::Fail) {
                     let failure_reason = structured_review_failure_reason(&record);
                     self.requeue_goal_step_to_pending(goal_run_id, &failure_reason, Some(task))
@@ -999,6 +1033,10 @@ impl AgentEngine {
                     return Ok(());
                 }
             }
+        }
+        if let Some(evidence_line) = review_record.as_ref().and_then(format_goal_verdict_evidence) {
+            let base_summary = thread_summary.clone().unwrap_or_else(|| "step completed".to_string());
+            thread_summary = Some(format!("{base_summary}\nEvidence — {evidence_line}"));
         }
         let updated = {
             let mut goal_runs = self.goal_runs.lock().await;
@@ -1075,6 +1113,8 @@ impl AgentEngine {
                 "completed_step_index": updated.current_step_index.saturating_sub(1),
                 "task_id": task.id,
                 "summary": thread_summary,
+                "verdict_evidence": review_record_for_task(&review_record)
+                    .and_then(format_goal_verdict_evidence),
             }),
             Some(updated.id.as_str()),
             Some(task.id.as_str()),

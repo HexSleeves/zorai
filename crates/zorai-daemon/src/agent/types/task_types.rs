@@ -178,6 +178,16 @@ pub enum GoalStepReviewVerdict {
     Fail,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct GoalVerdictEvidence {
+    #[serde(default)]
+    pub verifier: String,
+    #[serde(default)]
+    pub coverage: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gaps: Option<String>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct GoalStepReviewRecord {
     pub task_id: String,
@@ -185,6 +195,8 @@ pub struct GoalStepReviewRecord {
     pub goal_step_id: String,
     pub verdict: GoalStepReviewVerdict,
     pub explanation: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<GoalVerdictEvidence>,
     pub submitted_at: u64,
 }
 

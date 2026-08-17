@@ -23,6 +23,50 @@ pub(in crate::agent) fn goal_step_verdict_required_state_key(task_id: &str) -> S
     format!("{GOAL_STEP_VERDICT_REQUIRED_STATE_PREFIX}{task_id}")
 }
 
+/// Parses optional verifier-binding evidence fields from `submit_goal_step_verdict`
+/// arguments: `verifier`, `coverage`, and `gaps`.
+pub(in crate::agent) fn parse_goal_verdict_evidence(
+    args: &serde_json::Value,
+) -> Result<Option<GoalVerdictEvidence>, anyhow::Error> {
+    let field = |name: &str| {
+        args.get(name)
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    };
+    let verifier = field("verifier");
+    let coverage = field("coverage");
+    let gaps = field("gaps");
+    if verifier.is_none() && coverage.is_none() && gaps.is_none() {
+        return Ok(None);
+    }
+    Ok(Some(GoalVerdictEvidence {
+        verifier: verifier.unwrap_or_default(),
+        coverage: coverage.unwrap_or_default(),
+        gaps,
+    }))
+}
+
+/// A `pass` verdict is a completion claim, so it must bind the verifier that
+/// actually ran and the coverage scope it exercised. Fail verdicts stay
+/// unencumbered so reviewers can report problems without evidence bookkeeping.
+pub(in crate::agent) fn validate_pass_verdict_evidence(
+    evidence: Option<&GoalVerdictEvidence>,
+) -> Result<(), anyhow::Error> {
+    let Some(evidence) = evidence else {
+        anyhow::bail!(
+            "verdict 'pass' requires evidence: provide 'verifier' (what concretely ran: command + exit code, test name, review, build) and 'coverage' (the scope it exercised)"
+        );
+    };
+    if evidence.verifier.trim().is_empty() || evidence.coverage.trim().is_empty() {
+        anyhow::bail!(
+            "verdict 'pass' requires non-empty 'verifier' (what concretely ran: command + exit code, test name, review, build) and 'coverage' (the scope it exercised); state uncovered scope via optional 'gaps'"
+        );
+    }
+    Ok(())
+}
+
 fn parse_goal_role_binding(raw: Option<&str>, fallback: GoalRoleBinding) -> GoalRoleBinding {
     let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
         return fallback;
