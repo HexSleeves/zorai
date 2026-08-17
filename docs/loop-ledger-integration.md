@@ -73,6 +73,7 @@ Add `tier: fast|full|loop` to `AgentTask`/`GoalRunStep` (serde default `full`). 
 
 - P1 **implemented** and committed (d3fd1e70): `GoalVerdictEvidence` in `types/task_types.rs`, parse/validate helpers in `goal_planner.rs`, pass-verdict enforcement in `tool_executor/tasks.rs`, schema args in `tool_executor/catalog/part_d.rs`, reviewer prompt + step-summary/provenance evidence in `goal_planner/progress.rs`. `cargo check` passes; verdict tests pass; `goal_planner`/`part6` mass failures are pre-existing test-env SQLite init panics (confirmed on stashed baseline).
 - P2 **implemented** and committed (c597c72c): `ledger.md`/`ledger.json` (Goal/Core/Verified/Open/Next) written into `goal_inventory_specs_dir` on every projection refresh (`goal_dossier/projection.rs`); ledger injected into all four step task enqueue descriptions via `goal_step_task_description`, into verification task descriptions, and into planner replan prompts for non-terminal runs. `cargo check` + goal_dossier/verdict tests pass.
+- P3 **implemented** and committed (e96a0e8b): `GoalRun.step_failure_history` records `step_id#title attempt N: diagnosis` on every requeue; `goal_step_task_description` prepends a Retry context block with prior diagnoses, escalating to a switch-approach warning at 2+ attempts; history surfaces in the ledger Open section. New tests: `verifier_fail_verdict_requeues_current_step` extended with history/retry-context assertions, `repeated_step_failures_warn_about_approach_switch` added. All targeted suites pass.
 
 ## Ordering recommendation
 
