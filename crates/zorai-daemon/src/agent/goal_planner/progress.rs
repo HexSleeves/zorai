@@ -604,12 +604,14 @@ impl AgentEngine {
              Use verdict `pass` only when the current step satisfies its instructions, success criteria, todos, completion artifacts, and required proof checks.\n\
              A `pass` verdict must include evidence arguments: `verifier` (what concretely ran: command + exit code, test name, review, or build), `coverage` (the scope that verifier exercised), and optional `gaps` (what it did not cover). The tool rejects a `pass` without verifier and coverage.\n\
              Use verdict `fail` with a concrete explanation when the step needs more work; that explanation is sent back to the responsible step agent.\n\n\
+             Goal ledger (Core anchors broadcast-once; Verified shows already-passed checks; Open shows unresolved work; Next is the cold-executable action):\n{}\n\n\
              Original instructions:\n{}\n\n\
              Success criteria:\n{}\n\n\
              Implementation summary:\n{}\n\n\
              Verification binding:\n{}\n\n\
              Required proof checks:\n{}",
             step.title,
+            crate::agent::goal_dossier::goal_ledger_prompt_block(snapshot),
             step.instructions,
             step.success_criteria,
             implementation_summary

@@ -67,6 +67,17 @@ pub(in crate::agent) fn validate_pass_verdict_evidence(
     Ok(())
 }
 
+pub(in crate::agent) fn goal_step_task_description(
+    snapshot: &GoalRun,
+    instructions: &str,
+) -> String {
+    format!(
+        "{}\n\nGoal ledger (Core anchors broadcast-once; reuse verbatim; Open lists unresolved work; Next is the cold-executable action):\n{}",
+        instructions,
+        crate::agent::goal_dossier::goal_ledger_prompt_block(snapshot)
+    )
+}
+
 fn parse_goal_role_binding(raw: Option<&str>, fallback: GoalRoleBinding) -> GoalRoleBinding {
     let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
         return fallback;
@@ -692,7 +703,7 @@ impl AgentEngine {
                     );
                     self.enqueue_task(
                         step.title.clone(),
-                        step.instructions.clone(),
+                        goal_step_task_description(&snapshot, &step.instructions),
                         task_priority_to_str(snapshot.priority),
                         None,
                         step.session_id
@@ -750,7 +761,7 @@ impl AgentEngine {
                     );
                     self.enqueue_task(
                         step.title.clone(),
-                        step.instructions.clone(),
+                        goal_step_task_description(&snapshot, &step.instructions),
                         task_priority_to_str(snapshot.priority),
                         None,
                         step.session_id
@@ -808,7 +819,7 @@ impl AgentEngine {
                     );
                     self.enqueue_task(
                         step.title.clone(),
-                        step.instructions.clone(),
+                        goal_step_task_description(&snapshot, &step.instructions),
                         task_priority_to_str(snapshot.priority),
                         None,
                         step.session_id
@@ -828,7 +839,7 @@ impl AgentEngine {
         } else {
             self.enqueue_task(
                 step.title.clone(),
-                step.instructions.clone(),
+                goal_step_task_description(&snapshot, &step.instructions),
                 task_priority_to_str(snapshot.priority),
                 None,
                 step.session_id

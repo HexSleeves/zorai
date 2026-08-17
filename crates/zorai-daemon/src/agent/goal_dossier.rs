@@ -288,6 +288,14 @@ pub(crate) fn goal_inventory_prompt_block(data_dir: &std::path::Path, goal_run_i
     )
 }
 
+/// Rendered five-state loop ledger (`Goal / Core / Verified / Open / Next`)
+/// for prompt injection into goal step tasks and verification tasks.
+pub(crate) fn goal_ledger_prompt_block(goal_run: &crate::agent::types::GoalRun) -> String {
+    let dossier = goal_run.dossier.clone().unwrap_or_default();
+    let ledger = projection::goal_loop_ledger_projection(goal_run, &dossier);
+    projection::goal_ledger_markdown(&ledger)
+}
+
 #[cfg(test)]
 pub(crate) fn goal_step_completion_marker_relative_path(
     goal_run_id: &str,

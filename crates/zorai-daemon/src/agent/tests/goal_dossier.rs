@@ -45,6 +45,38 @@ async fn goal_projection_writes_files_on_create_and_refresh() {
     assert!(plans_dir.exists(), "plans directory should exist");
     assert!(execution_dir.exists(), "execution directory should exist");
 
+    let ledger_md_path = specs_dir.join("ledger.md");
+    let ledger_json_path = specs_dir.join("ledger.json");
+    assert!(ledger_md_path.exists(), "loop ledger markdown should exist");
+    assert!(ledger_json_path.exists(), "loop ledger json should exist");
+    let ledger_markdown = tokio::fs::read_to_string(&ledger_md_path)
+        .await
+        .expect("read loop ledger markdown");
+    for section in ["## Goal", "## Core", "## Verified", "## Open", "## Next"] {
+        assert!(
+            ledger_markdown.contains(section),
+            "ledger markdown should contain the {section} section"
+        );
+    }
+    assert!(
+        ledger_markdown.contains("Ship goal projections"),
+        "ledger should carry the goal text"
+    );
+    let ledger_json: serde_json::Value = serde_json::from_str(
+        &tokio::fs::read_to_string(&ledger_json_path)
+            .await
+            .expect("read loop ledger json"),
+    )
+    .expect("loop ledger json should parse");
+    assert!(
+        ledger_json["core"].as_array().is_some_and(|items| !items.is_empty()),
+        "ledger Core anchors should be non-empty"
+    );
+    assert!(
+        ledger_json["next"].as_str().is_some_and(|next| !next.trim().is_empty()),
+        "ledger Next should be a non-empty action"
+    );
+
     let initial_markdown = tokio::fs::read_to_string(&goal_md_path)
         .await
         .expect("read goal markdown");
