@@ -316,6 +316,7 @@ fn terminal_goal_run_for_thread(goal_run_id: &str, thread_id: &str, now: u64) ->
         generated_skill_path: None,
         last_error: None,
         failure_cause: None,
+        step_failure_history: Vec::new(),
         stopped_reason: Some("operator_stop".to_string()),
         child_task_ids: Vec::new(),
         child_task_count: 0,

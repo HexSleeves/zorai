@@ -33,6 +33,7 @@ fn sample_goal_run() -> GoalRun {
         generated_skill_path: Some("/tmp/skill.md".to_string()),
         last_error: Some("child task failed".to_string()),
         failure_cause: None,
+        step_failure_history: Vec::new(),
         stopped_reason: None,
         child_task_ids: vec!["task-a".to_string(), "task-b".to_string()],
         child_task_count: 0,

@@ -125,6 +125,7 @@ fn sample_goal_run(goal_run_id: &str) -> GoalRun {
         generated_skill_path: None,
         last_error: None,
         failure_cause: None,
+        step_failure_history: Vec::new(),
         stopped_reason: None,
         child_task_ids: Vec::new(),
         child_task_count: 0,
@@ -1497,6 +1498,7 @@ fn sample_goal_run_with_kind(
         generated_skill_path: None,
         last_error: None,
         failure_cause: None,
+        step_failure_history: Vec::new(),
         stopped_reason: None,
         child_task_ids: Vec::new(),
         child_task_count: 0,
@@ -2453,6 +2455,108 @@ async fn verifier_fail_verdict_requeues_current_step() {
             .as_deref()
             .is_some_and(|error| error.contains("build output is incomplete")),
         "step should retain the failing reviewer feedback"
+    );
+    assert_eq!(
+        updated.step_failure_history.len(),
+        1,
+        "requeue should record the failure diagnosis in step history"
+    );
+    assert!(
+        updated.step_failure_history[0].contains("build output is incomplete"),
+        "failure history should carry the diagnosis"
+    );
+    assert!(
+        updated.step_failure_history[0].contains("attempt 1"),
+        "failure history should number the attempt"
+    );
+
+    let retried_description = crate::agent::goal_planner::goal_step_task_description(
+        &updated,
+        &updated.steps[0].instructions,
+    );
+    assert!(
+        retried_description.contains("Retry context"),
+        "re-dispatched step description should include retry context"
+    );
+    assert!(
+        retried_description.contains("build output is incomplete"),
+        "retry context should carry the prior diagnosis"
+    );
+}
+
+#[tokio::test]
+async fn repeated_step_failures_warn_about_approach_switch() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let goal_run_id = "goal-repeated-failures";
+
+    let mut goal_run = sample_goal_run_with_kind(
+        goal_run_id,
+        GoalRunStepKind::Command,
+        "Build the Android artifact",
+    );
+    goal_run.steps[0].status = GoalRunStepStatus::InProgress;
+    goal_run.steps[0].task_id = Some("task-impl".to_string());
+    engine.goal_runs.lock().await.push_back(goal_run);
+
+    let implementation_task = sample_completed_goal_task(goal_run_id, "task-impl", "goal_run");
+    engine
+        .handle_goal_run_step_completion(goal_run_id, &implementation_task)
+        .await
+        .expect("implementation completion should queue verification");
+
+    for diagnosis in ["build output is incomplete", "build output is incomplete again"] {
+        let verifier_task = engine
+            .tasks
+            .lock()
+            .await
+            .iter()
+            .find(|task| task.source == "goal_verification")
+            .cloned()
+            .expect("verification task should exist");
+        let mut failed_verifier = verifier_task.clone();
+        failed_verifier.status = TaskStatus::Completed;
+        failed_verifier.result = Some(diagnosis.to_string());
+        write_goal_step_review_record(
+            &engine,
+            &failed_verifier,
+            GoalStepReviewVerdict::Fail,
+            diagnosis,
+        )
+        .await;
+        write_step_completion_marker(&engine, goal_run_id, 0).await;
+        engine
+            .handle_goal_run_step_completion(goal_run_id, &failed_verifier)
+            .await
+            .expect("fail verdict should requeue the step");
+        engine
+            .handle_goal_run_step_completion(goal_run_id, &implementation_task)
+            .await
+            .expect("requeued implementation should queue verification again");
+    }
+
+    let updated = engine
+        .get_goal_run(goal_run_id)
+        .await
+        .expect("goal run should still exist");
+    assert_eq!(
+        updated.step_failure_history.len(),
+        2,
+        "two failed attempts should be recorded"
+    );
+    assert!(
+        updated.step_failure_history[1].contains("attempt 2"),
+        "second failure should be numbered"
+    );
+
+    let retried_description = crate::agent::goal_planner::goal_step_task_description(
+        &updated,
+        &updated.steps[0].instructions,
+    );
+    assert!(
+        retried_description.contains("switch approach or escalate"),
+        "two diagnosed failures should trigger the approach-switch warning"
     );
 }
 

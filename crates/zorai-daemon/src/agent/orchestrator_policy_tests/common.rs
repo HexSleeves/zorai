@@ -222,6 +222,7 @@ pub(super) fn goal_run_fixture(thread_id: &str) -> GoalRun {
         generated_skill_path: None,
         last_error: None,
         failure_cause: None,
+        step_failure_history: Vec::new(),
         stopped_reason: None,
         child_task_ids: vec!["task-1".to_string()],
         child_task_count: 1,

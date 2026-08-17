@@ -71,11 +71,37 @@ pub(in crate::agent) fn goal_step_task_description(
     snapshot: &GoalRun,
     instructions: &str,
 ) -> String {
-    format!(
-        "{}\n\nGoal ledger (Core anchors broadcast-once; reuse verbatim; Open lists unresolved work; Next is the cold-executable action):\n{}",
-        instructions,
-        crate::agent::goal_dossier::goal_ledger_prompt_block(snapshot)
-    )
+    let mut description = String::new();
+    let current_step_failures: Vec<&str> = snapshot
+        .steps
+        .get(snapshot.current_step_index)
+        .map(|step| {
+            snapshot
+                .step_failure_history
+                .iter()
+                .filter(|entry| entry.starts_with(step.id.as_str()))
+                .map(String::as_str)
+                .collect()
+        })
+        .unwrap_or_default();
+    if !current_step_failures.is_empty() {
+        description.push_str("Retry context — prior attempt diagnosis (from the goal ledger; do not repeat the same approach without stating what changed):\n");
+        for entry in &current_step_failures {
+            description.push_str("- ");
+            description.push_str(entry);
+            description.push('\n');
+        }
+        if current_step_failures.len() >= 2 {
+            description.push_str("Two or more diagnosed attempts have failed on this step: switch approach or escalate; reviewers will reject another diagnosis-free retry.\n");
+        }
+        description.push('\n');
+    }
+    description.push_str(instructions);
+    description.push_str(
+        "\n\nGoal ledger (Core anchors broadcast-once; reuse verbatim; Open lists unresolved work; Next is the cold-executable action):\n",
+    );
+    description.push_str(&crate::agent::goal_dossier::goal_ledger_prompt_block(snapshot));
+    description
 }
 
 fn parse_goal_role_binding(raw: Option<&str>, fallback: GoalRoleBinding) -> GoalRoleBinding {

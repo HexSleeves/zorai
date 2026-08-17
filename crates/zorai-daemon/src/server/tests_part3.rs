@@ -117,6 +117,7 @@ async fn seed_goal_plan_review_approval_fixture(
             generated_skill_path: None,
             last_error: None,
             failure_cause: None,
+            step_failure_history: Vec::new(),
             stopped_reason: None,
             child_task_ids: vec![task_id.to_string()],
             child_task_count: 1,

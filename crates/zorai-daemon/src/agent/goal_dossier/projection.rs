@@ -278,6 +278,9 @@ pub(crate) fn goal_loop_ledger_projection(
             open.push(format!("resume decision {:?}: {reason}", decision.action));
         }
     }
+    for entry in goal_run.step_failure_history.iter() {
+        open.push(format!("prior failure: {entry}"));
+    }
 
     let next = goal_run
         .steps

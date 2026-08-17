@@ -190,6 +190,7 @@ fn sample_goal_run_for_compaction(thread_id: &str) -> GoalRun {
         generated_skill_path: None,
         last_error: Some("Mandatory review step was skipped.".to_string()),
         failure_cause: None,
+        step_failure_history: Vec::new(),
         stopped_reason: None,
         child_task_ids: Vec::new(),
         child_task_count: 0,

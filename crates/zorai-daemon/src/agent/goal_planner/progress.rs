@@ -314,6 +314,18 @@ impl AgentEngine {
                 anyhow::bail!("goal run missing while re-queuing step");
             };
             if let Some(step) = goal_run.steps.get_mut(goal_run.current_step_index) {
+                let prior_attempts = goal_run
+                    .step_failure_history
+                    .iter()
+                    .filter(|entry| entry.starts_with(&format!("{}", step.id)))
+                    .count();
+                goal_run.step_failure_history.push(format!(
+                    "{}#{} attempt {}: {}",
+                    step.id,
+                    step.title,
+                    prior_attempts + 1,
+                    reason
+                ));
                 step.task_id = None;
                 step.status = GoalRunStepStatus::Pending;
                 step.error = Some(reason.to_string());
