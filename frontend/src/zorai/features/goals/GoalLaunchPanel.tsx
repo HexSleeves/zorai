@@ -59,6 +59,12 @@ export function GoalLaunchPanel({
     setSelectedIndex(assignments.length);
   };
 
+  const removeSelectedAgent = () => {
+    if (assignments.length <= 1) return;
+    setAssignments((current) => current.filter((_, index) => index !== selectedIndex));
+    setSelectedIndex((current) => Math.max(0, Math.min(current, assignments.length - 2)));
+  };
+
   const launch = () => {
     const goal = prompt.trim();
     if (!goal || !supported || starting) return;
@@ -152,6 +158,9 @@ export function GoalLaunchPanel({
           {starting ? "Starting..." : "Start goal"}
         </button>
         <button type="button" className="zorai-ghost-button" onClick={addAgent}>Add agent</button>
+        <button type="button" className="zorai-ghost-button" onClick={removeSelectedAgent} disabled={assignments.length <= 1}>
+          Remove agent
+        </button>
         <button type="button" className="zorai-ghost-button" onClick={() => setSaveAsDefaultPending((current) => !current)}>
           {saveAsDefaultPending ? "Default pending" : "Save as default"}
         </button>

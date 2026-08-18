@@ -1,28 +1,42 @@
-import { startTransition, useEffect, useMemo, useRef, useState, type KeyboardEvent, type UIEvent } from "react";
+import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
 import { ToolEventRow } from "@/components/agent-chat-panel/chat-view/ToolEventRow";
+import { MarkdownContent } from "@/components/agent-chat-panel/chat-view/markdown";
 import { buildDisplayItems } from "@/components/agent-chat-panel/chat-view/helpers";
 import { useAgentChatPanelRuntime } from "@/components/agent-chat-panel/runtime/context";
+import {
+  beginProgrammaticThreadHistoryScroll,
+  endProgrammaticThreadHistoryScroll,
+  resolveThreadHistoryScrollAction,
+  shouldFollowThreadHistoryBottom,
+  shouldIgnoreThreadHistoryScroll,
+} from "@/components/agent-chat-panel/runtime/threadHistoryScroll";
 import { useAgentStore, type AgentMessage, type AgentThread } from "@/lib/agentStore";
 import { ThreadFilePreviewOverlay } from "./ThreadFilePreviewOverlay";
-import { buildThreadFilterTabs, daemonAgentFilterForThreadTab, dateFilters, filterThreads, type DateFilterId, type ThreadFilterTab } from "./threadFilterModel";
+import { buildThreadFilterTabs, daemonAgentFilterForThreadTab, dateFilters, DEFAULT_THREAD_DATE_FILTER, filterThreads, fixedThreadTabs, resolveThreadListSource, type DateFilterId, type ThreadFilterTab } from "./threadFilterModel";
+import { openThreadTarget } from "./openThreadTarget";
+import { ThreadComposer } from "./ThreadComposer";
+import { useThreadSpeech } from "./useThreadSpeech";
 
-const THREAD_SCROLL_THRESHOLD_PX = 24;
 const THREAD_FILTER_FETCH_DEBOUNCE_MS = 1000;
 
 export function ThreadsRail() {
   const runtime = useAgentChatPanelRuntime();
   const subAgents = useAgentStore((state) => state.subAgents);
+  const refreshSubAgents = useAgentStore((state) => state.refreshSubAgents);
   const [tab, setTab] = useState<ThreadFilterTab>("svarog");
-  const [dateFilter, setDateFilter] = useState<DateFilterId>("all");
+  const [dateFilter, setDateFilter] = useState<DateFilterId>(DEFAULT_THREAD_DATE_FILTER);
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [daemonFilteredThreads, setDaemonFilteredThreads] = useState<AgentThread[] | null>(null);
   const [loadingTab, setLoadingTab] = useState<ThreadFilterTab | null>(null);
   const pendingFetchIdRef = useRef(0);
+  const loadedAgentFilterRef = useRef<string | null>(null);
   const goalThreadIdSet = useMemo(() => goalThreadIds(runtime.goalRunsForTrace), [runtime.goalRunsForTrace]);
   const daemonAgentFilter = useMemo(() => daemonAgentFilterForThreadTab(tab), [tab]);
+  const fetchKey = daemonAgentFilter ?? "__all__";
+  const fetchThreadList = runtime.fetchThreadList;
   const sourceThreads = useMemo(() => {
-    const baseThreads = daemonFilteredThreads ?? runtime.filteredThreads;
+    const baseThreads = resolveThreadListSource(daemonFilteredThreads, runtime.filteredThreads);
     return filterThreadsForSearchQuery(baseThreads, runtime.searchQuery);
   }, [daemonFilteredThreads, runtime.filteredThreads, runtime.searchQuery]);
   const displayedThreads = useMemo(() => filterThreads(sourceThreads, {
@@ -31,33 +45,39 @@ export function ThreadsRail() {
     fromDate,
     toDate,
     goalThreadIds: goalThreadIdSet,
-  }), [dateFilter, fromDate, goalThreadIdSet, sourceThreads, tab, toDate]);
+    subAgents,
+  }), [dateFilter, fromDate, goalThreadIdSet, sourceThreads, subAgents, tab, toDate]);
   const threadTabs = useMemo(() => buildThreadFilterTabs(
     runtime.filteredThreads,
     subAgents,
     goalThreadIdSet,
   ), [runtime.filteredThreads, runtime.goalRunsForTrace, subAgents]);
+  const agentFilterOptions = useMemo(
+    () => threadTabs.filter((item) => item.id.startsWith("agent:")),
+    [threadTabs],
+  );
+
+  useEffect(() => {
+    void refreshSubAgents();
+  }, [refreshSubAgents]);
 
   useEffect(() => {
     pendingFetchIdRef.current += 1;
     const fetchId = pendingFetchIdRef.current;
 
-    if (!daemonAgentFilter) {
+    if (loadedAgentFilterRef.current !== fetchKey) {
       setDaemonFilteredThreads(null);
-      setLoadingTab(null);
-      return;
     }
-
-    setDaemonFilteredThreads(null);
     setLoadingTab(tab);
 
     const timeoutId = window.setTimeout(() => {
-      void runtime.fetchThreadList({ agentFilter: daemonAgentFilter })
+      void fetchThreadList({ agentFilter: daemonAgentFilter, includeInternal: true })
         .then((threads) => {
           if (pendingFetchIdRef.current !== fetchId) {
             return;
           }
           startTransition(() => {
+            loadedAgentFilterRef.current = fetchKey;
             setDaemonFilteredThreads(threads);
             setLoadingTab(null);
           });
@@ -69,31 +89,25 @@ export function ThreadsRail() {
           setDaemonFilteredThreads(null);
           setLoadingTab(null);
         });
-    }, THREAD_FILTER_FETCH_DEBOUNCE_MS);
+    }, loadedAgentFilterRef.current == null ? 0 : THREAD_FILTER_FETCH_DEBOUNCE_MS);
 
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [daemonAgentFilter, runtime, tab]);
+  }, [daemonAgentFilter, fetchKey, fetchThreadList, tab]);
 
   const refreshSelectedTab = () => {
     pendingFetchIdRef.current += 1;
     const fetchId = pendingFetchIdRef.current;
 
-    if (!daemonAgentFilter) {
-      setDaemonFilteredThreads(null);
-      setLoadingTab(null);
-      void runtime.refreshThreadList();
-      return;
-    }
-
     setLoadingTab(tab);
-    void runtime.fetchThreadList({ agentFilter: daemonAgentFilter })
+    void fetchThreadList({ agentFilter: daemonAgentFilter, includeInternal: true })
       .then((threads) => {
         if (pendingFetchIdRef.current !== fetchId) {
           return;
         }
         startTransition(() => {
+          loadedAgentFilterRef.current = fetchKey;
           setDaemonFilteredThreads(threads);
           setLoadingTab(null);
         });
@@ -131,7 +145,7 @@ export function ThreadsRail() {
         placeholder="Search threads"
       />
       <div className="zorai-thread-filter-tabs" aria-label="Thread source filters">
-        {threadTabs.map((item) => (
+        {fixedThreadTabs.map((item) => (
           <button
             type="button"
             key={item.id}
@@ -148,6 +162,25 @@ export function ThreadsRail() {
           </button>
         ))}
       </div>
+      {agentFilterOptions.length > 0 ? (
+        <div className="zorai-thread-agent-filter">
+          <select
+            aria-label="Agents and subagents"
+            className={tab.startsWith("agent:") ? "zorai-thread-agent-filter--active" : ""}
+            value={tab.startsWith("agent:") ? tab : ""}
+            onChange={(event) => {
+              const next = event.target.value;
+              setTab((next || "svarog") as ThreadFilterTab);
+            }}
+          >
+            <option value="">Agents & subagents</option>
+            {agentFilterOptions.map((item) => (
+              <option key={item.id} value={item.id}>{item.label}</option>
+            ))}
+          </select>
+          {loadingTab?.startsWith("agent:") ? <span className="zorai-thread-filter-tab__spinner" aria-hidden="true">◌</span> : null}
+        </div>
+      ) : null}
       <div className="zorai-thread-date-filters" aria-label="Thread date filters">
         <select value={dateFilter} onChange={(event) => setDateFilter(event.target.value as DateFilterId)}>
           {dateFilters.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
@@ -161,18 +194,18 @@ export function ThreadsRail() {
       </div>
       <div className="zorai-thread-list">
         {displayedThreads.length === 0 ? (
-          <div className="zorai-empty">No threads match this search.</div>
+          <div className="zorai-empty">{loadingTab ? "Loading threads." : "No threads match this search."}</div>
         ) : (
           displayedThreads.map((thread) => (
             <button
               type="button"
-              key={thread.id}
+              key={thread.daemonThreadId ?? thread.id}
               className={[
                 "zorai-thread-item",
-                thread.id === runtime.activeThreadId ? "zorai-thread-item--active" : "",
+                thread.id === runtime.activeThreadId || thread.daemonThreadId === runtime.activeThread?.daemonThreadId ? "zorai-thread-item--active" : "",
               ].filter(Boolean).join(" ")}
               onClick={() => {
-                runtime.openThread(thread.id);
+                void openThreadTarget(runtime, thread.daemonThreadId || thread.id);
               }}
             >
               <span className="zorai-thread-title">{thread.title}</span>
@@ -224,7 +257,57 @@ function threadHistoryLabel(thread: AgentThread): string {
 export function ThreadsView() {
   const runtime = useAgentChatPanelRuntime();
   const [pinLimitResult, setPinLimitResult] = useState<ZoraiThreadMessagePinResult | null>(null);
+  const viewMountedAtRef = useRef(Date.now());
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const previousMessageCountRef = useRef(runtime.messages.length);
   const displayItems = useMemo(() => buildDisplayItems(runtime.messages), [runtime.messages]);
+  const latestUserMessage = useMemo(
+    () => [...runtime.messages].reverse().find((message) => message.role === "user" && message.content.trim()),
+    [runtime.messages],
+  );
+  const retryLastMessage = useCallback(() => {
+    if (!latestUserMessage) return;
+    runtime.sendMessage({
+      text: latestUserMessage.content,
+      localContentBlocks: latestUserMessage.contentBlocks,
+    });
+  }, [latestUserMessage, runtime.sendMessage]);
+  const speech = useThreadSpeech(runtime.messages);
+
+  // Global shortcuts for the thread surface:
+  //   Ctrl+L — speak/stop the latest assistant message
+  useEffect(() => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (!event.ctrlKey || event.shiftKey || event.metaKey || event.altKey) return;
+      if (event.code !== "KeyL") return;
+      const target = event.target as HTMLElement | null;
+      if (target && (target.tagName === "TEXTAREA" || target.tagName === "INPUT" || target.isContentEditable)) {
+        return;
+      }
+      if (!speech.ttsEnabled) return;
+      event.preventDefault();
+      speech.speakLatestAssistantMessage();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [speech]);
+
+  const activeThreadId = runtime.activeThread?.id ?? null;
+
+  useEffect(() => {
+    const previousCount = previousMessageCountRef.current;
+    previousMessageCountRef.current = runtime.messages.length;
+    const scroller = scrollerRef.current;
+    if (!scroller || !activeThreadId || !shouldFollowThreadHistoryBottom()) return;
+
+    beginProgrammaticThreadHistoryScroll();
+    scroller.scrollTop = scroller.scrollHeight;
+    endProgrammaticThreadHistoryScroll();
+
+    if (runtime.messages.length > previousCount) {
+      runtime.trimThreadMessagesToLatestWindow(activeThreadId);
+    }
+  }, [activeThreadId, runtime.messages, runtime.trimThreadMessagesToLatestWindow]);
 
   if (!runtime.activeThread) {
     return (
@@ -247,10 +330,16 @@ export function ThreadsView() {
   }
 
   const activeThread = runtime.activeThread;
-  const sendCurrentInput = () => runtime.handleSend();
+
   const handleThreadScroll = async (event: UIEvent<HTMLDivElement>) => {
+    if (shouldIgnoreThreadHistoryScroll()) return;
     const scroller = event.currentTarget;
-    if (scroller.scrollTop <= THREAD_SCROLL_THRESHOLD_PX) {
+    const action = resolveThreadHistoryScrollAction({
+      scrollTop: scroller.scrollTop,
+      scrollHeight: scroller.scrollHeight,
+      clientHeight: scroller.clientHeight,
+    });
+    if (action === "load-older") {
       const previousHeight = scroller.scrollHeight;
       const previousTop = scroller.scrollTop;
       const loaded = await runtime.loadOlderThreadMessages();
@@ -261,9 +350,7 @@ export function ThreadsView() {
       }
       return;
     }
-
-    const distanceFromBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
-    if (distanceFromBottom <= THREAD_SCROLL_THRESHOLD_PX && runtime.trimThreadMessagesToLatestWindow(activeThread.id)) {
+    if (action === "trim-latest" && runtime.trimThreadMessagesToLatestWindow(activeThread.id)) {
       requestAnimationFrame(() => {
         runtime.messagesEndRef.current?.scrollIntoView({ block: "end" });
       });
@@ -277,12 +364,21 @@ export function ThreadsView() {
       />
       <ParticipantStrip thread={runtime.activeThread} />
 
-      <div className="zorai-thread-chat-scroll" onScroll={(event) => void handleThreadScroll(event)}>
+      <div ref={scrollerRef} className="zorai-thread-chat-scroll" onScroll={(event) => void handleThreadScroll(event)}>
         {runtime.messages.length === 0 ? (
           <div className="zorai-thread-empty-state">
-            <div className="zorai-brand-mark"><span>Z</span></div>
-            <strong>Start a Zorai thread</strong>
-            <span>Ask for a plan, delegate work, or turn a request into a goal.</span>
+            {activeThread.messageCount > 0 || activeThread.lastMessagePreview ? (
+              <>
+                <strong>Loading messages</strong>
+                <span>Fetching the latest history for this thread.</span>
+              </>
+            ) : (
+              <>
+                <div className="zorai-brand-mark"><span>Z</span></div>
+                <strong>Start a Zorai thread</strong>
+                <span>Ask for a plan, delegate work, or turn a request into a goal.</span>
+              </>
+            )}
           </div>
         ) : displayItems.map((item) => {
           if (item.type === "tool") {
@@ -298,6 +394,17 @@ export function ThreadsView() {
             <MessageBubble
               key={message.id}
               message={message}
+              threadAgentName={runtime.activeThread?.agent_name}
+              ttsEnabled={speech.ttsEnabled}
+              speaking={speech.speakingMessageId === message.id}
+              speechLoading={speech.loadingMessageId === message.id}
+              speechQueued={speech.queuedMessageIds.includes(message.id)}
+              onSpeak={() => void speech.speakMessage(message)}
+              onRetry={isRetryableErrorMessage(message)
+                && isMessageFromCurrentViewSession(message, viewMountedAtRef.current)
+                && latestUserMessage
+                ? retryLastMessage
+                : undefined}
               onPin={async () => {
                 const result = await runtime.pinMessageForCompaction(runtime.activeThread?.id ?? message.threadId, message.id);
                 if (result && result.ok === false && result.error === "pinned_budget_exceeded") {
@@ -308,41 +415,13 @@ export function ThreadsView() {
             />
           );
         })}
+        {runtime.isStreamingResponse ? (
+          <ThinkingIndicator agentName={runtime.activeThread.agent_name} />
+        ) : null}
         <div ref={runtime.messagesEndRef} />
       </div>
 
-      <div className="zorai-thread-composer">
-        <textarea
-          ref={runtime.inputRef}
-          value={runtime.input}
-          onChange={(event) => runtime.setInput(event.target.value)}
-          onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => runtime.handleKeyDown(event)}
-          placeholder="Message Zorai..."
-          rows={3}
-        />
-        <div className="zorai-thread-composer__footer">
-          <span>Enter sends. Shift+Enter adds a new line.</span>
-          <div className="zorai-card-actions">
-            {runtime.isStreamingResponse ? (
-              <button
-                type="button"
-                className="zorai-ghost-button zorai-stop-button"
-                onClick={() => runtime.stopStreaming(runtime.activeThreadId)}
-              >
-                Stop
-              </button>
-            ) : null}
-            <button
-              type="button"
-              className="zorai-primary-button"
-              onClick={sendCurrentInput}
-              disabled={!runtime.input.trim() || runtime.isStreamingResponse}
-            >
-              Send
-            </button>
-          </div>
-        </div>
-      </div>
+      <ThreadComposer />
 
       {pinLimitResult ? (
         <PinLimitModal result={pinLimitResult} onClose={() => setPinLimitResult(null)} />
@@ -366,7 +445,38 @@ function ThreadHeader({
         <h2>{thread.title}</h2>
         <span>{messageCount} messages / {thread.agent_name}</span>
       </div>
+      <ThreadRuntimeSummary thread={thread} />
     </header>
+  );
+}
+
+function ThreadRuntimeSummary({ thread }: { thread: AgentThread }) {
+  const provider = thread.profileProvider || "default provider";
+  const model = thread.profileModel || "default model";
+  return (
+    <div className="zorai-thread-runtime-summary" title="Provider, model, effort and context settings live in the Show Context panel">
+      <span className="zorai-thread-runtime-summary__model" title="Model">{model}</span>
+      <span className="zorai-thread-runtime-summary__provider" title="Provider">{provider}</span>
+    </div>
+  );
+}
+
+function ThinkingIndicator({ agentName }: { agentName: string }) {
+  return (
+    <div className="zorai-thinking" role="status" aria-live="polite">
+      <div className="zorai-brand-mark zorai-thinking__avatar" aria-hidden="true" />
+      <div className="zorai-thinking__body">
+        <div className="zorai-thinking__label">
+          <strong>{agentName}</strong>
+          <span className="zorai-thinking__dots" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+        </div>
+        <div className="zorai-thinking__phase">Thinking…</div>
+      </div>
+    </div>
   );
 }
 
@@ -391,17 +501,32 @@ function ParticipantStrip({ thread }: { thread: AgentThread }) {
   );
 }
 
-function MessageBubble({
+const MessageBubble = memo(function MessageBubble({
   message,
+  threadAgentName,
   onPin,
   onUnpin,
+  ttsEnabled,
+  speaking,
+  speechLoading,
+  speechQueued,
+  onSpeak,
+  onRetry,
 }: {
   message: AgentMessage;
+  threadAgentName?: string;
   onPin: () => void | Promise<void>;
   onUnpin: () => void | Promise<void>;
+  ttsEnabled: boolean;
+  speaking: boolean;
+  speechLoading: boolean;
+  speechQueued: boolean;
+  onSpeak: () => void;
+  onRetry?: () => void;
 }) {
+  const [retryDismissed, setRetryDismissed] = useState(false);
   const fromUser = message.role === "user";
-  const author = message.authorAgentName ?? (fromUser ? "You" : message.role === "assistant" ? "Zorai" : message.role);
+  const author = message.authorAgentName ?? (fromUser ? "You" : message.role === "assistant" ? (threadAgentName ?? "Zorai") : message.role);
   const tokenText = message.totalTokens > 0 ? `${message.totalTokens.toLocaleString()} tokens` : null;
   const hasVisibleContent = message.content.trim().length > 0;
   const shouldRenderContent = hasVisibleContent || !message.reasoning;
@@ -415,28 +540,116 @@ function MessageBubble({
       {message.reasoning ? (
         <details className="zorai-message__reasoning">
           <summary className="zorai-message__reasoning-toggle">Reasoning</summary>
-          <div>{message.reasoning}</div>
+          <div>
+            <MarkdownContent content={message.reasoning} />
+          </div>
         </details>
       ) : null}
       {shouldRenderContent ? (
-        <div className="zorai-message__content">{hasVisibleContent ? message.content : "No text content"}</div>
+        <div className="zorai-message__content">
+          {hasVisibleContent ? <MarkdownContent content={message.content} /> : null}
+        </div>
       ) : null}
       {message.toolCalls && message.toolCalls.length > 0 ? (
         <div className="zorai-message__tools">{message.toolCalls.length} tool calls</div>
       ) : null}
+      {onRetry && !retryDismissed ? (
+        <div className="zorai-message-retry" role="alert">
+          <div>
+            <strong>{isRateLimitError(message.content) ? "Provider rate limit" : "Agent request failed"}</strong>
+            <span>Retry the last message?</span>
+          </div>
+          <div className="zorai-message-retry__actions">
+            <button type="button" className="zorai-primary-button" onClick={onRetry}>Yes, retry</button>
+            <button type="button" className="zorai-ghost-button" onClick={() => setRetryDismissed(true)}>No</button>
+          </div>
+        </div>
+      ) : null}
       <div className="zorai-message__actions">
+        {ttsEnabled && message.content.trim() ? (
+          <button
+            type="button"
+            className={["zorai-ghost-button zorai-message-action", speaking ? "zorai-button--active" : ""].filter(Boolean).join(" ")}
+            disabled={speechLoading}
+            title={speechLoading ? "Synthesizing speech…" : speechQueued ? "Queued for playback" : speaking ? "Stop speech (Ctrl+L)" : "Read aloud (Ctrl+L plays latest)"}
+            aria-label={speechLoading ? "Synthesizing speech" : speechQueued ? "Queued for playback" : speaking ? "Stop speech" : "Read aloud"}
+            onClick={onSpeak}
+          >
+            <MessageActionIcon kind="speak" animated={speechLoading || speaking || speechQueued} />
+          </button>
+        ) : null}
         {message.pinnedForCompaction ? (
-          <button type="button" className="zorai-ghost-button" onClick={() => void onUnpin()}>
-            Unpin
+          <button
+            type="button"
+            className="zorai-ghost-button zorai-message-action zorai-button--active"
+            title="Unpin from compaction"
+            aria-label="Unpin from compaction"
+            onClick={() => void onUnpin()}
+          >
+            <MessageActionIcon kind="pin" filled />
           </button>
         ) : (
-          <button type="button" className="zorai-ghost-button" onClick={() => void onPin()}>
-            Pin
+          <button
+            type="button"
+            className="zorai-ghost-button zorai-message-action"
+            title="Pin for compaction"
+            aria-label="Pin for compaction"
+            onClick={() => void onPin()}
+          >
+            <MessageActionIcon kind="pin" />
           </button>
         )}
       </div>
     </article>
   );
+}, (previous, next) => (
+  previous.message === next.message
+  && previous.threadAgentName === next.threadAgentName
+  && previous.ttsEnabled === next.ttsEnabled
+  && previous.speaking === next.speaking
+  && previous.speechLoading === next.speechLoading
+  && previous.speechQueued === next.speechQueued
+  && previous.onRetry === next.onRetry
+));
+
+function MessageActionIcon({ kind, filled = false, animated = false }: { kind: "speak" | "pin"; filled?: boolean; animated?: boolean }) {
+  if (kind === "speak") {
+    return (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5" fill={filled ? "currentColor" : "none"} />
+        <path className={animated ? "zorai-speak-wave zorai-speak-wave--1" : undefined} d="M15.54 8.46a5 5 0 0 1 0 7.07" />
+        <path className={animated ? "zorai-speak-wave zorai-speak-wave--2" : undefined} d="M19.07 4.93a10 10 0 0 1 0 14.14" />
+      </svg>
+    );
+  }
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 17v5" />
+      <path d="M9 3h6l-1 7 3 3v2H7v-2l3-3-1-7z" />
+    </svg>
+  );
+}
+
+function isMessageFromCurrentViewSession(message: AgentMessage, mountedAt: number): boolean {
+  // Persisted history is rehydrated after the component mounts. Retry actions
+  // are operational UI state, not durable message state, so only errors born
+  // during this mounted view may expose Yes/No controls. Normalize seconds in
+  // case an older backend supplied Unix-second timestamps.
+  const createdAt = message.createdAt < 10_000_000_000
+    ? message.createdAt * 1000
+    : message.createdAt;
+  return createdAt >= mountedAt;
+}
+
+function isRetryableErrorMessage(message: AgentMessage): boolean {
+  if (message.role !== "assistant" || message.isStreaming) return false;
+  const content = message.content.trim();
+  return /^error\s*:/i.test(content)
+    || /\b429\b|rate[ -]?limit|quota|temporar(?:y|ily) unavailable|timeout|timed out|connection (?:reset|closed)/i.test(content);
+}
+
+function isRateLimitError(content: string): boolean {
+  return /\b429\b|rate[ -]?limit|quota/i.test(content);
 }
 
 function isMetacognitionSystemMessage(message: AgentMessage): boolean {
@@ -473,9 +686,9 @@ function MetacognitionEventRow({ message }: { message: AgentMessage }) {
       </button>
 
       {!collapsed && (
-        <pre style={{ margin: 0, fontFamily: "var(--font-mono)", fontSize: 12, lineHeight: 1.45, color: "var(--zorai-text)", whiteSpace: "pre-wrap", wordBreak: "break-word", overflowWrap: "anywhere", overflow: "auto", border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.04)", padding: 8, borderRadius: "var(--radius-sm)", maxHeight: "min(42vh, 360px)" }}>
-          {content}
-        </pre>
+        <div className="zorai-message__metacognition">
+          <MarkdownContent content={content} />
+        </div>
       )}
     </div>
   );

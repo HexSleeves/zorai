@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentThread, SubAgentDefinition } from "@/lib/agentStore";
-import { buildThreadFilterTabs, daemonAgentFilterForThreadTab, filterThreads } from "./threadFilterModel";
+import { buildThreadFilterTabs, daemonAgentFilterForThreadTab, DEFAULT_THREAD_DATE_FILTER, filterThreads, normalizeEpochMs, resolveThreadListSource } from "./threadFilterModel";
 
 function thread(overrides: Partial<AgentThread>): AgentThread {
   return {
@@ -41,6 +41,30 @@ describe("thread filters", () => {
     expect(tabs.map((tab) => tab.label)).toEqual(expect.arrayContaining(["Dazhbog", "Mokosh", "Verifier"]));
   });
 
+  it("does not duplicate a subagent tab when registry id and thread owner name both exist", () => {
+    const tabs = buildThreadFilterTabs(
+      [thread({ id: "glmus-thread", agent_name: "glmus" })],
+      [
+        { id: "glmus", name: "glmus", builtin: false } as SubAgentDefinition,
+        { id: "glmus-alias", name: "glmus", builtin: false } as SubAgentDefinition,
+      ],
+      new Set(),
+    );
+
+    expect(tabs.filter((tab) => tab.label.toLowerCase() === "glmus")).toHaveLength(1);
+  });
+
+  it("skips builtin subagents that already have a fixed tab", () => {
+    const tabs = buildThreadFilterTabs(
+      [],
+      [{ id: "weles", name: "Weles", builtin: true } as SubAgentDefinition],
+      new Set(),
+    );
+
+    expect(tabs.filter((tab) => tab.label === "Weles")).toHaveLength(1);
+    expect(tabs.filter((tab) => tab.id === "weles")).toHaveLength(1);
+  });
+
   it("keeps dynamic subagent threads out of Svarog and inside their own tab", () => {
     const dazhbog = thread({ id: "dazhbog-thread", agent_name: "Dazhbog" });
     const svarog = thread({ id: "svarog-thread", agent_name: "Svarog" });
@@ -75,6 +99,98 @@ describe("thread filters", () => {
     }).map((item) => item.id)).toEqual(["svarog-thread"]);
   });
 
+  it("defaults the thread date filter to the last seven days", () => {
+    expect(DEFAULT_THREAD_DATE_FILTER).toBe("7d");
+    const recent = thread({ id: "recent", updatedAt: Date.now() });
+    const old = thread({ id: "old", updatedAt: Date.now() - 8 * 24 * 60 * 60 * 1000 });
+
+    expect(filterThreads([recent, old], {
+      tab: "svarog",
+      dateFilter: DEFAULT_THREAD_DATE_FILTER,
+      fromDate: "",
+      toDate: "",
+      goalThreadIds: new Set(),
+    }).map((item) => item.id)).toEqual(["recent"]);
+  });
+
+  it("keeps recent threads when updatedAt is unix seconds instead of milliseconds", () => {
+    const recentSeconds = Math.floor(Date.now() / 1000);
+    const oldSeconds = Math.floor((Date.now() - 8 * 24 * 60 * 60 * 1000) / 1000);
+    const recent = thread({ id: "recent-seconds", updatedAt: recentSeconds });
+    const old = thread({ id: "old-seconds", updatedAt: oldSeconds });
+    const undated = thread({ id: "undated", updatedAt: 0 });
+
+    expect(normalizeEpochMs(recentSeconds)).toBeGreaterThan(1_000_000_000_000);
+    expect(filterThreads([recent, old, undated], {
+      tab: "svarog",
+      dateFilter: "7d",
+      fromDate: "",
+      toDate: "",
+      goalThreadIds: new Set(),
+    }).map((item) => item.id)).toEqual(["recent-seconds", "undated"]);
+  });
+
+  it("does not treat daemonThreadId containing daemon as Internal", () => {
+    const listed = thread({
+      id: "local-1",
+      daemonThreadId: "daemon-svarog-thread",
+      title: "Main conversation",
+    });
+
+    expect(filterThreads([listed], {
+      tab: "svarog",
+      dateFilter: "all",
+      fromDate: "",
+      toDate: "",
+      goalThreadIds: new Set(),
+    }).map((item) => item.id)).toEqual(["local-1"]);
+  });
+
+  it("routes specialized threads onto their picker tabs instead of Svarog", () => {
+    const goal = thread({ id: "goal-thread", daemonThreadId: "goal:run-1", title: "Ship the planner" });
+    const workspace = thread({ id: "ws-thread", daemonThreadId: "workspace-thread:task-1", title: "Board task" });
+    const playground = thread({ id: "pg-thread", daemonThreadId: "playground:domowoj:user", title: "Participant Playground · Domowoj" });
+    const internal = thread({ id: "dm-thread", daemonThreadId: "dm:svarog:weles", title: "Internal DM · Swarog ↔ WELES" });
+    const gateway = thread({ id: "gw-thread", daemonThreadId: "gw-1", title: "slack Alice" });
+    const svarog = thread({ id: "svarog-thread", title: "Main conversation" });
+
+    const all = [goal, workspace, playground, internal, gateway, svarog];
+    expect(filterThreads(all, { tab: "goals", dateFilter: "all", fromDate: "", toDate: "", goalThreadIds: new Set() }).map((item) => item.id)).toEqual(["goal-thread"]);
+    expect(filterThreads(all, { tab: "workspace", dateFilter: "all", fromDate: "", toDate: "", goalThreadIds: new Set() }).map((item) => item.id)).toEqual(["ws-thread"]);
+    expect(filterThreads(all, { tab: "playgrounds", dateFilter: "all", fromDate: "", toDate: "", goalThreadIds: new Set() }).map((item) => item.id)).toEqual(["pg-thread"]);
+    expect(filterThreads(all, { tab: "internal", dateFilter: "all", fromDate: "", toDate: "", goalThreadIds: new Set() }).map((item) => item.id)).toEqual(["dm-thread"]);
+    expect(filterThreads(all, { tab: "gateway", dateFilter: "all", fromDate: "", toDate: "", goalThreadIds: new Set() }).map((item) => item.id)).toEqual(["gw-thread"]);
+    expect(filterThreads(all, { tab: "svarog", dateFilter: "all", fromDate: "", toDate: "", goalThreadIds: new Set() }).map((item) => item.id)).toEqual(["svarog-thread"]);
+  });
+
+  it("keeps only the matching subagent thread even when the daemon list is unfiltered", () => {
+    const dazhbog = thread({ id: "dazhbog-thread", agent_name: "Dazhbog" });
+    const svarog = thread({ id: "svarog-thread", agent_name: "Svarog" });
+    const verifier = thread({ id: "verifier-thread", agent_name: "Verifier" });
+
+    expect(filterThreads([dazhbog, svarog, verifier], {
+      tab: "agent:dazhbog",
+      dateFilter: "all",
+      fromDate: "",
+      toDate: "",
+      goalThreadIds: new Set(),
+    }).map((item) => item.id)).toEqual(["dazhbog-thread"]);
+  });
+
+  it("matches a subagent tab by configured agent name when the tab id differs", () => {
+    const named = thread({ id: "review-thread", agent_name: "Code Reviewer" });
+    const unrelated = thread({ id: "other-thread", agent_name: "Svarog" });
+
+    expect(filterThreads([named, unrelated], {
+      tab: "agent:code-reviewer",
+      dateFilter: "all",
+      fromDate: "",
+      toDate: "",
+      goalThreadIds: new Set(),
+      subAgents: [{ id: "code-reviewer", name: "Code Reviewer", builtin: false } as SubAgentDefinition],
+    }).map((item) => item.id)).toEqual(["review-thread"]);
+  });
+
   it("maps agent-backed tabs to daemon agent filters", () => {
     expect(daemonAgentFilterForThreadTab("svarog")).toBe("svarog");
     expect(daemonAgentFilterForThreadTab("rarog")).toBe("rarog");
@@ -83,6 +199,35 @@ describe("thread filters", () => {
     expect(daemonAgentFilterForThreadTab("goals")).toBeNull();
     expect(daemonAgentFilterForThreadTab("workspace")).toBeNull();
     expect(daemonAgentFilterForThreadTab("internal")).toBeNull();
+  });
+
+  it("keeps extra agents out of the fixed tab row so the rail can use a selector", () => {
+    const tabs = buildThreadFilterTabs(
+      [thread({ id: "dazhbog-thread", agent_name: "Dazhbog" })],
+      [{ id: "verifier", name: "Verifier", builtin: false } as SubAgentDefinition],
+      new Set(),
+    );
+
+    expect(tabs.filter((tab) => !tab.id.startsWith("agent:")).map((tab) => tab.id)).toEqual([
+      "svarog",
+      "rarog",
+      "weles",
+      "goals",
+      "workspace",
+      "playgrounds",
+      "internal",
+      "gateway",
+    ]);
+    expect(tabs.filter((tab) => tab.id.startsWith("agent:")).map((tab) => tab.label).sort()).toEqual([
+      "Dazhbog",
+      "Verifier",
+    ]);
+  });
+
+  it("keeps an empty daemon list instead of falling back to stale local threads", () => {
+    const local = [thread({ id: "stale-local", title: "Stale" })];
+    expect(resolveThreadListSource(null, local)).toEqual(local);
+    expect(resolveThreadListSource([], local)).toEqual([]);
   });
 });
 

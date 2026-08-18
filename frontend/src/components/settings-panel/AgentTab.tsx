@@ -10,12 +10,14 @@ import { deriveOpenAICodexAuthUi } from "./openaiSubscriptionAuth";
 import { applySttReuseDecision, getModelSelectionEffects } from "./modelSelectionEffects";
 import {
     audioModelOptions,
+    audioRemoteModelFetchOutputModalities,
     buildProviderOptions,
     filterAudioProviderOptions,
     filterEmbeddingProviderOptions,
     filterImageGenerationProviderOptions,
     embeddingModelOptions,
     imageGenerationModelOptions,
+    imageRemoteModelFetchOutputModalities,
     normalizeEmbeddingModelForProviderChange,
     normalizeAudioModelForProviderChange,
     normalizeImageGenerationModelForProviderChange,
@@ -369,7 +371,7 @@ export function AgentTab({
                             allowProviderAuthFetch={providerHasDaemonAuth(settings.audio_stt_provider)}
                             modelOptions={audioModelOptions(settings.audio_stt_provider, "stt")}
                             remoteModelFilter={(model) => filterFetchedModelsForAudio([model], "stt").length > 0}
-                            fetchOutputModalities={settings.audio_stt_provider === "openrouter" ? "transcription" : undefined}
+                            fetchOutputModalities={audioRemoteModelFetchOutputModalities("stt", settings.audio_stt_provider)}
                             disabled={!settings.audio_stt_enabled}
                         />
                     </SettingRow>
@@ -415,7 +417,7 @@ export function AgentTab({
                             allowProviderAuthFetch={providerHasDaemonAuth(settings.audio_tts_provider)}
                             modelOptions={audioModelOptions(settings.audio_tts_provider, "tts")}
                             remoteModelFilter={(model) => filterFetchedModelsForAudio([model], "tts").length > 0}
-                            fetchOutputModalities={settings.audio_tts_provider === "openrouter" ? "speech" : undefined}
+                            fetchOutputModalities={audioRemoteModelFetchOutputModalities("tts", settings.audio_tts_provider)}
                             disabled={!settings.audio_tts_enabled}
                         />
                     </SettingRow>
@@ -462,6 +464,7 @@ export function AgentTab({
                         allowProviderAuthFetch={providerHasDaemonAuth(settings.image_generation_provider)}
                         modelOptions={imageGenerationModelOptions(settings.image_generation_provider)}
                         remoteModelFilter={(model) => filterFetchedModelsForImageGeneration([model]).length > 0}
+                        fetchOutputModalities={imageRemoteModelFetchOutputModalities(settings.image_generation_provider)}
                     />
                 </SettingRow>
             </Section>

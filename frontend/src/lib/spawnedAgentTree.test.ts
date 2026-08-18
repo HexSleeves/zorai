@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { deriveSpawnedAgentTree } from "./spawnedAgentTree.ts";
+import { deriveSpawnedAgentTree, pruneSpawnedAgentTreeToLive } from "./spawnedAgentTree.ts";
 
 describe("deriveSpawnedAgentTree", () => {
   it("keeps the top-level ancestor as anchor when a descendant shares the same thread_id", () => {
@@ -278,5 +278,83 @@ describe("deriveSpawnedAgentTree", () => {
 
     expect(forward?.anchor?.item.id).toBe("root-newer");
     expect(reversed?.anchor?.item.id).toBe("root-newer");
+  });
+});
+
+describe("pruneSpawnedAgentTreeToLive", () => {
+  it("keeps live runs and drops terminal leaf runs from history", () => {
+    const tree = deriveSpawnedAgentTree(
+      [
+        {
+          id: "live-child",
+          status: "in_progress",
+          created_at: 20,
+          thread_id: "thread-live",
+          parent_thread_id: "thread-root",
+        },
+        {
+          id: "done-child",
+          status: "completed",
+          created_at: 10,
+          thread_id: "thread-done",
+          parent_thread_id: "thread-root",
+        },
+      ],
+      "thread-root",
+    );
+
+    const pruned = pruneSpawnedAgentTreeToLive(tree);
+
+    expect(pruned?.roots.map((node) => node.item.id)).toEqual(["live-child"]);
+  });
+
+  it("keeps terminal runs that still have live descendants", () => {
+    const tree = deriveSpawnedAgentTree(
+      [
+        {
+          id: "parent-done",
+          status: "completed",
+          created_at: 10,
+          thread_id: "thread-parent",
+          parent_thread_id: "thread-root",
+        },
+        {
+          id: "child-live",
+          status: "in_progress",
+          created_at: 20,
+          thread_id: "thread-child",
+          parent_task_id: "parent-done",
+          parent_thread_id: "thread-parent",
+        },
+      ],
+      "thread-root",
+    );
+
+    const pruned = pruneSpawnedAgentTreeToLive(tree);
+
+    const parent = pruned?.roots.find((node) => node.item.id === "parent-done");
+    expect(parent).toBeDefined();
+    expect(parent?.children[0]?.item.id).toBe("child-live");
+  });
+
+  it("returns null when every run is terminal", () => {
+    const tree = deriveSpawnedAgentTree(
+      [
+        {
+          id: "done-child",
+          status: "failed",
+          created_at: 10,
+          thread_id: "thread-done",
+          parent_thread_id: "thread-root",
+        },
+      ],
+      "thread-root",
+    );
+
+    expect(pruneSpawnedAgentTreeToLive(tree)).toBeNull();
+  });
+
+  it("passes null trees through unchanged", () => {
+    expect(pruneSpawnedAgentTreeToLive(null)).toBeNull();
   });
 });

@@ -1,92 +1,8 @@
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import type { ComposerAttachment } from "./types";
+import { blobToBase64, collectMediaRecorderBlob, mediaRecorderOptions, readComposerAttachment, readSpeechToTextContent, readSpeechToTextError, stopMediaTracks } from "./composerMedia";
 import { inputStyle } from "../shared";
-
-const TEXT_ATTACHMENT_EXTENSIONS = new Set([
-  "txt", "md", "markdown", "json", "yaml", "yml", "toml", "ini", "cfg", "conf",
-  "rs", "ts", "tsx", "js", "jsx", "py", "sh", "sql", "csv", "log",
-]);
-
-function fileLooksTextual(file: File): boolean {
-  if (file.type.startsWith("text/")) return true;
-  const ext = file.name.includes(".") ? file.name.split(".").pop()?.toLowerCase() ?? "" : "";
-  return TEXT_ATTACHMENT_EXTENSIONS.has(ext);
-}
-
-async function readComposerAttachment(file: File): Promise<ComposerAttachment | null> {
-  const kind = file.type.startsWith("image/")
-    ? "image"
-    : file.type.startsWith("audio/")
-      ? "audio"
-      : fileLooksTextual(file)
-        ? "text"
-        : null;
-  if (!kind) return null;
-
-  if (kind === "text") {
-    return {
-      id: `${file.name}:${file.size}:${file.lastModified}`,
-      name: file.name,
-      size: file.size,
-      kind,
-      mimeType: file.type || "text/plain",
-      textContent: await file.text(),
-    };
-  }
-
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-    reader.onerror = () => reject(reader.error ?? new Error("file read failed"));
-    reader.readAsDataURL(file);
-  });
-  return {
-    id: `${file.name}:${file.size}:${file.lastModified}`,
-    name: file.name,
-    size: file.size,
-    kind,
-    mimeType: file.type || (kind === "image" ? "image/png" : "audio/wav"),
-    dataUrl,
-  };
-}
-
-async function blobToBase64(blob: Blob): Promise<string> {
-  const dataUrl = await new Promise<string>((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(typeof reader.result === "string" ? reader.result : "");
-    reader.onerror = () => reject(reader.error ?? new Error("blob read failed"));
-    reader.readAsDataURL(blob);
-  });
-  const commaIndex = dataUrl.indexOf(",");
-  return commaIndex >= 0 ? dataUrl.slice(commaIndex + 1) : dataUrl;
-}
-
-function readSpeechToTextContent(result: unknown): string {
-  if (typeof result === "string") {
-    return result.trim();
-  }
-  if (!result || typeof result !== "object") {
-    return "";
-  }
-  const record = result as Record<string, unknown>;
-  if (typeof record.text === "string") {
-    return record.text.trim();
-  }
-  if (typeof record.content === "string") {
-    return record.content.trim();
-  }
-  if (record.data && typeof record.data === "object" && record.data !== null) {
-    const nested = record.data as Record<string, unknown>;
-    if (typeof nested.text === "string") {
-      return nested.text.trim();
-    }
-    if (typeof nested.content === "string") {
-      return nested.content.trim();
-    }
-  }
-  return "";
-}
 
 function deriveImageComposerState(input: string): { isImageMode: boolean; displayValue: string } {
   const trimmed = input.trimStart();
@@ -156,8 +72,13 @@ export function ChatComposer({
 
   useEffect(() => {
     return () => {
-      mediaRecorderRef.current?.stop();
-      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+      const recorder = mediaRecorderRef.current;
+      if (recorder && recorder.state !== "inactive") {
+        recorder.stop();
+      }
+      stopMediaTracks(mediaStreamRef.current);
+      mediaRecorderRef.current = null;
+      mediaStreamRef.current = null;
     };
   }, []);
 
@@ -189,11 +110,48 @@ export function ChatComposer({
       : "Type a message... (Enter to send, Ctrl+Enter for newline)";
 
   const toggleRecording = async () => {
-    if (isRecording) {
-      mediaRecorderRef.current?.stop();
+    if (isTranscribing) {
       return;
     }
     const bridge = window.zorai ?? window.zorai;
+    if (isRecording) {
+      const recorder = mediaRecorderRef.current;
+      setIsRecording(false);
+      setIsTranscribing(true);
+      try {
+        const blob = recorder
+          ? await collectMediaRecorderBlob(recorder, recordedChunksRef.current)
+          : new Blob();
+        stopMediaTracks(mediaStreamRef.current);
+        mediaRecorderRef.current = null;
+        mediaStreamRef.current = null;
+        recordedChunksRef.current = [];
+        if (blob.size === 0) {
+          return;
+        }
+        const mimeType = blob.type || "audio/webm";
+        const base64Audio = await blobToBase64(blob);
+        const result = await bridge?.agentSpeechToText?.(base64Audio, mimeType, {
+          provider: agentSettings.audio_stt_provider,
+          model: agentSettings.audio_stt_model,
+          language: agentSettings.audio_stt_language || undefined,
+        });
+        const error = readSpeechToTextError(result);
+        if (error) {
+          console.error("speech-to-text failed", error);
+          return;
+        }
+        const transcript = readSpeechToTextContent(result);
+        if (transcript) {
+          setInput((current) => current.trim() ? `${current.trimEnd()} ${transcript}` : transcript);
+        }
+      } catch (error) {
+        console.error("speech-to-text failed", error);
+      } finally {
+        setIsTranscribing(false);
+      }
+      return;
+    }
     if (!bridge?.agentSpeechToText || !navigator.mediaDevices?.getUserMedia || typeof MediaRecorder === "undefined") {
       return;
     }
@@ -202,49 +160,18 @@ export function ChatComposer({
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       mediaStreamRef.current = stream;
       recordedChunksRef.current = [];
-      const recorder = new MediaRecorder(stream);
+      const recorder = new MediaRecorder(stream, mediaRecorderOptions());
       mediaRecorderRef.current = recorder;
       recorder.ondataavailable = (event) => {
         if (event.data.size > 0) {
           recordedChunksRef.current.push(event.data);
         }
       };
-      recorder.onstop = () => {
-        const mimeType = recorder.mimeType || recordedChunksRef.current[0]?.type || "audio/webm";
-        const blob = new Blob(recordedChunksRef.current, { type: mimeType });
-        mediaRecorderRef.current = null;
-        mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
-        mediaStreamRef.current = null;
-        recordedChunksRef.current = [];
-        setIsRecording(false);
-        void (async () => {
-          if (blob.size === 0) {
-            return;
-          }
-          setIsTranscribing(true);
-          try {
-            const base64Audio = await blobToBase64(blob);
-            const result = await bridge.agentSpeechToText?.(base64Audio, mimeType, {
-              provider: agentSettings.audio_stt_provider,
-              model: agentSettings.audio_stt_model,
-              language: agentSettings.audio_stt_language || undefined,
-            });
-            const transcript = readSpeechToTextContent(result);
-            if (transcript) {
-              setInput((current) => current.trim() ? `${current.trimEnd()} ${transcript}` : transcript);
-            }
-          } catch (error) {
-            console.error("speech-to-text failed", error);
-          } finally {
-            setIsTranscribing(false);
-          }
-        })();
-      };
-      recorder.start();
+      recorder.start(200);
       setIsRecording(true);
     } catch (error) {
       console.error("microphone capture failed", error);
-      mediaStreamRef.current?.getTracks().forEach((track) => track.stop());
+      stopMediaTracks(mediaStreamRef.current);
       mediaStreamRef.current = null;
       mediaRecorderRef.current = null;
       setIsRecording(false);

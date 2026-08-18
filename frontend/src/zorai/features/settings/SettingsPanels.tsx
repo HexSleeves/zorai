@@ -3,11 +3,13 @@ import { SubAgentsTab } from "@/components/settings-panel/SubAgentsTab";
 import { ModelSelector } from "@/components/settings-panel/shared";
 import {
   audioModelOptions,
+  audioRemoteModelFetchOutputModalities,
   embeddingModelOptions,
   filterAudioProviderOptions,
   filterEmbeddingProviderOptions,
   filterImageGenerationProviderOptions,
   imageGenerationModelOptions,
+  imageRemoteModelFetchOutputModalities,
   normalizeAudioModelForProviderChange,
   normalizeEmbeddingModelForProviderChange,
   normalizeImageGenerationModelForProviderChange,
@@ -30,6 +32,8 @@ import { useSettingsStore } from "@/lib/settingsStore";
 import { BUILTIN_THEMES } from "@/lib/themes";
 import { getWorkspaceSettings, setWorkspaceRepoMonitor } from "@/lib/workspaceBoard";
 import { ZORAI_APP_NAME } from "@/zorai/branding";
+import { applyRarogContextWindow } from "../threads/threadRuntimeActions";
+import { canonicalThreadAgentId } from "../threads/threadFilterModel";
 import { embeddingSettingsPatchForModelSelection } from "./embeddingSettings";
 import { duckDuckGoSafeSearchOptions, searchProviderOptions } from "./searchProviders";
 import type { ZoraiSettingsTabId } from "./settingsTabs";
@@ -58,7 +62,7 @@ export const conciergeReasoningEffortOptions: Array<{ value: AgentSettings["reas
   { value: "xhigh", label: "xhigh" },
   { value: "max", label: "max" },
 ];
-const APP_VERSION = "0.9.37";
+const APP_VERSION = "0.9.38";
 const APP_AUTHOR = "Mariusz Kurman";
 const APP_GITHUB = "mkurman/zorai";
 const APP_HOMEPAGE = "zorai.app";
@@ -466,6 +470,9 @@ function ConciergePanel() {
             {conciergeReasoningEffortOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select>
         </SettingRow>
+        <SettingRow label="Context" description="Rarog context window in tokens.">
+          <RarogContextField />
+        </SettingRow>
       </Panel>
     </SettingsGrid>
   );
@@ -473,6 +480,27 @@ function ConciergePanel() {
 
 function SubAgentsPanel() {
   return <SubAgentsTab />;
+}
+
+function RarogContextField() {
+  const threads = useAgentStore((state) => state.threads);
+  const agentSettings = useAgentStore((state) => state.agentSettings);
+  const initial = threads.find((thread) => {
+    const agentId = canonicalThreadAgentId(thread.agent_name);
+    return agentId === "rarog" || agentId === "concierge" || thread.daemonThreadId === "concierge";
+  })?.profileContextWindowTokens ?? agentSettings.context_window_tokens ?? 128000;
+  const [value, setValue] = useState(initial);
+  return (
+    <input
+      className="zorai-input"
+      type="number"
+      min={1000}
+      max={2000000}
+      value={value}
+      onChange={(event) => setValue(Number(event.target.value))}
+      onBlur={() => void applyRarogContextWindow(value)}
+    />
+  );
 }
 
 function GatewayPanel() {
@@ -562,6 +590,7 @@ function FeaturesPanel() {
             allowProviderAuthFetch={providerHasDaemonAuth(agentSettings.audio_stt_provider)}
             modelOptions={audioModelOptions(agentSettings.audio_stt_provider, "stt")}
             remoteModelFilter={(model) => filterFetchedModelsForAudio([model], "stt").length > 0}
+            fetchOutputModalities={audioRemoteModelFetchOutputModalities("stt", agentSettings.audio_stt_provider)}
             disabled={!agentSettings.audio_stt_enabled}
           />
         </SettingRow>
@@ -590,7 +619,7 @@ function FeaturesPanel() {
             allowProviderAuthFetch={providerHasDaemonAuth(agentSettings.audio_tts_provider)}
             modelOptions={audioModelOptions(agentSettings.audio_tts_provider, "tts")}
             remoteModelFilter={(model) => filterFetchedModelsForAudio([model], "tts").length > 0}
-            fetchOutputModalities={agentSettings.audio_tts_provider === "openrouter" ? "audio" : undefined}
+            fetchOutputModalities={audioRemoteModelFetchOutputModalities("tts", agentSettings.audio_tts_provider)}
             disabled={!agentSettings.audio_tts_enabled}
           />
         </SettingRow>
@@ -619,6 +648,7 @@ function FeaturesPanel() {
             allowProviderAuthFetch={providerHasDaemonAuth(agentSettings.image_generation_provider)}
             modelOptions={imageGenerationModelOptions(agentSettings.image_generation_provider)}
             remoteModelFilter={(model) => filterFetchedModelsForImageGeneration([model]).length > 0}
+            fetchOutputModalities={imageRemoteModelFetchOutputModalities(agentSettings.image_generation_provider)}
           />
         </SettingRow>
       </Panel>

@@ -171,6 +171,12 @@ export function isHiddenAgentThread(thread: Pick<RemoteAgentThreadRecord, "id" |
     || title.startsWith("weles ");
 }
 
+function epochMsOrNow(value: number | null | undefined): number {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return Date.now();
+  return n < 1_000_000_000_000 ? n * 1000 : n;
+}
+
 type AgentDbApi = {
   dbCreateThread?: (thread: AgentDbThreadRecord) => Promise<boolean>;
   dbDeleteThread?: (id: string) => Promise<boolean>;
@@ -330,8 +336,8 @@ export function buildHydratedRemoteThread(
       title: typeof thread.title === "string" && thread.title.trim()
         ? thread.title
         : "Conversation",
-      createdAt: Number(thread.created_at ?? Date.now()),
-      updatedAt: Number(thread.updated_at ?? Date.now()),
+      createdAt: epochMsOrNow(thread.created_at),
+      updatedAt: epochMsOrNow(thread.updated_at),
       messageCount: totalMessageCount,
       loadedMessageStart,
       loadedMessageEnd,
@@ -648,7 +654,10 @@ export function deserializeMessage(message: AgentDbMessageRecord): AgentMessage 
         : typeof metadata.pinnedForCompaction === "boolean"
         ? metadata.pinnedForCompaction
         : undefined,
-    isStreaming: Boolean(metadata.isStreaming),
+    // Streaming is ephemeral process state. A persisted message may have been
+    // written mid-stream before an app exit/crash, but must never resurrect a
+    // Thinking widget or Stop action after hydration.
+    isStreaming: false,
   };
 }
 

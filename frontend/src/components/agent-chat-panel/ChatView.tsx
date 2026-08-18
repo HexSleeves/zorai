@@ -1,4 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type UIEvent } from "react";
+import {
+  resolveThreadHistoryScrollAction,
+  shouldIgnoreThreadHistoryScroll,
+} from "./runtime/threadHistoryScroll";
 import { buildWelesHealthPresentation } from "./welesHealthPresentation";
 import { inputStyle } from "./shared";
 import { ChatComposer } from "./chat-view/Composer";
@@ -17,43 +21,8 @@ import { compactionArtifactDisplayText, MessageBubble } from "./chat-view/Messag
 import { TodoPanel } from "./chat-view/TodoPanel";
 import { ToolEventRow } from "./chat-view/ToolEventRow";
 import type { AgentMessage } from "@/lib/agentStore";
-import type { ChatViewProps, ComposerAttachment, SendMessagePayload } from "./chat-view/types";
-
-const CHAT_SCROLL_THRESHOLD_PX = 24;
-
-function buildAttachmentSendPayload(text: string, attachments: ComposerAttachment[]): SendMessagePayload {
-  const trimmedText = text.trim();
-  const textAttachmentWrappers = attachments
-    .filter((attachment) => attachment.kind === "text" && attachment.textContent)
-    .map((attachment) => `<attached_file name="${attachment.name}">\n${attachment.textContent}\n</attached_file>`);
-  const mediaAttachments = attachments.filter((attachment) => attachment.kind !== "text");
-  const finalText = [...textAttachmentWrappers, trimmedText].filter(Boolean).join("\n\n").trim();
-
-  if (mediaAttachments.length === 0) {
-    return { text: finalText };
-  }
-  const localContentBlocks = [
-    ...(finalText ? [{ type: "text", text: finalText } as const] : []),
-    ...mediaAttachments.map((attachment) =>
-      attachment.kind === "image"
-        ? ({
-            type: "image",
-            data_url: attachment.dataUrl,
-            mime_type: attachment.mimeType,
-          } as const)
-        : ({
-            type: "audio",
-            data_url: attachment.dataUrl,
-            mime_type: attachment.mimeType,
-          } as const),
-    ),
-  ];
-  return {
-    text: finalText,
-    contentBlocksJson: JSON.stringify(localContentBlocks),
-    localContentBlocks,
-  };
-}
+import type { ChatViewProps, ComposerAttachment } from "./chat-view/types";
+import { buildAttachmentSendPayload } from "./chat-view/composerMedia";
 
 export function ChatView({
   messages,
@@ -115,8 +84,14 @@ export function ChatView({
   };
 
   const handleMessageScroll = async (event: UIEvent<HTMLDivElement>) => {
+    if (shouldIgnoreThreadHistoryScroll()) return;
     const scroller = event.currentTarget;
-    if (scroller.scrollTop <= CHAT_SCROLL_THRESHOLD_PX && onLoadOlderMessages) {
+    const action = resolveThreadHistoryScrollAction({
+      scrollTop: scroller.scrollTop,
+      scrollHeight: scroller.scrollHeight,
+      clientHeight: scroller.clientHeight,
+    });
+    if (action === "load-older" && onLoadOlderMessages) {
       const previousHeight = scroller.scrollHeight;
       const previousTop = scroller.scrollTop;
       const loaded = await onLoadOlderMessages();
@@ -127,9 +102,7 @@ export function ChatView({
       }
       return;
     }
-
-    const distanceFromBottom = scroller.scrollHeight - scroller.scrollTop - scroller.clientHeight;
-    if (distanceFromBottom <= CHAT_SCROLL_THRESHOLD_PX && onTrimMessagesToLatestWindow?.()) {
+    if (action === "trim-latest" && onTrimMessagesToLatestWindow?.()) {
       requestAnimationFrame(() => {
         messagesEndRef.current?.scrollIntoView({ block: "end" });
       });

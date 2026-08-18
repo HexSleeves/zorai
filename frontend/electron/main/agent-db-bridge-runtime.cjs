@@ -297,7 +297,10 @@ function createAgentDbBridgeRuntime(options) {
             if (pending.commandKey === commandKey && pending.promise) {
                 return pending.promise;
             }
-            return Promise.reject(new Error(`Agent query already pending for response type: ${responseKey}`));
+            return pending.promise.then(
+                () => sendAgentQuery(command, responseType, timeoutMs),
+                () => sendAgentQuery(command, responseType, timeoutMs),
+            );
         }
 
         const reqId = `${responseKey}_${Date.now()}_${Math.random()}`;

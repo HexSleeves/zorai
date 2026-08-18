@@ -85,20 +85,23 @@ function createRuntimeHarness(options = {}) {
   return { runtime, spawned, sentEvents };
 }
 
-test("agent bridge rejects a concurrent query for the same response type", async () => {
+test("agent bridge queues a later query for the same response type", async () => {
   const { runtime, spawned } = createRuntimeHarness();
 
   const firstPromise = runtime.sendAgentQuery({ type: "get-thread", thread_id: "thread-1" }, "thread-detail", 5000);
+  const secondPromise = runtime.sendAgentQuery({ type: "get-thread", thread_id: "thread-2" }, "thread-detail", 5000);
   assert.equal(spawned.length, 1);
-
-  await assert.rejects(
-    runtime.sendAgentQuery({ type: "get-thread", thread_id: "thread-2" }, "thread-detail", 5000),
-    /already pending/i,
-  );
+  assert.equal(spawned[0].writes.length, 1);
 
   spawned[0].emitStdout(`${JSON.stringify({ type: "thread-detail", data: { id: "thread-1" } })}\n`);
-  await assert.doesNotReject(firstPromise);
-  assert.equal(spawned[0].writes.length, 1);
+  assert.deepEqual(await firstPromise, { id: "thread-1" });
+
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(spawned[0].writes.length, 2);
+
+  spawned[0].emitStdout(`${JSON.stringify({ type: "thread-detail", data: { id: "thread-2" } })}\n`);
+  assert.deepEqual(await secondPromise, { id: "thread-2" });
 });
 
 test("agent bridge coalesces duplicate concurrent queries", async () => {

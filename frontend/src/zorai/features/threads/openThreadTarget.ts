@@ -1,5 +1,9 @@
 import type { AgentChatPanelRuntimeValue } from "@/components/agent-chat-panel/runtime/types";
-import { useAgentStore } from "@/lib/agentStore";
+import { normalizeBridgePayload } from "@/components/agent-chat-panel/runtime/daemonHelpers";
+import { getAgentBridge } from "@/lib/agentDaemonConfig";
+import { PRIMARY_AGENT_NAME } from "@/lib/agentNames";
+import { buildHydratedRemoteThread, useAgentStore, type RemoteAgentThreadRecord } from "@/lib/agentStore";
+import { resolveReactChatHistoryMessageLimit } from "@/lib/chatHistoryPageSize";
 
 export async function openThreadTarget(runtime: AgentChatPanelRuntimeValue, targetThreadId: string): Promise<boolean> {
   const target = targetThreadId.trim();
@@ -11,11 +15,62 @@ export async function openThreadTarget(runtime: AgentChatPanelRuntimeValue, targ
     return true;
   }
 
-  await runtime.refreshThreadList();
-  const refreshed = findThread(useAgentStore.getState().threads, target);
-  if (!refreshed) return false;
-  runtime.openThread(refreshed.id);
+  const remoteThread = await fetchDaemonThread(target);
+  const raced = findThread(useAgentStore.getState().threads, target);
+  if (raced) {
+    runtime.openThread(raced.id);
+    return true;
+  }
+  if (!remoteThread) return false;
+
+  const hydrated = buildHydratedRemoteThread(
+    remoteThread,
+    useAgentStore.getState().agentSettings.agent_name || PRIMARY_AGENT_NAME,
+  );
+  if (!hydrated?.thread.daemonThreadId) return false;
+
+  insertHydratedThread(hydrated);
+  runtime.openThread(hydrated.thread.id);
   return true;
+}
+
+async function fetchDaemonThread(daemonThreadId: string): Promise<RemoteAgentThreadRecord | null> {
+  const zorai = getAgentBridge();
+  if (!zorai?.agentGetThread) return null;
+
+  const remotePayload = await zorai.agentGetThread(daemonThreadId, {
+    messageLimit: resolveReactChatHistoryMessageLimit(
+      useAgentStore.getState().agentSettings.react_chat_history_page_size,
+    ),
+    messageOffset: 0,
+  }).catch(() => null);
+  const remoteThread = normalizeBridgePayload(remotePayload);
+  if (!remoteThread || typeof remoteThread !== "object") return null;
+  const id = (remoteThread as { id?: unknown }).id;
+  return typeof id === "string" && id.trim() ? remoteThread as RemoteAgentThreadRecord : null;
+}
+
+function insertHydratedThread(hydrated: ReturnType<typeof buildHydratedRemoteThread>): void {
+  if (!hydrated) return;
+  const daemonThreadId = hydrated.thread.daemonThreadId;
+  if (!daemonThreadId) return;
+
+  useAgentStore.setState((state) => {
+    if (state.threads.some((thread) => thread.daemonThreadId === daemonThreadId)) {
+      return {};
+    }
+    return {
+      threads: [...state.threads, hydrated.thread].sort((left, right) => right.updatedAt - left.updatedAt),
+      messages: {
+        ...state.messages,
+        [hydrated.thread.id]: hydrated.messages,
+      },
+      todos: {
+        ...state.todos,
+        [hydrated.thread.id]: state.todos[hydrated.thread.id] ?? [],
+      },
+    };
+  });
 }
 
 function findThread(threads: AgentChatPanelRuntimeValue["threads"], targetThreadId: string) {

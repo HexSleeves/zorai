@@ -24,6 +24,14 @@ import { useAgentStore } from "./store";
 import { getDaemonAgentConfig } from "../daemonConfig";
 
 export async function hydrateAgentStore(): Promise<void> {
+  try {
+    await hydrateAgentStoreInner();
+  } finally {
+    await useAgentStore.getState().refreshSubAgents();
+  }
+}
+
+async function hydrateAgentStoreInner(): Promise<void> {
   const bridge = getBridge();
   let configuredBackend = DEFAULT_AGENT_SETTINGS.agent_backend;
   let agentSettingsHydrated = false;

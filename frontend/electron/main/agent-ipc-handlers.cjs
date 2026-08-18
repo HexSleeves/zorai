@@ -117,12 +117,17 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
     });
     ipcMain.handle('agent-stop-stream', async (_event, threadId) => { try { sendAgentCommand({ type: 'stop-stream', thread_id: threadId }); } catch {} return { ok: true }; });
     ipcMain.handle('agent-list-threads', async (_event, options) => {
+        const agentFilter = typeof options?.agentFilter === 'string' && options.agentFilter.trim()
+            ? options.agentFilter.trim()
+            : null;
         try {
-            const agentFilter = typeof options?.agentFilter === 'string' && options.agentFilter.trim()
-                ? options.agentFilter.trim()
-                : null;
-            return await sendAgentQuery({ type: 'list-threads', agent_filter: agentFilter }, 'thread-list');
-        } catch {
+            return await sendAgentQuery({
+                type: 'list-threads',
+                agent_filter: agentFilter,
+                include_internal: options?.includeInternal === true,
+            }, 'thread-list', 30000);
+        } catch (err) {
+            logToFile('warn', 'agent-list-threads failed', { error: err?.message || String(err), agentFilter });
             return [];
         }
     });
@@ -375,6 +380,7 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
                 mimeType: typeof mimeType === 'string' && mimeType.trim() ? mimeType.trim() : 'audio/webm',
             });
             if (!saved?.ok || !saved?.path) {
+                logToFile?.('warn', '[speech] failed to persist audio capture', { error: saved?.error });
                 return { error: saved?.error || 'Failed to persist audio capture' };
             }
             const payload = {
@@ -382,11 +388,16 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
                 path: saved.path,
                 mime_type: saved.mimeType || mimeType || 'audio/webm',
             };
+            logToFile?.('info', '[speech] speech-to-text requested', {
+                mimeType: payload.mime_type,
+                path: saved.path,
+            });
             return await sendAgentQuery({
                 type: 'speech-to-text',
                 args_json: JSON.stringify(payload),
             }, 'speech-to-text-result', 30000);
         } catch (err) {
+            logToFile?.('warn', '[speech] speech-to-text IPC failed', { error: err?.message || String(err) });
             return { error: err?.message || String(err) };
         }
     });
@@ -496,6 +507,8 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
     ipcMain.handle('agent-set-config-item', async (_event, keyPath, value) => { try { sendAgentCommand({ type: 'set-config-item', key_path: keyPath, value_json: JSON.stringify(value) }); return { ok: true }; } catch (err) { return { ok: false, error: err.message }; } });
     ipcMain.handle('agent-set-provider-model', async (_event, providerId, model) => { try { sendAgentCommand({ type: 'set-provider-model', provider_id: providerId, model }); return { ok: true }; } catch (err) { return { ok: false, error: err.message }; } });
     ipcMain.handle('agent-set-target-agent-provider-model', async (_event, targetAgentId, providerId, model) => { try { sendAgentCommand({ type: 'set-target-agent-provider-model', target_agent_id: targetAgentId, provider_id: providerId, model }); return { ok: true }; } catch (err) { return { ok: false, error: err.message }; } });
+    ipcMain.handle('agent-set-target-agent-reasoning-effort', async (_event, targetAgentId, reasoningEffort) => { try { sendAgentCommand({ type: 'set-target-agent-reasoning-effort', target_agent_id: targetAgentId, reasoning_effort: reasoningEffort }); return { ok: true }; } catch (err) { return { ok: false, error: err.message }; } });
+    ipcMain.handle('agent-set-target-agent-context-window', async (_event, targetAgentId, contextWindowTokens) => { try { sendAgentCommand({ type: 'set-target-agent-context-window', target_agent_id: targetAgentId, context_window_tokens: contextWindowTokens }); return { ok: true }; } catch (err) { return { ok: false, error: err.message }; } });
     ipcMain.handle('agent-set-tier-override', async (_event, tier) => { try { sendAgentCommand({ type: 'set-tier-override', tier: tier || null }); return { ok: true }; } catch (err) { return { ok: false, error: err.message }; } });
     ipcMain.handle('gateway:get-config', async () => { try { return await sendAgentQuery({ type: 'get-gateway-config' }, 'gateway-config'); } catch (err) { logToFile('warn', '[gateway] get-config IPC error', { error: err.message }); return {}; } });
     ipcMain.handle('gateway:set-config', async (_event, patch) => {

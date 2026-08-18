@@ -18,6 +18,7 @@ type SubAgentForm = {
     tool_whitelist: string;
     tool_blacklist: string;
     context_budget_tokens: string;
+    context_window_tokens: string;
     max_duration_secs: string;
     reasoning_effort: string;
     api_transport: string;
@@ -37,6 +38,7 @@ const emptyForm: SubAgentForm = {
     tool_whitelist: "",
     tool_blacklist: "",
     context_budget_tokens: "",
+    context_window_tokens: "",
     max_duration_secs: "",
     reasoning_effort: "",
     api_transport: "",
@@ -76,6 +78,7 @@ export function SubAgentsTab() {
             tool_whitelist: form.tool_whitelist ? form.tool_whitelist.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
             tool_blacklist: form.tool_blacklist ? form.tool_blacklist.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
             context_budget_tokens: form.context_budget_tokens ? Number(form.context_budget_tokens) : undefined,
+            context_window_tokens: form.context_window_tokens ? Number(form.context_window_tokens) : undefined,
             max_duration_secs: form.max_duration_secs ? Number(form.max_duration_secs) : undefined,
             reasoning_effort: form.reasoning_effort || undefined,
             api_transport: form.api_transport ? (form.api_transport as SubAgentDefinition["api_transport"]) : undefined,
@@ -116,6 +119,7 @@ export function SubAgentsTab() {
             tool_whitelist: sa.tool_whitelist?.join(", ") || "",
             tool_blacklist: sa.tool_blacklist?.join(", ") || "",
             context_budget_tokens: sa.context_budget_tokens ? String(sa.context_budget_tokens) : "",
+            context_window_tokens: sa.context_window_tokens ? String(sa.context_window_tokens) : "",
             max_duration_secs: sa.max_duration_secs ? String(sa.max_duration_secs) : "",
             reasoning_effort: sa.reasoning_effort || "",
             api_transport: sa.api_transport ?? "",
@@ -153,13 +157,14 @@ export function SubAgentsTab() {
 
     return (
         <div>
-            <Section title="Sub-Agent Registry">
-                {subAgents.length === 0 && !showForm && (
+            <Section title={showForm ? (editingId ? "Edit Sub-Agent" : "Add Sub-Agent") : "Sub-Agent Registry"}>
+                {showForm ? null : subAgents.length === 0 ? (
                     <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 12 }}>
                         No sub-agents configured. Add one to enable orchestration dispatch.
                     </div>
-                )}
+                ) : null}
 
+                {showForm ? null : (
                 <div style={{ display: "grid", gap: 2, marginBottom: 12 }}>
                     {subAgents.map((sa) => (
                         (() => {
@@ -252,6 +257,7 @@ export function SubAgentsTab() {
                         })()
                     ))}
                 </div>
+                )}
 
                 {showForm ? (
                     <div style={{
@@ -259,8 +265,16 @@ export function SubAgentsTab() {
                         background: "rgba(18, 33, 47, 0.7)",
                         padding: 14,
                     }}>
-                        <div style={{ fontSize: 12, fontWeight: 600, marginBottom: 10 }}>
-                            {editingId ? "Edit Sub-Agent" : "Add Sub-Agent"}
+                        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+                            <div style={{ fontSize: 12, fontWeight: 600 }}>
+                                {editingId ? "Edit Sub-Agent" : "Add Sub-Agent"}
+                            </div>
+                            <button
+                                onClick={() => { setShowForm(false); setEditingId(null); setForm(emptyForm); }}
+                                style={smallBtnStyle}
+                            >
+                                Back
+                            </button>
                         </div>
                         <SettingRow label="Name">
                             <input
@@ -302,6 +316,15 @@ export function SubAgentsTab() {
                             ) : (
                                 <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>Select a provider first</span>
                             )}
+                        </SettingRow>
+                        <SettingRow label="Context">
+                            <input
+                                type="number"
+                                value={form.context_window_tokens}
+                                onChange={(e) => setForm({ ...form, context_window_tokens: e.target.value })}
+                                placeholder="128000"
+                                style={{ ...inputStyle, width: 220 }}
+                            />
                         </SettingRow>
                         {form.provider === "openrouter" ? (
                             <OpenRouterProviderRoutingControls

@@ -42,10 +42,15 @@ describe("Zorai feature surfaces", () => {
 
   it("enters a dedicated TUI-style goal view from mission control", () => {
     const source = readFeature("./goals/GoalsView.tsx");
+    const openThreadSource = readFeature("./threads/openThreadTarget.ts");
 
     expect(source).toContain("workspaceOpen");
     expect(source).toContain("Open goal view");
     expect(source).toContain("Back to goals");
+    expect(source).toContain("openThreadTarget");
+    expect(source).toContain("onOpenThread={openGoalThread}");
+    expect(openThreadSource).toContain("agentGetThread");
+    expect(openThreadSource).not.toContain("refreshThreadList");
   });
 
   it("starts goals through the TUI-compatible Mission Control preflight", () => {
@@ -68,7 +73,9 @@ describe("Zorai feature surfaces", () => {
     expect(launchSource).toContain("Main Agent");
     expect(launchSource).toContain("Role Assignments");
     expect(launchSource).toContain("launchAssignments");
-    expect(launchSource).toContain("onClose");
+    expect(launchSource).toContain("Add agent");
+    expect(launchSource).toContain("Remove agent");
+    expect(launchSource).toContain("assignments.length <= 1");
     expect(goalRunsSource).toContain("launchAssignments?: GoalAgentAssignment[]");
     expect(electronSource).toContain("launch_assignments");
   });
@@ -78,6 +85,18 @@ describe("Zorai feature surfaces", () => {
 
     expect(source).not.toContain("TraceView");
     expect(source).toContain("zorai-activity-surface");
+  });
+
+  it("exposes a TUI-style notification inbox with read-all and archive-read", () => {
+    const source = readFeature("./activity/ActivityView.tsx");
+    const inboxSource = readFeature("./activity/ActivityInbox.tsx");
+
+    expect(source).toContain('"inbox"');
+    expect(source).toContain("ActivityInbox");
+    expect(inboxSource).toContain("Read all");
+    expect(inboxSource).toContain("Archive read");
+    expect(inboxSource).toContain("markAllRead");
+    expect(inboxSource).toContain("archiveRead");
   });
 
   it("exposes TUI-style usage statistics inside native Activity", () => {
@@ -139,6 +158,8 @@ describe("Zorai feature surfaces", () => {
     expect(panelSource).toContain("agentExternalRuntimeMigrationPreview");
     expect(panelSource).toContain("agentExternalRuntimeMigrationApply");
     expect(panelSource).toContain("selectedConciergeProvider");
+    expect(panelSource).toContain("RarogContextField");
+    expect(panelSource).toContain("applyRarogContextWindow");
     expect(panelSource).toContain("proactive_triage");
     expect(panelSource).toContain("(use Svarog)");
     expect(panelSource).toContain("managed_security_level");
@@ -151,6 +172,10 @@ describe("Zorai feature surfaces", () => {
     expect(panelSource).toContain("Homepage");
     expect(panelSource).toContain("Web Search");
     expect(panelSource).toContain("SubAgentsTab");
+    expect(readFeature("../../components/settings-panel/SubAgentsTab.tsx")).toContain("Edit Sub-Agent");
+    expect(readFeature("../../components/settings-panel/SubAgentsTab.tsx")).toContain("Back");
+    expect(readFeature("../../components/settings-panel/SubAgentsTab.tsx")).toContain("context_window_tokens");
+    expect(readFeature("../../components/settings-panel/SubAgentsTab.tsx")).toContain("showForm ? null");
     expect(panelSource).toContain("selectPlugin");
     expect(panelSource).toContain("pluginUpdateSettings");
   });
@@ -175,6 +200,11 @@ describe("Zorai feature surfaces", () => {
     expect(featuresSource).toContain("filterEmbeddingProviderOptions");
     expect(featuresSource).toContain("filterFetchedModelsForAudio");
     expect(featuresSource).toContain("filterFetchedModelsForEmbeddings");
+    expect(featuresSource).toContain("audioRemoteModelFetchOutputModalities");
+    expect(featuresSource).toContain("imageRemoteModelFetchOutputModalities");
+    expect(featuresSource).toContain('audioRemoteModelFetchOutputModalities("stt"');
+    expect(featuresSource).toContain('audioRemoteModelFetchOutputModalities("tts"');
+    expect(featuresSource).not.toContain('? "audio"');
     expect((featuresSource.match(/<ModelSelector/g) ?? []).length).toBeGreaterThanOrEqual(4);
     expect(featuresSource).not.toContain('label="STT Provider" description="Speech-to-text provider."><input');
     expect(featuresSource).not.toContain('label="TTS Provider" description="Text-to-speech provider."><input');
@@ -231,11 +261,13 @@ describe("Zorai feature surfaces", () => {
 
   it("keeps Threads native to the Zorai shell instead of embedding the old chat view", () => {
     const source = readFeature("./threads/ThreadsView.tsx");
+    const composerSource = readFeature("./threads/ThreadComposer.tsx");
     const css = readFeature("../styles/zorai.css");
 
     expect(source).not.toContain("ChatView");
     expect(source).toContain("zorai-native-thread-surface");
-    expect(source).toContain("zorai-thread-composer");
+    expect(source).toContain("ThreadComposer");
+    expect(composerSource).toContain("zorai-thread-composer");
     expect(css).not.toContain(".zorai-thread-surface > div");
   });
 
@@ -250,16 +282,70 @@ describe("Zorai feature surfaces", () => {
     expect(browserSource).not.toContain("setActiveThread(thread.id)");
   });
 
-  it("shows the streaming stop action next to Send in native Threads", () => {
-    const source = readFeature("./threads/ThreadsView.tsx");
-    const composerStart = source.indexOf("zorai-thread-composer__footer");
-    const composerEnd = source.indexOf("{pinLimitResult");
-    const composerSource = source.slice(composerStart, composerEnd);
+  it("shows the streaming stop action in the composer action bar in native Threads", () => {
+    const source = readFeature("./threads/ThreadComposer.tsx");
+    const actionsStart = source.indexOf("zorai-composer-actions");
+    const actionsSource = source.slice(actionsStart);
 
-    expect(composerSource).toContain("runtime.isStreamingResponse");
-    expect(composerSource).toContain("runtime.stopStreaming(runtime.activeThreadId)");
-    expect(composerSource.indexOf("Stop")).toBeGreaterThan(-1);
-    expect(composerSource.indexOf("Stop")).toBeLessThan(composerSource.indexOf("Send"));
+    expect(actionsSource).toContain("runtime.isStreamingResponse");
+    expect(actionsSource).toContain("runtime.stopStreaming(runtime.activeThreadId)");
+    expect(actionsSource.indexOf("Stop generating")).toBeGreaterThan(-1);
+    expect(actionsSource.indexOf("Send message")).toBeGreaterThan(-1);
+  });
+
+  it("queues messages while the agent is streaming", () => {
+    const source = readFeature("./threads/ThreadComposer.tsx");
+
+    expect(source).toContain("queuedMessages");
+    expect(source).toContain("queueCurrentInput");
+    expect(source).toContain("zorai-composer-queue");
+    expect(source).toContain("Queue a follow-up");
+  });
+
+  it("shows a thinking indicator while the agent streams", () => {
+    const source = readFeature("./threads/ThreadsView.tsx");
+
+    expect(source).toContain("ThinkingIndicator");
+    expect(source).toContain("zorai-thinking");
+    expect(source).toContain("runtime.isStreamingResponse");
+    // Assistant fallback name should come from the thread's agent, not hardcoded "Zorai".
+    expect(source).toContain("threadAgentName");
+  });
+
+  it("lets the current thread change provider, model, and context from the context panel", () => {
+    const viewSource = readFeature("./threads/ThreadsView.tsx");
+    const contextSource = readFeature("./threads/ThreadsContextPanel.tsx");
+    const runtimeSource = readFeature("./threads/ThreadRuntimeBar.tsx");
+    const actionsSource = readFeature("./threads/threadRuntimeActions.ts");
+
+    // The thread header no longer embeds the runtime bar; it only summarizes it.
+    expect(viewSource).not.toContain("ThreadRuntimeBar");
+    expect(viewSource).toContain("ThreadRuntimeSummary");
+
+    // The editable controls live in the context panel ("Show Context").
+    expect(contextSource).toContain("ThreadRuntimeBar");
+    expect(runtimeSource).toContain("Provider");
+    expect(runtimeSource).toContain("Model");
+    expect(runtimeSource).toContain("Effort");
+    expect(runtimeSource).toContain("Context");
+    expect(actionsSource).toContain("agentSetProviderModel");
+    expect(actionsSource).toContain("agentSetTargetAgentProviderModel");
+    expect(actionsSource).toContain("agentSetTargetAgentReasoningEffort");
+    expect(actionsSource).toContain("agentSetTargetAgentContextWindow");
+  });
+
+  it("attaches files and records speech on the native thread composer", () => {
+    const source = readFeature("./threads/ThreadComposer.tsx");
+    const speechSource = readFeature("./threads/useThreadSpeech.ts");
+    const viewSource = readFeature("./threads/ThreadsView.tsx");
+
+    expect(source).toContain("Attach files");
+    expect(source).toContain("readComposerAttachment");
+    expect(source).toContain("agentSpeechToText");
+    expect(source).toContain("Record voice message");
+    expect(speechSource).toContain("agentTextToSpeech");
+    expect(speechSource).toContain("loadingMessageId");
+    expect(viewSource).toContain("Speak");
   });
 
   it("keeps TUI-style pinned message controls in native Threads", () => {
@@ -380,13 +466,32 @@ describe("Zorai feature surfaces", () => {
     const runtimeSource = readFeature("../../components/agent-chat-panel/runtime/useAgentChatPanelProviderValue.ts");
     const eventsSource = readFeature("../../components/agent-chat-panel/runtime/useDaemonAgentEvents.ts");
 
-    expect(source).toContain("openThread");
+    expect(source).toContain("openThreadTarget");
+    expect(source).not.toContain("runtime.openThread(thread.id)");
+    expect(source).toContain("DEFAULT_THREAD_DATE_FILTER");
+    expect(source).toContain("Loading threads.");
+    expect(source).toContain("loadedAgentFilterRef.current == null ? 0");
+    expect(source).toContain("refreshSubAgents");
     expect(source).toContain("onScroll");
     expect(source).toContain("loadOlderThreadMessages");
     expect(source).toContain("threadHistoryLabel");
     expect(source).toContain("threadTabs");
+    expect(source).toContain("fixedThreadTabs");
+    expect(source).toContain("agentFilterOptions");
+    expect(source).toContain("Agents & subagents");
+    expect(source).toContain("Loading messages");
+    expect(source).not.toContain("threadTabs.map");
     expect(source).toContain("dateFilters");
+    expect(source).toContain("includeInternal: true");
+    expect(source).toContain("resolveThreadListSource(daemonFilteredThreads, runtime.filteredThreads)");
+    expect(source).not.toContain("daemonFilteredThreads?.length");
+    expect(source).toContain("fetchKey");
+    expect(source).toContain("[daemonAgentFilter, fetchKey, fetchThreadList, tab]");
+    expect(source).not.toContain("[daemonAgentFilter, runtime, tab]");
+    expect(source).toContain("resolveThreadHistoryScrollAction");
     expect(runtimeSource).toContain("loadThreadPage");
+    expect(runtimeSource).toContain("latestLoadedThreadIdRef");
+    expect(runtimeSource).toContain("loadThreadPage(activeThreadId, \"latest\")");
     expect(runtimeSource).toContain("localThreadId: threadId");
     expect(runtimeSource).toContain("messageOffset");
     expect(runtimeSource).toContain("threadPageLoadChainRef");
