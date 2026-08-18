@@ -437,6 +437,8 @@ pub struct BuiltinPersonaOverrides {
     pub openrouter_allow_fallbacks: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub huggingface_provider: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context_window_tokens: Option<u32>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -57,6 +57,7 @@ fn make_goal(status: GoalRunStatus, priority: TaskPriority) -> GoalRun {
         generated_skill_path: None,
         last_error: None,
         failure_cause: None,
+        step_failure_history: Vec::new(),
         stopped_reason: None,
         child_task_ids: Vec::new(),
         child_task_count: 0,

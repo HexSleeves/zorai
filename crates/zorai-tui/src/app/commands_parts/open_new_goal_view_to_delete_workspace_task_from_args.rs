@@ -41,20 +41,37 @@ impl TuiModel {
                     None
                 }
             });
-        self.goal_mission_control = match preferred_goal_snapshot.or(latest_goal_snapshot) {
-            Some(snapshot) => goal_mission_control::GoalMissionControlState::from_goal_snapshot(
+        self.goal_mission_control = if let Some(snapshot) = self
+            .goal_composer_saved_defaults
+            .clone()
+            .filter(|assignments| !assignments.is_empty())
+        {
+            let mut state = goal_mission_control::GoalMissionControlState::from_goal_snapshot(
                 snapshot,
                 fallback_main_assignment,
-                "Previous goal snapshot",
-            ),
-            None => goal_mission_control::GoalMissionControlState::from_main_assignment(
-                fallback_main_assignment.clone(),
-                vec![fallback_main_assignment],
-                "Main agent inheritance",
-            ),
+                "Saved default",
+            );
+            state.set_save_as_default_pending(true);
+            state
+        } else {
+            match preferred_goal_snapshot.or(latest_goal_snapshot) {
+                Some(snapshot) => {
+                    goal_mission_control::GoalMissionControlState::from_goal_snapshot(
+                        snapshot,
+                        fallback_main_assignment,
+                        "Previous goal snapshot",
+                    )
+                }
+                None => goal_mission_control::GoalMissionControlState::from_main_assignment(
+                    fallback_main_assignment.clone(),
+                    vec![fallback_main_assignment],
+                    "Main agent inheritance",
+                ),
+            }
         };
         self.goal_mission_control.set_prompt_text(String::new());
-        self.goal_mission_control.set_save_as_default_pending(false);
+        self.goal_mission_control
+            .set_focused_section(goal_mission_control::GoalMissionControlSection::Prompt);
         self.main_pane_view = MainPaneView::GoalComposer;
         self.task_view_scroll = 0;
         self.focus = FocusArea::Input;

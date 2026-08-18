@@ -212,6 +212,17 @@ pub(super) fn set_target_agent_reasoning_effort_dedup_key(
     )
 }
 
+pub(super) fn set_target_agent_context_window_dedup_key(
+    agent: &Arc<crate::agent::AgentEngine>,
+    target_agent_id: &str,
+    context_window_tokens: u32,
+) -> String {
+    format!(
+        "{OPERATION_KIND_SET_PROVIDER_MODEL}:{target_agent_id}:context_window:{context_window_tokens}:{:p}",
+        Arc::as_ptr(agent)
+    )
+}
+
 pub(super) fn set_sub_agent_dedup_key(
     agent: &Arc<crate::agent::AgentEngine>,
     sub_agent_id: &str,

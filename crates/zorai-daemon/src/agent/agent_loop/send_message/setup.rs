@@ -238,6 +238,9 @@ fn build_direct_thread_responder_config(
         context_window_tokens: matched_def
             .as_ref()
             .and_then(|def| def.context_window_tokens)
+            .or_else(|| {
+                builtin_persona_overrides.and_then(|overrides| overrides.context_window_tokens)
+            })
             .or(profile_context_window_tokens),
         huggingface_provider: matched_def
             .as_ref()
@@ -2680,6 +2683,7 @@ mod tests {
             generated_skill_path: None,
             last_error: None,
             failure_cause: None,
+            step_failure_history: Vec::new(),
             stopped_reason: None,
             child_task_ids: Vec::new(),
             child_task_count: 0,
@@ -2920,6 +2924,7 @@ mod tests {
             generated_skill_path: None,
             last_error: None,
             failure_cause: None,
+            step_failure_history: Vec::new(),
             stopped_reason: None,
             child_task_ids: Vec::new(),
             child_task_count: 0,

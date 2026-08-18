@@ -1078,6 +1078,15 @@ fn start_daemon_bridge(
                                     reasoning_effort,
                                 );
                             }
+                            DaemonCommand::SetTargetAgentContextWindow {
+                                target_agent_id,
+                                context_window_tokens,
+                            } => {
+                                let _ = client.set_target_agent_context_window(
+                                    target_agent_id,
+                                    context_window_tokens,
+                                );
+                            }
                             DaemonCommand::ControlGoalRun {
                                 goal_run_id,
                                 action,

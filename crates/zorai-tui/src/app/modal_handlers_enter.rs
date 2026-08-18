@@ -74,19 +74,6 @@ fn apply_active_svarog_provider_model_locally(
     let Some(thread) = model.chat.active_thread_mut() else {
         return;
     };
-    let is_svarog_thread = thread
-        .agent_name
-        .as_deref()
-        .map(str::trim)
-        .filter(|name| !name.is_empty())
-        .map(|name| {
-            name.eq_ignore_ascii_case(zorai_protocol::AGENT_NAME_SWAROG)
-                || name.eq_ignore_ascii_case(zorai_protocol::AGENT_ID_SWAROG)
-        })
-        .unwrap_or(true);
-    if !is_svarog_thread {
-        return;
-    }
 
     thread.profile_provider = Some(provider_id.to_string());
     thread.profile_model = Some(model_id.to_string());
@@ -1049,10 +1036,12 @@ pub(super) fn handle_modal_enter(model: &mut TuiModel, kind: modal::ModalKind) {
                             provider_id: pending.provider_id.clone(),
                             model: model_id.clone(),
                         });
-                        if let Some(thread) = model.chat.active_thread_mut() {
-                            thread.runtime_provider = Some(pending.provider_id.clone());
-                            thread.runtime_model = Some(model_id.clone());
-                        }
+                        apply_active_svarog_provider_model_locally(
+                            model,
+                            &pending.provider_id,
+                            &model_id,
+                            model_context_window,
+                        );
                         model.status_line =
                             format!("{} model: {}", pending.target_agent_name, model_id);
                         model.pending_target_agent_config = None;
@@ -1436,6 +1425,9 @@ pub(super) fn handle_modal_enter(model: &mut TuiModel, kind: modal::ModalKind) {
             }
             model.settings_picker_target = None;
             model.close_top_modal();
+        }
+        modal::ModalKind::ContextWindowEditor => {
+            model.commit_active_thread_context_window_editor();
         }
         modal::ModalKind::WhatsAppLink => {}
         _ => {

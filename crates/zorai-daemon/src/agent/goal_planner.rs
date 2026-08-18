@@ -23,6 +23,110 @@ pub(in crate::agent) fn goal_step_verdict_required_state_key(task_id: &str) -> S
     format!("{GOAL_STEP_VERDICT_REQUIRED_STATE_PREFIX}{task_id}")
 }
 
+/// Parses optional verifier-binding evidence fields from `submit_goal_step_verdict`
+/// arguments: `verifier`, `coverage`, and `gaps`.
+pub(in crate::agent) fn parse_goal_verdict_evidence(
+    args: &serde_json::Value,
+) -> Result<Option<GoalVerdictEvidence>, anyhow::Error> {
+    let field = |name: &str| {
+        args.get(name)
+            .and_then(|value| value.as_str())
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    };
+    let verifier = field("verifier");
+    let coverage = field("coverage");
+    let gaps = field("gaps");
+    if verifier.is_none() && coverage.is_none() && gaps.is_none() {
+        return Ok(None);
+    }
+    Ok(Some(GoalVerdictEvidence {
+        verifier: verifier.unwrap_or_default(),
+        coverage: coverage.unwrap_or_default(),
+        gaps,
+    }))
+}
+
+/// A `pass` verdict is a completion claim, so it must bind the verifier that
+/// actually ran and the coverage scope it exercised. Fail verdicts stay
+/// unencumbered so reviewers can report problems without evidence bookkeeping.
+pub(in crate::agent) fn validate_pass_verdict_evidence(
+    evidence: Option<&GoalVerdictEvidence>,
+) -> Result<(), anyhow::Error> {
+    let Some(evidence) = evidence else {
+        anyhow::bail!(
+            "verdict 'pass' requires evidence: provide 'verifier' (what concretely ran: command + exit code, test name, review, build) and 'coverage' (the scope it exercised)"
+        );
+    };
+    if evidence.verifier.trim().is_empty() || evidence.coverage.trim().is_empty() {
+        anyhow::bail!(
+            "verdict 'pass' requires non-empty 'verifier' (what concretely ran: command + exit code, test name, review, build) and 'coverage' (the scope it exercised); state uncovered scope via optional 'gaps'"
+        );
+    }
+    Ok(())
+}
+
+fn goal_step_task_description_with_ledger(
+    snapshot: &GoalRun,
+    instructions: &str,
+    ledger_block: &str,
+) -> String {
+    let mut description = String::new();
+    let current_step_failures: Vec<&str> = snapshot
+        .steps
+        .get(snapshot.current_step_index)
+        .map(|step| {
+            snapshot
+                .step_failure_history
+                .iter()
+                .filter(|entry| entry.starts_with(step.id.as_str()))
+                .map(String::as_str)
+                .collect()
+        })
+        .unwrap_or_default();
+    if !current_step_failures.is_empty() {
+        description.push_str("Retry context — prior attempt diagnosis (from the goal ledger; do not repeat the same approach without stating what changed):\n");
+        for entry in &current_step_failures {
+            description.push_str("- ");
+            description.push_str(entry);
+            description.push('\n');
+        }
+        if current_step_failures.len() >= 2 {
+            description.push_str("Two or more diagnosed attempts have failed on this step: switch approach or escalate; reviewers will reject another diagnosis-free retry.\n");
+        }
+        description.push('\n');
+    }
+    description.push_str(instructions);
+    description.push_str(
+        "\n\nGoal ledger (Core anchors broadcast-once; reuse verbatim; Open lists unresolved work; Next is the cold-executable action):\n",
+    );
+    description.push_str(ledger_block);
+    description
+}
+
+#[cfg(test)]
+pub(in crate::agent) fn goal_step_task_description(
+    snapshot: &GoalRun,
+    instructions: &str,
+) -> String {
+    goal_step_task_description_with_ledger(
+        snapshot,
+        instructions,
+        &crate::agent::goal_dossier::goal_ledger_prompt_block(snapshot),
+    )
+}
+
+async fn persisted_goal_step_task_description(
+    data_dir: &std::path::Path,
+    snapshot: &GoalRun,
+    instructions: &str,
+) -> String {
+    let ledger =
+        crate::agent::goal_dossier::goal_ledger_active_step_prompt_block(data_dir, snapshot).await;
+    goal_step_task_description_with_ledger(snapshot, instructions, &ledger)
+}
+
 fn parse_goal_role_binding(raw: Option<&str>, fallback: GoalRoleBinding) -> GoalRoleBinding {
     let Some(raw) = raw.map(str::trim).filter(|value| !value.is_empty()) else {
         return fallback;
@@ -620,13 +724,16 @@ impl AgentEngine {
         }
 
         let step = snapshot.steps[snapshot.current_step_index].clone();
+        let step_task_description =
+            persisted_goal_step_task_description(&self.data_dir, &snapshot, &step.instructions)
+                .await;
         let resolved_execution_target = self.resolve_goal_execution_target(&snapshot, &step).await;
 
         let task = if let GoalRunStepKind::Specialist(ref role) = step.kind {
             let thread_id = snapshot.thread_id.clone().unwrap_or_default();
             match self
                 .route_handoff_to_target(
-                    &step.instructions,
+                    &step_task_description,
                     &[role.clone()],
                     None,
                     Some(&snapshot.id),
@@ -648,7 +755,7 @@ impl AgentEngine {
                     );
                     self.enqueue_task(
                         step.title.clone(),
-                        step.instructions.clone(),
+                        step_task_description.clone(),
                         task_priority_to_str(snapshot.priority),
                         None,
                         step.session_id
@@ -668,7 +775,12 @@ impl AgentEngine {
         } else if step.kind == GoalRunStepKind::Divergent {
             let thread_id = snapshot.thread_id.clone().unwrap_or_default();
             match self
-                .start_divergent_session(&step.instructions, None, &thread_id, Some(&snapshot.id))
+                .start_divergent_session(
+                    &step_task_description,
+                    None,
+                    &thread_id,
+                    Some(&snapshot.id),
+                )
                 .await
             {
                 Ok(session_id) => {
@@ -680,9 +792,9 @@ impl AgentEngine {
                     self.enqueue_task(
                         format!("Divergent: {}", step.title),
                         format!(
-                            "Divergent session {} started for: {}\n\n\
+                            "Divergent session {} started.\n\n{}\n\n\
                              Monitor the parallel framings and synthesize tensions when complete.",
-                            session_id, step.instructions
+                            session_id, step_task_description
                         ),
                         task_priority_to_str(snapshot.priority),
                         None,
@@ -706,7 +818,7 @@ impl AgentEngine {
                     );
                     self.enqueue_task(
                         step.title.clone(),
-                        step.instructions.clone(),
+                        step_task_description.clone(),
                         task_priority_to_str(snapshot.priority),
                         None,
                         step.session_id
@@ -726,7 +838,7 @@ impl AgentEngine {
         } else if step.kind == GoalRunStepKind::Debate {
             let thread_id = snapshot.thread_id.clone().unwrap_or_default();
             match self
-                .start_debate_session(&step.instructions, None, &thread_id, Some(&snapshot.id))
+                .start_debate_session(&step_task_description, None, &thread_id, Some(&snapshot.id))
                 .await
             {
                 Ok(session_id) => {
@@ -738,9 +850,9 @@ impl AgentEngine {
                     self.enqueue_task(
                         format!("Debate: {}", step.title),
                         format!(
-                            "Debate session {} started for: {}\n\n\
+                            "Debate session {} started.\n\n{}\n\n\
                              Retrieve the debate state, append arguments, advance rounds, and complete the verdict when ready.",
-                            session_id, step.instructions
+                            session_id, step_task_description
                         ),
                         task_priority_to_str(snapshot.priority),
                         None,
@@ -764,7 +876,7 @@ impl AgentEngine {
                     );
                     self.enqueue_task(
                         step.title.clone(),
-                        step.instructions.clone(),
+                        step_task_description.clone(),
                         task_priority_to_str(snapshot.priority),
                         None,
                         step.session_id
@@ -784,7 +896,7 @@ impl AgentEngine {
         } else {
             self.enqueue_task(
                 step.title.clone(),
-                step.instructions.clone(),
+                step_task_description.clone(),
                 task_priority_to_str(snapshot.priority),
                 None,
                 step.session_id

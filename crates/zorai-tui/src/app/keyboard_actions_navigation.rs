@@ -34,16 +34,7 @@ impl TuiModel {
                                 crate::state::goal_workspace::GoalWorkspacePane::CommandBar => {}
                             }
                         } else if matches!(self.main_pane_view, MainPaneView::GoalComposer) {
-                            if self
-                                .goal_mission_control
-                                .cycle_selected_runtime_assignment(1)
-                            {
-                                let role_label = self
-                                    .goal_mission_control
-                                    .selected_runtime_row_label()
-                                    .unwrap_or("assignment");
-                                self.status_line = format!("Mission Control selected {role_label}");
-                            }
+                            let _ = self.step_goal_composer_vertical(1);
                         } else if matches!(
                             self.main_pane_view,
                             MainPaneView::Task(_) | MainPaneView::WorkContext
@@ -90,16 +81,7 @@ impl TuiModel {
                                 crate::state::goal_workspace::GoalWorkspacePane::CommandBar => {}
                             }
                         } else if matches!(self.main_pane_view, MainPaneView::GoalComposer) {
-                            if self
-                                .goal_mission_control
-                                .cycle_selected_runtime_assignment(-1)
-                            {
-                                let role_label = self
-                                    .goal_mission_control
-                                    .selected_runtime_row_label()
-                                    .unwrap_or("assignment");
-                                self.status_line = format!("Mission Control selected {role_label}");
-                            }
+                            let _ = self.step_goal_composer_vertical(-1);
                         } else if matches!(
                             self.main_pane_view,
                             MainPaneView::Task(_) | MainPaneView::WorkContext
@@ -117,6 +99,24 @@ impl TuiModel {
                         }
                     }
                     _ => {}
+                };
+                Some(false)
+            }
+            KeyCode::Left
+                if self.focus == FocusArea::Chat
+                    && matches!(self.main_pane_view, MainPaneView::GoalComposer) =>
+            {
+                {
+                    let _ = self.step_goal_composer_horizontal(-1);
+                };
+                Some(false)
+            }
+            KeyCode::Right
+                if self.focus == FocusArea::Chat
+                    && matches!(self.main_pane_view, MainPaneView::GoalComposer) =>
+            {
+                {
+                    let _ = self.step_goal_composer_horizontal(1);
                 };
                 Some(false)
             }

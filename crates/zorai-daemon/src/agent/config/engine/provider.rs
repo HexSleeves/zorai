@@ -3,7 +3,7 @@ use crate::agent::{copilot_auth, openai_codex_auth, provider_resolution};
 use zorai_shared::providers::{PROVIDER_ID_GITHUB_COPILOT, PROVIDER_ID_OPENAI};
 
 impl AgentEngine {
-    fn normalize_agent_model_target(target: &str) -> String {
+    pub(super) fn normalize_agent_model_target(target: &str) -> String {
         let normalized = target.trim().to_ascii_lowercase();
         match normalized.as_str() {
             crate::agent::agent_identity::MAIN_AGENT_ID

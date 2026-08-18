@@ -81,6 +81,7 @@ pub struct TuiModel {
     sidebar: sidebar::SidebarState,
     goal_sidebar: goal_sidebar::GoalSidebarState,
     goal_mission_control: goal_mission_control::GoalMissionControlState,
+    goal_composer_saved_defaults: Option<Vec<task::GoalAgentAssignment>>,
     goal_workspace: goal_workspace::GoalWorkspaceState,
     mission_control_navigation: MissionControlNavigationState,
     goal_sidebar_selection_anchor: Option<GoalSidebarSelectionAnchor>,

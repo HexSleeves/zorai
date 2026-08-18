@@ -178,7 +178,7 @@ impl TuiModel {
         }
     }
 
-    fn active_thread_target_agent_config(&self) -> Option<PendingTargetAgentConfig> {
+    pub(crate) fn active_thread_target_agent_config(&self) -> Option<PendingTargetAgentConfig> {
         let target_agent_id = self.active_thread_owner_agent_id()?;
         if target_agent_id.eq_ignore_ascii_case(zorai_protocol::AGENT_ID_SWAROG) {
             return None;

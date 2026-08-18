@@ -219,6 +219,12 @@ pub struct GoalRun {
     pub last_error: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub failure_cause: Option<String>,
+    /// Append-only per-step failure history for retry diagnosis inheritance.
+    /// Each entry: "<step_id> attempt <n>: <diagnosis>". When a step is
+    /// re-dispatched after a failed review/completion gate, the retry must
+    /// state what changed relative to the last recorded diagnosis.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub step_failure_history: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stopped_reason: Option<String>,
     #[serde(default)]

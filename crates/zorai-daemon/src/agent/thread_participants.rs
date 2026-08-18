@@ -1451,6 +1451,11 @@ impl AgentEngine {
                             ))
                     })
                     .find_map(|message| {
+                        if message.message_kind
+                            == crate::agent::types::AgentMessageKind::CompactionArtifact
+                        {
+                            return None;
+                        }
                         if !matches!(message.role, MessageRole::Assistant) {
                             return None;
                         }

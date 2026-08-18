@@ -391,6 +391,7 @@ async fn send_message_request_includes_runtime_continuity_and_negative_knowledge
             generated_skill_path: None,
             last_error: None,
             failure_cause: None,
+            step_failure_history: Vec::new(),
             stopped_reason: None,
             child_task_ids: vec!["task-runtime-continuity-request".to_string()],
             child_task_count: 1,

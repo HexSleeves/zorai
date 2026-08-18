@@ -1092,6 +1092,7 @@ impl AgentEngine {
             generated_skill_path: None,
             last_error: None,
             failure_cause: None,
+            step_failure_history: Vec::new(),
             stopped_reason: None,
             awaiting_approval_id: None,
             policy_fingerprint: None,

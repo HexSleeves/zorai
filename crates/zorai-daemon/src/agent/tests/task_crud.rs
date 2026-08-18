@@ -295,6 +295,7 @@ fn sample_supervised_goal_run(goal_run_id: &str, task_id: &str, approval_id: &st
         generated_skill_path: None,
         last_error: None,
         failure_cause: None,
+        step_failure_history: Vec::new(),
         stopped_reason: None,
         child_task_ids: vec![task_id.to_string()],
         child_task_count: 1,

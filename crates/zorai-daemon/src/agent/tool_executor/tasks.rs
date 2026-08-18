@@ -824,6 +824,10 @@ pub(crate) async fn execute_submit_goal_step_verdict(
         .filter(|value| !value.is_empty())
         .ok_or_else(|| anyhow::anyhow!("missing non-empty 'explanation' argument"))?
         .to_string();
+    let evidence = super::super::parse_goal_verdict_evidence(args)?;
+    if matches!(verdict, GoalStepReviewVerdict::Pass) {
+        super::super::validate_pass_verdict_evidence(evidence.as_ref())?;
+    }
 
     let task = task_by_id_for_tool_scope(agent, task_id)
         .await
@@ -893,6 +897,7 @@ pub(crate) async fn execute_submit_goal_step_verdict(
         goal_step_id: goal_step_id.to_string(),
         verdict,
         explanation,
+        evidence,
         submitted_at: crate::agent::now_millis(),
     };
     let record_json = serde_json::to_string(&record)?;
@@ -906,10 +911,24 @@ pub(crate) async fn execute_submit_goal_step_verdict(
         .await?;
 
     let mut updated = task.clone();
-    updated.result = Some(format!(
+    let mut result_text = format!(
         "Structured verdict: {:?}\n{}",
         record.verdict, record.explanation
-    ));
+    );
+    if let Some(evidence) = record.evidence.as_ref() {
+        result_text.push_str(&format!(
+            "\nEvidence — verifier: {} | coverage: {}{}",
+            evidence.verifier,
+            evidence.coverage,
+            evidence
+                .gaps
+                .as_deref()
+                .filter(|gaps| !gaps.trim().is_empty())
+                .map(|gaps| format!(" | gaps: {gaps}"))
+                .unwrap_or_default()
+        ));
+    }
+    updated.result = Some(result_text);
     updated.logs.push(make_task_log_entry(
         updated.retry_count,
         TaskLogLevel::Info,

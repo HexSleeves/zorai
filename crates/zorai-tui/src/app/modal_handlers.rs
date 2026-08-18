@@ -225,6 +225,19 @@ impl TuiModel {
             return self.handle_workspace_history_modal_key(code, modifiers);
         }
 
+        if kind == modal::ModalKind::ContextWindowEditor {
+            match code {
+                KeyCode::Enter => self.commit_active_thread_context_window_editor(),
+                KeyCode::Esc => self.cancel_active_thread_context_window_editor(),
+                KeyCode::Backspace => self.settings.reduce(SettingsAction::Backspace),
+                KeyCode::Char(c) if c.is_ascii_digit() || matches!(c, '_' | ',' | ' ') => {
+                    self.settings.reduce(SettingsAction::InsertChar(c));
+                }
+                _ => {}
+            }
+            return false;
+        }
+
         if kind == modal::ModalKind::Settings {
             if matches!(
                 code,
@@ -420,6 +433,8 @@ impl TuiModel {
                                     },
                                 );
                                 if let Some(thread) = self.chat.active_thread_mut() {
+                                    thread.profile_provider = Some(pending.provider_id.clone());
+                                    thread.profile_model = Some(model_id.to_string());
                                     thread.runtime_provider = Some(pending.provider_id);
                                     thread.runtime_model = Some(model_id.to_string());
                                 }
@@ -534,18 +549,25 @@ impl TuiModel {
                                 }
                             }
                             "context_window_tokens" => {
-                                if providers::model_uses_context_window_override(
-                                    &self.config.provider,
-                                    &self.config.auth_source,
-                                    &self.config.model,
-                                    &self.config.custom_model_name,
-                                ) {
-                                    if let Ok(n) = value.parse::<u32>() {
-                                        let next = n.clamp(1000, 2_000_000);
-                                        self.config.custom_context_window_tokens = Some(next);
-                                        self.config.context_window_tokens = next;
+                                if let Ok(n) = value.parse::<u32>() {
+                                    let next = n.clamp(1000, 2_000_000);
+                                    self.config.custom_context_window_tokens = Some(next);
+                                    self.config.context_window_tokens = next;
+                                    if self.active_thread_target_agent_config().is_none() {
+                                        if let Some(thread) = self.chat.active_thread_mut() {
+                                            thread.profile_context_window_tokens = Some(next);
+                                        }
                                     }
                                 }
+                            }
+                            "target_agent_context_window" => {
+                                let Some(tokens) = Self::parse_context_window_tokens(&value) else {
+                                    self.status_line =
+                                        "Context window must be a number of tokens".to_string();
+                                    return false;
+                                };
+                                self.apply_active_thread_context_window(tokens);
+                                self.pending_target_agent_config = None;
                             }
                             "compact_threshold_pct" => {
                                 if let Ok(n) = value.parse::<u32>() {
@@ -956,6 +978,7 @@ impl TuiModel {
                                 | "concierge_base_url"
                                 | "subagent_system_prompt"
                                 | "target_agent_model"
+                                | "target_agent_context_window"
                                 | "honcho_editor_api_key"
                                 | "honcho_editor_base_url"
                                 | "honcho_editor_workspace_id"

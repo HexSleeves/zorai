@@ -282,6 +282,7 @@ async fn policy_halt_aborts_before_guarded_tool_execution_and_persists_failure_t
             generated_skill_path: None,
             last_error: None,
             failure_cause: None,
+            step_failure_history: Vec::new(),
             stopped_reason: None,
             child_task_ids: vec!["task-policy-loop-proof".to_string()],
             child_task_count: 1,

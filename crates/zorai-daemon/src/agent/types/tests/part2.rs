@@ -1118,6 +1118,7 @@ fn goal_dossier_serializes_into_goal_run_state() {
         generated_skill_path: None,
         last_error: None,
         failure_cause: None,
+        step_failure_history: Vec::new(),
         child_task_ids: vec![],
         child_task_count: 0,
         approval_count: 0,

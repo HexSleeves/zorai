@@ -82,7 +82,7 @@ pub struct GoalRuntimeOwnerProfile {
     pub reasoning_effort: Option<String>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct GoalAgentAssignment {
     pub role_id: String,
     pub enabled: bool,

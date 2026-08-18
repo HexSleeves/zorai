@@ -45,6 +45,72 @@ async fn goal_projection_writes_files_on_create_and_refresh() {
     assert!(plans_dir.exists(), "plans directory should exist");
     assert!(execution_dir.exists(), "execution directory should exist");
 
+    let ledger_md_path = specs_dir.join("ledger.md");
+    let ledger_json_path = specs_dir.join("ledger.json");
+    assert!(ledger_md_path.exists(), "loop ledger markdown should exist");
+    assert!(ledger_json_path.exists(), "loop ledger json should exist");
+    let ledger_markdown = tokio::fs::read_to_string(&ledger_md_path)
+        .await
+        .expect("read loop ledger markdown");
+    for section in ["## Goal", "## Core", "## Verified", "## Open", "## Next"] {
+        assert!(
+            ledger_markdown.contains(section),
+            "ledger markdown should contain the {section} section"
+        );
+    }
+    assert!(
+        ledger_markdown.contains("Ship goal projections"),
+        "ledger should carry the goal text"
+    );
+    let ledger_json: serde_json::Value = serde_json::from_str(
+        &tokio::fs::read_to_string(&ledger_json_path)
+            .await
+            .expect("read loop ledger json"),
+    )
+    .expect("loop ledger json should parse");
+    assert!(
+        ledger_json["core"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty()),
+        "ledger Core anchors should be non-empty"
+    );
+    assert!(
+        ledger_json["next"]
+            .as_str()
+            .is_some_and(|next| !next.trim().is_empty()),
+        "ledger Next should be a non-empty action"
+    );
+
+    let active_step_checkpoint = crate::agent::goal_dossier::goal_ledger_active_step_prompt_block(
+        &engine.data_dir,
+        &goal_run,
+    )
+    .await;
+    assert!(active_step_checkpoint.contains("source:"));
+    assert!(active_step_checkpoint.contains("ledger.json"));
+    assert!(active_step_checkpoint.contains("current-step pointer:"));
+    assert!(active_step_checkpoint.contains("## Core"));
+    assert!(active_step_checkpoint.contains("## Next"));
+
+    let resume_checkpoint =
+        crate::agent::goal_dossier::goal_ledger_resume_checkpoint(&engine.data_dir, &goal_run.id)
+            .await
+            .expect("persisted ledger should render a resume checkpoint");
+    assert!(resume_checkpoint.contains("## Resume Ledger Checkpoint"));
+    assert!(resume_checkpoint.contains("Core anchors:"));
+    assert!(resume_checkpoint.contains("Next:"));
+
+    let subagent_checkpoint =
+        crate::agent::goal_dossier::goal_ledger_subagent_integration_checkpoint(
+            &engine.data_dir,
+            &goal_run.id,
+        )
+        .await
+        .expect("persisted ledger should render a subagent integration checkpoint");
+    assert!(subagent_checkpoint.contains("## Goal Ledger Integration Checkpoint"));
+    assert!(subagent_checkpoint.contains("Already verified (do not re-derive):"));
+    assert!(subagent_checkpoint.contains("Next:"));
+
     let initial_markdown = tokio::fs::read_to_string(&goal_md_path)
         .await
         .expect("read goal markdown");

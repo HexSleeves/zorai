@@ -50,6 +50,7 @@ fn sample_goal_run_record(id: &str, updated_at: u64) -> GoalRun {
         generated_skill_path: None,
         last_error: None,
         failure_cause: None,
+        step_failure_history: Vec::new(),
         dossier: None,
         stopped_reason: None,
         child_task_ids: Vec::new(),
@@ -1844,6 +1845,7 @@ async fn goal_run_event_todo_snapshot_round_trips() -> Result<()> {
         generated_skill_path: None,
         last_error: None,
         failure_cause: None,
+        step_failure_history: Vec::new(),
         dossier: None,
         stopped_reason: None,
         child_task_ids: Vec::new(),
@@ -3185,6 +3187,10 @@ async fn goal_run_extended_metadata_round_trips() -> Result<()> {
         generated_skill_path: Some("skills/generated/goal-meta.md".to_string()),
         last_error: Some("waiting for approval".to_string()),
         failure_cause: Some("policy gate".to_string()),
+        step_failure_history: vec![
+            "step-meta attempt 1: build output is incomplete".to_string(),
+            "step-meta attempt 2: tests still failing".to_string(),
+        ],
         stopped_reason: Some("operator requested stop".to_string()),
         child_task_ids: vec!["task-1".to_string(), "task-2".to_string()],
         child_task_count: 2,
@@ -3368,6 +3374,33 @@ async fn goal_run_extended_metadata_round_trips() -> Result<()> {
             "thread-followup".to_string(),
         ]
     );
+    assert_eq!(
+        loaded.step_failure_history,
+        vec![
+            "step-meta attempt 1: build output is incomplete".to_string(),
+            "step-meta attempt 2: tests still failing".to_string(),
+        ]
+    );
+
+    fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn goal_run_step_failure_history_survives_reload() -> Result<()> {
+    let (store, root) = make_test_store().await?;
+    let mut goal_run = sample_goal_run_record("goal-retry-history", 40);
+    goal_run.step_failure_history = vec![
+        "step-inspect attempt 1: missing cargo target".to_string(),
+        "step-inspect attempt 2: retry still incomplete".to_string(),
+    ];
+    store.upsert_goal_run(&goal_run).await?;
+
+    let loaded = store
+        .get_goal_run("goal-retry-history")
+        .await?
+        .expect("goal run should reload");
+    assert_eq!(loaded.step_failure_history, goal_run.step_failure_history);
 
     fs::remove_dir_all(root)?;
     Ok(())
@@ -3495,6 +3528,7 @@ async fn init_schema_migrates_legacy_goal_runs_metadata_columns() -> Result<()> 
                 table_has_column_sync(conn, "goal_runs", "root_thread_id")?,
                 table_has_column_sync(conn, "goal_runs", "active_thread_id")?,
                 table_has_column_sync(conn, "goal_runs", "execution_thread_ids_json")?,
+                table_has_column_sync(conn, "goal_runs", "step_failure_history_json")?,
             ))
         })
         .await
@@ -3526,6 +3560,7 @@ async fn init_schema_migrates_legacy_goal_runs_metadata_columns() -> Result<()> 
     assert!(cols.23);
     assert!(cols.24);
     assert!(cols.25);
+    assert!(cols.26);
 
     let legacy_goal = store
         .list_goal_runs()

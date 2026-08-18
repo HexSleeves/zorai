@@ -427,6 +427,7 @@ fn selected_message_arrow_keys_navigate_inline_actions() {
     model.chat.reduce(chat::ChatAction::AppendMessage {
         thread_id: "thread-1".to_string(),
         message: chat::AgentMessage {
+            id: Some("message-1".to_string()),
             role: chat::MessageRole::User,
             content: "first".to_string(),
             ..Default::default()

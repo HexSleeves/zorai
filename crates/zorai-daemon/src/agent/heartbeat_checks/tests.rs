@@ -44,6 +44,7 @@ fn make_goal_run(id: &str, title: &str, status: GoalRunStatus, updated_at: u64) 
         generated_skill_path: None,
         last_error: None,
         failure_cause: None,
+        step_failure_history: Vec::new(),
         stopped_reason: None,
         child_task_ids: Vec::new(),
         child_task_count: 0,

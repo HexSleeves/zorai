@@ -2,7 +2,12 @@
 
 use crate::state::task::GoalAgentAssignment;
 
-const MAIN_AGENT_ROLE_ID: &str = zorai_protocol::AGENT_ID_SWAROG;
+#[path = "goal_mission_control_focus.rs"]
+mod goal_mission_control_focus;
+
+pub use goal_mission_control_focus::{GoalMissionControlField, GoalMissionControlSection};
+
+pub(super) const MAIN_AGENT_ROLE_ID: &str = zorai_protocol::AGENT_ID_SWAROG;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RuntimeAssignmentApplyMode {
@@ -68,6 +73,8 @@ pub struct GoalMissionControlState {
     pub runtime_roster_uses_fallback: bool,
     pub pending_runtime_edit: Option<RuntimeAssignmentEditRequest>,
     pub pending_runtime_change: Option<PendingRuntimeAssignmentChange>,
+    pub focused_section: GoalMissionControlSection,
+    pub selected_field: GoalMissionControlField,
 }
 
 impl GoalMissionControlState {
@@ -86,6 +93,8 @@ impl GoalMissionControlState {
             runtime_roster_uses_fallback: false,
             pending_runtime_edit: None,
             pending_runtime_change: None,
+            focused_section: GoalMissionControlSection::RoleAssignments,
+            selected_field: GoalMissionControlField::Provider,
         }
     }
 
@@ -108,6 +117,8 @@ impl GoalMissionControlState {
             runtime_roster_uses_fallback: false,
             pending_runtime_edit: None,
             pending_runtime_change: None,
+            focused_section: GoalMissionControlSection::RoleAssignments,
+            selected_field: GoalMissionControlField::Provider,
         }
     }
 
@@ -245,6 +256,23 @@ impl GoalMissionControlState {
         self.pending_role_assignments = None;
         self.pending_runtime_edit = None;
         self.pending_runtime_change = None;
+    }
+
+    pub fn remove_preflight_assignment(&mut self) -> Option<String> {
+        if self.runtime_mode() || self.role_assignments.len() <= 1 {
+            return None;
+        }
+        let index = self
+            .selected_runtime_assignment_index
+            .min(self.role_assignments.len() - 1);
+        let removed = self.role_assignments.remove(index);
+        self.selected_runtime_assignment_index =
+            index.min(self.role_assignments.len().saturating_sub(1));
+        self.pending_role_assignments = None;
+        self.pending_runtime_edit = None;
+        self.pending_runtime_change = None;
+        self.refresh_main_assignment_from_display();
+        Some(removed.role_id)
     }
 
     pub fn stage_runtime_edit(&mut self, row_index: usize, field: RuntimeAssignmentEditField) {

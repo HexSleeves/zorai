@@ -933,6 +933,13 @@ pub(super) async fn apply_schema_migrations<E: super::db::DbExecutor + ?Sized>(
         "TEXT NOT NULL DEFAULT '[]'",
     )
     .await?;
+    ensure_column(
+        &mut *exec,
+        "goal_runs",
+        "step_failure_history_json",
+        "TEXT NOT NULL DEFAULT '[]'",
+    )
+    .await?;
     ensure_column(&mut *exec, "goal_runs", "deleted_at", "INTEGER").await?;
     ensure_column(&mut *exec, "goal_run_steps", "deleted_at", "INTEGER").await?;
     ensure_column(&mut *exec, "goal_run_events", "step_index", "INTEGER").await?;

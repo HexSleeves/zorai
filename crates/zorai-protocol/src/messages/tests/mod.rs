@@ -552,6 +552,26 @@ fn client_message_roundtrips_agent_set_target_agent_reasoning_effort() {
 }
 
 #[test]
+fn client_message_roundtrips_agent_set_target_agent_context_window() {
+    let msg = ClientMessage::AgentSetTargetAgentContextWindow {
+        target_agent_id: "weles".to_string(),
+        context_window_tokens: 200_000,
+    };
+    let bytes = bincode::serialize(&msg).unwrap();
+    let decoded: ClientMessage = bincode::deserialize(&bytes).unwrap();
+    match decoded {
+        ClientMessage::AgentSetTargetAgentContextWindow {
+            target_agent_id,
+            context_window_tokens,
+        } => {
+            assert_eq!(target_agent_id, "weles");
+            assert_eq!(context_window_tokens, 200_000);
+        }
+        other => panic!("unexpected variant: {:?}", other),
+    }
+}
+
+#[test]
 fn client_message_roundtrips_agent_execute_memory_tool() {
     let msg = ClientMessage::AgentExecuteMemoryTool {
         tool_name: "search_memory".to_string(),

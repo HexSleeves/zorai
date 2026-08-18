@@ -1,6 +1,10 @@
 use super::*;
 
 const GOAL_COMPLETION_MARKER_REMINDER_LIMIT: u32 = 3;
+/// Maximum diagnosed completion/review failures allowed for one goal step.
+/// The third failure is retained in history, then execution pauses for an
+/// operator decision instead of creating an unbounded requeue loop.
+const GOAL_STEP_RETRY_BUDGET: usize = 3;
 
 #[derive(Clone)]
 struct GoalCompletionMarkerContext {
@@ -104,6 +108,35 @@ fn structured_review_failure_reason(record: &GoalStepReviewRecord) -> String {
     } else {
         explanation.to_string()
     }
+}
+
+fn format_goal_verdict_evidence(record: &GoalStepReviewRecord) -> Option<String> {
+    let evidence = record.evidence.as_ref()?;
+    let verifier = evidence.verifier.trim();
+    let coverage = evidence.coverage.trim();
+    if verifier.is_empty() && coverage.is_empty() {
+        return None;
+    }
+    let mut parts = Vec::new();
+    if !verifier.is_empty() {
+        parts.push(format!("verifier: {verifier}"));
+    }
+    if !coverage.is_empty() {
+        parts.push(format!("coverage: {coverage}"));
+    }
+    if let Some(gaps) = evidence
+        .gaps
+        .as_deref()
+        .map(str::trim)
+        .filter(|gaps| !gaps.is_empty())
+    {
+        parts.push(format!("gaps: {gaps}"));
+    }
+    Some(parts.join(" | "))
+}
+
+fn review_record_for_task(record: &Option<GoalStepReviewRecord>) -> Option<&GoalStepReviewRecord> {
+    record.as_ref()
 }
 
 fn legacy_review_failure_reason(review_result: String) -> String {
@@ -277,12 +310,48 @@ impl AgentEngine {
         reason: &str,
         task: Option<&AgentTask>,
     ) -> Result<()> {
+        let next_attempt = {
+            let goal_runs = self.goal_runs.lock().await;
+            let Some(goal_run) = goal_runs.iter().find(|item| item.id == goal_run_id) else {
+                anyhow::bail!("goal run missing while checking step retry budget");
+            };
+            goal_run
+                .steps
+                .get(goal_run.current_step_index)
+                .map(|step| {
+                    goal_run
+                        .step_failure_history
+                        .iter()
+                        .filter(|entry| entry.starts_with(step.id.as_str()))
+                        .count()
+                        .saturating_add(1)
+                })
+                .unwrap_or(1)
+        };
+        if next_attempt >= GOAL_STEP_RETRY_BUDGET {
+            return self
+                .gate_goal_step_retry_budget_exhausted(goal_run_id, reason, task, next_attempt)
+                .await;
+        }
+
         let updated = {
             let mut goal_runs = self.goal_runs.lock().await;
             let Some(goal_run) = goal_runs.iter_mut().find(|item| item.id == goal_run_id) else {
                 anyhow::bail!("goal run missing while re-queuing step");
             };
             if let Some(step) = goal_run.steps.get_mut(goal_run.current_step_index) {
+                let prior_attempts = goal_run
+                    .step_failure_history
+                    .iter()
+                    .filter(|entry| entry.starts_with(&format!("{}", step.id)))
+                    .count();
+                goal_run.step_failure_history.push(format!(
+                    "{}#{} attempt {}: {}",
+                    step.id,
+                    step.title,
+                    prior_attempts + 1,
+                    reason
+                ));
                 step.task_id = None;
                 step.status = GoalRunStepStatus::Pending;
                 step.error = Some(reason.to_string());
@@ -344,6 +413,130 @@ impl AgentEngine {
             )
             .await;
         }
+        Ok(())
+    }
+
+    async fn gate_goal_step_retry_budget_exhausted(
+        &self,
+        goal_run_id: &str,
+        reason: &str,
+        task: Option<&AgentTask>,
+        attempt: usize,
+    ) -> Result<()> {
+        let approval_id = format!("goal-step-retry-budget-{}", Uuid::new_v4());
+        let detail = format!(
+            "Goal step retry budget exhausted after {attempt} diagnosed failures (limit {GOAL_STEP_RETRY_BUDGET}). Latest diagnosis: {reason}"
+        );
+
+        let mut updated_task = None;
+        let mut updated_live_task = false;
+        if let Some(task) = task {
+            let (task, was_live) = self
+                .update_goal_completion_marker_task(
+                    &task.id,
+                    "goal step task disappeared before retry-budget escalation",
+                    |current| {
+                        current.status = TaskStatus::AwaitingApproval;
+                        current.completed_at = None;
+                        current.next_retry_at = None;
+                        current.awaiting_approval_id = Some(approval_id.clone());
+                        current.blocked_reason = Some(detail.clone());
+                        current.error = Some(reason.to_string());
+                        current.last_error = Some(reason.to_string());
+                        current.logs.push(make_task_log_entry(
+                            current.retry_count,
+                            TaskLogLevel::Error,
+                            "goal_step_retry_budget",
+                            "goal step retry budget exhausted; operator decision required",
+                            Some(detail.clone()),
+                        ));
+                    },
+                )
+                .await?;
+            updated_task = Some(task);
+            updated_live_task = was_live;
+        }
+
+        let updated_goal = {
+            let mut goal_runs = self.goal_runs.lock().await;
+            let Some(goal_run) = goal_runs.iter_mut().find(|item| item.id == goal_run_id) else {
+                anyhow::bail!("goal run missing while applying step retry-budget escalation");
+            };
+            let mut exhausted_step_id = None;
+            if let Some(step) = goal_run.steps.get_mut(goal_run.current_step_index) {
+                goal_run.step_failure_history.push(format!(
+                    "{}#{} attempt {}: {}",
+                    step.id, step.title, attempt, reason
+                ));
+                step.status = GoalRunStepStatus::Failed;
+                step.error = Some(reason.to_string());
+                step.completed_at = Some(now_millis());
+                exhausted_step_id = Some(step.id.clone());
+            }
+            goal_run.status = GoalRunStatus::AwaitingApproval;
+            goal_run.updated_at = now_millis();
+            goal_run.last_error = Some(detail.clone());
+            goal_run.failure_cause = Some(reason.to_string());
+            goal_run.awaiting_approval_id = Some(approval_id.clone());
+            goal_run.active_task_id = updated_task.as_ref().map(|task| task.id.clone());
+            goal_run.current_step_owner_profile = None;
+            goal_run.events.push(make_goal_run_event(
+                "retry_budget",
+                "goal step retry budget exhausted; operator decision required",
+                Some(detail.clone()),
+            ));
+            if let Some(step_id) = exhausted_step_id {
+                super::goal_dossier::set_goal_unit_verification_state(
+                    goal_run,
+                    &step_id,
+                    GoalProjectionState::Failed,
+                    detail.clone(),
+                    vec!["automatic retry budget exhausted".to_string()],
+                    Some("goal step retry budget"),
+                    Some(reason.to_string()),
+                );
+            }
+            super::goal_dossier::set_goal_resume_decision(
+                goal_run,
+                GoalResumeAction::Pause,
+                "step_retry_budget_exhausted",
+                Some(detail.clone()),
+                vec![
+                    format!("attempt={attempt}"),
+                    format!("limit={GOAL_STEP_RETRY_BUDGET}"),
+                ],
+            );
+            goal_run.clone()
+        };
+
+        if updated_live_task {
+            self.persist_tasks().await;
+        }
+        self.persist_goal_runs().await;
+        if let Some(task) = updated_task.as_ref() {
+            self.emit_task_update(task, Some("Goal step retry budget exhausted".into()));
+        }
+        self.emit_goal_run_update(
+            &updated_goal,
+            Some("Goal step retry budget exhausted; operator decision required".into()),
+        );
+        self.record_provenance_event(
+            "step_retry_budget_exhausted",
+            "goal step retry budget exhausted",
+            serde_json::json!({
+                "goal_run_id": updated_goal.id,
+                "task_id": updated_task.as_ref().map(|task| task.id.clone()),
+                "attempt": attempt,
+                "limit": GOAL_STEP_RETRY_BUDGET,
+                "reason": reason,
+            }),
+            Some(updated_goal.id.as_str()),
+            updated_task.as_ref().map(|task| task.id.as_str()),
+            updated_goal.thread_id.as_deref(),
+            None,
+            None,
+        )
+        .await;
         Ok(())
     }
 
@@ -571,13 +764,16 @@ impl AgentEngine {
             "Review completed goal step `{}`.\n\n\
              You must call `submit_goal_step_verdict` exactly once before finishing.\n\
              Use verdict `pass` only when the current step satisfies its instructions, success criteria, todos, completion artifacts, and required proof checks.\n\
+             A `pass` verdict must include evidence arguments: `verifier` (what concretely ran: command + exit code, test name, review, or build), `coverage` (the scope that verifier exercised), and optional `gaps` (what it did not cover). The tool rejects a `pass` without verifier and coverage.\n\
              Use verdict `fail` with a concrete explanation when the step needs more work; that explanation is sent back to the responsible step agent.\n\n\
+             Goal ledger (Core anchors broadcast-once; Verified shows already-passed checks; Open shows unresolved work; Next is the cold-executable action):\n{}\n\n\
              Original instructions:\n{}\n\n\
              Success criteria:\n{}\n\n\
              Implementation summary:\n{}\n\n\
              Verification binding:\n{}\n\n\
              Required proof checks:\n{}",
             step.title,
+            crate::agent::goal_dossier::goal_ledger_prompt_block(snapshot),
             step.instructions,
             step.success_criteria,
             implementation_summary
@@ -962,13 +1158,15 @@ impl AgentEngine {
             ));
 
         let now = now_millis();
-        let thread_summary = match task.thread_id.as_deref() {
+        let mut thread_summary = match task.thread_id.as_deref() {
             Some(thread_id) => self.goal_thread_summary(thread_id).await,
             None => None,
         };
+        let mut review_record: Option<GoalStepReviewRecord> = None;
         if task.source == GOAL_VERIFICATION_SOURCE {
             if let Some(record) = self.load_goal_step_review_record(&task.id).await? {
                 Self::validate_goal_step_review_record(task, goal_run_id, &record)?;
+                review_record = Some(record.clone());
                 if matches!(record.verdict, GoalStepReviewVerdict::Fail) {
                     let failure_reason = structured_review_failure_reason(&record);
                     self.requeue_goal_step_to_pending(goal_run_id, &failure_reason, Some(task))
@@ -999,6 +1197,15 @@ impl AgentEngine {
                     return Ok(());
                 }
             }
+        }
+        if let Some(evidence_line) = review_record
+            .as_ref()
+            .and_then(format_goal_verdict_evidence)
+        {
+            let base_summary = thread_summary
+                .clone()
+                .unwrap_or_else(|| "step completed".to_string());
+            thread_summary = Some(format!("{base_summary}\nEvidence — {evidence_line}"));
         }
         let updated = {
             let mut goal_runs = self.goal_runs.lock().await;
@@ -1075,6 +1282,8 @@ impl AgentEngine {
                 "completed_step_index": updated.current_step_index.saturating_sub(1),
                 "task_id": task.id,
                 "summary": thread_summary,
+                "verdict_evidence": review_record_for_task(&review_record)
+                    .and_then(format_goal_verdict_evidence),
             }),
             Some(updated.id.as_str()),
             Some(task.id.as_str()),

@@ -209,7 +209,7 @@ pub(super) fn seed_active_weles_thread(model: &mut TuiModel) {
         .reduce(chat::ChatAction::SelectThread("thread-weles".to_string()));
 }
 
-fn seed_active_svarog_thread(model: &mut TuiModel) {
+pub(super) fn seed_active_svarog_thread(model: &mut TuiModel) {
     model.connected = true;
     model.agent_config_loaded = true;
     model.config.provider = PROVIDER_ID_OPENAI.to_string();
@@ -371,6 +371,12 @@ fn slash_model_updates_active_thread_owner_model() {
     }
     assert!(saw_target_update);
     assert!(daemon_rx.try_recv().is_err());
+    let thread = model
+        .chat
+        .active_thread()
+        .expect("weles thread should stay active");
+    assert_eq!(thread.runtime_model.as_deref(), Some("gpt-5.4-mini"));
+    assert_eq!(thread.profile_model.as_deref(), Some("gpt-5.4-mini"));
 }
 
 #[test]

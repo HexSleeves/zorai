@@ -37,6 +37,16 @@ async fn write_goal_step_review_record(
     verdict: GoalStepReviewVerdict,
     explanation: &str,
 ) {
+    write_goal_step_review_record_with_evidence(engine, task, verdict, explanation, None).await;
+}
+
+async fn write_goal_step_review_record_with_evidence(
+    engine: &AgentEngine,
+    task: &AgentTask,
+    verdict: GoalStepReviewVerdict,
+    explanation: &str,
+    evidence: Option<GoalVerdictEvidence>,
+) {
     let record = GoalStepReviewRecord {
         task_id: task.id.clone(),
         goal_run_id: task
@@ -49,6 +59,7 @@ async fn write_goal_step_review_record(
             .expect("task should have goal_step_id"),
         verdict,
         explanation: explanation.to_string(),
+        evidence,
         submitted_at: now_millis(),
     };
     engine
@@ -114,6 +125,7 @@ fn sample_goal_run(goal_run_id: &str) -> GoalRun {
         generated_skill_path: None,
         last_error: None,
         failure_cause: None,
+        step_failure_history: Vec::new(),
         stopped_reason: None,
         child_task_ids: Vec::new(),
         child_task_count: 0,
@@ -1486,6 +1498,7 @@ fn sample_goal_run_with_kind(
         generated_skill_path: None,
         last_error: None,
         failure_cause: None,
+        step_failure_history: Vec::new(),
         stopped_reason: None,
         child_task_ids: Vec::new(),
         child_task_count: 0,
@@ -2232,6 +2245,22 @@ async fn verifier_completion_advances_goal_step_and_resolves_proof_checks() {
     .await;
     write_step_completion_marker(&engine, goal_run_id, 0).await;
 
+    {
+        let evidence_verifier_task = completed_verifier.clone();
+        write_goal_step_review_record_with_evidence(
+            &engine,
+            &evidence_verifier_task,
+            GoalStepReviewVerdict::Pass,
+            "all proof checks satisfied",
+            Some(GoalVerdictEvidence {
+                verifier: "cargo test -p zorai-daemon goal_planner -- --exact (exit 0)".to_string(),
+                coverage: "structured verdict handling and step advancement".to_string(),
+                gaps: None,
+            }),
+        )
+        .await;
+    }
+
     engine
         .handle_goal_run_step_completion(goal_run_id, &completed_verifier)
         .await
@@ -2248,6 +2277,13 @@ async fn verifier_completion_advances_goal_step_and_resolves_proof_checks() {
         "passed verification should clear stale step errors"
     );
     assert_eq!(updated.current_step_title.as_deref(), Some("step-2"));
+    assert!(
+        updated.steps[0]
+            .summary
+            .as_deref()
+            .is_some_and(|summary| summary.contains("verifier: cargo test")),
+        "step summary should carry the verdict evidence line"
+    );
 
     let dossier = updated.dossier.expect("verification should update dossier");
     assert_eq!(dossier.units[0].status, GoalProjectionState::Completed);
@@ -2420,6 +2456,201 @@ async fn verifier_fail_verdict_requeues_current_step() {
             .is_some_and(|error| error.contains("build output is incomplete")),
         "step should retain the failing reviewer feedback"
     );
+    assert_eq!(
+        updated.step_failure_history.len(),
+        1,
+        "requeue should record the failure diagnosis in step history"
+    );
+    assert!(
+        updated.step_failure_history[0].contains("build output is incomplete"),
+        "failure history should carry the diagnosis"
+    );
+    assert!(
+        updated.step_failure_history[0].contains("attempt 1"),
+        "failure history should number the attempt"
+    );
+
+    let retried_description = crate::agent::goal_planner::goal_step_task_description(
+        &updated,
+        &updated.steps[0].instructions,
+    );
+    assert!(
+        retried_description.contains("Retry context"),
+        "re-dispatched step description should include retry context"
+    );
+    assert!(
+        retried_description.contains("build output is incomplete"),
+        "retry context should carry the prior diagnosis"
+    );
+}
+
+#[tokio::test]
+async fn repeated_step_failures_warn_about_approach_switch() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let goal_run_id = "goal-repeated-failures";
+
+    let mut goal_run = sample_goal_run_with_kind(
+        goal_run_id,
+        GoalRunStepKind::Command,
+        "Build the Android artifact",
+    );
+    goal_run.steps[0].status = GoalRunStepStatus::InProgress;
+    goal_run.steps[0].task_id = Some("task-impl".to_string());
+    engine.goal_runs.lock().await.push_back(goal_run);
+
+    let implementation_task = sample_completed_goal_task(goal_run_id, "task-impl", "goal_run");
+    engine
+        .handle_goal_run_step_completion(goal_run_id, &implementation_task)
+        .await
+        .expect("implementation completion should queue verification");
+
+    for diagnosis in [
+        "build output is incomplete",
+        "build output is incomplete again",
+    ] {
+        let verifier_task = engine
+            .tasks
+            .lock()
+            .await
+            .iter()
+            .find(|task| task.source == "goal_verification")
+            .cloned()
+            .expect("verification task should exist");
+        let mut failed_verifier = verifier_task.clone();
+        failed_verifier.status = TaskStatus::Completed;
+        failed_verifier.result = Some(diagnosis.to_string());
+        write_goal_step_review_record(
+            &engine,
+            &failed_verifier,
+            GoalStepReviewVerdict::Fail,
+            diagnosis,
+        )
+        .await;
+        write_step_completion_marker(&engine, goal_run_id, 0).await;
+        engine
+            .handle_goal_run_step_completion(goal_run_id, &failed_verifier)
+            .await
+            .expect("fail verdict should requeue the step");
+        engine
+            .handle_goal_run_step_completion(goal_run_id, &implementation_task)
+            .await
+            .expect("requeued implementation should queue verification again");
+    }
+
+    let updated = engine
+        .get_goal_run(goal_run_id)
+        .await
+        .expect("goal run should still exist");
+    assert_eq!(
+        updated.step_failure_history.len(),
+        2,
+        "two failed attempts should be recorded"
+    );
+    assert!(
+        updated.step_failure_history[1].contains("attempt 2"),
+        "second failure should be numbered"
+    );
+
+    let retried_description = crate::agent::goal_planner::goal_step_task_description(
+        &updated,
+        &updated.steps[0].instructions,
+    );
+    assert!(
+        retried_description.contains("switch approach or escalate"),
+        "two diagnosed failures should trigger the approach-switch warning"
+    );
+}
+
+#[tokio::test]
+async fn third_step_failure_exhausts_retry_budget_and_requires_operator_decision() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let goal_run_id = "goal-retry-budget-exhausted";
+
+    let mut goal_run = sample_goal_run_with_kind(
+        goal_run_id,
+        GoalRunStepKind::Command,
+        "Build the Android artifact",
+    );
+    goal_run.steps[0].status = GoalRunStepStatus::InProgress;
+    goal_run.steps[0].task_id = Some("task-impl-budget".to_string());
+    goal_run.step_failure_history = vec![
+        "step-1#step-1 attempt 1: artifact missing".to_string(),
+        "step-1#step-1 attempt 2: artifact still missing".to_string(),
+    ];
+    engine.goal_runs.lock().await.push_back(goal_run);
+
+    let implementation_task =
+        sample_completed_goal_task(goal_run_id, "task-impl-budget", "goal_run");
+    engine
+        .handle_goal_run_step_completion(goal_run_id, &implementation_task)
+        .await
+        .expect("implementation completion should queue verification");
+    let verifier_task = engine
+        .tasks
+        .lock()
+        .await
+        .iter()
+        .find(|task| task.source == "goal_verification")
+        .cloned()
+        .expect("verification task should exist");
+    let mut failed_verifier = verifier_task.clone();
+    failed_verifier.status = TaskStatus::Completed;
+    failed_verifier.result = Some("artifact remains incomplete".to_string());
+    write_goal_step_review_record(
+        &engine,
+        &failed_verifier,
+        GoalStepReviewVerdict::Fail,
+        "artifact remains incomplete",
+    )
+    .await;
+    write_step_completion_marker(&engine, goal_run_id, 0).await;
+
+    engine
+        .handle_goal_run_step_completion(goal_run_id, &failed_verifier)
+        .await
+        .expect("third failure should escalate rather than requeue");
+
+    let updated = engine
+        .get_goal_run(goal_run_id)
+        .await
+        .expect("goal run should still exist");
+    assert_eq!(updated.status, GoalRunStatus::AwaitingApproval);
+    assert_eq!(updated.steps[0].status, GoalRunStepStatus::Failed);
+    assert_eq!(updated.step_failure_history.len(), 3);
+    assert!(updated.step_failure_history[2].contains("attempt 3"));
+    assert!(updated
+        .awaiting_approval_id
+        .as_deref()
+        .is_some_and(|id| id.starts_with("goal-step-retry-budget-")));
+    assert!(updated
+        .events
+        .iter()
+        .any(|event| event.phase == "retry_budget"));
+    let resume_decision = updated
+        .dossier
+        .as_ref()
+        .and_then(|dossier| dossier.latest_resume_decision.as_ref())
+        .expect("retry-budget exhaustion should record a resume decision");
+    assert_eq!(resume_decision.action, GoalResumeAction::Pause);
+    assert_eq!(resume_decision.reason_code, "step_retry_budget_exhausted");
+
+    let escalated_task = engine
+        .tasks
+        .lock()
+        .await
+        .iter()
+        .find(|task| task.id == failed_verifier.id)
+        .cloned()
+        .expect("verification task should remain available for operator review");
+    assert_eq!(escalated_task.status, TaskStatus::AwaitingApproval);
+    assert!(escalated_task
+        .blocked_reason
+        .as_deref()
+        .is_some_and(|reason| reason.contains("retry budget exhausted")));
 }
 
 #[tokio::test]
@@ -4163,6 +4394,12 @@ async fn complete_goal_run_queues_final_review_before_marking_completed() {
         .cloned()
         .expect("queued final review task should exist");
     assert_eq!(review_task.source, "goal_final_review");
+    assert!(review_task
+        .description
+        .contains("Do not query zorai goal/task status through the CLI or API"));
+    assert!(review_task
+        .description
+        .contains("do not leave the task result empty"));
 }
 
 #[tokio::test]
@@ -4425,6 +4662,176 @@ async fn final_review_completion_accepts_pass_verdict_from_thread_summary() {
         .await
         .expect("final review marker should be written from thread summary verdict");
     assert!(marker.starts_with("VERDICT: PASS"), "{marker}");
+}
+
+#[tokio::test]
+async fn final_review_completion_uses_assistant_thread_verdict_when_task_result_is_empty() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let recorded_bodies =
+        std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new()));
+    let mut config = AgentConfig::default();
+    config.provider = "openai".to_string();
+    config.base_url = crate::agent::tests::spawn_goal_recording_server(
+        recorded_bodies,
+        serde_json::json!({
+            "summary": "Goal finished after empty-result thread fallback.",
+            "stable_memory_update": null,
+            "generate_skill": false,
+            "skill_title": null,
+            "activate_skill": null
+        })
+        .to_string(),
+    )
+    .await;
+    config.model = "gpt-4o-mini".to_string();
+    config.api_key = "test-key".to_string();
+    config.api_transport = ApiTransport::ChatCompletions;
+    config.auto_retry = false;
+    config.max_retries = 0;
+    config.max_tool_loops = 1;
+    let engine = AgentEngine::new_test(manager, config, root.path()).await;
+    let goal_run_id = "goal-final-review-empty-result";
+    let root_thread_id = "thread-final-review-root";
+    let review_thread_id = "thread-final-review-child";
+    engine
+        .get_or_create_thread(Some(root_thread_id), "goal")
+        .await;
+    engine
+        .get_or_create_thread(Some(review_thread_id), "final review")
+        .await;
+
+    let mut goal_run = sample_goal_run_with_kind(
+        goal_run_id,
+        GoalRunStepKind::Command,
+        "Finish the only step",
+    );
+    goal_run.thread_id = Some(root_thread_id.to_string());
+    goal_run.steps[0].status = GoalRunStepStatus::Completed;
+    goal_run.steps[0].summary = Some("done".to_string());
+    goal_run.current_step_index = goal_run.steps.len();
+    goal_run.current_step_title = None;
+    goal_run.current_step_kind = None;
+    engine.goal_runs.lock().await.push_back(goal_run);
+    write_step_completion_marker(&engine, goal_run_id, 0).await;
+
+    engine
+        .complete_goal_run(goal_run_id)
+        .await
+        .expect("goal completion should queue a final review");
+    let review_task = engine
+        .tasks
+        .lock()
+        .await
+        .iter()
+        .find(|task| task.source == "goal_final_review")
+        .cloned()
+        .expect("final review task should exist");
+    let mut completed_review = review_task.clone();
+    completed_review.status = TaskStatus::Completed;
+    completed_review.thread_id = Some(review_thread_id.to_string());
+    completed_review.result = None;
+    completed_review.completed_at = Some(now_millis());
+    {
+        let mut tasks = engine.tasks.lock().await;
+        let stored = tasks
+            .iter_mut()
+            .find(|task| task.id == completed_review.id)
+            .expect("stored final review task should exist");
+        *stored = completed_review.clone();
+    }
+    engine.persist_tasks().await;
+
+    let engine_for_delayed_verdict = engine.clone();
+    let delayed_verdict = tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(75)).await;
+        {
+            let mut threads = engine_for_delayed_verdict.threads.write().await;
+            let thread = threads
+                .get_mut(review_thread_id)
+                .expect("final review child thread should exist");
+            let mut message = AgentMessage::user(
+                "VERDICT: PASS\nreviewer confirms all artifacts",
+                now_millis(),
+            );
+            message.role = MessageRole::Assistant;
+            thread.messages.push(message);
+        }
+        engine_for_delayed_verdict.persist_threads().await;
+    });
+
+    engine
+        .handle_goal_run_final_review_completion(goal_run_id, &completed_review)
+        .await
+        .expect("empty task result should wait for its own review thread verdict");
+    delayed_verdict
+        .await
+        .expect("delayed verdict persistence should complete");
+
+    let final_review_marker =
+        crate::agent::goal_dossier::goal_final_review_marker_path(&engine.data_dir, goal_run_id);
+    let marker = tokio::fs::read_to_string(final_review_marker)
+        .await
+        .expect("final review marker should be written");
+    assert!(marker.starts_with("VERDICT: PASS"), "{marker}");
+}
+
+#[tokio::test]
+async fn final_review_completion_without_any_verdict_fails_closed_once() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let goal_run_id = "goal-final-review-no-verdict";
+    let review_thread_id = "thread-final-review-no-verdict";
+    engine
+        .get_or_create_thread(Some(review_thread_id), "final review")
+        .await;
+
+    let mut goal_run = sample_goal_run_with_kind(
+        goal_run_id,
+        GoalRunStepKind::Command,
+        "Finish the only step",
+    );
+    goal_run.steps[0].status = GoalRunStepStatus::Completed;
+    goal_run.steps[0].summary = Some("done".to_string());
+    goal_run.current_step_index = goal_run.steps.len();
+    goal_run.current_step_title = None;
+    goal_run.current_step_kind = None;
+    engine.goal_runs.lock().await.push_back(goal_run);
+    write_step_completion_marker(&engine, goal_run_id, 0).await;
+
+    engine
+        .complete_goal_run(goal_run_id)
+        .await
+        .expect("goal completion should queue a final review");
+    let review_task = engine
+        .tasks
+        .lock()
+        .await
+        .iter()
+        .find(|task| task.source == "goal_final_review")
+        .cloned()
+        .expect("final review task should exist");
+    let mut completed_review = review_task.clone();
+    completed_review.status = TaskStatus::Completed;
+    completed_review.thread_id = Some(review_thread_id.to_string());
+    completed_review.result = None;
+
+    engine
+        .handle_goal_run_final_review_completion(goal_run_id, &completed_review)
+        .await
+        .expect("missing verdict should fail closed without requeueing review");
+
+    let updated = engine
+        .get_goal_run(goal_run_id)
+        .await
+        .expect("goal run should remain available");
+    assert_eq!(updated.status, GoalRunStatus::Failed);
+    assert!(updated
+        .last_error
+        .as_deref()
+        .is_some_and(|error| error.contains("without a parseable VERDICT")));
+    assert!(updated.active_task_id.is_none());
 }
 
 #[tokio::test]

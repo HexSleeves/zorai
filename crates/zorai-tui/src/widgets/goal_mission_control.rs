@@ -1,10 +1,16 @@
 #![allow(dead_code)]
 
-use crate::state::goal_mission_control::GoalMissionControlState;
+use crate::state::goal_mission_control::{
+    GoalMissionControlField, GoalMissionControlSection, GoalMissionControlState,
+};
 use crate::theme::ThemeTokens;
 use ratatui::prelude::*;
 use ratatui::text::{Line, Span};
 use ratatui::widgets::{Block, BorderType, Borders, Clear, Paragraph, Wrap};
+
+#[path = "goal_mission_control_layout.rs"]
+mod layout;
+use layout::*;
 
 const OPEN_ACTIVE_THREAD_LABEL: &str = "[Ctrl+O] Open active thread";
 const RETURN_TO_GOAL_LABEL: &str = "[B] Return to goal";
@@ -14,6 +20,10 @@ const RETURN_TO_WORKSPACE_LABEL: &str = "[B] Return to workspace";
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GoalMissionControlHitTarget {
     OpenActiveThread,
+    Section(GoalMissionControlSection),
+    SaveAsDefault,
+    AssignmentRow(usize),
+    RemoveAssignment(usize),
 }
 
 pub fn render_preflight(
@@ -29,25 +39,17 @@ pub fn render_preflight(
         .border_type(BorderType::Double)
         .border_style(theme.accent_primary);
 
-    let inner = block.inner(area);
     frame.render_widget(Clear, area);
     frame.render_widget(block, area);
 
-    let sections = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(5),
-            Constraint::Length(8),
-            Constraint::Min(7),
-            Constraint::Length(3),
-            Constraint::Length(2),
-        ])
-        .split(inner);
+    let Some(sections) = preflight_section_areas(area) else {
+        return;
+    };
 
     render_prompt_section(frame, sections[0], state, theme);
     render_main_section(frame, sections[1], state, theme);
     render_role_assignments_section(frame, sections[2], state, theme);
-    render_thread_router_section(frame, sections[3], can_open_active_thread, theme);
+    render_thread_router_section(frame, sections[3], state, can_open_active_thread, theme);
     render_footer(frame, sections[4], theme);
 }
 
@@ -55,23 +57,16 @@ pub fn hit_test(
     area: Rect,
     mouse: Position,
     can_open_active_thread: bool,
+    assignment_count: usize,
+    runtime_mode: bool,
 ) -> Option<GoalMissionControlHitTarget> {
-    if !can_open_active_thread {
-        return None;
-    }
-    if area.width == 0
-        || area.height == 0
-        || mouse.x < area.x
-        || mouse.x >= area.x.saturating_add(area.width)
-        || mouse.y < area.y
-        || mouse.y >= area.y.saturating_add(area.height)
-    {
-        return None;
-    }
-
-    let router_area = thread_router_area(area)?;
-    let button = open_active_thread_button_area(router_area)?;
-    point_in_rect(button, mouse).then_some(GoalMissionControlHitTarget::OpenActiveThread)
+    layout::hit_test(
+        area,
+        mouse,
+        can_open_active_thread,
+        assignment_count,
+        runtime_mode,
+    )
 }
 
 pub fn render_return_to_goal_banner(frame: &mut Frame, area: Rect, theme: &ThemeTokens) {
@@ -159,15 +154,16 @@ fn render_prompt_section(
     state: &GoalMissionControlState,
     theme: &ThemeTokens,
 ) {
+    let focused = state.focused_section == GoalMissionControlSection::Prompt;
     let block = Block::default()
         .title(" Prompt ")
         .borders(Borders::ALL)
-        .border_style(theme.fg_dim);
+        .border_style(section_border_style(theme, focused));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     let prompt_text = if state.prompt_text.trim().is_empty() {
-        "Type the goal in the bottom composer, then press Tab to return here.".to_string()
+        "Type the goal in the bottom composer. Tab/↓ moves to the next section.".to_string()
     } else {
         state.prompt_text.clone()
     };
@@ -188,10 +184,11 @@ fn render_main_section(
     state: &GoalMissionControlState,
     theme: &ThemeTokens,
 ) {
+    let focused = state.focused_section == GoalMissionControlSection::MainAgent;
     let block = Block::default()
         .title(" Main Agent ")
         .borders(Borders::ALL)
-        .border_style(theme.fg_dim);
+        .border_style(section_border_style(theme, focused));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -200,21 +197,34 @@ fn render_main_section(
         .map(str::to_string)
         .unwrap_or_else(|| "none".to_string());
     let save_default = if state.save_as_default_pending {
-        "pending"
+        "on"
     } else {
         "off"
     };
+    let field = |target| focused && state.selected_field == target;
     let content = vec![
         Line::from(Span::styled("Main model", theme.accent_secondary)),
         Line::from(vec![
             Span::styled("Provider: ", theme.fg_dim),
-            Span::styled(state.main_provider(), theme.fg_active),
+            field_value_span(
+                state.main_provider(),
+                field(GoalMissionControlField::Provider),
+                theme,
+            ),
         ]),
         Line::from(vec![
             Span::styled("Model: ", theme.fg_dim),
-            Span::styled(state.main_model(), theme.fg_active),
+            field_value_span(
+                state.main_model(),
+                field(GoalMissionControlField::Model),
+                theme,
+            ),
             Span::styled("  Reasoning: ", theme.fg_dim),
-            Span::styled(reasoning, theme.fg_active),
+            field_value_span(
+                &reasoning,
+                field(GoalMissionControlField::ReasoningEffort),
+                theme,
+            ),
         ]),
         Line::from(vec![
             Span::styled("Preset source: ", theme.fg_dim),
@@ -222,7 +232,11 @@ fn render_main_section(
         ]),
         Line::from(vec![
             Span::styled("Save as default: ", theme.fg_dim),
-            Span::styled(save_default, theme.fg_active),
+            field_value_span(
+                save_default,
+                field(GoalMissionControlField::SaveAsDefault),
+                theme,
+            ),
         ]),
     ];
     frame.render_widget(Paragraph::new(content).wrap(Wrap { trim: false }), inner);
@@ -234,10 +248,11 @@ fn render_role_assignments_section(
     state: &GoalMissionControlState,
     theme: &ThemeTokens,
 ) {
+    let focused = state.focused_section == GoalMissionControlSection::RoleAssignments;
     let block = Block::default()
         .title(" Role Assignments ")
         .borders(Borders::ALL)
-        .border_style(theme.fg_dim);
+        .border_style(section_border_style(theme, focused));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -247,7 +262,7 @@ fn render_role_assignments_section(
         theme.accent_secondary,
     )));
     lines.push(Line::from(Span::styled(
-        "Use ↑↓ to select, A add, P provider, M model, E effort, R role, S save default.",
+        "↑↓ agents, ←→ fields, Enter edit. A add, X remove, P/M/E/R shortcuts, S save default.",
         theme.fg_dim,
     )));
 
@@ -286,17 +301,40 @@ fn render_role_assignments_section(
                 .filter(|live| *live != assignment)
                 .map(|live| format!("  live {} / {}", live.provider, live.model))
                 .unwrap_or_default();
-            lines.push(Line::from(vec![
-                Span::styled(selection_marker, theme.accent_secondary),
-                Span::styled(format!("{}: ", assignment.role_id), theme.fg_active),
-                Span::styled(
-                    format!(
-                        "{} / {} / {} ({})",
-                        assignment.provider, assignment.model, reasoning, inherit_label
-                    ),
-                    theme.fg_dim,
+            let row_selected = focused && state.selected_runtime_assignment_index == index;
+            let field = |target| row_selected && state.selected_field == target;
+            let can_remove = !state.runtime_mode() && display_assignments.len() > 1;
+            let mut row_spans = vec![Span::styled(selection_marker, theme.accent_secondary)];
+            if can_remove {
+                row_spans.push(Span::styled("[x] ", theme.fg_dim));
+            }
+            row_spans.extend([
+                field_value_span(
+                    &format!("{}:", assignment.role_id),
+                    field(GoalMissionControlField::Role),
+                    theme,
                 ),
-            ]));
+                Span::raw(" "),
+                field_value_span(
+                    &assignment.provider,
+                    field(GoalMissionControlField::Provider),
+                    theme,
+                ),
+                Span::styled(" / ", theme.fg_dim),
+                field_value_span(
+                    &assignment.model,
+                    field(GoalMissionControlField::Model),
+                    theme,
+                ),
+                Span::styled(" / ", theme.fg_dim),
+                field_value_span(
+                    reasoning,
+                    field(GoalMissionControlField::ReasoningEffort),
+                    theme,
+                ),
+                Span::styled(format!(" ({inherit_label})"), theme.fg_dim),
+            ]);
+            lines.push(Line::from(row_spans));
             lines.push(Line::from(vec![
                 Span::styled("   ", theme.fg_dim),
                 Span::styled(status_label, theme.accent_secondary),
@@ -320,13 +358,15 @@ fn render_role_assignments_section(
 fn render_thread_router_section(
     frame: &mut Frame,
     area: Rect,
+    state: &GoalMissionControlState,
     can_open_active_thread: bool,
     theme: &ThemeTokens,
 ) {
+    let focused = state.focused_section == GoalMissionControlSection::ThreadRouter;
     let block = Block::default()
         .title(" Thread Router ")
         .borders(Borders::ALL)
-        .border_style(theme.fg_dim);
+        .border_style(section_border_style(theme, focused));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -360,63 +400,21 @@ fn render_thread_router_section(
 fn render_footer(frame: &mut Frame, area: Rect, theme: &ThemeTokens) {
     let footer = Line::from(vec![
         Span::styled("Enter", theme.fg_active),
-        Span::styled(" launch  ", theme.fg_dim),
-        Span::styled("A", theme.fg_active),
-        Span::styled(" add agent  ", theme.fg_dim),
+        Span::styled(" launch/edit  ", theme.fg_dim),
         Span::styled("Tab", theme.fg_active),
-        Span::styled(" prompt/roster  ", theme.fg_dim),
+        Span::styled(" sections  ", theme.fg_dim),
+        Span::styled("↑↓←→", theme.fg_active),
+        Span::styled(" navigate  ", theme.fg_dim),
+        Span::styled("A", theme.fg_active),
+        Span::styled(" add  ", theme.fg_dim),
+        Span::styled("X", theme.fg_active),
+        Span::styled(" remove  ", theme.fg_dim),
         Span::styled("Ctrl+O", theme.fg_active),
         Span::styled(" open thread  ", theme.fg_dim),
         Span::styled("Esc", theme.fg_active),
         Span::styled(" cancel", theme.fg_dim),
     ]);
     frame.render_widget(Paragraph::new(footer), area);
-}
-
-fn thread_router_area(area: Rect) -> Option<Rect> {
-    if area.width == 0 || area.height == 0 {
-        return None;
-    }
-    let inner = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Double)
-        .inner(area);
-    let sections = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(5),
-            Constraint::Length(8),
-            Constraint::Min(7),
-            Constraint::Length(3),
-            Constraint::Length(2),
-        ])
-        .split(inner);
-    sections.get(3).copied()
-}
-
-fn open_active_thread_button_area(area: Rect) -> Option<Rect> {
-    let inner = Block::default().borders(Borders::ALL).inner(area);
-    button_area(inner, OPEN_ACTIVE_THREAD_LABEL)
-}
-
-fn button_area(inner: Rect, label: &str) -> Option<Rect> {
-    if inner.width == 0 || inner.height == 0 {
-        return None;
-    }
-
-    Some(Rect::new(
-        inner.x,
-        inner.y,
-        label.chars().count().min(inner.width as usize) as u16,
-        1,
-    ))
-}
-
-fn point_in_rect(rect: Rect, point: Position) -> bool {
-    point.x >= rect.x
-        && point.x < rect.x.saturating_add(rect.width)
-        && point.y >= rect.y
-        && point.y < rect.y.saturating_add(rect.height)
 }
 
 #[cfg(test)]

@@ -22,6 +22,8 @@ mod selecting_custom_provider_focuses_model_field_for_inline_entry;
 mod selecting_image_generation_model_updates_image_model_to_accepting_audio;
 #[path = "modal_handlers_parts/settings_modal_mouse_wheel_scrolls_overflowing_content_to_help_viewer.rs"]
 mod settings_modal_mouse_wheel_scrolls_overflowing_content_to_help_viewer;
+#[path = "modal_handlers_parts/slash_context_updates_active_thread_owner_window.rs"]
+mod slash_context_updates_active_thread_owner_window;
 #[path = "modal_handlers_parts/slash_effort_picker_starts_on_active_thread_owner_effort_to_queued.rs"]
 mod slash_effort_picker_starts_on_active_thread_owner_effort_to_queued;
 #[path = "modal_handlers_parts/statistics_modal_keyboard_cycles_tabs_and_filters_to_ctrl_a_toggles.rs"]

@@ -179,6 +179,7 @@ impl TuiModel {
                 | "image"
                 | "tools"
                 | "effort"
+                | "context"
                 | "thread"
                 | "new"
                 | "goal"
@@ -261,6 +262,9 @@ impl TuiModel {
                 self.modal
                     .reduce(modal::ModalAction::Push(modal::ModalKind::EffortPicker));
                 self.sync_effort_picker_cursor_to_current();
+            }
+            "context" => {
+                self.open_active_thread_context_window_editor();
             }
             "thread" => {
                 self.modal

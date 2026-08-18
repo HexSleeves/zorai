@@ -1325,9 +1325,41 @@ impl AgentEngine {
                             .map(str::trim)
                             .filter(|value| !value.is_empty())
                             .unwrap_or("(the subagent did not record a result)");
+                        let ledger_checkpoint = if let Some(goal_run_id) =
+                            child_task.goal_run_id.as_deref()
+                        {
+                            let goal_snapshot = {
+                                let goal_runs = self.goal_runs.lock().await;
+                                goal_runs.iter().find(|run| run.id == goal_run_id).cloned()
+                            };
+                            let goal_snapshot = match goal_snapshot {
+                                Some(run) => Some(run),
+                                None => self.get_goal_run(goal_run_id).await,
+                            };
+                            match goal_snapshot {
+                                Some(goal_run) => Some(
+                                    crate::agent::goal_dossier::goal_ledger_subagent_integration_checkpoint_for_run(
+                                        &self.data_dir,
+                                        &goal_run,
+                                    )
+                                    .await,
+                                ),
+                                None => crate::agent::goal_dossier::goal_ledger_subagent_integration_checkpoint(
+                                    &self.data_dir,
+                                    goal_run_id,
+                                )
+                                .await,
+                            }
+                        } else {
+                            None
+                        };
+                        let integration_checkpoint = ledger_checkpoint
+                            .as_deref()
+                            .map(|checkpoint| format!("\n\n{checkpoint}"))
+                            .unwrap_or_default();
                         Some((
                             format!(
-                                "Spawned thread `{child_thread_id}` (subagent task `{child_task_id}`) finished and reported back.\n\nResult:\n{result_text}\n\nReport this outcome back to the operator. Use `list_subagents` if you need the full child output."
+                                "Spawned thread `{child_thread_id}` (subagent task `{child_task_id}`) finished and reported back.\n\nResult:\n{result_text}{integration_checkpoint}\n\nIntegrate this result against the ledger checkpoint, then report the outcome back to the operator. Use `list_subagents` if you need the full child output."
                             ),
                             "child-thread-completed",
                             format!("Spawned thread {child_thread_id} reported back."),
@@ -1729,6 +1761,114 @@ mod tests {
             "persisted active task should prevent premature goal completion"
         );
         assert!(updated.completed_at.is_none());
+    }
+
+    #[tokio::test]
+    async fn completed_goal_subagent_injects_ledger_checkpoint_into_parent_thread() {
+        let root = tempdir().expect("tempdir");
+        let manager = SessionManager::new_test(root.path()).await;
+        let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+        let parent_thread_id = "thread-goal-subagent-parent";
+
+        engine.threads.write().await.insert(
+            parent_thread_id.to_string(),
+            AgentThread {
+                id: parent_thread_id.to_string(),
+                agent_name: Some("Svarog".to_string()),
+                title: "Goal parent".to_string(),
+                messages: vec![AgentMessage::user("Integrate child results", 1)],
+                pinned: false,
+                upstream_thread_id: None,
+                upstream_transport: None,
+                upstream_provider: None,
+                upstream_model: None,
+                upstream_assistant_id: None,
+                total_input_tokens: 0,
+                total_output_tokens: 0,
+                created_at: 1,
+                updated_at: 1,
+            },
+        );
+
+        let goal = engine
+            .start_goal_run(
+                "Integrate verified child work".to_string(),
+                Some("Goal child integration".to_string()),
+                Some(parent_thread_id.to_string()),
+                None,
+                None,
+                None,
+                Some("agent".to_string()),
+                None,
+            )
+            .await;
+        let parent = engine
+            .enqueue_task(
+                "Parent task".to_string(),
+                "Wait for child".to_string(),
+                "normal",
+                None,
+                None,
+                Vec::new(),
+                None,
+                "goal_run",
+                Some(goal.id.clone()),
+                None,
+                Some(parent_thread_id.to_string()),
+                Some("daemon".to_string()),
+            )
+            .await;
+        let mut child = engine
+            .enqueue_task(
+                "Child task".to_string(),
+                "Return verified work".to_string(),
+                "normal",
+                None,
+                None,
+                Vec::new(),
+                None,
+                "subagent",
+                Some(goal.id.clone()),
+                Some(parent.id.clone()),
+                Some("thread-goal-subagent-child".to_string()),
+                Some("daemon".to_string()),
+            )
+            .await;
+        child.status = TaskStatus::Completed;
+        child.result = Some("child verification artifact".to_string());
+        child.parent_thread_id = Some(parent_thread_id.to_string());
+
+        engine
+            .record_subagent_outcome_on_parent(
+                &child,
+                TaskLogLevel::Info,
+                "subagent completed",
+                None,
+            )
+            .await;
+
+        let threads = engine.threads.read().await;
+        let parent_thread = threads
+            .get(parent_thread_id)
+            .expect("parent thread should exist");
+        let message = parent_thread
+            .messages
+            .iter()
+            .find(|message| {
+                message.role == MessageRole::System
+                    && message.content.contains("child verification artifact")
+            })
+            .expect("completed child result should be appended to parent");
+        assert!(message
+            .content
+            .contains("## Goal Ledger Integration Checkpoint"));
+        assert!(message
+            .content
+            .contains("Already verified (do not re-derive):"));
+        assert!(message.content.contains("Next:"));
+        assert!(message
+            .content
+            .contains("Integrate this result against the ledger checkpoint"));
     }
 
     #[tokio::test]

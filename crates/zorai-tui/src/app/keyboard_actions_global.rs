@@ -254,6 +254,9 @@ impl TuiModel {
             }
             KeyCode::Up if self.focus == FocusArea::Input => {
                 {
+                    if self.handle_goal_composer_input_vertical(-1) {
+                        return Some(false);
+                    }
                     if self.input.can_browse_sent_history() {
                         self.input.reduce(input::InputAction::HistoryPrevious);
                     } else {
@@ -266,6 +269,9 @@ impl TuiModel {
             }
             KeyCode::Down if self.focus == FocusArea::Input => {
                 {
+                    if self.handle_goal_composer_input_vertical(1) {
+                        return Some(false);
+                    }
                     if self.input.can_browse_sent_history() {
                         self.input.reduce(input::InputAction::HistoryNext);
                     } else {
