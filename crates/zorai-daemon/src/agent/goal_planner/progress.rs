@@ -1,6 +1,10 @@
 use super::*;
 
 const GOAL_COMPLETION_MARKER_REMINDER_LIMIT: u32 = 3;
+/// Maximum diagnosed completion/review failures allowed for one goal step.
+/// The third failure is retained in history, then execution pauses for an
+/// operator decision instead of creating an unbounded requeue loop.
+const GOAL_STEP_RETRY_BUDGET: usize = 3;
 
 #[derive(Clone)]
 struct GoalCompletionMarkerContext {
@@ -308,6 +312,30 @@ impl AgentEngine {
         reason: &str,
         task: Option<&AgentTask>,
     ) -> Result<()> {
+        let next_attempt = {
+            let goal_runs = self.goal_runs.lock().await;
+            let Some(goal_run) = goal_runs.iter().find(|item| item.id == goal_run_id) else {
+                anyhow::bail!("goal run missing while checking step retry budget");
+            };
+            goal_run
+                .steps
+                .get(goal_run.current_step_index)
+                .map(|step| {
+                    goal_run
+                        .step_failure_history
+                        .iter()
+                        .filter(|entry| entry.starts_with(step.id.as_str()))
+                        .count()
+                        .saturating_add(1)
+                })
+                .unwrap_or(1)
+        };
+        if next_attempt >= GOAL_STEP_RETRY_BUDGET {
+            return self
+                .gate_goal_step_retry_budget_exhausted(goal_run_id, reason, task, next_attempt)
+                .await;
+        }
+
         let updated = {
             let mut goal_runs = self.goal_runs.lock().await;
             let Some(goal_run) = goal_runs.iter_mut().find(|item| item.id == goal_run_id) else {
@@ -387,6 +415,127 @@ impl AgentEngine {
             )
             .await;
         }
+        Ok(())
+    }
+
+    async fn gate_goal_step_retry_budget_exhausted(
+        &self,
+        goal_run_id: &str,
+        reason: &str,
+        task: Option<&AgentTask>,
+        attempt: usize,
+    ) -> Result<()> {
+        let approval_id = format!("goal-step-retry-budget-{}", Uuid::new_v4());
+        let detail = format!(
+            "Goal step retry budget exhausted after {attempt} diagnosed failures (limit {GOAL_STEP_RETRY_BUDGET}). Latest diagnosis: {reason}"
+        );
+
+        let mut updated_task = None;
+        let mut updated_live_task = false;
+        if let Some(task) = task {
+            let (task, was_live) = self
+                .update_goal_completion_marker_task(
+                    &task.id,
+                    "goal step task disappeared before retry-budget escalation",
+                    |current| {
+                        current.status = TaskStatus::AwaitingApproval;
+                        current.completed_at = None;
+                        current.next_retry_at = None;
+                        current.awaiting_approval_id = Some(approval_id.clone());
+                        current.blocked_reason = Some(detail.clone());
+                        current.error = Some(reason.to_string());
+                        current.last_error = Some(reason.to_string());
+                        current.logs.push(make_task_log_entry(
+                            current.retry_count,
+                            TaskLogLevel::Error,
+                            "goal_step_retry_budget",
+                            "goal step retry budget exhausted; operator decision required",
+                            Some(detail.clone()),
+                        ));
+                    },
+                )
+                .await?;
+            updated_task = Some(task);
+            updated_live_task = was_live;
+        }
+
+        let updated_goal = {
+            let mut goal_runs = self.goal_runs.lock().await;
+            let Some(goal_run) = goal_runs.iter_mut().find(|item| item.id == goal_run_id) else {
+                anyhow::bail!("goal run missing while applying step retry-budget escalation");
+            };
+            let mut exhausted_step_id = None;
+            if let Some(step) = goal_run.steps.get_mut(goal_run.current_step_index) {
+                goal_run.step_failure_history.push(format!(
+                    "{}#{} attempt {}: {}",
+                    step.id, step.title, attempt, reason
+                ));
+                step.status = GoalRunStepStatus::Failed;
+                step.error = Some(reason.to_string());
+                step.completed_at = Some(now_millis());
+                exhausted_step_id = Some(step.id.clone());
+            }
+            goal_run.status = GoalRunStatus::AwaitingApproval;
+            goal_run.updated_at = now_millis();
+            goal_run.last_error = Some(detail.clone());
+            goal_run.failure_cause = Some(reason.to_string());
+            goal_run.awaiting_approval_id = Some(approval_id.clone());
+            goal_run.active_task_id = updated_task.as_ref().map(|task| task.id.clone());
+            goal_run.current_step_owner_profile = None;
+            goal_run.events.push(make_goal_run_event(
+                "retry_budget",
+                "goal step retry budget exhausted; operator decision required",
+                Some(detail.clone()),
+            ));
+            if let Some(step_id) = exhausted_step_id {
+                super::goal_dossier::set_goal_unit_verification_state(
+                    goal_run,
+                    &step_id,
+                    GoalProjectionState::Failed,
+                    detail.clone(),
+                    vec!["automatic retry budget exhausted".to_string()],
+                    Some("goal step retry budget"),
+                    Some(reason.to_string()),
+                );
+            }
+            super::goal_dossier::set_goal_resume_decision(
+                goal_run,
+                GoalResumeAction::Pause,
+                "step_retry_budget_exhausted",
+                Some(detail.clone()),
+                vec![format!("attempt={attempt}"), format!("limit={GOAL_STEP_RETRY_BUDGET}")],
+            );
+            goal_run.clone()
+        };
+
+        if updated_live_task {
+            self.persist_tasks().await;
+        }
+        self.persist_goal_runs().await;
+        if let Some(task) = updated_task.as_ref() {
+            self.emit_task_update(task, Some("Goal step retry budget exhausted".into()));
+        }
+        self.emit_goal_run_update(
+            &updated_goal,
+            Some("Goal step retry budget exhausted; operator decision required".into()),
+        );
+        self.record_provenance_event(
+            "step_retry_budget_exhausted",
+            "goal step retry budget exhausted",
+            serde_json::json!({
+                "goal_run_id": updated_goal.id,
+                "task_id": updated_task.as_ref().map(|task| task.id.clone()),
+                "attempt": attempt,
+                "limit": GOAL_STEP_RETRY_BUDGET,
+                "reason": reason,
+            }),
+            Some(updated_goal.id.as_str()),
+            updated_task.as_ref().map(|task| task.id.as_str()),
+            updated_goal.thread_id.as_deref(),
+            None,
+            None,
+        )
+        .await;
         Ok(())
     }
 

@@ -2561,6 +2561,96 @@ async fn repeated_step_failures_warn_about_approach_switch() {
 }
 
 #[tokio::test]
+async fn third_step_failure_exhausts_retry_budget_and_requires_operator_decision() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let goal_run_id = "goal-retry-budget-exhausted";
+
+    let mut goal_run = sample_goal_run_with_kind(
+        goal_run_id,
+        GoalRunStepKind::Command,
+        "Build the Android artifact",
+    );
+    goal_run.steps[0].status = GoalRunStepStatus::InProgress;
+    goal_run.steps[0].task_id = Some("task-impl-budget".to_string());
+    goal_run.step_failure_history = vec![
+        "step-1#step-1 attempt 1: artifact missing".to_string(),
+        "step-1#step-1 attempt 2: artifact still missing".to_string(),
+    ];
+    engine.goal_runs.lock().await.push_back(goal_run);
+
+    let implementation_task =
+        sample_completed_goal_task(goal_run_id, "task-impl-budget", "goal_run");
+    engine
+        .handle_goal_run_step_completion(goal_run_id, &implementation_task)
+        .await
+        .expect("implementation completion should queue verification");
+    let verifier_task = engine
+        .tasks
+        .lock()
+        .await
+        .iter()
+        .find(|task| task.source == "goal_verification")
+        .cloned()
+        .expect("verification task should exist");
+    let mut failed_verifier = verifier_task.clone();
+    failed_verifier.status = TaskStatus::Completed;
+    failed_verifier.result = Some("artifact remains incomplete".to_string());
+    write_goal_step_review_record(
+        &engine,
+        &failed_verifier,
+        GoalStepReviewVerdict::Fail,
+        "artifact remains incomplete",
+    )
+    .await;
+    write_step_completion_marker(&engine, goal_run_id, 0).await;
+
+    engine
+        .handle_goal_run_step_completion(goal_run_id, &failed_verifier)
+        .await
+        .expect("third failure should escalate rather than requeue");
+
+    let updated = engine
+        .get_goal_run(goal_run_id)
+        .await
+        .expect("goal run should still exist");
+    assert_eq!(updated.status, GoalRunStatus::AwaitingApproval);
+    assert_eq!(updated.steps[0].status, GoalRunStepStatus::Failed);
+    assert_eq!(updated.step_failure_history.len(), 3);
+    assert!(updated.step_failure_history[2].contains("attempt 3"));
+    assert!(updated
+        .awaiting_approval_id
+        .as_deref()
+        .is_some_and(|id| id.starts_with("goal-step-retry-budget-")));
+    assert!(updated
+        .events
+        .iter()
+        .any(|event| event.phase == "retry_budget"));
+    let resume_decision = updated
+        .dossier
+        .as_ref()
+        .and_then(|dossier| dossier.latest_resume_decision.as_ref())
+        .expect("retry-budget exhaustion should record a resume decision");
+    assert_eq!(resume_decision.action, GoalResumeAction::Pause);
+    assert_eq!(resume_decision.reason_code, "step_retry_budget_exhausted");
+
+    let escalated_task = engine
+        .tasks
+        .lock()
+        .await
+        .iter()
+        .find(|task| task.id == failed_verifier.id)
+        .cloned()
+        .expect("verification task should remain available for operator review");
+    assert_eq!(escalated_task.status, TaskStatus::AwaitingApproval);
+    assert!(escalated_task
+        .blocked_reason
+        .as_deref()
+        .is_some_and(|reason| reason.contains("retry budget exhausted")));
+}
+
+#[tokio::test]
 async fn verifier_without_structured_verdict_requeues_even_if_text_says_pass() {
     let root = tempdir().expect("temp dir");
     let manager = SessionManager::new_test(root.path()).await;

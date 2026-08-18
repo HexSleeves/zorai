@@ -66,19 +66,26 @@ At the two cheapest seams:
 
 Full tool-call-boundary checkpointing is not recommended initially — token cost per seam is high and the existing compaction artifact path already covers the worst case (context loss).
 
-### P5 — Tier flag on tasks/goal steps
-Add `tier: fast|full|loop` to `AgentTask`/`GoalRunStep` (serde default `full`). Loop tier gates ledger maintenance and checkpoint injection so simple tasks pay nothing. Set via planner LLM output schema (goal_parsing) with conservative default.
+### P5 — Goal-step retry budget enforcement
+Goal-step completion/review failures are distinct from dispatcher execution failures: each failed review previously set the step back to `Pending` with no bound. Enforce a daemon-owned per-step budget of three diagnosed failures:
+- Attempts 1–2 remain automatic requeues and inherit prior diagnoses (P3).
+- Attempt 3 is appended to `step_failure_history`, marks the step failed, and transitions the goal and review task to `AwaitingApproval`.
+- Persist `GoalResumeDecision { action: Pause, reason_code: "step_retry_budget_exhausted" }`, a `retry_budget` goal event, and provenance record.
+- Operator controls (`retry_step`/`rerun_from_step`) remain the explicit escape hatch after diagnosis or scope changes.
+
+This complements existing `AgentTask.max_retries` enforcement in `dispatcher.rs`; it does not duplicate transport/execution retry handling. No schema migration is needed because the attempt count is derived from the append-only failure history. A persisted task tier remains a possible optimization if ledger token overhead becomes measurable, but is not required for bounded behavior.
 
 ## Implementation status
 
 - P1 **implemented** and committed (d3fd1e70): `GoalVerdictEvidence` in `types/task_types.rs`, parse/validate helpers in `goal_planner.rs`, pass-verdict enforcement in `tool_executor/tasks.rs`, schema args in `tool_executor/catalog/part_d.rs`, reviewer prompt + step-summary/provenance evidence in `goal_planner/progress.rs`. `cargo check` passes; verdict tests pass; `goal_planner`/`part6` mass failures are pre-existing test-env SQLite init panics (confirmed on stashed baseline).
 - P2 **implemented** and committed (c597c72c): `ledger.md`/`ledger.json` (Goal/Core/Verified/Open/Next) written into `goal_inventory_specs_dir` on every projection refresh (`goal_dossier/projection.rs`); ledger injected into all four step task enqueue descriptions via `goal_step_task_description`, into verification task descriptions, and into planner replan prompts for non-terminal runs. `cargo check` + goal_dossier/verdict tests pass.
 - P3 **implemented** and committed (e96a0e8b): `GoalRun.step_failure_history` records `step_id#title attempt N: diagnosis` on every requeue; `goal_step_task_description` prepends a Retry context block with prior diagnoses, escalating to a switch-approach warning at 2+ attempts; history surfaces in the ledger Open section. New tests: `verifier_fail_verdict_requeues_current_step` extended with history/retry-context assertions, `repeated_step_failures_warn_about_approach_switch` added. All targeted suites pass.
-- P4 **implemented**: active-step task dispatch reads daemon-owned `inventory/specs/ledger.json` with an in-memory projection fallback, injects the source path and current-step pointer, and now covers successful specialist/divergent/debate routes as well as normal goal tasks. Quiet-goal recovery injects a compact Goal/Core/Next resume checkpoint. Completed subagent returns inject current-step/Verified/Next integration context so the parent does not re-derive established checks. Focused projection and quiet-recovery tests cover the new seams.
+- P4 **implemented** and committed (0d87cc01): active-step task dispatch reads daemon-owned `inventory/specs/ledger.json` with an in-memory projection fallback, injects the source path and current-step pointer, and now covers successful specialist/divergent/debate routes as well as normal goal tasks. Quiet-goal recovery injects a compact Goal/Core/Next resume checkpoint. Completed subagent returns inject current-step/Verified/Next integration context so the parent does not re-derive established checks. Focused projection, seam-renderer, and subagent-return tests pass. The pre-existing `supervise_quiet_goal_runs_resumes_root_thread_after_full_idle_window` integration test fails identically on committed baseline in this machine's test environment.
+- P5 **implemented**: `requeue_goal_step_to_pending` derives the current step's diagnosed attempt count from `step_failure_history`; attempts 1–2 requeue, while attempt 3 invokes a hard exhaustion gate. The gate preserves the third diagnosis, marks the step failed, puts the goal/review task in `AwaitingApproval`, writes an approval ID, records `step_retry_budget_exhausted` resume/provenance state, and prevents an unbounded automatic review loop. The focused exhaustion test and P3 two-attempt regression pass.
 
 ## Ordering recommendation
 
-P1 first (small, hardens the core anti-false-completion gate), then P2 (ledger persistence — multiplies resume reliability), P3 (retry hygiene), P4 (seam checkpoint injection), and P5 last (tier gating). P1–P4 are implemented; P5 remains.
+P1 first (small, hardens the core anti-false-completion gate), then P2 (ledger persistence — multiplies resume reliability), P3 (retry hygiene), P4 (seam checkpoint injection), and P5 (bounded automatic retries). P1–P5 are implemented.
 
 ## Non-goals
 
