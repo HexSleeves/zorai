@@ -225,6 +225,19 @@ impl TuiModel {
             return self.handle_workspace_history_modal_key(code, modifiers);
         }
 
+        if kind == modal::ModalKind::ContextWindowEditor {
+            match code {
+                KeyCode::Enter => self.commit_active_thread_context_window_editor(),
+                KeyCode::Esc => self.cancel_active_thread_context_window_editor(),
+                KeyCode::Backspace => self.settings.reduce(SettingsAction::Backspace),
+                KeyCode::Char(c) if c.is_ascii_digit() || matches!(c, '_' | ',' | ' ') => {
+                    self.settings.reduce(SettingsAction::InsertChar(c));
+                }
+                _ => {}
+            }
+            return false;
+        }
+
         if kind == modal::ModalKind::Settings {
             if matches!(
                 code,

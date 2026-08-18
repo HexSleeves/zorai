@@ -1859,10 +1859,16 @@ mod tests {
                     && message.content.contains("child verification artifact")
             })
             .expect("completed child result should be appended to parent");
-        assert!(message.content.contains("## Goal Ledger Integration Checkpoint"));
-        assert!(message.content.contains("Already verified (do not re-derive):"));
+        assert!(message
+            .content
+            .contains("## Goal Ledger Integration Checkpoint"));
+        assert!(message
+            .content
+            .contains("Already verified (do not re-derive):"));
         assert!(message.content.contains("Next:"));
-        assert!(message.content.contains("Integrate this result against the ledger checkpoint"));
+        assert!(message
+            .content
+            .contains("Integrate this result against the ledger checkpoint"));
     }
 
     #[tokio::test]

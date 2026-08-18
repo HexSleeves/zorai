@@ -69,32 +69,33 @@ async fn goal_projection_writes_files_on_create_and_refresh() {
     )
     .expect("loop ledger json should parse");
     assert!(
-        ledger_json["core"].as_array().is_some_and(|items| !items.is_empty()),
+        ledger_json["core"]
+            .as_array()
+            .is_some_and(|items| !items.is_empty()),
         "ledger Core anchors should be non-empty"
     );
     assert!(
-        ledger_json["next"].as_str().is_some_and(|next| !next.trim().is_empty()),
+        ledger_json["next"]
+            .as_str()
+            .is_some_and(|next| !next.trim().is_empty()),
         "ledger Next should be a non-empty action"
     );
 
-    let active_step_checkpoint =
-        crate::agent::goal_dossier::goal_ledger_active_step_prompt_block(
-            &engine.data_dir,
-            &goal_run,
-        )
-        .await;
+    let active_step_checkpoint = crate::agent::goal_dossier::goal_ledger_active_step_prompt_block(
+        &engine.data_dir,
+        &goal_run,
+    )
+    .await;
     assert!(active_step_checkpoint.contains("source:"));
     assert!(active_step_checkpoint.contains("ledger.json"));
     assert!(active_step_checkpoint.contains("current-step pointer:"));
     assert!(active_step_checkpoint.contains("## Core"));
     assert!(active_step_checkpoint.contains("## Next"));
 
-    let resume_checkpoint = crate::agent::goal_dossier::goal_ledger_resume_checkpoint(
-        &engine.data_dir,
-        &goal_run.id,
-    )
-    .await
-    .expect("persisted ledger should render a resume checkpoint");
+    let resume_checkpoint =
+        crate::agent::goal_dossier::goal_ledger_resume_checkpoint(&engine.data_dir, &goal_run.id)
+            .await
+            .expect("persisted ledger should render a resume checkpoint");
     assert!(resume_checkpoint.contains("## Resume Ledger Checkpoint"));
     assert!(resume_checkpoint.contains("Core anchors:"));
     assert!(resume_checkpoint.contains("Next:"));

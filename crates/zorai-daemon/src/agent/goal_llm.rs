@@ -124,7 +124,9 @@ impl AgentEngine {
                 | crate::agent::types::GoalRunStatus::AwaitingApproval
         ) {
             prompt.push_str("\n\nCurrent ledger state (Core anchors are broadcast-once; reuse them verbatim, update Open/Next):\n");
-            prompt.push_str(&crate::agent::goal_dossier::goal_ledger_prompt_block(&goal_run));
+            prompt.push_str(&crate::agent::goal_dossier::goal_ledger_prompt_block(
+                &goal_run,
+            ));
         }
 
         match adaptation_mode {

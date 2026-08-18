@@ -135,9 +135,7 @@ fn format_goal_verdict_evidence(record: &GoalStepReviewRecord) -> Option<String>
     Some(parts.join(" | "))
 }
 
-fn review_record_for_task(
-    record: &Option<GoalStepReviewRecord>,
-) -> Option<&GoalStepReviewRecord> {
+fn review_record_for_task(record: &Option<GoalStepReviewRecord>) -> Option<&GoalStepReviewRecord> {
     record.as_ref()
 }
 
@@ -503,7 +501,10 @@ impl AgentEngine {
                 GoalResumeAction::Pause,
                 "step_retry_budget_exhausted",
                 Some(detail.clone()),
-                vec![format!("attempt={attempt}"), format!("limit={GOAL_STEP_RETRY_BUDGET}")],
+                vec![
+                    format!("attempt={attempt}"),
+                    format!("limit={GOAL_STEP_RETRY_BUDGET}"),
+                ],
             );
             goal_run.clone()
         };
@@ -1197,8 +1198,13 @@ impl AgentEngine {
                 }
             }
         }
-        if let Some(evidence_line) = review_record.as_ref().and_then(format_goal_verdict_evidence) {
-            let base_summary = thread_summary.clone().unwrap_or_else(|| "step completed".to_string());
+        if let Some(evidence_line) = review_record
+            .as_ref()
+            .and_then(format_goal_verdict_evidence)
+        {
+            let base_summary = thread_summary
+                .clone()
+                .unwrap_or_else(|| "step completed".to_string());
             thread_summary = Some(format!("{base_summary}\nEvidence — {evidence_line}"));
         }
         let updated = {

@@ -1,8 +1,9 @@
 use super::*;
-use crate::state::settings::{SettingsAction, SettingsTab};
+use crate::state::settings::SettingsAction;
 
 const MIN_CONTEXT_WINDOW_TOKENS: u32 = 1_000;
 const MAX_CONTEXT_WINDOW_TOKENS: u32 = 2_000_000;
+const CONTEXT_WINDOW_EDIT_FIELD: &str = "thread_owner_context_window";
 
 impl TuiModel {
     pub(crate) fn parse_context_window_tokens(raw: &str) -> Option<u32> {
@@ -28,25 +29,55 @@ impl TuiModel {
             .max(1)
     }
 
+    pub(crate) fn active_thread_context_owner_label(&self) -> String {
+        let label = self.current_conversation_agent_profile().agent_label;
+        if label.trim().is_empty() {
+            "current thread owner".to_string()
+        } else {
+            label
+        }
+    }
+
     pub(crate) fn open_active_thread_context_window_editor(&mut self) {
         let current = self.current_thread_context_window_tokens().to_string();
-        if self.modal.top() != Some(modal::ModalKind::Settings) {
-            self.modal
-                .reduce(modal::ModalAction::Push(modal::ModalKind::Settings));
+        let owner_label = self.active_thread_context_owner_label();
+        if let Some(pending) = self.active_thread_target_agent_config() {
+            self.pending_target_agent_config = Some(pending);
+        }
+        if self.modal.top() != Some(modal::ModalKind::ContextWindowEditor) {
+            self.modal.reduce(modal::ModalAction::Push(
+                modal::ModalKind::ContextWindowEditor,
+            ));
         }
         self.settings
-            .reduce(SettingsAction::SwitchTab(SettingsTab::Provider));
-        self.settings_navigate_to(7);
-        if let Some(pending) = self.active_thread_target_agent_config() {
-            let target_agent_name = pending.target_agent_name.clone();
-            self.pending_target_agent_config = Some(pending);
-            self.settings
-                .start_editing("target_agent_context_window", &current);
-            self.status_line = format!("Enter context window tokens for {target_agent_name}");
+            .start_editing(CONTEXT_WINDOW_EDIT_FIELD, &current);
+        self.status_line = format!("Enter context window tokens for {owner_label}");
+    }
+
+    pub(crate) fn context_window_editor_body(&self) -> String {
+        let owner_label = self.active_thread_context_owner_label();
+        let buffer = self.settings.edit_buffer();
+        format!(
+            "Pinned to {owner_label}\n\nTokens: {buffer}█\n\nEnter save   Esc cancel\n{MIN_CONTEXT_WINDOW_TOKENS} – {MAX_CONTEXT_WINDOW_TOKENS} tokens"
+        )
+    }
+
+    pub(crate) fn commit_active_thread_context_window_editor(&mut self) {
+        let Some(tokens) = Self::parse_context_window_tokens(self.settings.edit_buffer()) else {
+            self.status_line = "Context window must be a number of tokens".to_string();
             return;
-        }
-        self.settings.start_editing("context_window_tokens", &current);
-        self.status_line = "Enter context window tokens".to_string();
+        };
+        self.apply_active_thread_context_window(tokens);
+        self.settings.reduce(SettingsAction::ConfirmEdit);
+        self.pending_target_agent_config = None;
+        self.close_top_modal();
+    }
+
+    pub(crate) fn cancel_active_thread_context_window_editor(&mut self) {
+        self.settings.reduce(SettingsAction::CancelEdit);
+        self.pending_target_agent_config = None;
+        self.close_top_modal();
+        self.status_line = "Context window unchanged".to_string();
     }
 
     pub(crate) fn apply_active_thread_context_window(&mut self, tokens: u32) {
@@ -76,7 +107,10 @@ impl TuiModel {
                 value_json,
             });
         }
-        self.status_line = format!("Context: {tokens} tok");
+        self.status_line = format!(
+            "{} context: {tokens} tok",
+            self.active_thread_context_owner_label()
+        );
     }
 }
 
@@ -86,7 +120,11 @@ fn apply_svarog_context_window_locally(model: &mut TuiModel, tokens: u32) {
     if let Some(raw) = model.config.agent_config_raw.as_mut() {
         raw["context_window_tokens"] = serde_json::json!(tokens);
         let provider_id = model.config.provider.clone();
-        if raw.get("providers").and_then(|value| value.get(&provider_id)).is_some() {
+        if raw
+            .get("providers")
+            .and_then(|value| value.get(&provider_id))
+            .is_some()
+        {
             raw["providers"][provider_id.as_str()]["context_window_tokens"] =
                 serde_json::json!(tokens);
         }

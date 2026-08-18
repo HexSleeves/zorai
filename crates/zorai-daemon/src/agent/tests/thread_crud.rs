@@ -2580,19 +2580,15 @@ async fn agent_thread_detail_json_skips_compaction_artifact_when_deriving_profil
             vec![older, artifact],
         ),
     );
-    engine
-        .thread_execution_profiles
-        .write()
-        .await
-        .insert(
-            thread_id.to_string(),
-            crate::agent::types::ThreadExecutionProfile {
-                provider: Some("github-copilot".to_string()),
-                model: Some("gpt-5.5".to_string()),
-                reasoning_effort: None,
-                context_window_tokens: Some(200_000),
-            },
-        );
+    engine.thread_execution_profiles.write().await.insert(
+        thread_id.to_string(),
+        crate::agent::types::ThreadExecutionProfile {
+            provider: Some("github-copilot".to_string()),
+            model: Some("gpt-5.5".to_string()),
+            reasoning_effort: None,
+            context_window_tokens: Some(200_000),
+        },
+    );
 
     let json = engine
         .agent_thread_detail_json(thread_id, Some(10), Some(0))
@@ -2601,7 +2597,10 @@ async fn agent_thread_detail_json_skips_compaction_artifact_when_deriving_profil
 
     assert_eq!(value["profile_provider"].as_str(), Some("github-copilot"));
     assert_eq!(value["profile_model"].as_str(), Some("gpt-5.5"));
-    assert_eq!(value["profile_context_window_tokens"].as_u64(), Some(200_000));
+    assert_eq!(
+        value["profile_context_window_tokens"].as_u64(),
+        Some(200_000)
+    );
 }
 
 #[tokio::test]
@@ -2623,19 +2622,15 @@ async fn sync_thread_execution_profiles_for_agent_updates_owned_threads() {
             vec![AgentMessage::user("hi", 1)],
         ),
     );
-    engine
-        .thread_execution_profiles
-        .write()
-        .await
-        .insert(
-            thread_id.to_string(),
-            crate::agent::types::ThreadExecutionProfile {
-                provider: Some("openai".to_string()),
-                model: Some("gpt-5.4".to_string()),
-                reasoning_effort: Some("medium".to_string()),
-                context_window_tokens: Some(128_000),
-            },
-        );
+    engine.thread_execution_profiles.write().await.insert(
+        thread_id.to_string(),
+        crate::agent::types::ThreadExecutionProfile {
+            provider: Some("openai".to_string()),
+            model: Some("gpt-5.4".to_string()),
+            reasoning_effort: Some("medium".to_string()),
+            context_window_tokens: Some(128_000),
+        },
+    );
 
     let mut config = engine.get_config().await;
     config.builtin_sub_agents.weles.provider = Some("openai".to_string());

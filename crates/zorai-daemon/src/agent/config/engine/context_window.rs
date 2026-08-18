@@ -1,7 +1,7 @@
 use super::super::*;
 use crate::agent::agent_identity::{
-    canonical_agent_id, is_concierge_target, is_explicit_builtin_persona_scope, is_main_agent_scope,
-    is_weles_agent_scope, CONCIERGE_AGENT_ID, MAIN_AGENT_ID, WELES_AGENT_ID,
+    canonical_agent_id, is_concierge_target, is_explicit_builtin_persona_scope,
+    is_main_agent_scope, is_weles_agent_scope, CONCIERGE_AGENT_ID, MAIN_AGENT_ID, WELES_AGENT_ID,
 };
 use crate::agent::types::{AgentThread, ThreadExecutionProfile};
 
@@ -58,7 +58,10 @@ fn thread_matches_agent(thread: &AgentThread, agent_id: &str) -> bool {
     agent_ids_match(name, target)
 }
 
-fn execution_fields_for_agent(config: &AgentConfig, agent_id: &str) -> Option<AgentExecutionFields> {
+fn execution_fields_for_agent(
+    config: &AgentConfig,
+    agent_id: &str,
+) -> Option<AgentExecutionFields> {
     let target = AgentEngine::normalize_agent_model_target(agent_id);
     match target.as_str() {
         MAIN_AGENT_ID => Some(AgentExecutionFields {
@@ -92,7 +95,8 @@ fn execution_fields_for_agent(config: &AgentConfig, agent_id: &str) -> Option<Ag
         | crate::agent::agent_identity::PERUN_AGENT_ID
         | crate::agent::agent_identity::MOKOSH_AGENT_ID
         | crate::agent::agent_identity::DAZHBOG_AGENT_ID => {
-            let overrides = crate::agent::agent_identity::builtin_persona_overrides(config, &target)?;
+            let overrides =
+                crate::agent::agent_identity::builtin_persona_overrides(config, &target)?;
             Some(AgentExecutionFields {
                 provider: nonempty(overrides.provider.clone())
                     .unwrap_or_else(|| config.provider.clone()),

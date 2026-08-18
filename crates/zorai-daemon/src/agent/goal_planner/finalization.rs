@@ -289,10 +289,7 @@ impl AgentEngine {
         Ok(())
     }
 
-    async fn final_review_output(
-        &self,
-        task: &AgentTask,
-    ) -> Option<String> {
+    async fn final_review_output(&self, task: &AgentTask) -> Option<String> {
         if let Some(result) = task
             .result
             .as_deref()

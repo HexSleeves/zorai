@@ -75,6 +75,7 @@ fn map_goal_run_row_db(row: &db::Row) -> anyhow::Result<GoalRun> {
     let current_step_owner_profile_json: Option<String> = row.get(44)?;
     let launch_assignment_snapshot_json: Option<String> = row.get(45)?;
     let runtime_assignment_list_json: Option<String> = row.get(46)?;
+    let step_failure_history_json: String = row.get(47)?;
     let child_task_ids = serde_json::from_str(&child_task_ids_json).unwrap_or_default();
     let root_thread_id = root_thread_id.or_else(|| thread_id.clone());
     let active_thread_id = active_thread_id.or_else(|| thread_id.clone());
@@ -117,7 +118,7 @@ fn map_goal_run_row_db(row: &db::Row) -> anyhow::Result<GoalRun> {
         generated_skill_path: row.get(21)?,
         last_error: row.get(22)?,
         failure_cause: row.get(23)?,
-        step_failure_history: Vec::new(),
+        step_failure_history: serde_json::from_str(&step_failure_history_json).unwrap_or_default(),
         stopped_reason: row.get(24)?,
         child_task_ids,
         child_task_count: row.get::<i64>(26)? as u32,
@@ -192,12 +193,13 @@ async fn upsert_goal_run_exec<E: db::DbExecutor + ?Sized>(
         serialize_goal_runtime_owner_profile(&goal_run.planner_owner_profile)?;
     let current_step_owner_profile_json =
         serialize_goal_runtime_owner_profile(&goal_run.current_step_owner_profile)?;
+    let step_failure_history_json = serde_json::to_string(&goal_run.step_failure_history)?;
     let authorship_tag = goal_run.authorship_tag.map(authorship_tag_to_str);
 
     exec.execute(
         "INSERT OR REPLACE INTO goal_runs \
-         (id, title, goal, client_request_id, status, priority, created_at, updated_at, started_at, completed_at, thread_id, session_id, root_thread_id, active_thread_id, execution_thread_ids_json, current_step_index, replan_count, max_replans, plan_summary, reflection_summary, memory_updates_json, generated_skill_path, last_error, failure_cause, stopped_reason, child_task_ids_json, child_task_count, approval_count, awaiting_approval_id, policy_fingerprint, approval_expires_at, containment_scope, compensation_status, compensation_summary, active_task_id, duration_ms, dossier_json, total_prompt_tokens, total_completion_tokens, estimated_cost_usd, model_usage_json, autonomy_level, authorship_tag, planner_owner_profile_json, current_step_owner_profile_json, launch_assignment_snapshot_json, runtime_assignment_list_json, deleted_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43, ?44, ?45, ?46, ?47, NULL)",
+         (id, title, goal, client_request_id, status, priority, created_at, updated_at, started_at, completed_at, thread_id, session_id, root_thread_id, active_thread_id, execution_thread_ids_json, current_step_index, replan_count, max_replans, plan_summary, reflection_summary, memory_updates_json, generated_skill_path, last_error, failure_cause, stopped_reason, child_task_ids_json, child_task_count, approval_count, awaiting_approval_id, policy_fingerprint, approval_expires_at, containment_scope, compensation_status, compensation_summary, active_task_id, duration_ms, dossier_json, total_prompt_tokens, total_completion_tokens, estimated_cost_usd, model_usage_json, autonomy_level, authorship_tag, planner_owner_profile_json, current_step_owner_profile_json, launch_assignment_snapshot_json, runtime_assignment_list_json, step_failure_history_json, deleted_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43, ?44, ?45, ?46, ?47, ?48, NULL)",
         db::db_params![
             goal_run.id.clone(),
             goal_run.title.clone(),
@@ -246,6 +248,7 @@ async fn upsert_goal_run_exec<E: db::DbExecutor + ?Sized>(
             current_step_owner_profile_json,
             launch_assignment_snapshot_json,
             runtime_assignment_list_json,
+            step_failure_history_json,
         ],
     )
     .await?;
@@ -1712,7 +1715,7 @@ impl HistoryStore {
             event_map.entry(goal_run_id).or_default().push(event);
         }
 
-        let mut goal_sql = "SELECT id, title, goal, client_request_id, status, priority, created_at, updated_at, started_at, completed_at, thread_id, session_id, root_thread_id, active_thread_id, execution_thread_ids_json, current_step_index, replan_count, max_replans, plan_summary, reflection_summary, memory_updates_json, generated_skill_path, last_error, failure_cause, stopped_reason, child_task_ids_json, child_task_count, approval_count, awaiting_approval_id, policy_fingerprint, approval_expires_at, containment_scope, compensation_status, compensation_summary, active_task_id, duration_ms, dossier_json, total_prompt_tokens, total_completion_tokens, estimated_cost_usd, model_usage_json, autonomy_level, authorship_tag, planner_owner_profile_json, current_step_owner_profile_json, launch_assignment_snapshot_json, runtime_assignment_list_json \
+        let mut goal_sql = "SELECT id, title, goal, client_request_id, status, priority, created_at, updated_at, started_at, completed_at, thread_id, session_id, root_thread_id, active_thread_id, execution_thread_ids_json, current_step_index, replan_count, max_replans, plan_summary, reflection_summary, memory_updates_json, generated_skill_path, last_error, failure_cause, stopped_reason, child_task_ids_json, child_task_count, approval_count, awaiting_approval_id, policy_fingerprint, approval_expires_at, containment_scope, compensation_status, compensation_summary, active_task_id, duration_ms, dossier_json, total_prompt_tokens, total_completion_tokens, estimated_cost_usd, model_usage_json, autonomy_level, authorship_tag, planner_owner_profile_json, current_step_owner_profile_json, launch_assignment_snapshot_json, runtime_assignment_list_json, step_failure_history_json \
              FROM goal_runs WHERE deleted_at IS NULL".to_string();
         let mut goal_values = Vec::<db::Value>::new();
         if let Some(goal_run_id) = goal_run_id.as_deref() {

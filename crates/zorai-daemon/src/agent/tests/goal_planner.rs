@@ -2506,7 +2506,10 @@ async fn repeated_step_failures_warn_about_approach_switch() {
         .await
         .expect("implementation completion should queue verification");
 
-    for diagnosis in ["build output is incomplete", "build output is incomplete again"] {
+    for diagnosis in [
+        "build output is incomplete",
+        "build output is incomplete again",
+    ] {
         let verifier_task = engine
             .tasks
             .lock()
@@ -4391,16 +4394,12 @@ async fn complete_goal_run_queues_final_review_before_marking_completed() {
         .cloned()
         .expect("queued final review task should exist");
     assert_eq!(review_task.source, "goal_final_review");
-    assert!(
-        review_task
-            .description
-            .contains("Do not query zorai goal/task status through the CLI or API")
-    );
-    assert!(
-        review_task
-            .description
-            .contains("do not leave the task result empty")
-    );
+    assert!(review_task
+        .description
+        .contains("Do not query zorai goal/task status through the CLI or API"));
+    assert!(review_task
+        .description
+        .contains("do not leave the task result empty"));
 }
 
 #[tokio::test]

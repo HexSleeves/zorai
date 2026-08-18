@@ -102,16 +102,14 @@ impl TuiModel {
                 "tool_synthesis_max_generated_tools",
                 &self.config.tool_synthesis_max_generated_tools.to_string(),
             ),
-            "context_window_tokens" => {
-                self.settings.start_editing(
-                    "context_window_tokens",
-                    &self
-                        .config
-                        .custom_context_window_tokens
-                        .unwrap_or(self.config.context_window_tokens)
-                        .to_string(),
-                )
-            }
+            "context_window_tokens" => self.settings.start_editing(
+                "context_window_tokens",
+                &self
+                    .config
+                    .custom_context_window_tokens
+                    .unwrap_or(self.config.context_window_tokens)
+                    .to_string(),
+            ),
             _ => return false,
         }
         true

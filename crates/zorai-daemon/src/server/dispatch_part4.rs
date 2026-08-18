@@ -745,8 +745,9 @@ pub(crate) async fn dispatch_part4(
                     return Ok(true);
                 }
 
-                if crate::agent::AgentEngine::config_item_affects_swarog_execution_profile(&key_path)
-                {
+                if crate::agent::AgentEngine::config_item_affects_swarog_execution_profile(
+                    &key_path,
+                ) {
                     agent
                         .sync_thread_execution_profiles_for_agent(
                             crate::agent::agent_identity::MAIN_AGENT_ID,
@@ -1092,9 +1093,7 @@ pub(crate) async fn dispatch_part4(
                     );
                     framed
                         .send(DaemonMessage::Error {
-                            message: format!(
-                                "Invalid target agent context window selection: {e}"
-                            ),
+                            message: format!("Invalid target agent context window selection: {e}"),
                         })
                         .await?;
                 }

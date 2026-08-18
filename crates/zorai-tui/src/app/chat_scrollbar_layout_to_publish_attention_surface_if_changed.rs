@@ -210,6 +210,7 @@ impl TuiModel {
                 modal::ModalKind::OpenAIAuth => "modal:openai_auth".to_string(),
                 modal::ModalKind::ErrorViewer => "modal:error_viewer".to_string(),
                 modal::ModalKind::EffortPicker => "modal:effort_picker".to_string(),
+                modal::ModalKind::ContextWindowEditor => "modal:context_window_editor".to_string(),
                 modal::ModalKind::Notifications => "modal:notifications".to_string(),
                 modal::ModalKind::ToolsPicker => "modal:tools_picker".to_string(),
                 modal::ModalKind::ViewPicker => "modal:view_picker".to_string(),

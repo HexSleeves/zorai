@@ -69,6 +69,14 @@ impl TuiModel {
                     }
                     return;
                 }
+                modal::ModalKind::ContextWindowEditor => {
+                    for ch in text.chars() {
+                        if ch.is_ascii_digit() || matches!(ch, '_' | ',' | ' ') {
+                            self.settings.reduce(SettingsAction::InsertChar(ch));
+                        }
+                    }
+                    return;
+                }
                 modal::ModalKind::CommandPalette => {
                     let query = text
                         .chars()

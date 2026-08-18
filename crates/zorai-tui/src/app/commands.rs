@@ -142,22 +142,20 @@ pub(super) fn parse_workspace_actor_field(
 mod activate_workspace_toolbar_action_to_submit_image_prompt;
 #[path = "commands_parts/active_goal_sidebar_item_to_speak_latest_assistant_message.rs"]
 mod active_goal_sidebar_item_to_speak_latest_assistant_message;
-#[path = "commands_parts/slash_context.rs"]
-mod slash_context;
 #[path = "commands_parts/copy_work_context_content_to_regenerate_from_message.rs"]
 mod copy_work_context_content_to_regenerate_from_message;
 #[path = "commands_parts/export_thread.rs"]
 mod export_thread;
 #[path = "commands_parts/focus_goal_composer_section.rs"]
 mod focus_goal_composer_section;
-#[path = "commands_parts/goal_composer_defaults.rs"]
-mod goal_composer_defaults;
 #[path = "commands_parts/focus_next_goal_workspace_pane_to_select_goal_sidebar_row.rs"]
 mod focus_next_goal_workspace_pane_to_select_goal_sidebar_row;
 #[path = "commands_parts/fork_message.rs"]
 mod fork_message;
 #[path = "commands_parts/go_back_thread_to_execute_selected_queued_prompt_action.rs"]
 mod go_back_thread_to_execute_selected_queued_prompt_action;
+#[path = "commands_parts/goal_composer_defaults.rs"]
+mod goal_composer_defaults;
 #[path = "commands_parts/known_agent_directive_aliases_to_selected_runtime_assignment_preview.rs"]
 mod known_agent_directive_aliases_to_selected_runtime_assignment_preview;
 #[path = "commands_parts/mission_control_navigation_state_to_collapse_goal_workspace_selection.rs"]
@@ -166,6 +164,8 @@ mod mission_control_navigation_state_to_collapse_goal_workspace_selection;
 mod move_workspace_task_from_args_to_activate_workspace_board_target;
 #[path = "commands_parts/open_new_goal_view_to_delete_workspace_task_from_args.rs"]
 mod open_new_goal_view_to_delete_workspace_task_from_args;
+#[path = "commands_parts/slash_context.rs"]
+mod slash_context;
 #[path = "commands_parts/stage_mission_control_assignment_modal_edit_to_open_selected_spawned.rs"]
 mod stage_mission_control_assignment_modal_edit_to_open_selected_spawned;
 #[path = "commands_parts/submit_prompt_to_copy_message.rs"]

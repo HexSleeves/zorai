@@ -37,6 +37,7 @@ pub enum ModalKind {
     PinnedBudgetExceeded,
     Settings,
     EffortPicker,
+    ContextWindowEditor,
     Notifications,
     ToolsPicker,
     ViewPicker,

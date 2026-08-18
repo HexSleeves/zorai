@@ -431,8 +431,11 @@ pub(crate) async fn write_goal_projection_files(
     .await?;
 
     let ledger = goal_loop_ledger_projection(goal_run, &dossier);
-    write_text_file(&goal_ledger_path(data_dir, &goal_run.id), &goal_ledger_markdown(&ledger))
-        .await?;
+    write_text_file(
+        &goal_ledger_path(data_dir, &goal_run.id),
+        &goal_ledger_markdown(&ledger),
+    )
+    .await?;
     write_text_file(
         &goal_ledger_json_path(data_dir, &goal_run.id),
         &serde_json::to_string_pretty(&ledger)?,

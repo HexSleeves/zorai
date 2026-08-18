@@ -24,7 +24,7 @@ pub(super) fn default_command_items() -> Vec<CommandItem> {
         },
         CommandItem {
             command: "context".into(),
-            description: "Set the current model's context window".into(),
+            description: "Set the current context window".into(),
         },
         CommandItem {
             command: "thread".into(),

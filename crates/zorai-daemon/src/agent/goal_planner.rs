@@ -838,12 +838,7 @@ impl AgentEngine {
         } else if step.kind == GoalRunStepKind::Debate {
             let thread_id = snapshot.thread_id.clone().unwrap_or_default();
             match self
-                .start_debate_session(
-                    &step_task_description,
-                    None,
-                    &thread_id,
-                    Some(&snapshot.id),
-                )
+                .start_debate_session(&step_task_description, None, &thread_id, Some(&snapshot.id))
                 .await
             {
                 Ok(session_id) => {
