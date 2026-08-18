@@ -21,6 +21,7 @@ struct QuietGoalRecoveryCandidate {
     active_task_progress: u8,
     todo_items: Vec<TodoItem>,
     last_message_excerpt: String,
+    ledger_checkpoint: String,
     last_activity_at: u64,
 }
 
@@ -192,7 +193,32 @@ impl AgentEngine {
             }
         };
 
-        let recovery_message = quiet_goal_recovery_system_message(candidate);
+        let goal_snapshot = {
+            let live_goal_runs = self.goal_runs.lock().await;
+            live_goal_runs
+                .iter()
+                .find(|run| run.id == candidate.goal_run_id)
+                .cloned()
+        };
+        let mut candidate = candidate.clone();
+        if let Some(goal_snapshot) = goal_snapshot {
+            candidate.ledger_checkpoint =
+                crate::agent::goal_dossier::goal_ledger_resume_checkpoint_for_run(
+                    &self.data_dir,
+                    &goal_snapshot,
+                )
+                .await;
+        } else if let Some(ledger_checkpoint) =
+            crate::agent::goal_dossier::goal_ledger_resume_checkpoint(
+                &self.data_dir,
+                &candidate.goal_run_id,
+            )
+            .await
+        {
+            candidate.ledger_checkpoint = ledger_checkpoint;
+        }
+
+        let recovery_message = quiet_goal_recovery_system_message(&candidate);
         {
             let mut threads = self.threads.write().await;
             let Some(thread) = threads.get_mut(&candidate.thread_id) else {
@@ -342,6 +368,7 @@ fn build_quiet_goal_recovery_candidate(
         active_task_progress: active_task.progress,
         todo_items,
         last_message_excerpt,
+        ledger_checkpoint: String::new(),
         last_activity_at: activity_at,
     })
 }
@@ -404,6 +431,7 @@ fn quiet_goal_recovery_system_message(candidate: &QuietGoalRecoveryCandidate) ->
          Active main task `{}` status={:?} progress={}.\n\
          Authoritative goal todos:\n{}\n\
          Last main-thread message: {}\n\
+         {}\n\
          Resume this goal on the main thread now. Updating goal todos does not finish the goal step; continue until the current step is actually complete or blocked by operator approval.",
         candidate.goal_run_id,
         candidate.current_step_index.saturating_add(1),
@@ -414,6 +442,11 @@ fn quiet_goal_recovery_system_message(candidate: &QuietGoalRecoveryCandidate) ->
         candidate.active_task_progress,
         todo_block,
         last_message,
+        if candidate.ledger_checkpoint.trim().is_empty() {
+            "Resume ledger checkpoint unavailable; use the goal run state above.".to_string()
+        } else {
+            candidate.ledger_checkpoint.clone()
+        },
     )
 }
 
@@ -713,6 +746,40 @@ mod tests {
         assert!(thread.messages.iter().any(|message| {
             message.role == MessageRole::Assistant && message.content.contains("Recovered.")
         }));
+    }
+
+    #[test]
+    fn quiet_goal_recovery_message_injects_resume_ledger_checkpoint() {
+        let now = now_millis();
+        let goal = sample_running_goal(now, "thread-goal-ledger", "task-goal-ledger");
+        let ledger_checkpoint = concat!(
+            "## Resume Ledger Checkpoint\n",
+            "Goal: Continue the goal\n",
+            "Current-step pointer: Implement plugin scaffold (goal-step-1)\n",
+            "Core anchors:\n- goal_run_id: goal-quiet\n",
+            "Next: Complete step 'Implement plugin scaffold'"
+        )
+        .to_string();
+        let candidate = QuietGoalRecoveryCandidate {
+            goal_run_id: goal.id.clone(),
+            thread_id: "thread-goal-ledger".to_string(),
+            task_id: "task-goal-ledger".to_string(),
+            current_step_index: 0,
+            current_step_id: Some("goal-step-1".to_string()),
+            current_step_title: Some("Implement plugin scaffold".to_string()),
+            active_task_status: TaskStatus::InProgress,
+            active_task_progress: 72,
+            todo_items: Vec::new(),
+            last_message_excerpt: "checkpoint me".to_string(),
+            ledger_checkpoint,
+            last_activity_at: now.saturating_sub(QUIET_GOAL_IDLE_MS),
+        };
+
+        let message = quiet_goal_recovery_system_message(&candidate);
+        assert!(message.contains("## Resume Ledger Checkpoint"));
+        assert!(message.contains("Core anchors:"));
+        assert!(message.contains("Next:"));
+        assert!(message.contains("Implement plugin scaffold"));
     }
 
     #[tokio::test]

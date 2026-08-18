@@ -77,6 +77,39 @@ async fn goal_projection_writes_files_on_create_and_refresh() {
         "ledger Next should be a non-empty action"
     );
 
+    let active_step_checkpoint =
+        crate::agent::goal_dossier::goal_ledger_active_step_prompt_block(
+            &engine.data_dir,
+            &goal_run,
+        )
+        .await;
+    assert!(active_step_checkpoint.contains("source:"));
+    assert!(active_step_checkpoint.contains("ledger.json"));
+    assert!(active_step_checkpoint.contains("current-step pointer:"));
+    assert!(active_step_checkpoint.contains("## Core"));
+    assert!(active_step_checkpoint.contains("## Next"));
+
+    let resume_checkpoint = crate::agent::goal_dossier::goal_ledger_resume_checkpoint(
+        &engine.data_dir,
+        &goal_run.id,
+    )
+    .await
+    .expect("persisted ledger should render a resume checkpoint");
+    assert!(resume_checkpoint.contains("## Resume Ledger Checkpoint"));
+    assert!(resume_checkpoint.contains("Core anchors:"));
+    assert!(resume_checkpoint.contains("Next:"));
+
+    let subagent_checkpoint =
+        crate::agent::goal_dossier::goal_ledger_subagent_integration_checkpoint(
+            &engine.data_dir,
+            &goal_run.id,
+        )
+        .await
+        .expect("persisted ledger should render a subagent integration checkpoint");
+    assert!(subagent_checkpoint.contains("## Goal Ledger Integration Checkpoint"));
+    assert!(subagent_checkpoint.contains("Already verified (do not re-derive):"));
+    assert!(subagent_checkpoint.contains("Next:"));
+
     let initial_markdown = tokio::fs::read_to_string(&goal_md_path)
         .await
         .expect("read goal markdown");

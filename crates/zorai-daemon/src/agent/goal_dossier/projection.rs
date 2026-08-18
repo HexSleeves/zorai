@@ -1,5 +1,5 @@
 use super::*;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
 
@@ -21,7 +21,7 @@ struct GoalProofLedgerProjection {
     latest_resume_decision: Option<GoalResumeDecision>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct GoalLoopLedgerProjection {
     goal_run_id: String,
     title: String,
@@ -31,6 +31,71 @@ pub(crate) struct GoalLoopLedgerProjection {
     open: Vec<String>,
     next: String,
     updated_at: u64,
+}
+
+pub(crate) async fn read_goal_loop_ledger_projection(
+    data_dir: &Path,
+    goal_run_id: &str,
+) -> anyhow::Result<GoalLoopLedgerProjection> {
+    let path = goal_ledger_json_path(data_dir, goal_run_id);
+    let contents = tokio::fs::read_to_string(&path).await?;
+    let ledger: GoalLoopLedgerProjection = serde_json::from_str(&contents)?;
+    if ledger.goal_run_id != goal_run_id {
+        anyhow::bail!(
+            "goal ledger identity mismatch: expected {goal_run_id}, found {} in {}",
+            ledger.goal_run_id,
+            path.display()
+        );
+    }
+    Ok(ledger)
+}
+
+fn render_ledger_items(items: &[String]) -> String {
+    if items.is_empty() {
+        "- none".to_string()
+    } else {
+        items
+            .iter()
+            .map(|item| format!("- {item}"))
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
+pub(crate) fn goal_ledger_current_step_pointer(ledger: &GoalLoopLedgerProjection) -> &str {
+    ledger
+        .core
+        .iter()
+        .find_map(|anchor| anchor.strip_prefix("current_step: "))
+        .unwrap_or("no active step recorded")
+}
+
+pub(crate) fn goal_ledger_resume_checkpoint(ledger: &GoalLoopLedgerProjection) -> String {
+    format!(
+        "## Resume Ledger Checkpoint\n\
+         Goal: {}\n\
+         Current-step pointer: {}\n\
+         Core anchors:\n{}\n\
+         Next: {}",
+        ledger.goal,
+        goal_ledger_current_step_pointer(ledger),
+        render_ledger_items(&ledger.core),
+        ledger.next,
+    )
+}
+
+pub(crate) fn goal_ledger_subagent_integration_checkpoint(
+    ledger: &GoalLoopLedgerProjection,
+) -> String {
+    format!(
+        "## Goal Ledger Integration Checkpoint\n\
+         Current-step pointer: {}\n\
+         Already verified (do not re-derive):\n{}\n\
+         Next: {}",
+        goal_ledger_current_step_pointer(ledger),
+        render_ledger_items(&ledger.verified),
+        ledger.next,
+    )
 }
 
 fn goal_projection_root_dir(data_dir: &Path) -> PathBuf {
@@ -308,17 +373,6 @@ pub(crate) fn goal_loop_ledger_projection(
 }
 
 pub(crate) fn goal_ledger_markdown(ledger: &GoalLoopLedgerProjection) -> String {
-    let render_list = |items: &[String]| {
-        if items.is_empty() {
-            "- none".to_string()
-        } else {
-            items
-                .iter()
-                .map(|item| format!("- {item}"))
-                .collect::<Vec<_>>()
-                .join("\n")
-        }
-    };
     format!(
         "# Ledger: {title}\n\n\
          ## Goal\n{goal}\n\n\
@@ -328,9 +382,9 @@ pub(crate) fn goal_ledger_markdown(ledger: &GoalLoopLedgerProjection) -> String 
          ## Next\n{next}\n",
         title = ledger.title,
         goal = ledger.goal,
-        core = render_list(&ledger.core),
-        verified = render_list(&ledger.verified),
-        open = render_list(&ledger.open),
+        core = render_ledger_items(&ledger.core),
+        verified = render_ledger_items(&ledger.verified),
+        open = render_ledger_items(&ledger.open),
         next = ledger.next,
     )
 }
