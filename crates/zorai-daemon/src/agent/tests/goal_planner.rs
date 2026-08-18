@@ -4391,6 +4391,16 @@ async fn complete_goal_run_queues_final_review_before_marking_completed() {
         .cloned()
         .expect("queued final review task should exist");
     assert_eq!(review_task.source, "goal_final_review");
+    assert!(
+        review_task
+            .description
+            .contains("Do not query zorai goal/task status through the CLI or API")
+    );
+    assert!(
+        review_task
+            .description
+            .contains("do not leave the task result empty")
+    );
 }
 
 #[tokio::test]
@@ -4653,6 +4663,176 @@ async fn final_review_completion_accepts_pass_verdict_from_thread_summary() {
         .await
         .expect("final review marker should be written from thread summary verdict");
     assert!(marker.starts_with("VERDICT: PASS"), "{marker}");
+}
+
+#[tokio::test]
+async fn final_review_completion_uses_assistant_thread_verdict_when_task_result_is_empty() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let recorded_bodies =
+        std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new()));
+    let mut config = AgentConfig::default();
+    config.provider = "openai".to_string();
+    config.base_url = crate::agent::tests::spawn_goal_recording_server(
+        recorded_bodies,
+        serde_json::json!({
+            "summary": "Goal finished after empty-result thread fallback.",
+            "stable_memory_update": null,
+            "generate_skill": false,
+            "skill_title": null,
+            "activate_skill": null
+        })
+        .to_string(),
+    )
+    .await;
+    config.model = "gpt-4o-mini".to_string();
+    config.api_key = "test-key".to_string();
+    config.api_transport = ApiTransport::ChatCompletions;
+    config.auto_retry = false;
+    config.max_retries = 0;
+    config.max_tool_loops = 1;
+    let engine = AgentEngine::new_test(manager, config, root.path()).await;
+    let goal_run_id = "goal-final-review-empty-result";
+    let root_thread_id = "thread-final-review-root";
+    let review_thread_id = "thread-final-review-child";
+    engine
+        .get_or_create_thread(Some(root_thread_id), "goal")
+        .await;
+    engine
+        .get_or_create_thread(Some(review_thread_id), "final review")
+        .await;
+
+    let mut goal_run = sample_goal_run_with_kind(
+        goal_run_id,
+        GoalRunStepKind::Command,
+        "Finish the only step",
+    );
+    goal_run.thread_id = Some(root_thread_id.to_string());
+    goal_run.steps[0].status = GoalRunStepStatus::Completed;
+    goal_run.steps[0].summary = Some("done".to_string());
+    goal_run.current_step_index = goal_run.steps.len();
+    goal_run.current_step_title = None;
+    goal_run.current_step_kind = None;
+    engine.goal_runs.lock().await.push_back(goal_run);
+    write_step_completion_marker(&engine, goal_run_id, 0).await;
+
+    engine
+        .complete_goal_run(goal_run_id)
+        .await
+        .expect("goal completion should queue a final review");
+    let review_task = engine
+        .tasks
+        .lock()
+        .await
+        .iter()
+        .find(|task| task.source == "goal_final_review")
+        .cloned()
+        .expect("final review task should exist");
+    let mut completed_review = review_task.clone();
+    completed_review.status = TaskStatus::Completed;
+    completed_review.thread_id = Some(review_thread_id.to_string());
+    completed_review.result = None;
+    completed_review.completed_at = Some(now_millis());
+    {
+        let mut tasks = engine.tasks.lock().await;
+        let stored = tasks
+            .iter_mut()
+            .find(|task| task.id == completed_review.id)
+            .expect("stored final review task should exist");
+        *stored = completed_review.clone();
+    }
+    engine.persist_tasks().await;
+
+    let engine_for_delayed_verdict = engine.clone();
+    let delayed_verdict = tokio::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(75)).await;
+        {
+            let mut threads = engine_for_delayed_verdict.threads.write().await;
+            let thread = threads
+                .get_mut(review_thread_id)
+                .expect("final review child thread should exist");
+            let mut message = AgentMessage::user(
+                "VERDICT: PASS\nreviewer confirms all artifacts",
+                now_millis(),
+            );
+            message.role = MessageRole::Assistant;
+            thread.messages.push(message);
+        }
+        engine_for_delayed_verdict.persist_threads().await;
+    });
+
+    engine
+        .handle_goal_run_final_review_completion(goal_run_id, &completed_review)
+        .await
+        .expect("empty task result should wait for its own review thread verdict");
+    delayed_verdict
+        .await
+        .expect("delayed verdict persistence should complete");
+
+    let final_review_marker =
+        crate::agent::goal_dossier::goal_final_review_marker_path(&engine.data_dir, goal_run_id);
+    let marker = tokio::fs::read_to_string(final_review_marker)
+        .await
+        .expect("final review marker should be written");
+    assert!(marker.starts_with("VERDICT: PASS"), "{marker}");
+}
+
+#[tokio::test]
+async fn final_review_completion_without_any_verdict_fails_closed_once() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let goal_run_id = "goal-final-review-no-verdict";
+    let review_thread_id = "thread-final-review-no-verdict";
+    engine
+        .get_or_create_thread(Some(review_thread_id), "final review")
+        .await;
+
+    let mut goal_run = sample_goal_run_with_kind(
+        goal_run_id,
+        GoalRunStepKind::Command,
+        "Finish the only step",
+    );
+    goal_run.steps[0].status = GoalRunStepStatus::Completed;
+    goal_run.steps[0].summary = Some("done".to_string());
+    goal_run.current_step_index = goal_run.steps.len();
+    goal_run.current_step_title = None;
+    goal_run.current_step_kind = None;
+    engine.goal_runs.lock().await.push_back(goal_run);
+    write_step_completion_marker(&engine, goal_run_id, 0).await;
+
+    engine
+        .complete_goal_run(goal_run_id)
+        .await
+        .expect("goal completion should queue a final review");
+    let review_task = engine
+        .tasks
+        .lock()
+        .await
+        .iter()
+        .find(|task| task.source == "goal_final_review")
+        .cloned()
+        .expect("final review task should exist");
+    let mut completed_review = review_task.clone();
+    completed_review.status = TaskStatus::Completed;
+    completed_review.thread_id = Some(review_thread_id.to_string());
+    completed_review.result = None;
+
+    engine
+        .handle_goal_run_final_review_completion(goal_run_id, &completed_review)
+        .await
+        .expect("missing verdict should fail closed without requeueing review");
+
+    let updated = engine
+        .get_goal_run(goal_run_id)
+        .await
+        .expect("goal run should remain available");
+    assert_eq!(updated.status, GoalRunStatus::Failed);
+    assert!(updated
+        .last_error
+        .as_deref()
+        .is_some_and(|error| error.contains("without a parseable VERDICT")));
+    assert!(updated.active_task_id.is_none());
 }
 
 #[tokio::test]

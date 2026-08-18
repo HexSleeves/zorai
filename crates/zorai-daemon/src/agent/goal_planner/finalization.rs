@@ -1,5 +1,8 @@
 use super::*;
 
+const FINAL_REVIEW_VERDICT_WAIT_ATTEMPTS: usize = 5;
+const FINAL_REVIEW_VERDICT_WAIT_MS: u64 = 50;
+
 fn all_goal_steps_completed(goal_run: &GoalRun) -> bool {
     !goal_run.steps.is_empty()
         && goal_run
@@ -42,6 +45,9 @@ fn final_review_prompt(goal_run: &GoalRun) -> String {
     format!(
         "Perform the final review for goal `{}`.\n\n\
          Return the first line exactly as `VERDICT: PASS` or `VERDICT: FAIL`.\n\
+         Do not query zorai goal/task status through the CLI or API: this prompt is the daemon-owned final-review snapshot and is authoritative for plan, step, and artifact requirements.\n\
+         Inspect only delivered outputs and the explicit completion-marker paths when independent confirmation is needed.\n\
+         Finish with the verdict response; do not leave the task result empty after collecting evidence.\n\
          PASS only when all planned steps are complete, all goal todos are complete, every step has a completion markdown artifact, and the delivered work matches the plan.\n\
          FAIL when any step is incomplete, any todo remains unchecked, a completion marker is missing, or the delivered work does not satisfy the plan.\n\n\
          Goal:\n{}\n\n\
@@ -283,6 +289,35 @@ impl AgentEngine {
         Ok(())
     }
 
+    async fn final_review_output(
+        &self,
+        task: &AgentTask,
+    ) -> Option<String> {
+        if let Some(result) = task
+            .result
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            return Some(result.to_string());
+        }
+        let thread_id = task.thread_id.as_deref()?;
+        for attempt in 0..FINAL_REVIEW_VERDICT_WAIT_ATTEMPTS {
+            if let Some(output) = self.goal_thread_latest_assistant_content(thread_id).await {
+                if parse_goal_review_verdict(&output).is_some() {
+                    return Some(output);
+                }
+            }
+            if attempt + 1 < FINAL_REVIEW_VERDICT_WAIT_ATTEMPTS {
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    FINAL_REVIEW_VERDICT_WAIT_MS,
+                ))
+                .await;
+            }
+        }
+        None
+    }
+
     pub(in crate::agent) async fn handle_goal_run_final_review_completion(
         &self,
         goal_run_id: &str,
@@ -292,26 +327,24 @@ impl AgentEngine {
             .get_goal_run(goal_run_id)
             .await
             .context("goal run missing during final review completion")?;
-        let review_thread_output = match task.thread_id.as_deref().or(snapshot.thread_id.as_deref())
-        {
-            Some(thread_id) => self.goal_thread_latest_assistant_content(thread_id).await,
-            None => None,
+        let review_output = self.final_review_output(task).await.or_else(|| {
+            task.last_error
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_string)
+        });
+        let Some(review_output) = review_output else {
+            let error = "final review completed without a parseable VERDICT: PASS or VERDICT: FAIL in its task result or reviewer thread";
+            self.fail_goal_run(
+                goal_run_id,
+                error,
+                "final_review_protocol",
+                task.thread_id.clone(),
+            )
+            .await;
+            return Ok(());
         };
-        let review_output = task
-            .result
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-            .map(str::to_string)
-            .or_else(|| review_thread_output.clone())
-            .or_else(|| {
-                task.last_error
-                    .as_deref()
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .map(str::to_string)
-            })
-            .unwrap_or_else(|| "final review completed without a structured verdict".to_string());
         if !matches!(
             parse_goal_review_verdict(&review_output),
             Some(GoalReviewVerdict::Pass)
