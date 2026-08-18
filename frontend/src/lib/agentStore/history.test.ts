@@ -66,4 +66,21 @@ describe("buildHydratedRemoteThread", () => {
     expect(hydrated?.thread.activeContextWindowEnd).toBe(6);
     expect(hydrated?.thread.activeContextWindowTokens).toBe(12_345);
   });
+
+  it("normalizes unix-second thread timestamps to milliseconds", () => {
+    const seconds = Math.floor(Date.now() / 1000);
+    const hydrated = buildHydratedRemoteThread(
+      {
+        id: "thread-seconds",
+        title: "Seconds stamp",
+        created_at: seconds,
+        updated_at: seconds,
+        messages: [],
+      },
+      "Svarog",
+    );
+
+    expect(hydrated?.thread.updatedAt).toBe(seconds * 1000);
+    expect(hydrated?.thread.createdAt).toBe(seconds * 1000);
+  });
 });

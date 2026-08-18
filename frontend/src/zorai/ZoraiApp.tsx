@@ -5,6 +5,7 @@ import { ConciergeToast } from "@/components/ConciergeToast";
 import { OperatorProfileOnboardingPanel } from "@/components/OperatorProfileOnboardingPanel";
 import { OperatorQuestionOverlay } from "@/components/OperatorQuestionOverlay";
 import { SetupOnboardingPanel } from "@/components/SetupOnboardingPanel";
+import { ToastViewport } from "@/components/ToastViewport";
 import { getBridge } from "@/lib/bridge";
 import { useAgentStore } from "@/lib/agentStore";
 import { useAuditStore } from "@/lib/auditStore";
@@ -89,6 +90,7 @@ export function ZoraiApp() {
       <AgentApprovalOverlay />
       <OperatorQuestionOverlay />
       <ConciergeToast />
+      <ToastViewport />
     </AgentChatPanelProvider>
   );
 }

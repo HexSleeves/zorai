@@ -1235,6 +1235,18 @@
   gap: 10px;
 }
 
+.zorai-inbox__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.zorai-inbox__item--read {
+  opacity: 0.72;
+}
+
 @media (max-width: 900px) {
   .zorai-goals-layout,
   .zorai-activity-grid,

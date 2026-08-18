@@ -189,6 +189,39 @@ export function useDaemonAgentEvents({
       return refreshedMessages[refreshedMessages.length - 1];
     };
 
+    // Providers can emit far more token events than the browser can paint.
+    // Coalesce content/reasoning deltas to at most one Zustand update per
+    // animation frame; terminal/tool events flush synchronously first.
+    const pendingStreamDeltas = new Map<string, { content: string; reasoning: string }>();
+    let streamFrame: number | null = null;
+
+    const flushStreamDeltas = () => {
+      if (streamFrame !== null) {
+        window.cancelAnimationFrame(streamFrame);
+        streamFrame = null;
+      }
+      const pending = [...pendingStreamDeltas.entries()];
+      pendingStreamDeltas.clear();
+      pending.forEach(([threadId, delta]) => {
+        const last = ensureStreamingAssistantMessage(threadId);
+        if (last?.role !== "assistant" || !last.isStreaming) return;
+        updateLastAssistantMessage(threadId, (last.content || "") + delta.content, true, {
+          reasoning: (last.reasoning || "") + delta.reasoning || undefined,
+        });
+      });
+    };
+
+    const queueStreamDelta = (threadId: string, content: string, reasoning: string) => {
+      const current = pendingStreamDeltas.get(threadId) ?? { content: "", reasoning: "" };
+      pendingStreamDeltas.set(threadId, {
+        content: current.content + content,
+        reasoning: current.reasoning + reasoning,
+      });
+      if (streamFrame === null) {
+        streamFrame = window.requestAnimationFrame(flushStreamDeltas);
+      }
+    };
+
     // Walks the thread's messages from newest to oldest and rewrites the id of
     // the first one that matches `predicate` to `daemonId`. Used to reconcile
     // frontend-local placeholder ids (msg_42) with the daemon's persisted
@@ -240,24 +273,17 @@ export function useDaemonAgentEvents({
       switch (event.type) {
         case "delta": {
           if (!tid) break;
-          const last = ensureStreamingAssistantMessage(tid);
-          if (last?.role === "assistant" && last.isStreaming) {
-            updateLastAssistantMessage(tid, (last.content || "") + (event.content || ""), true);
-          }
+          queueStreamDelta(tid, event.content || "", "");
           break;
         }
         case "reasoning": {
           if (!tid) break;
-          const last = ensureStreamingAssistantMessage(tid);
-          if (last?.role === "assistant" && last.isStreaming) {
-            updateLastAssistantMessage(tid, last.content || "", true, {
-              reasoning: (last.reasoning || "") + (event.content || ""),
-            });
-          }
+          queueStreamDelta(tid, "", event.content || "");
           break;
         }
         case "done": {
           if (!tid) break;
+          flushStreamDeltas();
           useAgentMissionStore.getState().setSharedCursorMode("idle");
           const last = ensureStreamingAssistantMessage(tid);
           if (last?.role === "assistant") {
@@ -282,6 +308,7 @@ export function useDaemonAgentEvents({
         }
         case "tool_call": {
           if (!tid) break;
+          flushStreamDeltas();
           useAgentMissionStore.getState().setSharedCursorMode("agent");
           const messages = useAgentStore.getState().getThreadMessages(tid);
           const last = messages[messages.length - 1];
@@ -376,6 +403,7 @@ export function useDaemonAgentEvents({
         }
         case "error": {
           if (!tid) break;
+          flushStreamDeltas();
           useAgentMissionStore.getState().setSharedCursorMode("idle");
           ensureStreamingAssistantMessage(tid);
           updateLastAssistantMessage(tid, `Error: ${event.message}`, false);
@@ -484,7 +512,15 @@ export function useDaemonAgentEvents({
       }
     });
 
-    return unsubscribe;
+    return () => {
+      if (streamFrame !== null) {
+        window.cancelAnimationFrame(streamFrame);
+      }
+      pendingStreamDeltas.clear();
+      if (typeof unsubscribe === "function") {
+        unsubscribe();
+      }
+    };
   }, [
     activePaneId,
     activeThreadId,

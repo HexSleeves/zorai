@@ -172,6 +172,22 @@ export function filterAudioProviderOptions(
   return providerOptions.filter((provider) => providerSupportsAudioTool(provider.id, kind));
 }
 
+export function audioRemoteModelFetchOutputModalities(
+  endpoint: "stt" | "tts",
+  providerId: AgentProviderId,
+): string | undefined {
+  if (providerId !== "openrouter") {
+    return undefined;
+  }
+  if (endpoint === "tts") return "speech";
+  if (endpoint === "stt") return "transcription";
+  return undefined;
+}
+
+export function imageRemoteModelFetchOutputModalities(providerId: AgentProviderId): string | undefined {
+  return providerId === "openrouter" ? "image" : undefined;
+}
+
 export function imageGenerationModelOptions(providerId: AgentProviderId): ModelDefinition[] {
   if (providerId === "openai" || providerId === "azure-openai" || providerId === "custom") {
     return OPENAI_IMAGE_MODELS;

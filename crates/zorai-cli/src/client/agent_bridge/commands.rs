@@ -80,13 +80,16 @@ where
                 .send(ClientMessage::AgentStopStream { thread_id })
                 .await?;
         }
-        AgentBridgeCommand::ListThreads => {
+        AgentBridgeCommand::ListThreads {
+            agent_filter,
+            include_internal,
+        } => {
             framed
                 .send(ClientMessage::AgentListThreads {
                     limit: None,
                     offset: None,
-                    include_internal: false,
-                    agent_filter: None,
+                    include_internal,
+                    agent_filter,
                 })
                 .await?;
         }
@@ -455,6 +458,28 @@ where
                     target_agent_id,
                     provider_id,
                     model,
+                })
+                .await?;
+        }
+        AgentBridgeCommand::SetTargetAgentReasoningEffort {
+            target_agent_id,
+            reasoning_effort,
+        } => {
+            framed
+                .send(ClientMessage::AgentSetTargetAgentReasoningEffort {
+                    target_agent_id,
+                    reasoning_effort,
+                })
+                .await?;
+        }
+        AgentBridgeCommand::SetTargetAgentContextWindow {
+            target_agent_id,
+            context_window_tokens,
+        } => {
+            framed
+                .send(ClientMessage::AgentSetTargetAgentContextWindow {
+                    target_agent_id,
+                    context_window_tokens,
                 })
                 .await?;
         }
@@ -905,6 +930,42 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn set_target_agent_reasoning_effort_command_maps_to_client_message() {
+        let message = emitted_client_message(
+            r#"{"type":"set-target-agent-reasoning-effort","target_agent_id":"rarog","reasoning_effort":"high"}"#,
+        )
+        .await;
+        match message {
+            ClientMessage::AgentSetTargetAgentReasoningEffort {
+                target_agent_id,
+                reasoning_effort,
+            } => {
+                assert_eq!(target_agent_id, "rarog");
+                assert_eq!(reasoning_effort, "high");
+            }
+            other => panic!("expected AgentSetTargetAgentReasoningEffort, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn set_target_agent_context_window_command_maps_to_client_message() {
+        let message = emitted_client_message(
+            r#"{"type":"set-target-agent-context-window","target_agent_id":"weles","context_window_tokens":180000}"#,
+        )
+        .await;
+        match message {
+            ClientMessage::AgentSetTargetAgentContextWindow {
+                target_agent_id,
+                context_window_tokens,
+            } => {
+                assert_eq!(target_agent_id, "weles");
+                assert_eq!(context_window_tokens, 180_000);
+            }
+            other => panic!("expected AgentSetTargetAgentContextWindow, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
     async fn openai_codex_auth_status_command_maps_to_client_message() {
         assert_emitted_client_message(
             r#"{"type":"openai-codex-auth-status"}"#,
@@ -929,6 +990,44 @@ mod tests {
             ClientMessage::AgentLogoutOpenAICodex,
         )
         .await;
+    }
+
+    #[tokio::test]
+    async fn list_threads_forwards_agent_filter_and_include_internal() {
+        let message = emitted_client_message(
+            r#"{"type":"list-threads","agent_filter":"dazhbog","include_internal":true}"#,
+        )
+        .await;
+        match message {
+            ClientMessage::AgentListThreads {
+                agent_filter,
+                include_internal,
+                limit,
+                offset,
+            } => {
+                assert_eq!(agent_filter.as_deref(), Some("dazhbog"));
+                assert!(include_internal);
+                assert_eq!(limit, None);
+                assert_eq!(offset, None);
+            }
+            other => panic!("expected AgentListThreads, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn list_threads_defaults_to_public_unfiltered_list() {
+        let message = emitted_client_message(r#"{"type":"list-threads"}"#).await;
+        match message {
+            ClientMessage::AgentListThreads {
+                agent_filter,
+                include_internal,
+                ..
+            } => {
+                assert_eq!(agent_filter, None);
+                assert!(!include_internal);
+            }
+            other => panic!("expected AgentListThreads, got {other:?}"),
+        }
     }
 
     #[test]

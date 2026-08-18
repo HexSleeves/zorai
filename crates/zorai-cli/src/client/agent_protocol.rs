@@ -57,7 +57,12 @@ pub(super) enum AgentBridgeCommand {
     StopStream {
         thread_id: String,
     },
-    ListThreads,
+    ListThreads {
+        #[serde(default)]
+        agent_filter: Option<String>,
+        #[serde(default)]
+        include_internal: bool,
+    },
     GetThread {
         thread_id: String,
         #[serde(default)]
@@ -227,6 +232,14 @@ pub(super) enum AgentBridgeCommand {
         target_agent_id: String,
         provider_id: String,
         model: String,
+    },
+    SetTargetAgentReasoningEffort {
+        target_agent_id: String,
+        reasoning_effort: String,
+    },
+    SetTargetAgentContextWindow {
+        target_agent_id: String,
+        context_window_tokens: u32,
     },
     HeartbeatGetItems,
     HeartbeatSetItems {

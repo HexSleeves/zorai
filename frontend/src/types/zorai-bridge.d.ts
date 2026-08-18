@@ -495,6 +495,7 @@ declare global {
         }) => Promise<{ ok?: boolean; error?: string } | unknown>;
         agentListThreads?: (options?: {
             agentFilter?: string | null;
+            includeInternal?: boolean;
         }) => Promise<unknown[]>;
         agentGetThread?: (
             threadId: string,
@@ -566,6 +567,8 @@ declare global {
         agentSetConfigItem?: (keyPath: string, value: unknown) => Promise<unknown>;
         agentSetProviderModel?: (providerId: string, model: string) => Promise<{ ok?: boolean; error?: string }>;
         agentSetTargetAgentProviderModel?: (targetAgentId: string, providerId: string, model: string) => Promise<{ ok?: boolean; error?: string }>;
+        agentSetTargetAgentReasoningEffort?: (targetAgentId: string, reasoningEffort: string) => Promise<{ ok?: boolean; error?: string }>;
+        agentSetTargetAgentContextWindow?: (targetAgentId: string, contextWindowTokens: number) => Promise<{ ok?: boolean; error?: string }>;
         agentSetTierOverride?: (tier: string | null) => Promise<unknown>;
         agentSetSubAgent?: (subAgentJson: string) => Promise<{ ok?: boolean; error?: string }>;
         agentRemoveSubAgent?: (subAgentId: string) => Promise<{ ok?: boolean }>;

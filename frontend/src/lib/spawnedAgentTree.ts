@@ -207,3 +207,30 @@ export function deriveSpawnedAgentTree<T extends SpawnedAgentTreeSource>(
             .map((item) => buildNode(item, indexes, rootIdentityLookup)),
     };
 }
+
+/**
+ * Prunes a spawned-agent tree down to the nodes that still matter for live
+ * orchestration: every non-terminal node plus terminal nodes that still have
+ * live descendants. Historical (terminal leaf) runs are dropped so the
+ * "Spawned" context shows the current working set, not the full backlog of
+ * everything ever spawned from the thread.
+ */
+export function pruneSpawnedAgentTreeToLive<T extends SpawnedAgentTreeSource>(
+    tree: SpawnedAgentTree<T> | null,
+): SpawnedAgentTree<T> | null {
+    if (!tree) return null;
+
+    const pruneNodes = (nodes: readonly SpawnedAgentTreeNode<T>[]): SpawnedAgentTreeNode<T>[] =>
+        nodes
+            .map((node) => ({ ...node, children: pruneNodes(node.children) }))
+            .filter((node) => node.live || node.children.length > 0);
+
+    const anchor = tree.anchor ? pruneNodes([tree.anchor])[0] ?? null : null;
+    const roots = pruneNodes(tree.roots);
+
+    if (!anchor && roots.length === 0) {
+        return null;
+    }
+
+    return { ...tree, anchor, roots };
+}

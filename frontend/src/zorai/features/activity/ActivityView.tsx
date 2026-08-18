@@ -3,12 +3,14 @@ import { useAgentChatPanelRuntime } from "@/components/agent-chat-panel/runtime/
 import { useAuditStore } from "@/lib/auditStore";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { UsagePanel } from "./ActivityUsagePanel";
+import { ActivityInbox } from "./ActivityInbox";
 import { buildUsageStats, formatCount } from "./ActivityUsageStats";
 
-type ActivityTab = "timeline" | "reasoning" | "planner" | "usage";
+type ActivityTab = "inbox" | "timeline" | "reasoning" | "planner" | "usage";
 
 export function ActivityRail() {
   const notifications = useNotificationStore((state) => state.notifications);
+  const unreadCount = useNotificationStore((state) => state.unreadCount);
   const auditEntries = useAuditStore((state) => state.entries);
   const { pendingApprovals, scopedOperationalEvents } = useAgentChatPanelRuntime();
 
@@ -16,7 +18,8 @@ export function ActivityRail() {
     <div className="zorai-rail-stack">
       <Metric label="Approvals" value={pendingApprovals.length} />
       <Metric label="Ops events" value={scopedOperationalEvents.length} />
-      <Metric label="Notifications" value={notifications.length} />
+      <Metric label="Notifications" value={unreadCount} />
+      <Metric label="Inbox" value={notifications.filter((notification) => notification.archivedAt == null && notification.deletedAt == null).length} />
       <Metric label="Audit entries" value={auditEntries.length} />
     </div>
   );
@@ -77,7 +80,7 @@ export function ActivityView() {
           onChange={(event) => setQuery(event.target.value)}
           placeholder="Search activity..."
         />
-        {(["timeline", "reasoning", "planner", "usage"] as const).map((nextTab) => (
+        {(["inbox", "timeline", "reasoning", "planner", "usage"] as const).map((nextTab) => (
           <button
             type="button"
             key={nextTab}
@@ -88,6 +91,8 @@ export function ActivityView() {
           </button>
         ))}
       </div>
+
+      {tab === "inbox" ? <ActivityInbox /> : null}
 
       {tab === "timeline" ? (
         <div className="zorai-activity-grid">

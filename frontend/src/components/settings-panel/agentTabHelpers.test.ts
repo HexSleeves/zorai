@@ -1,9 +1,11 @@
 import { expect, test } from "vitest";
 import {
   audioModelOptions,
+  audioRemoteModelFetchOutputModalities,
   embeddingModelOptions,
   filterImageGenerationProviderOptions,
   imageGenerationModelOptions,
+  imageRemoteModelFetchOutputModalities,
   normalizeImageGenerationModelForProviderChange,
   normalizeAudioModelForProviderChange,
 } from "./agentTabHelpers";
@@ -99,4 +101,13 @@ test("embedding model options match tui static catalogs", () => {
     "openai/text-embedding-3-small",
     "openai/text-embedding-3-large",
   ]);
+});
+
+test("remote model fetches request TUI modality filters for OpenRouter audio and image pickers", () => {
+  expect(audioRemoteModelFetchOutputModalities("stt", "openrouter")).toBe("transcription");
+  expect(audioRemoteModelFetchOutputModalities("tts", "openrouter")).toBe("speech");
+  expect(audioRemoteModelFetchOutputModalities("stt", "openai")).toBeUndefined();
+  expect(audioRemoteModelFetchOutputModalities("tts", "openai")).toBeUndefined();
+  expect(imageRemoteModelFetchOutputModalities("openrouter")).toBe("image");
+  expect(imageRemoteModelFetchOutputModalities("openai")).toBeUndefined();
 });

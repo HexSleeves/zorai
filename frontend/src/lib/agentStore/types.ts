@@ -170,6 +170,7 @@ export interface SubAgentDefinition {
   tool_whitelist?: string[];
   tool_blacklist?: string[];
   context_budget_tokens?: number;
+  context_window_tokens?: number;
   max_duration_secs?: number;
   supervisor_config?: {
     check_interval_secs?: number;

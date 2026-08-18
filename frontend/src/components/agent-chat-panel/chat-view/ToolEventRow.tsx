@@ -14,7 +14,6 @@ import {
 export function ToolEventRow({ group }: { group: ToolEventGroup }) {
   const [collapsed, setCollapsed] = useState(true);
   const statusLabel = group.status.toUpperCase();
-  const shortId = (group.toolCallId || group.key).slice(-8);
   const statusTone = toolStatusTone(group.status);
   const toolIcon = getToolIconPresentation(group.toolName, group.toolArguments);
   const toolDiff = group.toolArguments
@@ -36,17 +35,13 @@ export function ToolEventRow({ group }: { group: ToolEventGroup }) {
   const reviewToneStyle = reviewPresentation?.tone === "blocked"
     ? {
       color: "#FFB4B4",
-      borderColor: "rgba(255, 107, 107, 0.35)",
-      background: "rgba(109, 26, 26, 0.45)",
     }
     : {
       color: "#FFE1A8",
-      borderColor: "rgba(255, 184, 77, 0.35)",
-      background: "rgba(88, 57, 8, 0.38)",
     };
 
   return (
-    <div style={{ border: "1px solid rgba(255,255,255,0.1)", padding: 8, fontFamily: "var(--font-mono)", whiteSpace: "pre-wrap", wordBreak: "break-word", overflowWrap: "anywhere", display: "flex", flexDirection: "column", gap: 6, borderRadius: "var(--radius-sm)", background: "rgba(255,255,255,0.01)", minWidth: 0, maxWidth: "100%", boxSizing: "border-box" }}>
+    <div style={{ padding: "8px 0 8px 0", fontFamily: "var(--font-mono)", whiteSpace: "pre-wrap", wordBreak: "break-word", overflowWrap: "anywhere", display: "flex", flexDirection: "column", gap: 6, borderRadius: "var(--radius-sm)", minWidth: 0, maxWidth: "100%", boxSizing: "border-box" }}>
       <button
         type="button"
         onClick={() => setCollapsed((prev) => !prev)}
@@ -92,41 +87,33 @@ export function ToolEventRow({ group }: { group: ToolEventGroup }) {
             </span>
             <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{group.toolName}</span>
           </span>
-          <div style={{ display: "flex", flexDirection: "row", gap: 4, alignItems: "flex-start", fontSize: 8, flexShrink: 0 }}>
+          <div style={{ display: "flex", flexDirection: "row", gap: 8, alignItems: "center", fontSize: 8, flexShrink: 0 }}>
             {reviewPresentation && (
               <span
                 style={{
                   fontSize: 11,
                   fontWeight: 700,
-                  padding: "1px 6px",
-                  border: "1px solid",
-                  borderRadius: 999,
                   ...reviewToneStyle,
                 }}
               >
-                {reviewPresentation.badgeLabel}
+                {reviewPresentation.badgeLabel === "Blocked" ? "❌" : reviewPresentation.badgeLabel === "Flagged" ? "⚠️" : null}
               </span>
             )}
-            <span style={{ color: "var(--text-muted)", fontSize: 11 }}>#{shortId}</span>
             <span
               style={{
                 color: statusTone.text,
-                border: `1px solid ${statusTone.border}`,
-                background: statusTone.background,
-                borderRadius: 999,
-                padding: "1px 6px",
                 fontSize: 11,
                 fontWeight: 700,
               }}
             >
-              {statusLabel}
+              {statusLabel === "DONE" ? "✅" : statusLabel === "REQUESTED" || statusLabel === "EXECUTING" ? "⏳" : statusLabel === "ERROR" ? "❌" : null}
             </span>
           </div>
         </div>
       </button>
 
       {!collapsed && (
-        <div style={{ display: "grid", gap: 6, minWidth: 0 }}>
+        <div style={{ display: "grid", gap: 8, minWidth: 0, padding: "8px 0 0 0" }}>
           {reviewPresentation && (
             <div
               style={{

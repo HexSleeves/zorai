@@ -15,17 +15,33 @@ import { hydrateTierStore } from "./lib/tierStore";
 import { useWorkspaceStore } from "./lib/workspaceStore";
 import "./styles/global.css";
 
+const setBootStatus = (text: string): void => {
+  const status = document.getElementById("zorai-boot-status");
+  if (status) status.textContent = text;
+};
+
+const dismissBootSplash = (): void => {
+  const splash = document.getElementById("zorai-boot");
+  if (!splash) return;
+  splash.classList.add("zorai-boot--done");
+  window.setTimeout(() => splash.remove(), 500);
+};
+
 const renderRoot = (): void => {
   ReactDOM.createRoot(document.getElementById("root")!).render(
     <React.StrictMode>
       <App />
     </React.StrictMode>
   );
+  // Let the first paint land before fading the splash out.
+  requestAnimationFrame(() => requestAnimationFrame(dismissBootSplash));
 };
 
 async function bootstrap() {
+  setBootStatus("Loading settings…");
   await hydrateSettingsStore();
 
+  setBootStatus("Hydrating agent stores…");
   await Promise.all([
     hydrateAgentStore(),
     hydrateCommandLogStore(),
@@ -40,11 +56,13 @@ async function bootstrap() {
   // Start status polling after stores are hydrated (non-blocking)
   hydrateStatusStore();
 
+  setBootStatus("Restoring session…");
   const persistedSession = await loadSession();
   if (persistedSession) {
     useWorkspaceStore.getState().hydrateSession(persistedSession);
   }
 
+  setBootStatus("Launching interface…");
   renderRoot();
 }
 

@@ -11,6 +11,7 @@ import {
 } from "./threadContextPreview";
 import { useThreadFilePreview } from "./ThreadFilePreviewContext";
 import { SpawnedContext } from "./ThreadsSpawnedContext";
+import { ThreadRuntimeBar } from "./ThreadRuntimeBar";
 
 type ContextTab = "todos" | "files" | "spawned";
 
@@ -61,6 +62,13 @@ export function ThreadsContext() {
 
   return (
     <div className="zorai-thread-context-stack">
+      {activeThread ? (
+        <section className="zorai-thread-runtime-setup">
+          <div className="zorai-section-label">Runtime</div>
+          <ThreadRuntimeBar thread={activeThread} />
+        </section>
+      ) : null}
+
       <ContextWindowSummary
         currentTokens={currentContextTokens}
         contextWindowTokens={contextWindowTokens}

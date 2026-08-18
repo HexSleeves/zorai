@@ -1,3 +1,4 @@
+import { memo } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -124,7 +125,7 @@ const markdownComponents: Components = {
   ),
 };
 
-export function MarkdownContent({ content }: { content: string }) {
+export const MarkdownContent = memo(function MarkdownContent({ content }: { content: string }) {
   return (
     <div style={{ minWidth: 0, maxWidth: "100%", overflowWrap: "anywhere" }}>
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
@@ -132,4 +133,4 @@ export function MarkdownContent({ content }: { content: string }) {
       </ReactMarkdown>
     </div>
   );
-}
+});
