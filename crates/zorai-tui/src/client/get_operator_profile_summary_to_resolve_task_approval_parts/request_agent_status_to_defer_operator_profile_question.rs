@@ -394,6 +394,17 @@ impl DaemonClient {
         })
     }
 
+    pub fn set_target_agent_context_window(
+        &self,
+        target_agent_id: String,
+        context_window_tokens: u32,
+    ) -> Result<()> {
+        self.send(ClientMessage::AgentSetTargetAgentContextWindow {
+            target_agent_id,
+            context_window_tokens,
+        })
+    }
+
     pub fn get_provider_auth_states(&self) -> Result<()> {
         self.send(ClientMessage::AgentGetProviderAuthStates)
     }

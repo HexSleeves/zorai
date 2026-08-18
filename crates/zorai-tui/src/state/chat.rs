@@ -643,6 +643,24 @@ fn trimmed_non_empty(value: Option<&str>) -> Option<String> {
         .map(str::to_string)
 }
 
+fn incoming_profile_disagrees_with_runtime(
+    existing: &AgentThread,
+    incoming_provider: Option<&str>,
+    incoming_model: Option<&str>,
+) -> bool {
+    if existing
+        .runtime_provider
+        .as_deref()
+        .is_some_and(|runtime| incoming_provider != Some(runtime))
+    {
+        return true;
+    }
+    existing
+        .runtime_model
+        .as_deref()
+        .is_some_and(|runtime| incoming_model != Some(runtime))
+}
+
 fn responder_identity_meaningfully_changed(
     before: &ThreadResponderIdentity,
     after: &ThreadResponderIdentity,
@@ -661,6 +679,9 @@ fn responder_identity_meaningfully_changed(
     // switch and must not clear runtime_provider/runtime_model, otherwise
     // the header falls back to the stale cached config.
     if names_equal && before.agent_id.is_some() && after.agent_id.is_none() {
+        return false;
+    }
+    if after.agent_id.is_none() && after.agent_name.is_none() {
         return false;
     }
     true
@@ -2004,16 +2025,34 @@ impl ChatState {
                     if !older_history_page && incoming.agent_name.is_some() {
                         existing.agent_name = incoming.agent_name;
                     }
-                    if !older_history_page && incoming.profile_provider.is_some() {
+                    let incoming_profile_disagrees_with_runtime =
+                        incoming_profile_disagrees_with_runtime(
+                            existing,
+                            incoming.profile_provider.as_deref(),
+                            incoming.profile_model.as_deref(),
+                        );
+                    if !older_history_page
+                        && incoming.profile_provider.is_some()
+                        && !incoming_profile_disagrees_with_runtime
+                    {
                         existing.profile_provider = incoming.profile_provider;
                     }
-                    if !older_history_page && incoming.profile_model.is_some() {
+                    if !older_history_page
+                        && incoming.profile_model.is_some()
+                        && !incoming_profile_disagrees_with_runtime
+                    {
                         existing.profile_model = incoming.profile_model;
                     }
-                    if !older_history_page && incoming.profile_reasoning_effort.is_some() {
+                    if !older_history_page
+                        && incoming.profile_reasoning_effort.is_some()
+                        && !incoming_profile_disagrees_with_runtime
+                    {
                         existing.profile_reasoning_effort = incoming.profile_reasoning_effort;
                     }
-                    if !older_history_page && incoming.profile_context_window_tokens.is_some() {
+                    if !older_history_page
+                        && incoming.profile_context_window_tokens.is_some()
+                        && !incoming_profile_disagrees_with_runtime
+                    {
                         existing.profile_context_window_tokens =
                             incoming.profile_context_window_tokens;
                     }

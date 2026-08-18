@@ -1,5 +1,4 @@
 use super::super::advanced_single_line_edit_layout_to_subagent_row_action_offsets::*;
-use crate::providers;
 use crate::state::concierge::ConciergeState;
 use crate::state::config::ConfigState;
 use crate::state::modal::ModalState;
@@ -201,17 +200,6 @@ pub(crate) fn render(
 pub(crate) fn settings_field_can_activate(settings: &SettingsState, config: &ConfigState) -> bool {
     let field = settings.current_field_name_with_config(config);
     if field.is_empty() || matches!(field, "snapshot_stats") {
-        return false;
-    }
-    if settings.active_tab() == SettingsTab::Advanced
-        && field == "context_window_tokens"
-        && !providers::model_uses_context_window_override(
-            &config.provider,
-            &config.auth_source,
-            &config.model,
-            &config.custom_model_name,
-        )
-    {
         return false;
     }
     !matches!(

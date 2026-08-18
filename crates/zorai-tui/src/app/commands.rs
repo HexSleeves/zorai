@@ -142,10 +142,16 @@ pub(super) fn parse_workspace_actor_field(
 mod activate_workspace_toolbar_action_to_submit_image_prompt;
 #[path = "commands_parts/active_goal_sidebar_item_to_speak_latest_assistant_message.rs"]
 mod active_goal_sidebar_item_to_speak_latest_assistant_message;
+#[path = "commands_parts/slash_context.rs"]
+mod slash_context;
 #[path = "commands_parts/copy_work_context_content_to_regenerate_from_message.rs"]
 mod copy_work_context_content_to_regenerate_from_message;
 #[path = "commands_parts/export_thread.rs"]
 mod export_thread;
+#[path = "commands_parts/focus_goal_composer_section.rs"]
+mod focus_goal_composer_section;
+#[path = "commands_parts/goal_composer_defaults.rs"]
+mod goal_composer_defaults;
 #[path = "commands_parts/focus_next_goal_workspace_pane_to_select_goal_sidebar_row.rs"]
 mod focus_next_goal_workspace_pane_to_select_goal_sidebar_row;
 #[path = "commands_parts/fork_message.rs"]

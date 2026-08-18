@@ -65,6 +65,7 @@ impl TuiModel {
                 .goal_mission_control
                 .update_selected_preflight_assignment(update);
             if updated {
+                self.persist_goal_composer_defaults_if_enabled();
                 self.status_line = "Mission Control preflight roster updated".to_string();
             }
             return updated;

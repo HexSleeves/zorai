@@ -192,6 +192,10 @@ pub enum DaemonCommand {
         target_agent_id: String,
         reasoning_effort: String,
     },
+    SetTargetAgentContextWindow {
+        target_agent_id: String,
+        context_window_tokens: u32,
+    },
     ControlGoalRun {
         goal_run_id: String,
         action: String,

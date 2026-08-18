@@ -107,16 +107,7 @@ pub(crate) fn render_provider_tab<'a>(
     } else {
         config.huggingface_provider.clone()
     };
-    let context_hint = if providers::model_uses_context_window_override(
-        &config.provider,
-        &config.auth_source,
-        &config.model,
-        &config.custom_model_name,
-    ) {
-        " [Enter: edit]"
-    } else {
-        ""
-    };
+    let context_hint = " [Enter: edit]";
     let transport_hint = if fixed_transport.is_some() || uses_fixed_anthropic_messages {
         ""
     } else if providers::supported_transports_for(&config.provider).len() <= 1 {
@@ -228,7 +219,9 @@ pub(crate) fn render_provider_tab<'a>(
                     && matches!(
                         settings.editing_field(),
                         Some("custom_model_entry" | "target_agent_model")
-                    )));
+                    ))
+                || (*field_name == "context_window_tokens"
+                    && settings.editing_field() == Some("target_agent_context_window")));
 
         let marker = if is_selected { ">" } else { " " };
 

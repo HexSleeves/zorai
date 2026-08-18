@@ -2553,6 +2553,111 @@ async fn agent_thread_detail_json_falls_back_to_message_provider_when_execution_
 }
 
 #[tokio::test]
+async fn agent_thread_detail_json_skips_compaction_artifact_when_deriving_profile() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let thread_id = "thread-compaction-artifact-profile";
+
+    let mut older = assistant_message("older kept assistant", 1);
+    older.provider = Some("openai".to_string());
+    older.model = Some("gpt-5.4".to_string());
+
+    let mut artifact = assistant_message("Pre-compaction context", 2);
+    artifact.message_kind = AgentMessageKind::CompactionArtifact;
+    artifact.provider = Some("openai".to_string());
+    artifact.model = Some("gpt-5.4".to_string());
+
+    engine.threads.write().await.insert(
+        thread_id.to_string(),
+        make_thread(
+            thread_id,
+            Some("Swarog"),
+            "Compaction artifact profile",
+            false,
+            1,
+            2,
+            vec![older, artifact],
+        ),
+    );
+    engine
+        .thread_execution_profiles
+        .write()
+        .await
+        .insert(
+            thread_id.to_string(),
+            crate::agent::types::ThreadExecutionProfile {
+                provider: Some("github-copilot".to_string()),
+                model: Some("gpt-5.5".to_string()),
+                reasoning_effort: None,
+                context_window_tokens: Some(200_000),
+            },
+        );
+
+    let json = engine
+        .agent_thread_detail_json(thread_id, Some(10), Some(0))
+        .await;
+    let value: serde_json::Value = serde_json::from_str(&json).expect("decode thread detail");
+
+    assert_eq!(value["profile_provider"].as_str(), Some("github-copilot"));
+    assert_eq!(value["profile_model"].as_str(), Some("gpt-5.5"));
+    assert_eq!(value["profile_context_window_tokens"].as_u64(), Some(200_000));
+}
+
+#[tokio::test]
+async fn sync_thread_execution_profiles_for_agent_updates_owned_threads() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let thread_id = "thread-weles-owned";
+
+    engine.threads.write().await.insert(
+        thread_id.to_string(),
+        make_thread(
+            thread_id,
+            Some("Weles"),
+            "Weles thread",
+            false,
+            1,
+            2,
+            vec![AgentMessage::user("hi", 1)],
+        ),
+    );
+    engine
+        .thread_execution_profiles
+        .write()
+        .await
+        .insert(
+            thread_id.to_string(),
+            crate::agent::types::ThreadExecutionProfile {
+                provider: Some("openai".to_string()),
+                model: Some("gpt-5.4".to_string()),
+                reasoning_effort: Some("medium".to_string()),
+                context_window_tokens: Some(128_000),
+            },
+        );
+
+    let mut config = engine.get_config().await;
+    config.builtin_sub_agents.weles.provider = Some("openai".to_string());
+    config.builtin_sub_agents.weles.model = Some("gpt-5.4-mini".to_string());
+    config.builtin_sub_agents.weles.context_window_tokens = Some(256_000);
+    engine.set_config(config).await;
+    engine
+        .sync_thread_execution_profiles_for_agent("weles")
+        .await;
+
+    let profile = engine
+        .thread_execution_profiles
+        .read()
+        .await
+        .get(thread_id)
+        .cloned()
+        .expect("execution profile should exist");
+    assert_eq!(profile.model.as_deref(), Some("gpt-5.4-mini"));
+    assert_eq!(profile.context_window_tokens, Some(256_000));
+}
+
+#[tokio::test]
 async fn agent_thread_detail_json_backfills_agent_name_from_message_author_when_missing() {
     // Why this matters: older threads (or in-memory state that lost the field)
     // can be persisted without `agent_name`, making the TUI's sticky owner

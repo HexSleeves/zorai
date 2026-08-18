@@ -54,6 +54,7 @@ pub(crate) async fn dispatch_part4(
             | ClientMessage::AgentSetProviderModel { .. }
             | ClientMessage::AgentSetTargetAgentProviderModel { .. }
             | ClientMessage::AgentSetTargetAgentReasoningEffort { .. }
+            | ClientMessage::AgentSetTargetAgentContextWindow { .. }
             | ClientMessage::AgentFetchModels { .. }
             | ClientMessage::AgentHeartbeatGetItems
             | ClientMessage::AgentHeartbeatSetItems { .. }
@@ -744,6 +745,15 @@ pub(crate) async fn dispatch_part4(
                     return Ok(true);
                 }
 
+                if crate::agent::AgentEngine::config_item_affects_swarog_execution_profile(&key_path)
+                {
+                    agent
+                        .sync_thread_execution_profiles_for_agent(
+                            crate::agent::agent_identity::MAIN_AGENT_ID,
+                        )
+                        .await;
+                }
+
                 let operation = operation_registry().accept_operation(
                     OPERATION_KIND_CONFIG_SET_ITEM,
                     Some(config_set_item_dedup_key(&agent, &key_path, &value_json)),
@@ -803,6 +813,11 @@ pub(crate) async fn dispatch_part4(
                     }
 
                     agent.persist_prepared_provider_model_json(merged).await;
+                    agent
+                        .sync_thread_execution_profiles_for_agent(
+                            crate::agent::agent_identity::MAIN_AGENT_ID,
+                        )
+                        .await;
 
                     let operation = operation_registry().accept_operation(
                         OPERATION_KIND_SET_PROVIDER_MODEL,
@@ -868,6 +883,9 @@ pub(crate) async fn dispatch_part4(
                     }
 
                     agent.persist_prepared_provider_model_json(merged).await;
+                    agent
+                        .sync_thread_execution_profiles_for_agent(&target_agent_id)
+                        .await;
 
                     let operation = operation_registry().accept_operation(
                         OPERATION_KIND_SET_PROVIDER_MODEL,
@@ -943,6 +961,9 @@ pub(crate) async fn dispatch_part4(
                     }
 
                     agent.persist_prepared_provider_model_json(merged).await;
+                    agent
+                        .sync_thread_execution_profiles_for_agent(&target_agent_id)
+                        .await;
 
                     let operation = operation_registry().accept_operation(
                         OPERATION_KIND_SET_PROVIDER_MODEL,
@@ -989,6 +1010,90 @@ pub(crate) async fn dispatch_part4(
                         .send(DaemonMessage::Error {
                             message: format!(
                                 "Invalid target agent reasoning effort selection: {e}"
+                            ),
+                        })
+                        .await?;
+                }
+            }
+        }
+
+        ClientMessage::AgentSetTargetAgentContextWindow {
+            target_agent_id,
+            context_window_tokens,
+        } => {
+            match agent
+                .prepare_agent_context_window_json(&target_agent_id, context_window_tokens)
+                .await
+            {
+                Ok(merged) => {
+                    if !background_daemon_pending.has_capacity(BackgroundSubsystem::ConfigReconcile)
+                    {
+                        background_daemon_pending
+                            .note_rejection(BackgroundSubsystem::ConfigReconcile);
+                        framed
+                            .send(DaemonMessage::Error {
+                                message: "config_reconcile background queue is full".to_string(),
+                            })
+                            .await?;
+                        return Ok(true);
+                    }
+
+                    agent.persist_prepared_provider_model_json(merged).await;
+                    agent
+                        .set_owned_thread_execution_profile_context(
+                            &target_agent_id,
+                            context_window_tokens,
+                        )
+                        .await;
+                    agent
+                        .sync_thread_execution_profiles_for_agent(&target_agent_id)
+                        .await;
+
+                    let operation = operation_registry().accept_operation(
+                        OPERATION_KIND_SET_PROVIDER_MODEL,
+                        Some(set_target_agent_context_window_dedup_key(
+                            &agent,
+                            &target_agent_id,
+                            context_window_tokens,
+                        )),
+                    );
+
+                    framed
+                        .send(DaemonMessage::OperationAccepted {
+                            operation_id: operation.operation_id.clone(),
+                            kind: operation.kind.clone(),
+                            dedup: operation.dedup.clone(),
+                            revision: operation.revision,
+                        })
+                        .await?;
+
+                    let agent = agent.clone();
+                    let background_daemon_tx =
+                        background_daemon_queues.sender(BackgroundSubsystem::ConfigReconcile);
+                    spawn_background_side_effect(
+                        BackgroundSubsystem::ConfigReconcile,
+                        Some(operation.operation_id.clone()),
+                        background_daemon_tx,
+                        background_daemon_pending,
+                        async move {
+                            match agent.reconcile_config_runtime_after_commit().await {
+                                Ok(()) => BackgroundSideEffectOutcome::Completed,
+                                Err(_) => BackgroundSideEffectOutcome::Failed,
+                            }
+                        },
+                    );
+                }
+                Err(e) => {
+                    tracing::warn!(
+                        error = %e,
+                        target_agent_id,
+                        context_window_tokens,
+                        "server: AgentSetTargetAgentContextWindow rejected"
+                    );
+                    framed
+                        .send(DaemonMessage::Error {
+                            message: format!(
+                                "Invalid target agent context window selection: {e}"
                             ),
                         })
                         .await?;

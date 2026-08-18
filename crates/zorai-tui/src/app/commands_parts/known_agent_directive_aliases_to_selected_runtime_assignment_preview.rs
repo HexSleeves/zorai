@@ -455,6 +455,8 @@ impl TuiModel {
             self.set_mission_control_return_targets(Some(target), None);
         }
         self.main_pane_view = MainPaneView::GoalComposer;
+        self.goal_mission_control
+            .set_focused_section(goal_mission_control::GoalMissionControlSection::RoleAssignments);
         self.focus = FocusArea::Chat;
         self.task_view_scroll = 0;
         true

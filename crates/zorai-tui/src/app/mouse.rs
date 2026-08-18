@@ -466,19 +466,25 @@ impl TuiModel {
                         return;
                     }
                     if matches!(self.main_pane_view, MainPaneView::GoalComposer) {
-                        if matches!(
-                            widgets::goal_mission_control::hit_test(
-                                chat_area,
-                                Position::new(mouse.column, mouse.row),
-                                self.mission_control_has_thread_target(),
-                            ),
-                            Some(
-                                widgets::goal_mission_control::GoalMissionControlHitTarget::OpenActiveThread
-                            )
+                        match widgets::goal_mission_control::hit_test(
+                            chat_area,
+                            Position::new(mouse.column, mouse.row),
+                            self.mission_control_has_thread_target(),
+                            self.goal_mission_control.display_role_assignments().len(),
+                            self.goal_mission_control.runtime_mode(),
                         ) {
-                            let _ = self.open_mission_control_goal_thread();
-                            self.input.set_mode(input::InputMode::Insert);
-                            return;
+                            Some(hit) => {
+                                if self.apply_goal_composer_mouse_hit(hit) {
+                                    self.input.set_mode(input::InputMode::Insert);
+                                    return;
+                                }
+                            }
+                            None => {
+                                self.goal_mission_control.set_focused_section(
+                                    goal_mission_control::GoalMissionControlSection::RoleAssignments,
+                                );
+                                self.apply_goal_composer_section_focus();
+                            }
                         }
                     } else if matches!(self.main_pane_view, MainPaneView::Conversation) {
                         if self
@@ -894,6 +900,11 @@ impl TuiModel {
                     self.clear_work_context_drag_selection();
                     self.clear_task_view_drag_selection();
                     self.focus = FocusArea::Input;
+                    if matches!(self.main_pane_view, MainPaneView::GoalComposer) {
+                        self.goal_mission_control.set_focused_section(
+                            goal_mission_control::GoalMissionControlSection::Prompt,
+                        );
+                    }
                     let inner_row = mouse.row.saturating_sub(layout.input.y + 1) as usize;
                     if inner_row < self.attachments.len() {
                         let att = self.attachments.remove(inner_row);

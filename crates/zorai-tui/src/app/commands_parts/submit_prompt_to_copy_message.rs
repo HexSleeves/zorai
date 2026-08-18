@@ -288,6 +288,10 @@ impl TuiModel {
             return;
         }
 
+        if self.focus_next_goal_composer_section() {
+            return;
+        }
+
         if self.focus_next_goal_workspace_pane() {
             self.input.set_mode(input::InputMode::Insert);
             return;
@@ -331,6 +335,10 @@ impl TuiModel {
                 }
             }
             self.input.set_mode(input::InputMode::Insert);
+            return;
+        }
+
+        if self.focus_prev_goal_composer_section() {
             return;
         }
 

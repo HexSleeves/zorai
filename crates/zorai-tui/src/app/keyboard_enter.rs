@@ -285,6 +285,16 @@ impl TuiModel {
             self.queue_threads_for_picker_tab_refresh(&tab);
             return true;
         }
+        if cmd == "context" {
+            if args.is_empty() {
+                self.execute_command("context");
+            } else if let Some(tokens) = Self::parse_context_window_tokens(args) {
+                self.apply_active_thread_context_window(tokens);
+            } else {
+                self.status_line = "Usage: /context [token_count]".to_string();
+            }
+            return true;
+        }
         if self.is_builtin_command(cmd) {
             self.execute_command(cmd);
             return true;
@@ -341,6 +351,9 @@ impl TuiModel {
             {
                 return false;
             }
+        }
+        if self.activate_goal_composer_selection() {
+            return false;
         }
         if self.focus == FocusArea::Chat {
             if let Some(sel) = self.chat.selected_message() {

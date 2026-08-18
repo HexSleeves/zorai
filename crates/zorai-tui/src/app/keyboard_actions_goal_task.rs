@@ -35,11 +35,22 @@ impl TuiModel {
             {
                 {
                     self.goal_mission_control.append_preflight_assignment();
+                    self.persist_goal_composer_defaults_if_enabled();
                     let role_label = self
                         .goal_mission_control
                         .selected_runtime_row_label()
                         .unwrap_or("assignment");
                     self.status_line = format!("Mission Control added {role_label}");
+                };
+                Some(false)
+            }
+            KeyCode::Char('x') | KeyCode::Char('X') | KeyCode::Delete | KeyCode::Backspace
+                if self.focus == FocusArea::Chat
+                    && matches!(self.main_pane_view, MainPaneView::GoalComposer)
+                    && !self.goal_mission_control.runtime_mode() =>
+            {
+                {
+                    self.remove_goal_composer_assignment();
                 };
                 Some(false)
             }
@@ -161,12 +172,7 @@ impl TuiModel {
                     && !self.goal_mission_control.runtime_mode() =>
             {
                 {
-                    self.goal_mission_control.toggle_save_as_default_pending();
-                    self.status_line = if self.goal_mission_control.save_as_default_pending {
-                        "Mission Control preflight will be saved as the new default".to_string()
-                    } else {
-                        "Mission Control preflight will not overwrite defaults".to_string()
-                    };
+                    self.toggle_goal_composer_save_as_default();
                 };
                 Some(false)
             }

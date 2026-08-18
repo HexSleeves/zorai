@@ -23,6 +23,10 @@ pub(super) fn default_command_items() -> Vec<CommandItem> {
             description: "Set Svarog's reasoning effort".into(),
         },
         CommandItem {
+            command: "context".into(),
+            description: "Set the current model's context window".into(),
+        },
+        CommandItem {
             command: "thread".into(),
             description: "Pick conversation thread".into(),
         },
