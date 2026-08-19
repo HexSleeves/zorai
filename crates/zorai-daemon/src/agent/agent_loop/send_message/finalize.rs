@@ -235,8 +235,9 @@ impl<'a> SendMessageRunner<'a> {
             self.mark_last_assistant_report_back().await;
             self.capture_text_report_back(&final_content).await;
         }
-        let continue_for_report_back =
-            self.report_back_phase.is_none() && self.maybe_force_budget_report_back().await;
+        let continue_for_report_back = self.subagent_report.is_none()
+            && self.report_back_phase.is_none()
+            && self.maybe_force_budget_report_back().await;
         Box::pin(
             self.engine
                 .maybe_auto_send_gateway_thread_response(&self.tid),

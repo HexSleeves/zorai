@@ -30,6 +30,14 @@ pub(super) fn budget_overflow_decision(
     }
 }
 
+pub(super) fn should_force_budget_report_back(
+    already_in_report_back: bool,
+    already_has_terminal_report: bool,
+    spawned_subagent: bool,
+) -> bool {
+    spawned_subagent && !already_in_report_back && !already_has_terminal_report
+}
+
 pub(super) fn parse_subagent_report_status(status: &str) -> Option<SubagentReportStatus> {
     match status.trim() {
         "done" => Some(SubagentReportStatus::Done),
@@ -47,7 +55,11 @@ impl<'a> SendMessageRunner<'a> {
     }
 
     pub(super) async fn enter_execution_budget_report_back(&mut self) -> bool {
-        if self.report_back_phase.is_some() || !self.spawned_subagent_turn_active() {
+        if !should_force_budget_report_back(
+            self.report_back_phase.is_some(),
+            self.subagent_report.is_some(),
+            self.spawned_subagent_turn_active(),
+        ) {
             return false;
         }
         let consumed = self
@@ -136,7 +148,11 @@ impl<'a> SendMessageRunner<'a> {
     }
 
     pub(super) async fn maybe_force_budget_report_back(&mut self) -> bool {
-        if self.report_back_phase.is_some() || !self.spawned_subagent_turn_active() {
+        if !should_force_budget_report_back(
+            self.report_back_phase.is_some(),
+            self.subagent_report.is_some(),
+            self.spawned_subagent_turn_active(),
+        ) {
             return false;
         }
         let Some(budget) = self.task_context_budget.as_mut() else {
@@ -320,7 +336,9 @@ impl<'a> SendMessageRunner<'a> {
 
 #[cfg(test)]
 mod tests {
-    use super::{budget_overflow_decision, BudgetOverflowDecision};
+    use super::{
+        budget_overflow_decision, should_force_budget_report_back, BudgetOverflowDecision,
+    };
     use crate::agent::types::ContextOverflowAction;
 
     #[test]
@@ -345,5 +363,23 @@ mod tests {
             budget_overflow_decision(true, true, ContextOverflowAction::Error),
             BudgetOverflowDecision::Continue
         );
+    }
+
+    #[test]
+    fn captured_text_report_must_not_reenter_while_budget_still_exceeded() {
+        assert!(
+            !should_force_budget_report_back(false, true, true),
+            "text report-back clears the phase but already recorded a terminal child report; re-entering would burn another turn and emit Done before more model work"
+        );
+    }
+
+    #[test]
+    fn budget_exceeded_without_report_still_enters_report_back() {
+        assert!(should_force_budget_report_back(false, false, true));
+    }
+
+    #[test]
+    fn already_in_report_back_does_not_force_another_entry() {
+        assert!(!should_force_budget_report_back(true, false, true));
     }
 }

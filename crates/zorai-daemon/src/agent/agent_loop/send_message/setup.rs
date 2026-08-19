@@ -1925,6 +1925,109 @@ mod tests {
         );
     }
 
+    #[tokio::test]
+    async fn goal_run_and_handoff_parent_thread_keeps_supervision_roster() {
+        let root = tempdir().expect("tempdir");
+        let manager = SessionManager::new_test(root.path()).await;
+        let mut config = AgentConfig::default();
+        config.provider = "openai".to_string();
+        config.model = "gpt-5.4-mini".to_string();
+        config.base_url = "http://127.0.0.1:1/v1".to_string();
+        config.api_key = "test-key".to_string();
+        config.sub_agents.push(spawnable_researcher());
+        let engine = AgentEngine::new_test(manager, config, root.path()).await;
+        let thread_id = "thread_goal_conversation";
+        insert_test_thread(&engine, thread_id, "Goal conversation").await;
+
+        for source in ["goal_run", "handoff"] {
+            let task = engine
+                .enqueue_task(
+                    format!("{source} step"),
+                    "Advance the parent conversation.".to_string(),
+                    "normal",
+                    None,
+                    None,
+                    Vec::new(),
+                    None,
+                    source,
+                    None,
+                    None,
+                    Some(thread_id.to_string()),
+                    Some("daemon".to_string()),
+                )
+                .await;
+            assert!(
+                !task.is_spawned_subagent(),
+                "{source} tasks are parent turns even when parent_thread_id is the conversation"
+            );
+            engine
+                .set_thread_identity_from_task(thread_id, &task)
+                .await;
+
+            let runner = SendMessageRunner::initialize(
+                &engine,
+                Some(thread_id),
+                "continue parent work",
+                &[],
+                "continue parent work",
+                Some(&task.id),
+                None,
+                None,
+                None,
+                true,
+                true,
+                0,
+            )
+            .await
+            .expect("parent-turn runner should initialize");
+            assert!(
+                runner.system_prompt.contains("## Subagent Supervision")
+                    && runner.system_prompt.contains("## Available Sub-Agents")
+                    && runner.system_prompt.contains("Researcher")
+                    && !runner.system_prompt.contains("## Subagent Report-Back"),
+                "{source} parent turns must keep supervision and the spawnable roster"
+            );
+
+            let continued = SendMessageRunner::initialize(
+                &engine,
+                Some(thread_id),
+                "continue without a task id",
+                &[],
+                "continue without a task id",
+                None,
+                None,
+                None,
+                None,
+                true,
+                true,
+                0,
+            )
+            .await
+            .expect("identity-only parent continuation should initialize");
+            assert!(
+                continued
+                    .system_prompt
+                    .contains("## Subagent Supervision")
+                    && continued
+                        .system_prompt
+                        .contains("## Available Sub-Agents"),
+                "{source} continuations that only read identity must not switch into child report-back"
+            );
+        }
+    }
+
+    #[test]
+    fn spawned_subagent_turn_ignores_unspawned_identity() {
+        assert!(
+            !spawned_subagent_turn(None, false),
+            "identity-only parent continuations must not enter the child report-back prompt"
+        );
+        assert!(
+            spawned_subagent_turn(None, true),
+            "identity-only spawned-child continuations must still enter report-back"
+        );
+    }
+
     #[test]
     fn direct_thread_responder_config_preserves_user_defined_subagent() {
         let mut config = AgentConfig::default();

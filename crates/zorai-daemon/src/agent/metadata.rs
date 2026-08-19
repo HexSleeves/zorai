@@ -89,9 +89,7 @@ impl ThreadIdentityMetadata {
     }
 
     pub(super) fn is_spawned_subagent(&self) -> bool {
-        self.source.as_deref() == Some("subagent")
-            || self.parent_task_id.is_some()
-            || self.parent_thread_id.is_some()
+        self.source.as_deref() == Some("subagent") || self.parent_task_id.is_some()
     }
 
     fn normalized(mut self) -> Self {
@@ -573,5 +571,56 @@ impl AgentEngine {
                 profiles.remove(thread_id);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn identity(
+        source: &str,
+        parent_task_id: Option<&str>,
+        parent_thread_id: Option<&str>,
+    ) -> ThreadIdentityMetadata {
+        ThreadIdentityMetadata {
+            thread_id: "thread-1".to_string(),
+            goal_run_id: None,
+            goal_id: None,
+            task_id: Some("task-1".to_string()),
+            parent_task_id: parent_task_id.map(str::to_string),
+            parent_thread_id: parent_thread_id.map(str::to_string),
+            source: Some(source.to_string()),
+            reserved_at: None,
+        }
+    }
+
+    #[test]
+    fn conversation_parent_thread_does_not_mark_goal_or_handoff_as_spawned() {
+        for source in ["goal_run", "handoff", "thread_handoff"] {
+            let meta = identity(source, None, Some("thread-1"));
+            assert!(
+                !meta.is_spawned_subagent(),
+                "{source} stores the conversation thread in parent_thread_id without being a spawned child"
+            );
+        }
+    }
+
+    #[test]
+    fn subagent_source_remains_spawned_with_parent_thread() {
+        let meta = identity("subagent", None, Some("thread-parent"));
+        assert!(
+            meta.is_spawned_subagent(),
+            "chat-spawned children are spawned by source, not by parent_thread_id"
+        );
+    }
+
+    #[test]
+    fn parent_task_id_keeps_identity_aligned_with_agent_task() {
+        let meta = identity("goal_run", Some("parent-task"), Some("thread-1"));
+        assert!(
+            meta.is_spawned_subagent(),
+            "identity must match AgentTask: parent_task_id still means spawned"
+        );
     }
 }
