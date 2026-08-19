@@ -450,7 +450,7 @@ export function ModelSelector({ providerId, value, customName, onChange, disable
                     onChange={(e) => setCustomModelName(e.target.value)}
                     placeholder="Display name (optional)"
                     disabled={disabled}
-                    style={{ ...inputStyle, width: "100%", background: undefined, border: undefined }}
+                    style={{ ...inputStyle, width: "100%", background: "none", border: "none" }}
                 />
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                     <input
@@ -507,7 +507,7 @@ export function ModelSelector({ providerId, value, customName, onChange, disable
                     }}
                     placeholder="Select or type model ID"
                     disabled={disabled}
-                    style={{ ...inputStyle, flex: 1, background: undefined, border: undefined }}
+                    style={{ ...inputStyle, flex: 1, background: "none", border: "none" }}
                 />
                 {canFetch && (
                     <button

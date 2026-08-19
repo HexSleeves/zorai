@@ -1903,6 +1903,10 @@ impl ChatState {
                                 incoming.queued_participant_suggestions =
                                     existing.queued_participant_suggestions.clone();
                             }
+                            if incoming.thread_handoff_state.is_none() {
+                                incoming.thread_handoff_state =
+                                    existing.thread_handoff_state.clone();
+                            }
                         }
                         normalize_thread_window(&mut incoming);
                         filter_locally_deleted_messages(&mut incoming, &local_deleted_messages);
@@ -2021,6 +2025,9 @@ impl ChatState {
                     {
                         existing.queued_participant_suggestions =
                             incoming.queued_participant_suggestions;
+                    }
+                    if !metadata_only_detail || incoming.thread_handoff_state.is_some() {
+                        existing.thread_handoff_state = incoming.thread_handoff_state;
                     }
                     if !older_history_page && incoming.agent_name.is_some() {
                         existing.agent_name = incoming.agent_name;

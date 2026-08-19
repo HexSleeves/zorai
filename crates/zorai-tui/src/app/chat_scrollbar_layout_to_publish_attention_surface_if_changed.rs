@@ -174,6 +174,7 @@ impl TuiModel {
                 }
                 modal::ModalKind::CommandPalette => "modal:command_palette".to_string(),
                 modal::ModalKind::ThreadParticipants => "modal:thread_participants".to_string(),
+                modal::ModalKind::ThreadHandoff => "modal:thread_handoff".to_string(),
                 modal::ModalKind::ThreadParticipantAgentPicker => {
                     "modal:thread_participant_agent_picker".to_string()
                 }

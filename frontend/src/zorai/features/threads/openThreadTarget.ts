@@ -1,5 +1,6 @@
 import type { AgentChatPanelRuntimeValue } from "@/components/agent-chat-panel/runtime/types";
 import { normalizeBridgePayload } from "@/components/agent-chat-panel/runtime/daemonHelpers";
+import { findThreadByIdentityPriority } from "@/components/agent-chat-panel/runtime/threadListQueries";
 import { getAgentBridge } from "@/lib/agentDaemonConfig";
 import { PRIMARY_AGENT_NAME } from "@/lib/agentNames";
 import { buildHydratedRemoteThread, useAgentStore, type RemoteAgentThreadRecord } from "@/lib/agentStore";
@@ -9,14 +10,15 @@ export async function openThreadTarget(runtime: AgentChatPanelRuntimeValue, targ
   const target = targetThreadId.trim();
   if (!target) return false;
 
-  const local = findThread(runtime.threads, target) ?? findThread(useAgentStore.getState().threads, target);
+  const local = findThreadByIdentityPriority(runtime.threads, target)
+    ?? findThreadByIdentityPriority(useAgentStore.getState().threads, target);
   if (local) {
     runtime.openThread(local.id);
     return true;
   }
 
   const remoteThread = await fetchDaemonThread(target);
-  const raced = findThread(useAgentStore.getState().threads, target);
+  const raced = findThreadByIdentityPriority(useAgentStore.getState().threads, target);
   if (raced) {
     runtime.openThread(raced.id);
     return true;
@@ -71,12 +73,4 @@ function insertHydratedThread(hydrated: ReturnType<typeof buildHydratedRemoteThr
       },
     };
   });
-}
-
-function findThread(threads: AgentChatPanelRuntimeValue["threads"], targetThreadId: string) {
-  return threads.find((thread) => (
-    thread.id === targetThreadId
-    || thread.daemonThreadId === targetThreadId
-    || thread.upstreamThreadId === targetThreadId
-  ));
 }

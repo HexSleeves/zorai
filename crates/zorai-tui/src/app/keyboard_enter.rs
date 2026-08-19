@@ -116,6 +116,10 @@ impl TuiModel {
         let trimmed = prompt.trim_start_matches('/');
         let cmd = trimmed.split_whitespace().next().unwrap_or("");
         let args = trimmed[cmd.len()..].trim();
+        if cmd == "handoff" {
+            self.execute_thread_handoff_slash(args);
+            return true;
+        }
         if cmd == "migrate" {
             self.execute_migration_slash_command(args);
             return true;

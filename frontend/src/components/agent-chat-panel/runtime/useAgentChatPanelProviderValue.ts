@@ -38,7 +38,7 @@ import type {
   AgentChatPanelView,
 } from "./types";
 import { createThreadCollaborationActions } from "./threadCollaborationActions";
-import { fetchHydratedRemoteThreads } from "./threadListQueries";
+import { fetchHydratedRemoteThreads, findThreadByIdentityPriority } from "./threadListQueries";
 import {
   pinnedMessageBudgetChars,
   sumMessageContentChars,
@@ -890,8 +890,7 @@ export function useAgentChatPanelProviderValue(): {
 
   const openThread = useCallback((threadId: string) => {
     const state = useAgentStore.getState();
-    const thread = state.threads.find((entry) => entry.id === threadId)
-      ?? state.threads.find((entry) => entry.daemonThreadId === threadId || entry.upstreamThreadId === threadId);
+    const thread = findThreadByIdentityPriority(state.threads, threadId);
     const localId = thread?.id ?? threadId;
     daemonLocalThreadRef.current = localId;
     daemonThreadIdRef.current = thread?.daemonThreadId ?? null;

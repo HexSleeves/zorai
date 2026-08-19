@@ -88,6 +88,7 @@ pub enum ClientEvent {
     ThreadReloadRequired {
         thread_id: String,
     },
+    ThreadHandoffResult(zorai_protocol::ThreadHandoffResult),
     MessageFeedbackUpdated {
         thread_id: String,
         message_id: String,

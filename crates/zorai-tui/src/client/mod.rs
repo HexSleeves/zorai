@@ -37,6 +37,8 @@ mod tests {
     mod bootstrap_rearms_after_successful_connection_cycle_to_daemon_bootstrap;
     #[path = "daemon_collaboration_sessions_reply_emits_client_event_to_workspace.rs"]
     mod daemon_collaboration_sessions_reply_emits_client_event_to_workspace;
+    #[path = "tui_thread_handoff_bridge.rs"]
+    mod tui_thread_handoff_bridge;
     #[path = "whatsapp_link_methods_send_expected_protocol_messages_to_resolve_task.rs"]
     mod whatsapp_link_methods_send_expected_protocol_messages_to_resolve_task;
 

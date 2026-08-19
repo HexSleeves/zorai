@@ -195,6 +195,7 @@ impl TuiModel {
                 | "notifications"
                 | "approvals"
                 | "participants"
+                | "handoff"
                 | "compact"
                 | "quit"
                 | "prompt"
@@ -337,6 +338,9 @@ impl TuiModel {
             "participants" => {
                 self.open_thread_participants_modal();
                 self.status_line = "Viewing thread participants".to_string();
+            }
+            "handoff" => {
+                self.open_thread_handoff_modal();
             }
             "compact" => {
                 let Some(thread_id) = self.chat.active_thread_id().map(str::to_string) else {

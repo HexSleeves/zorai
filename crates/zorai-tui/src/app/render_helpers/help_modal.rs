@@ -33,6 +33,18 @@ fn help_modal_lines(theme: &ThemeTokens) -> Vec<Line<'static>> {
             Span::styled("Open thread participants modal", theme.fg_dim),
         ]),
         Line::from(vec![
+            Span::styled("  /handoff          ", theme.fg_active),
+            Span::styled("Open thread handoff modal", theme.fg_dim),
+        ]),
+        Line::from(vec![
+            Span::styled("  /handoff <agent>  ", theme.fg_active),
+            Span::styled("Hand off current thread", theme.fg_dim),
+        ]),
+        Line::from(vec![
+            Span::styled("  /handoff return   ", theme.fg_active),
+            Span::styled("Return to previous responder", theme.fg_dim),
+        ]),
+        Line::from(vec![
             Span::styled("  Ctrl+G           ", theme.fg_active),
             Span::styled("Toggle Goal Runner view", theme.fg_dim),
         ]),
@@ -362,5 +374,26 @@ mod tests {
 
         assert!(text.contains("/goal"));
         assert!(!text.contains("/goals"));
+    }
+}
+
+#[cfg(test)]
+mod handoff_discoverability_tests {
+    use super::*;
+
+    #[test]
+    fn handoff_discoverability_help_lists_modal_push_and_return_forms() {
+        let theme = ThemeTokens::default();
+        let text = help_modal_lines(&theme)
+            .into_iter()
+            .map(|line| line.to_string())
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(text.contains("/handoff"));
+        assert!(text.contains("Open thread handoff modal"));
+        assert!(text.contains("/handoff <agent>"));
+        assert!(text.contains("Hand off current thread"));
+        assert!(text.contains("/handoff return"));
+        assert!(text.contains("Return to previous responder"));
     }
 }

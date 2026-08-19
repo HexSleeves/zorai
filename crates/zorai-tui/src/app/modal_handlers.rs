@@ -1508,35 +1508,59 @@ impl TuiModel {
             return false;
         }
 
-        if kind == modal::ModalKind::ThreadParticipants {
+        if kind == modal::ModalKind::ThreadParticipants || kind == modal::ModalKind::ThreadHandoff {
             match code {
                 KeyCode::Esc => {
                     self.close_top_modal();
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
-                    self.sync_thread_participants_modal_item_count();
+                    if kind == modal::ModalKind::ThreadParticipants {
+                        self.sync_thread_participants_modal_item_count();
+                    } else {
+                        self.sync_thread_handoff_modal_item_count();
+                    }
                     self.modal.reduce(modal::ModalAction::Navigate(1))
                 }
                 KeyCode::Up | KeyCode::Char('k') => {
-                    self.sync_thread_participants_modal_item_count();
+                    if kind == modal::ModalKind::ThreadParticipants {
+                        self.sync_thread_participants_modal_item_count();
+                    } else {
+                        self.sync_thread_handoff_modal_item_count();
+                    }
                     self.modal.reduce(modal::ModalAction::Navigate(-1))
                 }
                 KeyCode::Enter => self.handle_modal_enter(kind),
                 KeyCode::PageDown => {
-                    self.sync_thread_participants_modal_item_count();
+                    if kind == modal::ModalKind::ThreadParticipants {
+                        self.sync_thread_participants_modal_item_count();
+                    } else {
+                        self.sync_thread_handoff_modal_item_count();
+                    }
                     self.modal.reduce(modal::ModalAction::Navigate(5))
                 }
                 KeyCode::PageUp => {
-                    self.sync_thread_participants_modal_item_count();
+                    if kind == modal::ModalKind::ThreadParticipants {
+                        self.sync_thread_participants_modal_item_count();
+                    } else {
+                        self.sync_thread_handoff_modal_item_count();
+                    }
                     self.modal.reduce(modal::ModalAction::Navigate(-5))
                 }
                 KeyCode::Home => {
-                    self.sync_thread_participants_modal_item_count();
+                    if kind == modal::ModalKind::ThreadParticipants {
+                        self.sync_thread_participants_modal_item_count();
+                    } else {
+                        self.sync_thread_handoff_modal_item_count();
+                    }
                     self.modal
                         .reduce(modal::ModalAction::Navigate(i32::MIN / 2))
                 }
                 KeyCode::End => {
-                    self.sync_thread_participants_modal_item_count();
+                    if kind == modal::ModalKind::ThreadParticipants {
+                        self.sync_thread_participants_modal_item_count();
+                    } else {
+                        self.sync_thread_handoff_modal_item_count();
+                    }
                     self.modal
                         .reduce(modal::ModalAction::Navigate(i32::MAX / 2))
                 }

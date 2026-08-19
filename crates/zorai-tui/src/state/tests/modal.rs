@@ -364,3 +364,18 @@ fn pinned_budget_modal_stacks_and_pops_like_other_modal_kinds() {
 
     assert_eq!(state.top(), Some(ModalKind::Status));
 }
+
+#[test]
+fn handoff_discoverability_command_follows_participants_with_exact_description() {
+    let state = ModalState::new();
+    let items = state.command_items();
+    let participants = items
+        .iter()
+        .position(|item| item.command == "participants")
+        .expect("participants command should exist");
+    let handoff = items
+        .get(participants + 1)
+        .expect("handoff should immediately follow participants");
+    assert_eq!(handoff.command, "handoff");
+    assert_eq!(handoff.description, "Hand off or return current thread");
+}

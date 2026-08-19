@@ -853,6 +853,7 @@ impl TuiModel {
                 | modal::ModalKind::OpenAIAuth
                 | modal::ModalKind::WorkspaceTaskHistory
                 | modal::ModalKind::ThreadParticipants
+                | modal::ModalKind::ThreadHandoff
                 | modal::ModalKind::ThreadParticipantAgentPicker
                 | modal::ModalKind::ThreadParticipantActions
                 | modal::ModalKind::GatewayDefaultAgentPicker
@@ -905,6 +906,7 @@ impl TuiModel {
                 | modal::ModalKind::OpenAIAuth
                 | modal::ModalKind::WorkspaceTaskHistory
                 | modal::ModalKind::ThreadParticipants
+                | modal::ModalKind::ThreadHandoff
                 | modal::ModalKind::ThreadParticipantAgentPicker
                 | modal::ModalKind::ThreadParticipantActions
                 | modal::ModalKind::GatewayDefaultAgentPicker
@@ -947,6 +949,7 @@ impl TuiModel {
                         | modal::ModalKind::Statistics
                         | modal::ModalKind::PromptViewer
                         | modal::ModalKind::CommandPalette
+                        | modal::ModalKind::ThreadHandoff
                         | modal::ModalKind::ThreadPicker
                         | modal::ModalKind::GoalPicker
                         | modal::ModalKind::WorkspacePicker
@@ -1236,6 +1239,29 @@ impl TuiModel {
                             ) => {
                                 self.handle_reject_selected_approval(approval_id);
                             }
+                        }
+                    }
+                }
+                modal::ModalKind::ThreadHandoff => {
+                    let inner = Block::default()
+                        .borders(Borders::ALL)
+                        .border_type(BorderType::Double)
+                        .inner(overlay_area);
+                    let body_height = inner.height.saturating_sub(1);
+                    let inside_body = mouse.column >= inner.x
+                        && mouse.column < inner.x.saturating_add(inner.width)
+                        && mouse.row >= inner.y
+                        && mouse.row < inner.y.saturating_add(body_height);
+                    if inside_body {
+                        let body_line = self
+                            .thread_handoff_modal_cursor_scroll()
+                            .saturating_add(mouse.row.saturating_sub(inner.y) as usize);
+                        if let Some(index) = body_line
+                            .checked_sub(self.thread_handoff_modal_action_start_line())
+                            .filter(|index| *index < self.thread_handoff_modal_actions().len())
+                        {
+                            self.modal_navigate_to(index);
+                            self.handle_modal_enter(kind);
                         }
                     }
                 }

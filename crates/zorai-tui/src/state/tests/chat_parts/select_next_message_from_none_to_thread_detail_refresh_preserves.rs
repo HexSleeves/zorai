@@ -735,3 +735,94 @@ fn thread_detail_refresh_preserves_optimistic_local_tail_when_smaller_snapshot_m
     assert_eq!(thread.total_message_count, 3);
     assert_eq!(thread.loaded_message_end, 3);
 }
+
+#[test]
+fn thread_handoff_state_metadata_refresh_preserves_and_updates_authoritative_state() {
+    let state_a = ThreadHandoffState {
+        origin_agent_id: "swarog".into(),
+        active_agent_id: "weles".into(),
+        responder_stack: vec![ThreadHandoffFrame {
+            agent_id: "weles".into(),
+            agent_name: "Weles".into(),
+            entered_at: 20,
+            linked_thread_id: Some("thread-weles".into()),
+        }],
+        pending_approval_id: Some("approval-1".into()),
+    };
+    let state_b = ThreadHandoffState {
+        origin_agent_id: "swarog".into(),
+        active_agent_id: "perun".into(),
+        responder_stack: vec![ThreadHandoffFrame {
+            agent_id: "perun".into(),
+            agent_name: "Perun".into(),
+            entered_at: 30,
+            linked_thread_id: None,
+        }],
+        pending_approval_id: None,
+    };
+    let mut chat = ChatState::new();
+    chat.reduce(ChatAction::ThreadDetailReceived(AgentThread {
+        id: "thread-1".into(),
+        title: "Handoff".into(),
+        messages: vec![AgentMessage {
+            id: Some("message-1".into()),
+            role: MessageRole::Assistant,
+            content: "Initial state".into(),
+            ..Default::default()
+        }],
+        total_message_count: 1,
+        loaded_message_end: 1,
+        thread_handoff_state: Some(state_a),
+        ..Default::default()
+    }));
+
+    chat.reduce(ChatAction::ThreadDetailReceived(AgentThread {
+        id: "thread-1".into(),
+        title: "Handoff".into(),
+        thread_handoff_state: None,
+        ..Default::default()
+    }));
+    assert_eq!(
+        chat.threads()[0]
+            .thread_handoff_state
+            .as_ref()
+            .map(|state| state.active_agent_id.as_str()),
+        Some("weles"),
+        "legacy/missing metadata refresh must not erase known authoritative state"
+    );
+
+    chat.reduce(ChatAction::ThreadDetailReceived(AgentThread {
+        id: "thread-1".into(),
+        title: "Handoff".into(),
+        thread_handoff_state: Some(state_b),
+        ..Default::default()
+    }));
+    assert_eq!(
+        chat.threads()[0]
+            .thread_handoff_state
+            .as_ref()
+            .map(|state| state.active_agent_id.as_str()),
+        Some("perun"),
+        "a populated authoritative metadata refresh must replace stale handoff state"
+    );
+
+    chat.reduce(ChatAction::ThreadDetailReceived(AgentThread {
+        id: "thread-1".into(),
+        title: "Handoff".into(),
+        messages: vec![AgentMessage {
+            id: Some("message-2".into()),
+            role: MessageRole::Assistant,
+            content: "Authoritative clear".into(),
+            ..Default::default()
+        }],
+        total_message_count: 2,
+        loaded_message_end: 2,
+        thread_handoff_state: None,
+        ..Default::default()
+    }));
+    assert_eq!(
+        chat.threads()[0].thread_handoff_state,
+        None,
+        "an explicit-null state clears on an authoritative non-metadata detail response"
+    );
+}

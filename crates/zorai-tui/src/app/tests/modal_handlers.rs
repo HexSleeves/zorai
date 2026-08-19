@@ -30,6 +30,8 @@ mod slash_effort_picker_starts_on_active_thread_owner_effort_to_queued;
 mod slash_model_custom_entry_uses_thread_owner_editor;
 #[path = "modal_handlers_parts/statistics_modal_keyboard_cycles_tabs_and_filters_to_ctrl_a_toggles.rs"]
 mod statistics_modal_keyboard_cycles_tabs_and_filters_to_ctrl_a_toggles;
+#[path = "modal_handlers_parts/thread_handoff_command.rs"]
+mod thread_handoff_command;
 #[path = "modal_handlers_parts/thread_picker_ctrl_s_on_stopped_thread_requires_confirmation_before.rs"]
 mod thread_picker_ctrl_s_on_stopped_thread_requires_confirmation_before;
 #[path = "modal_handlers_parts/thread_picker_playgrounds_new_row_is_browse_only_to_slash_effort_updates.rs"]

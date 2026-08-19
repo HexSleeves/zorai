@@ -20,7 +20,7 @@ export function SpawnedContext({
   openSpawnedThread: (run: AgentRun) => Promise<boolean>;
   goBackThread: () => void;
 }) {
-  const backLabel = backThreadTitle ? `Back to ${backThreadTitle}` : "Back";
+  const backLabel = backThreadTitle ? `Back to ${backThreadTitle.slice(0, 10)}...` : "Back";
 
   return (
     <section className="zorai-spawned-context">

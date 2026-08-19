@@ -135,6 +135,13 @@ pub enum DaemonCommand {
         instruction: Option<String>,
         session_id: Option<String>,
     },
+    ThreadHandoff {
+        thread_id: String,
+        action: String,
+        target_agent_id: Option<String>,
+        reason: String,
+        summary: String,
+    },
     SendParticipantSuggestion {
         thread_id: String,
         suggestion_id: String,

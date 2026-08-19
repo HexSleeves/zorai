@@ -1945,6 +1945,7 @@ impl TuiModel {
                 modal::ModalKind::Statistics => render_helpers::centered_rect(84, 84, area),
                 modal::ModalKind::PromptViewer => render_helpers::centered_rect(84, 84, area),
                 modal::ModalKind::ThreadParticipants => render_helpers::centered_rect(76, 68, area),
+                modal::ModalKind::ThreadHandoff => render_helpers::centered_rect(76, 68, area),
                 modal::ModalKind::ThreadParticipantAgentPicker => {
                     render_helpers::centered_rect(48, 46, area)
                 }
@@ -2436,6 +2437,17 @@ impl TuiModel {
                         &self.theme,
                     );
                 }
+                modal::ModalKind::ThreadHandoff => {
+                    render_helpers::render_status_modal(
+                        frame,
+                        overlay_area,
+                        "THREAD HANDOFF",
+                        &self.thread_handoff_modal_body(),
+                        self.thread_handoff_modal_cursor_scroll(),
+                        true,
+                        &self.theme,
+                    );
+                }
                 modal::ModalKind::ThreadParticipantAgentPicker => {
                     render_helpers::render_status_modal(
                         frame,
@@ -2507,6 +2519,7 @@ impl TuiModel {
             modal::ModalKind::Statistics => render_helpers::centered_rect(84, 84, area),
             modal::ModalKind::PromptViewer => render_helpers::centered_rect(84, 84, area),
             modal::ModalKind::ThreadParticipants => render_helpers::centered_rect(76, 68, area),
+            modal::ModalKind::ThreadHandoff => render_helpers::centered_rect(76, 68, area),
             modal::ModalKind::ThreadParticipantAgentPicker => {
                 render_helpers::centered_rect(48, 46, area)
             }

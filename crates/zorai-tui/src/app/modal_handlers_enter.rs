@@ -349,6 +349,9 @@ pub(super) fn handle_modal_enter(model: &mut TuiModel, kind: modal::ModalKind) {
         modal::ModalKind::ThreadParticipants => {
             model.handle_thread_participants_modal_enter();
         }
+        modal::ModalKind::ThreadHandoff => {
+            model.submit_thread_handoff_modal_action();
+        }
         modal::ModalKind::ThreadParticipantAgentPicker => {
             model.submit_thread_participant_agent_picker();
         }
