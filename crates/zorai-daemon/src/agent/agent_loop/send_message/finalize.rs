@@ -271,39 +271,34 @@ impl<'a> SendMessageRunner<'a> {
             )
             .await;
         self.provider_final_result = provider_final_result.clone();
-        if !continue_for_report_back {
-            if let Err(error) = self
-                .engine
-                .complete_workspace_thread_task_by_thread_id(&self.tid)
-                .await
-            {
-                tracing::warn!(
-                    thread_id = %self.tid,
-                    error = %error,
-                    "failed to complete workspace thread task"
-                );
-            }
+        if !super::report_back::should_emit_turn_done_on_text_completion(continue_for_report_back) {
+            self.needs_turn_done = true;
+            return Ok(LoopDisposition::Continue);
+        }
+        if let Err(error) = self
+            .engine
+            .complete_workspace_thread_task_by_thread_id(&self.tid)
+            .await
+        {
+            tracing::warn!(
+                thread_id = %self.tid,
+                error = %error,
+                "failed to complete workspace thread task"
+            );
         }
 
-        let _ = self.engine.event_tx.send(AgentEvent::Done {
-            thread_id: self.tid.clone(),
+        self.emit_turn_done(
             input_tokens,
             output_tokens,
-            cost: turn_cost,
-            provider: Some(self.config.provider.clone()),
-            model: Some(self.provider_config.model.clone()),
+            turn_cost,
             tps,
             generation_ms,
-            reasoning: final_reasoning,
+            final_reasoning,
             upstream_message,
             provider_final_result,
-            message_id: persisted_message_id,
-        });
-        if continue_for_report_back {
-            Ok(LoopDisposition::Continue)
-        } else {
-            Ok(LoopDisposition::Break)
-        }
+            persisted_message_id,
+        );
+        Ok(LoopDisposition::Break)
     }
 
     pub(super) async fn finish(mut self) -> Result<SendMessageOutcome> {
@@ -326,6 +321,22 @@ impl<'a> SendMessageRunner<'a> {
                 thread_id: self.tid.clone(),
                 message: "Tool execution limit reached".into(),
             });
+        }
+        if super::report_back::should_emit_deferred_turn_done(
+            self.needs_turn_done,
+            self.interrupted_for_approval,
+        ) {
+            self.emit_turn_done(
+                0,
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                self.provider_final_result.clone(),
+                None,
+            );
         }
 
         if self.task_id.is_some() {

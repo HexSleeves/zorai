@@ -324,7 +324,6 @@ function ThreadRuntimeSummary({ thread }: { thread: AgentThread }) {
 function ThinkingIndicator({ agentName }: { agentName: string }) {
   return (
     <div className="zorai-thinking" role="status" aria-live="polite">
-      <div className="zorai-brand-mark zorai-thinking__avatar" aria-hidden="true" />
       <div className="zorai-thinking__body">
         <div className="zorai-thinking__label">
           <strong>{agentName}</strong>
@@ -334,7 +333,6 @@ function ThinkingIndicator({ agentName }: { agentName: string }) {
             <span />
           </span>
         </div>
-        <div className="zorai-thinking__phase">Thinking…</div>
       </div>
     </div>
   );

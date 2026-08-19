@@ -1,0 +1,1205 @@
+/* ═══════════════════════════════════════════════════════════════════════════
+ * AGENT CHAT PANEL — chat surface styles
+ * Raw, terminal-grade styling in the Cursor/VSCode idiom:
+ * - Prose uses the UI font (readable at length); code/tool output/meta mono.
+ * - Sharp 2–3px corners, flat surfaces, 1px borders, no gradients, no glow.
+ * - One muted accent; color reserved for meaning (diff, status, warning).
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+.acp-root {
+  /* Chat-scope palette overrides: tone the neon tokens down to editor neutrals */
+  --acp-accent: #4fb8ab;
+  --acp-link: #6cb6ff;
+  --acp-border: #2a2f3a;
+  --acp-border-strong: #3a4150;
+  --acp-bg: #16181d;
+  --acp-bg-raised: #1d2026;
+  --acp-diff-file-bg: rgba(47, 98, 140, 0.22);
+  --acp-diff-hunk-bg: rgba(120, 96, 30, 0.22);
+  --acp-diff-add-bg: rgba(38, 100, 55, 0.24);
+  --acp-diff-remove-bg: rgba(120, 44, 44, 0.24);
+  color: var(--text-primary);
+}
+
+/* ── Chat scroll container ──────────────────────────────────────────────── */
+.acp-chat {
+  flex: 1;
+  overflow: auto;
+  padding: 8px 8px 8px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.acp-chat__toolbar {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.acp-chat__search {
+  flex: 1;
+  min-width: 0;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-sm);
+}
+
+/* ── Notice banners (weles health, participants summary) ────────────────── */
+.acp-banner {
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  border-radius: 2px;
+  padding: var(--space-3);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.acp-banner--warning {
+  border-color: color-mix(in srgb, var(--warning) 55%, var(--border));
+  background: color-mix(in srgb, var(--warning) 10%, var(--bg-secondary));
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.acp-banner__title {
+  font-size: var(--text-sm);
+  font-weight: 700;
+  color: var(--warning);
+}
+
+.acp-banner__detail {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.acp-banner__kicker {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.acp-banner__label {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.acp-banner__stats {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+/* ── Usage footer ───────────────────────────────────────────────────────── */
+.acp-usage {
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  border-top: 1px solid var(--border);
+  display: flex;
+  gap: var(--space-3);
+}
+
+.acp-autospeak {
+  padding: 0 var(--space-3) var(--space-2);
+  display: flex;
+  justify-content: flex-end;
+}
+
+.acp-autospeak label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+/* ── Modals (participants, pin limit) ───────────────────────────────────── */
+.acp-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(3, 8, 18, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  z-index: 1000;
+}
+
+.acp-modal {
+  width: min(560px, 100%);
+  max-height: 80vh;
+  overflow: auto;
+  border: 1px solid var(--border-strong);
+  background: var(--zorai-bg);
+  border-radius: 3px;
+  padding: var(--space-4);
+  display: grid;
+  gap: var(--space-4);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.5);
+}
+
+.acp-modal--wide {
+  width: min(760px, 100%);
+}
+
+.acp-modal__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.acp-modal__kicker {
+  font-size: var(--text-xs);
+  font-weight: 700;
+  color: var(--text-muted);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.acp-modal__subtitle {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+}
+
+.acp-modal__section {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.acp-modal__section-title {
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.acp-modal__empty {
+  font-size: var(--text-sm);
+  color: var(--text-muted);
+}
+
+.acp-modal__card {
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: var(--space-3);
+  display: grid;
+  gap: var(--space-1);
+  background: var(--bg-secondary);
+}
+
+.acp-modal__card-name {
+  font-weight: 700;
+}
+
+.acp-modal__card-body {
+  font-size: var(--text-sm);
+  color: var(--text-secondary);
+  white-space: pre-wrap;
+}
+
+.acp-modal__card-row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.acp-modal__card-tags {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.acp-modal__actions {
+  display: flex;
+  gap: var(--space-2);
+}
+
+.acp-modal__footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+.acp-modal__list {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  display: grid;
+  gap: var(--space-1);
+}
+
+/* ── Buttons ────────────────────────────────────────────────────────────── */
+.acp-btn {
+  border: 1px solid var(--border-strong);
+  background: var(--bg-elevated);
+  color: var(--text-primary);
+  border-radius: 2px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background var(--transition-fast), border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.acp-btn:hover:not(:disabled) {
+  background: var(--bg-active);
+}
+
+.acp-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.acp-btn--primary {
+  border-color: rgba(79, 184, 171, 0.45);
+  background: rgba(79, 184, 171, 0.14);
+  color: var(--acp-accent);
+  font-weight: 700;
+}
+
+.acp-btn--primary:hover:not(:disabled) {
+  background: rgba(79, 184, 171, 0.24);
+}
+
+.acp-btn--ghost {
+  background: transparent;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.acp-btn--ghost:hover:not(:disabled) {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+  background: transparent;
+}
+
+.acp-btn--danger {
+  border-color: rgba(248, 113, 113, 0.45);
+  background: rgba(248, 113, 113, 0.12);
+  color: #fca5a5;
+}
+
+.acp-btn--mission {
+  border-color: var(--mission-border);
+  background: var(--mission-soft);
+  color: var(--mission);
+  font-weight: 700;
+}
+
+/* ── Pills / badges ─────────────────────────────────────────────────────── */
+.acp-pill {
+  font-size: 10px;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  border-radius: 2px;
+  padding: 1px 6px;
+  white-space: nowrap;
+}
+
+.acp-pill--warning {
+  border-color: var(--warning);
+  color: var(--warning);
+  border-radius: 2px;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.acp-pill--danger {
+  border-color: #ff7675;
+  color: #ff7675;
+  border-radius: 2px;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.acp-pill--outline {
+  border: 1px solid currentColor;
+  border-radius: 2px;
+  padding: 1px 6px;
+  font-size: 10px;
+}
+
+/* ── Messages ───────────────────────────────────────────────────────────── */
+.acp-message-row {
+  display: flex;
+  justify-content: flex-start;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.acp-message-row--user {
+  justify-content: flex-end;
+}
+
+.acp-message {
+  position: relative;
+  max-width: min(85%, 100%);
+  min-width: 0;
+  box-sizing: border-box;
+  border-radius: 2px;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  user-select: auto;
+  padding: var(--space-3);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-primary);
+}
+
+/* Assistant prose: no bubble chrome, readable UI font */
+.acp-message--assistant {
+  padding: var(--space-2) 0;
+}
+
+.acp-message--user,
+.acp-message--system,
+.acp-message--tool {
+  background: var(--acp-bg-raised);
+  border-color: var(--acp-border);
+  font-family: var(--font-mono);
+}
+
+.acp-message--user {
+  color: var(--text-primary);
+}
+
+.acp-message__author {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--acp-accent);
+  opacity: 0.95;
+  margin-bottom: 4px;
+  font-size: 12px;
+  font-family: var(--font-mono);
+}
+
+.acp-message__pinned {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--warning);
+  margin-bottom: 6px;
+}
+
+.acp-message__model {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  margin-top: var(--space-1);
+  font-family: var(--font-mono);
+}
+
+.acp-message__streaming-cursor {
+  opacity: 0.5;
+  margin-left: 4px;
+}
+
+/* Usage stats row — revealed on hover via parent :hover */
+.acp-message__usage {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  font-family: var(--font-mono);
+  max-height: 0;
+  opacity: 0;
+  overflow: hidden;
+  transform: translateY(-4px);
+  transition: opacity 180ms ease, max-height 240ms ease, transform 180ms ease;
+  pointer-events: none;
+}
+
+.acp-message:hover .acp-message__usage {
+  max-height: 40px;
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+
+/* Hover action bar (copy/pin/regen…) — floats above bubble */
+.acp-message__actions {
+  position: absolute;
+  top: -28px;
+  right: 0;
+  display: flex;
+  gap: 2px;
+  background: var(--acp-bg-raised);
+  border: 1px solid var(--acp-border);
+  border-radius: 2px;
+  padding: 2px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.acp-message-row--user .acp-message__actions {
+  right: 0;
+}
+
+.acp-message-row:not(.acp-message-row--user) .acp-message__actions {
+  right: auto;
+  left: 0;
+}
+
+/* Reasoning block */
+.acp-reasoning {
+  margin-top: 8px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.02);
+  padding: 8px;
+}
+
+.acp-reasoning summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--text-muted);
+  user-select: auto;
+}
+
+.acp-reasoning__body {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  user-select: auto;
+  max-height: min(42vh, 360px);
+  overflow: auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+/* Compaction artifact */
+.acp-compaction {
+  width: 100%;
+  border-top: 1px solid color-mix(in srgb, var(--text-muted) 35%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, var(--text-muted) 35%, transparent);
+  padding: var(--space-3) 0;
+  display: grid;
+  gap: var(--space-2);
+}
+
+.acp-compaction__rule {
+  font-size: 11px;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.acp-compaction__body {
+  font-size: var(--text-sm);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  color: var(--text-secondary);
+}
+
+.acp-compaction__actions {
+  display: flex;
+  gap: 2px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 2px;
+  width: fit-content;
+}
+
+/* Tiny inline action button (Copy/Delete/Pin…) */
+.acp-action-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 6px;
+  border-radius: 2px;
+  transition: color var(--transition-fast), background var(--transition-fast);
+  white-space: nowrap;
+}
+
+.acp-action-btn:hover {
+  color: var(--text-primary);
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* Small ghost toggle button (Expand/Collapse/Show… ) */
+.acp-toggle-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 4px 8px;
+  width: fit-content;
+  border-radius: 2px;
+}
+
+.acp-toggle-btn:hover {
+  color: var(--text-primary);
+  border-color: var(--border-strong);
+}
+
+.acp-toggle-btn--capitalize {
+  text-transform: capitalize;
+}
+
+/* Preformatted payload block (provider results, raw json) */
+.acp-pre {
+  margin: 0;
+  padding: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  font-size: 11px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+  overflow: auto;
+}
+
+/* Handoff event block */
+.acp-handoff {
+  display: grid;
+  gap: 8px;
+}
+
+.acp-handoff__title {
+  font-size: var(--text-xs);
+  color: var(--agent);
+  font-weight: 700;
+}
+
+.acp-handoff__route {
+  font-size: 12px;
+  color: var(--text-primary);
+}
+
+.acp-handoff__reason {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.acp-handoff__summary {
+  padding: 8px;
+  background: rgba(2, 10, 18, 0.55);
+  border: 1px solid var(--border);
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-radius: 2px;
+}
+
+/* Media attachments */
+.acp-media {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.acp-media__figure {
+  margin: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.acp-media__img {
+  max-width: 100%;
+  border-radius: 2px;
+  border: 1px solid var(--border);
+}
+
+.acp-media__caption {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.acp-media__audio {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 2px;
+}
+
+.acp-media__audio audio {
+  width: 100%;
+}
+
+/* ── Tool event rows ────────────────────────────────────────────────────── */
+.acp-tool-row {
+  padding: 0;
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border-radius: 2px;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.acp-tool-row__header {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 8px;
+  min-width: 0;
+}
+
+.acp-tool-row__toggle {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.acp-tool-row__caret {
+  color: var(--text-muted);
+  font-size: var(--text-base);
+}
+
+.acp-tool-row__icon {
+  width: var(--space-4);
+  height: var(--space-4);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+  font-size: var(--text-base);
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.acp-tool-row__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acp-tool-row__status {
+  margin-left: auto;
+  display: flex;
+  flex-direction: row;
+  gap: 8px;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.acp-tool-row__badge {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.acp-tool-row__body {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  padding: 8px 0 0 0;
+}
+
+.acp-tool-row__footer {
+  display: flex;
+  justify-content: flex-end;
+}
+
+/* Review presentation block */
+.acp-tool-review {
+  display: grid;
+  gap: 6px;
+}
+
+.acp-tool-review--blocked {
+  color: #ffb4b4;
+}
+
+.acp-tool-review--flagged {
+  color: #ffe1a8;
+}
+
+.acp-tool-review__header {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.acp-tool-review__title {
+  font-size: var(--text-sm);
+  font-weight: 700;
+}
+
+.acp-tool-review__audit {
+  font-size: var(--text-xs);
+  opacity: 0.85;
+}
+
+.acp-tool-review__reason {
+  font-size: var(--text-sm);
+  line-height: 1.45;
+}
+
+/* Field label above value boxes */
+.acp-field-label {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+}
+
+/* Structured key/value grid */
+.acp-struct {
+  border: 1px solid var(--border);
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 2px;
+  padding: 8px;
+  display: grid;
+  gap: 8px;
+}
+
+.acp-struct__row {
+  display: grid;
+  grid-template-columns: minmax(112px, max-content) minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+
+.acp-struct__key {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-family: var(--font-mono);
+  word-break: break-word;
+}
+
+.acp-struct__value {
+  color: var(--text-primary);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  font-family: var(--font-mono);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* File target link */
+.acp-file-target {
+  border: none;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  color: var(--acp-link);
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  text-decoration: underline;
+  word-break: break-word;
+}
+
+.acp-file-summary {
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* Plain tool result box */
+.acp-tool-result {
+  padding: 8px;
+  background: rgba(2, 10, 18, 0.55);
+  border: 1px solid var(--border);
+  font-size: var(--text-sm);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border-radius: 2px;
+}
+
+/* Diff view */
+.acp-diff {
+  border: 1px solid var(--border);
+  background: rgba(7, 12, 18, 0.84);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.acp-diff__section + .acp-diff__section {
+  border-top: 1px solid var(--border);
+}
+
+.acp-diff__line {
+  padding: 3px 8px;
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.acp-diff__line--file {
+  color: var(--acp-link);
+  background: var(--acp-diff-file-bg);
+  font-weight: 700;
+}
+
+.acp-diff__line--hunk {
+  color: #ffd37a;
+  background: var(--acp-diff-hunk-bg);
+}
+
+.acp-diff__line--add {
+  color: #b8f2c4;
+  background: var(--acp-diff-add-bg);
+}
+
+.acp-diff__line--remove {
+  color: #ffc1c1;
+  background: var(--acp-diff-remove-bg);
+}
+
+.acp-diff__line--meta {
+  color: var(--text-muted);
+}
+
+/* ── Markdown prose (assistant messages) ────────────────────────────────── */
+.acp-md {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  font-size: var(--text-sm);
+  line-height: 1.65;
+}
+
+.acp-md p {
+  overflow-wrap: anywhere;
+}
+
+.acp-md a {
+  color: var(--acp-link);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  overflow-wrap: anywhere;
+}
+
+.acp-md pre {
+  margin: 6px 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 10px 12px;
+  background: rgba(0, 0, 0, 0.35);
+  border-radius: 2px;
+  overflow: auto;
+  font-size: var(--text-xs);
+  line-height: 1.5;
+  border: 1px solid var(--border);
+}
+
+.acp-md code {
+  font-family: var(--font-mono);
+}
+
+.acp-md pre code {
+  font-size: inherit;
+  overflow-wrap: anywhere;
+}
+
+.acp-md :not(pre) > code {
+  background: rgba(255, 255, 255, 0.07);
+  padding: 1px 5px;
+  border-radius: 2px;
+  font-size: 0.9em;
+  overflow-wrap: anywhere;
+}
+
+.acp-md ul {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+.acp-md ol {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+.acp-md li {
+  margin: 2px 0;
+}
+
+.acp-md h1, .acp-md h2, .acp-md h3,
+.acp-md h4, .acp-md h5, .acp-md h6 {
+  margin: 8px 0 4px;
+  font-weight: 700;
+}
+
+.acp-md h1 { font-size: 1.15em; }
+.acp-md h2 { font-size: 1.1em; }
+.acp-md h3 { font-size: 1.05em; font-weight: 600; }
+.acp-md h4 { font-size: 1em; font-weight: 600; }
+.acp-md h5 { font-size: 0.95em; font-weight: 600; }
+.acp-md h6 { font-size: 0.9em; font-weight: 600; }
+
+.acp-md blockquote {
+  margin: 6px 0;
+  padding-left: 12px;
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-secondary);
+}
+
+.acp-md table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--text-xs);
+}
+
+.acp-md th {
+  text-align: left;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-strong);
+  font-weight: 600;
+}
+
+.acp-md td {
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.acp-md hr {
+  border: none;
+  border-top: 1px solid var(--border);
+  margin: 8px 0;
+}
+
+/* ── Composer ───────────────────────────────────────────────────────────── */
+.acp-composer {
+  padding: var(--space-3);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-tertiary);
+  user-select: auto;
+}
+
+.acp-composer--drop {
+  box-shadow: 0 0 0 2px rgba(94, 231, 223, 0.45) inset;
+}
+
+.acp-composer__input-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: start;
+  gap: var(--space-2);
+  border: 1px solid var(--border-strong);
+  background: var(--bg-secondary);
+  border-radius: 2px;
+  padding: 8px 10px;
+}
+
+.acp-composer__glyph {
+  color: var(--acp-accent);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  line-height: 24px;
+  user-select: auto;
+}
+
+.acp-composer__glyph--image {
+  color: var(--warning);
+}
+
+.acp-composer__textarea {
+  width: 100%;
+  resize: none;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  padding: 4px 0;
+  outline: none;
+  min-height: 72px;
+  font-size: var(--text-sm);
+  line-height: 1.6;
+}
+
+.acp-composer__textarea:disabled {
+  opacity: 0.5;
+}
+
+.acp-composer__attachments {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.acp-composer__attachment {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.acp-composer__attachment-remove {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.acp-composer__footer {
+  margin-top: var(--space-2);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.acp-composer__effort {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.acp-composer__effort-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+
+.acp-composer__effort-select {
+  font-size: 11px;
+  font-family: var(--font-mono);
+  background: var(--zorai-bg-surface);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: 2px;
+  padding: 1px 4px;
+  cursor: pointer;
+  outline: none;
+}
+
+.acp-composer__actions {
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.acp-composer__btn {
+  border-radius: 2px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.acp-composer__btn--recording {
+  border-color: rgba(255, 99, 132, 0.55);
+  background: rgba(255, 99, 132, 0.12);
+  color: #ff9aa9;
+}
+
+.acp-composer__hidden-input {
+  display: none;
+}
+
+/* ── Todo panel ─────────────────────────────────────────────────────────── */
+.acp-todo {
+  border-top: 1px solid var(--border);
+  background: var(--bg-secondary);
+  padding: var(--space-2) var(--space-3);
+}
+
+.acp-todo__toggle {
+  width: 100%;
+  border: none;
+  background: transparent;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+  cursor: pointer;
+  color: var(--text-primary);
+}
+
+.acp-todo__title {
+  font-size: var(--text-xs);
+  font-weight: 700;
+}
+
+.acp-todo__preview {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.acp-todo__list {
+  margin-top: var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.acp-todo__item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 6px 8px;
+  border-radius: 2px;
+  background: var(--bg-tertiary);
+}
+
+.acp-todo__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.acp-todo__content {
+  font-size: var(--text-sm);
+  color: var(--text-primary);
+  flex: 1;
+}
+
+.acp-todo__status {
+  font-size: var(--text-xs);
+  color: var(--text-muted);
+  text-transform: capitalize;
+}

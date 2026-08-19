@@ -38,6 +38,17 @@ pub(super) fn should_force_budget_report_back(
     spawned_subagent && !already_in_report_back && !already_has_terminal_report
 }
 
+pub(super) fn should_emit_turn_done_on_text_completion(continue_for_report_back: bool) -> bool {
+    !continue_for_report_back
+}
+
+pub(super) fn should_emit_deferred_turn_done(
+    needs_turn_done: bool,
+    interrupted_for_approval: bool,
+) -> bool {
+    needs_turn_done && !interrupted_for_approval
+}
+
 pub(super) fn parse_subagent_report_status(status: &str) -> Option<SubagentReportStatus> {
     match status.trim() {
         "done" => Some(SubagentReportStatus::Done),
@@ -52,6 +63,35 @@ impl<'a> SendMessageRunner<'a> {
         self.current_task_snapshot
             .as_ref()
             .is_some_and(crate::agent::types::AgentTask::is_spawned_subagent)
+    }
+
+    pub(super) fn emit_turn_done(
+        &mut self,
+        input_tokens: u64,
+        output_tokens: u64,
+        cost: Option<f64>,
+        tps: Option<f64>,
+        generation_ms: Option<u64>,
+        reasoning: Option<String>,
+        upstream_message: Option<CompletionUpstreamMessage>,
+        provider_final_result: Option<CompletionProviderFinalResult>,
+        message_id: Option<String>,
+    ) {
+        self.needs_turn_done = false;
+        let _ = self.engine.event_tx.send(AgentEvent::Done {
+            thread_id: self.tid.clone(),
+            input_tokens,
+            output_tokens,
+            cost,
+            provider: Some(self.config.provider.clone()),
+            model: Some(self.provider_config.model.clone()),
+            tps,
+            generation_ms,
+            reasoning,
+            upstream_message,
+            provider_final_result,
+            message_id,
+        });
     }
 
     pub(super) async fn enter_execution_budget_report_back(&mut self) -> bool {
@@ -337,7 +377,9 @@ impl<'a> SendMessageRunner<'a> {
 #[cfg(test)]
 mod tests {
     use super::{
-        budget_overflow_decision, should_force_budget_report_back, BudgetOverflowDecision,
+        budget_overflow_decision, should_emit_deferred_turn_done,
+        should_emit_turn_done_on_text_completion, should_force_budget_report_back,
+        BudgetOverflowDecision,
     };
     use crate::agent::types::ContextOverflowAction;
 
@@ -381,5 +423,30 @@ mod tests {
     #[test]
     fn already_in_report_back_does_not_force_another_entry() {
         assert!(!should_force_budget_report_back(true, false, true));
+    }
+
+    #[test]
+    fn continuing_into_budget_report_back_must_not_emit_done() {
+        assert!(
+            !should_emit_turn_done_on_text_completion(true),
+            "listeners treat Done as the end of the turn; emitting it before the extra report-back model call makes UI/stream go idle then resume"
+        );
+        assert!(
+            should_emit_turn_done_on_text_completion(false),
+            "a finished text completion still ends the turn"
+        );
+    }
+
+    #[test]
+    fn deferred_done_fires_after_report_back_continue_unless_approval_paused() {
+        assert!(
+            should_emit_deferred_turn_done(true, false),
+            "skipping Done on continue still requires a terminal Done when the turn actually ends"
+        );
+        assert!(
+            !should_emit_deferred_turn_done(true, true),
+            "approval pauses the turn; Done would clear activity while waiting"
+        );
+        assert!(!should_emit_deferred_turn_done(false, false));
     }
 }

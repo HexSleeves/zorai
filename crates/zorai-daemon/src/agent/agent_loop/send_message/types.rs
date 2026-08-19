@@ -49,6 +49,7 @@ pub(super) struct SendMessageRunner<'a> {
     pub(super) report_back_phase: Option<super::report_back::ReportBackReason>,
     pub(super) tools_before_report_back: Option<Vec<ToolDefinition>>,
     pub(super) subagent_report: Option<SubagentTurnReport>,
+    pub(super) needs_turn_done: bool,
     pub(super) policy_aborted_retry: bool,
     pub(super) previous_tool_signature: Option<String>,
     pub(super) previous_tool_outcome: Option<(String, bool)>,

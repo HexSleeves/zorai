@@ -55,24 +55,12 @@ export function ToolStructuredValueView({
 }) {
     return (
         <div>
-            <div style={{ color: "var(--text-muted)", fontSize: 11 }}>{label}</div>
-            <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", borderRadius: "var(--radius-sm)", padding: 8, display: "grid", gap: 8 }}>
+            <div className="acp-field-label">{label}</div>
+            <div className="acp-struct">
                 {fields.map((field) => (
-                    <div
-                        key={field.key}
-                        style={{
-                            display: "grid",
-                            gridTemplateColumns: "minmax(112px, max-content) minmax(0, 1fr)",
-                            gap: 8,
-                            alignItems: "start",
-                        }}
-                    >
-                        <div style={{ color: "var(--text-muted)", fontSize: 11, fontFamily: "var(--font-mono)", wordBreak: "break-word" }}>
-                            {field.key}
-                        </div>
-                        <div style={{ color: "var(--text-primary)", fontSize: 12, lineHeight: 1.45, fontFamily: "var(--font-mono)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                            {field.value || "-"}
-                        </div>
+                    <div key={field.key} className="acp-struct__row">
+                        <div className="acp-struct__key">{field.key}</div>
+                        <div className="acp-struct__value">{field.value || "-"}</div>
                     </div>
                 ))}
             </div>
@@ -109,25 +97,12 @@ export function ToolFileTargetView({
 
     return (
         <div>
-            <div style={{ color: "var(--text-muted)", fontSize: 11 }}>{label}</div>
-            <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.03)", borderRadius: "var(--radius-sm)", padding: 8, display: "grid", gap: 8 }}>
+            <div className="acp-field-label">{label}</div>
+            <div className="acp-struct">
                 <button
                     type="button"
                     onClick={openPath}
-                    style={{
-                        border: "none",
-                        background: "transparent",
-                        padding: 0,
-                        margin: 0,
-                        color: "#8ED0FF",
-                        cursor: "pointer",
-                        textAlign: "left",
-                        fontFamily: "var(--font-mono)",
-                        fontSize: 12,
-                        lineHeight: 1.45,
-                        textDecoration: "underline",
-                        wordBreak: "break-word",
-                    }}
+                    className="acp-file-target"
                 >
                     {path}
                 </button>
@@ -136,24 +111,14 @@ export function ToolFileTargetView({
                         <button
                             type="button"
                             onClick={revealPath}
-                            style={{
-                                border: "1px solid rgba(255,255,255,0.12)",
-                                background: "rgba(255,255,255,0.02)",
-                                color: "var(--text-muted)",
-                                cursor: "pointer",
-                                padding: "4px 8px",
-                                borderRadius: "var(--radius-sm)",
-                                fontSize: 11,
-                            }}
+                            className="acp-toggle-btn"
                         >
                             Reveal in folder
                         </button>
                     </div>
                 )}
                 {summaryText && (
-                    <div style={{ color: "var(--text-muted)", fontSize: 11, lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                        {summaryText}
-                    </div>
+                    <div className="acp-file-summary">{summaryText}</div>
                 )}
             </div>
         </div>

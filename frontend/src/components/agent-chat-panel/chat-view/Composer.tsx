@@ -2,7 +2,6 @@ import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import type { ComposerAttachment } from "./types";
 import { blobToBase64, collectMediaRecorderBlob, mediaRecorderOptions, readComposerAttachment, readSpeechToTextContent, readSpeechToTextError, stopMediaTracks } from "./composerMedia";
-import { inputStyle } from "../shared";
 
 function deriveImageComposerState(input: string): { isImageMode: boolean; displayValue: string } {
   const trimmed = input.trimStart();
@@ -180,16 +179,7 @@ export function ChatComposer({
 
   return (
     <div
-      style={{
-        padding: "var(--space-3)",
-        borderTop: "1px solid var(--border)",
-        flexShrink: 0,
-        display: "flex",
-        flexDirection: "column",
-        background: "var(--bg-tertiary)",
-        userSelect: "auto",
-        boxShadow: dropActive ? "0 0 0 2px rgba(94, 231, 223, 0.45) inset" : undefined,
-      }}
+      className={dropActive ? "acp-composer acp-composer--drop" : "acp-composer"}
       onDragOver={(event) => {
         if (!agentSettings.enabled) return;
         if (event.dataTransfer?.files?.length) {
@@ -207,26 +197,9 @@ export function ChatComposer({
         void appendFiles(files);
       }}
     >
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "auto 1fr",
-          alignItems: "start",
-          gap: "var(--space-2)",
-          border: "1px solid rgba(94, 231, 223, 0.3)",
-          background: "var(--bg-tertiary)",
-          borderRadius: "var(--radius-md)",
-          padding: "8px 10px",
-        }}
-      >
+      <div className="acp-composer__input-row">
         <span
-          style={{
-            color: isImageMode ? "#f6ad55" : "#5ee7df",
-            fontFamily: "var(--font-mono)",
-            fontSize: "var(--text-sm)",
-            lineHeight: "24px",
-            userSelect: "auto",
-          }}
+          className={isImageMode ? "acp-composer__glyph acp-composer__glyph--image" : "acp-composer__glyph"}
         >
           {isImageMode ? "🖼" : ">"}
         </span>
@@ -252,43 +225,20 @@ export function ChatComposer({
           rows={3}
           placeholder={composerPlaceholder}
           disabled={!agentSettings.enabled}
-          style={{
-            ...inputStyle,
-            width: "100%",
-            resize: "none",
-            background: "transparent",
-            border: "none",
-            color: "var(--text-primary)",
-            padding: "4px 0",
-            fontFamily: agentSettings.chatFontFamily,
-            outline: "none",
-            opacity: agentSettings.enabled ? 1 : 0.5,
-            minHeight: 72,
-          }}
+          className="acp-composer__textarea"
+          style={{ fontFamily: agentSettings.chatFontFamily }}
         />
       </div>
 
       {attachments.length > 0 && (
-        <div style={{ display: "flex", flexWrap: "wrap", gap: "var(--space-2)", marginTop: "var(--space-2)" }}>
+        <div className="acp-composer__attachments">
           {attachments.map((attachment) => (
-            <div
-              key={attachment.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--space-2)",
-                border: "1px solid var(--glass-border)",
-                borderRadius: "var(--radius-sm)",
-                padding: "4px 8px",
-                fontSize: 11,
-                color: "var(--text-secondary)",
-              }}
-            >
+            <div key={attachment.id} className="acp-composer__attachment">
               <span>{attachment.kind === "image" ? "🖼" : attachment.kind === "audio" ? "🔊" : "📄"} {attachment.name}</span>
               <button
                 type="button"
+                className="acp-composer__attachment-remove"
                 onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}
-                style={{ background: "transparent", border: "none", color: "var(--text-muted)", cursor: "pointer", fontSize: 11 }}
               >
                 ×
               </button>
@@ -297,26 +247,14 @@ export function ChatComposer({
         </div>
       )}
 
-      <div style={{ marginTop: "var(--space-2)", display: "flex", justifyContent: "space-between", alignItems: "center", gap: "var(--space-2)" }}>
-        <div style={{ display: "flex", alignItems: "flex-start", flexDirection: "column", gap: 4 }}>
-          <span style={{ fontSize: 11, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
-            Reasoning effort
-          </span>
+      <div className="acp-composer__footer">
+        <div className="acp-composer__effort">
+          <span className="acp-composer__effort-label">Reasoning effort</span>
           <select
             value={agentSettings.reasoning_effort}
             onChange={(event) => onUpdateReasoningEffort(event.target.value)}
             title="Reasoning effort"
-            style={{
-              fontSize: 10,
-              fontFamily: "var(--font-mono)",
-              background: "var(--zorai-bg-surface)",
-              color: "var(--text-secondary)",
-              border: "1px solid var(--glass-border)",
-              borderRadius: 3,
-              padding: "1px 4px",
-              cursor: "pointer",
-              outline: "none",
-            }}
+            className="acp-composer__effort-select"
           >
             <option value="none">off</option>
             <option value="minimal">minimal</option>
@@ -327,7 +265,7 @@ export function ChatComposer({
             <option value="max">max</option>
           </select>
         </div>
-        <div style={{ display: "flex", gap: "var(--space-2)", alignItems: "center" }}>
+        <div className="acp-composer__actions">
           {voiceCaptureAvailable && (
             <button
               type="button"
@@ -335,16 +273,11 @@ export function ChatComposer({
                 void toggleRecording();
               }}
               disabled={!agentSettings.enabled || isTranscribing}
-              style={{
-                border: `1px solid ${isRecording ? "rgba(255, 99, 132, 0.55)" : "var(--glass-border)"}`,
-                background: isRecording ? "rgba(255, 99, 132, 0.12)" : "rgba(255,255,255,0.04)",
-                color: isRecording ? "#ff9aa9" : "var(--text-secondary)",
-                borderRadius: "var(--radius-sm)",
-                padding: "6px 10px",
-                fontSize: 12,
-                cursor: !agentSettings.enabled || isTranscribing ? "not-allowed" : "pointer",
-                opacity: !agentSettings.enabled || isTranscribing ? 0.5 : 1,
-              }}
+              className={[
+                "acp-btn",
+                "acp-composer__btn",
+                isRecording ? "acp-composer__btn--recording" : "acp-btn--ghost",
+              ].join(" ")}
               title={isRecording ? "Stop recording" : isTranscribing ? "Transcribing..." : "Record voice message"}
             >
               {isRecording ? "Stop" : isTranscribing ? "..." : "Mic"}
@@ -356,22 +289,13 @@ export function ChatComposer({
             accept="image/*,audio/*,.txt,.md,.markdown,.json,.yaml,.yml,.toml,.ini,.cfg,.conf,.rs,.ts,.tsx,.js,.jsx,.py,.sh,.sql,.csv,.log"
             multiple
             onChange={handleAttachmentSelect}
-            style={{ display: "none" }}
+            className="acp-composer__hidden-input"
           />
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={!agentSettings.enabled}
-            style={{
-              border: "1px solid var(--glass-border)",
-              background: "rgba(255,255,255,0.04)",
-              color: "var(--text-secondary)",
-              borderRadius: "var(--radius-sm)",
-              padding: "6px 10px",
-              fontSize: 12,
-              cursor: !agentSettings.enabled ? "not-allowed" : "pointer",
-              opacity: !agentSettings.enabled ? 0.5 : 1,
-            }}
+            className="acp-btn acp-btn--ghost acp-composer__btn"
           >
             Attach
           </button>
@@ -380,17 +304,7 @@ export function ChatComposer({
               type="button"
               onClick={onStartGoalRun}
               disabled={!agentSettings.enabled || !input.trim()}
-              style={{
-                border: "1px solid var(--mission-border)",
-                background: "var(--mission-soft)",
-                color: "var(--mission)",
-                borderRadius: "var(--radius-sm)",
-                padding: "6px 12px",
-                fontSize: 12,
-                fontWeight: 700,
-                cursor: !agentSettings.enabled || !input.trim() ? "not-allowed" : "pointer",
-                opacity: !agentSettings.enabled || !input.trim() ? 0.5 : 1,
-              }}
+              className="acp-btn acp-btn--mission acp-composer__btn"
             >
               Goal Run
             </button>
@@ -399,16 +313,7 @@ export function ChatComposer({
             <button
               type="button"
               onClick={onStopStreaming}
-              style={{
-                border: "1px solid rgba(255, 118, 117, 0.45)",
-                background: "rgba(255, 118, 117, 0.15)",
-                color: "#ff7675",
-                borderRadius: "var(--radius-sm)",
-                padding: "6px 10px",
-                fontSize: 12,
-                fontWeight: 600,
-                cursor: "pointer",
-              }}
+              className="acp-btn acp-btn--danger acp-composer__btn"
             >
               Stop
             </button>
@@ -417,17 +322,7 @@ export function ChatComposer({
             type="button"
             onClick={onSend}
             disabled={!agentSettings.enabled || (!input.trim() && attachments.length === 0)}
-            style={{
-              border: "1px solid var(--accent)",
-              background: "rgba(94, 231, 223, 0.16)",
-              color: "var(--accent)",
-              borderRadius: "var(--radius-sm)",
-              padding: "6px 12px",
-              fontSize: 12,
-              fontWeight: 700,
-              cursor: !agentSettings.enabled || (!input.trim() && attachments.length === 0) ? "not-allowed" : "pointer",
-              opacity: !agentSettings.enabled || (!input.trim() && attachments.length === 0) ? 0.5 : 1,
-            }}
+            className="acp-btn acp-btn--primary acp-composer__btn"
           >
             Send
           </button>

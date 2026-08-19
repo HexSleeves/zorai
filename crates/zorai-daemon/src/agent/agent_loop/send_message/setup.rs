@@ -1308,6 +1308,7 @@ impl<'a> SendMessageRunner<'a> {
             report_back_phase: None,
             tools_before_report_back: None,
             subagent_report: None,
+            needs_turn_done: false,
             policy_aborted_retry: false,
             previous_tool_signature: None,
             previous_tool_outcome: None,

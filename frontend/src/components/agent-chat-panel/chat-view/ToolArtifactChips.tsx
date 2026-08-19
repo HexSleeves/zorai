@@ -37,11 +37,27 @@ export function ToolArtifactChips({
           {!compact ? (
             <>
               <span className="zorai-status-pill">{artifact.provenance}</span>
-              {bridge?.openFsPath ? (
-                <button type="button" className="zorai-ghost-button" onClick={() => void bridge.openFsPath?.(artifact.path)}>Open</button>
-              ) : null}
+              <button
+                type="button"
+                className="zorai-ghost-button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  openThreadFilePreview(toolArtifactPreviewEntry(artifact, createdAt));
+                }}
+              >
+                Open
+              </button>
               {bridge?.revealFsPath ? (
-                <button type="button" className="zorai-ghost-button" onClick={() => void bridge.revealFsPath?.(artifact.path)}>Reveal</button>
+                <button
+                  type="button"
+                  className="zorai-ghost-button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    void bridge.revealFsPath?.(artifact.path);
+                  }}
+                >
+                  Reveal
+                </button>
               ) : null}
             </>
           ) : null}
