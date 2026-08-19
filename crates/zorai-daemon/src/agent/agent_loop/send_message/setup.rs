@@ -1961,9 +1961,7 @@ mod tests {
                 !task.is_spawned_subagent(),
                 "{source} tasks are parent turns even when parent_thread_id is the conversation"
             );
-            engine
-                .set_thread_identity_from_task(thread_id, &task)
-                .await;
+            engine.set_thread_identity_from_task(thread_id, &task).await;
 
             let runner = SendMessageRunner::initialize(
                 &engine,

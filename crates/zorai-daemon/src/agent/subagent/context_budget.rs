@@ -101,6 +101,12 @@ impl ContextBudget {
     pub fn extend_max(&mut self, additional: u32) {
         self.max_tokens = self.max_tokens.saturating_add(additional.max(256));
     }
+
+    pub fn raise_max_to(&mut self, max_tokens: u32) {
+        if max_tokens > self.max_tokens {
+            self.max_tokens = max_tokens.max(256);
+        }
+    }
 }
 
 /// Count the visible assistant output tokens that apply to a sub-agent's
@@ -297,6 +303,23 @@ mod tests {
         assert_eq!(budget.max_tokens(), 1_500);
         assert_eq!(budget.consumed(), 1_400);
         assert!(matches!(budget.check(), BudgetStatus::Warning { .. }));
+    }
+
+    #[test]
+    fn raise_max_to_adopts_higher_persisted_ceiling_without_resetting_consumed() {
+        let mut budget = ContextBudget::new(1_000, ContextOverflowAction::Error);
+        budget.set_consumed(1_400);
+        budget.raise_max_to(1_512);
+        assert_eq!(budget.max_tokens(), 1_512);
+        assert_eq!(budget.consumed(), 1_400);
+        assert!(matches!(budget.check(), BudgetStatus::Warning { .. }));
+    }
+
+    #[test]
+    fn raise_max_to_does_not_lower_an_already_higher_ceiling() {
+        let mut budget = ContextBudget::new(2_000, ContextOverflowAction::Error);
+        budget.raise_max_to(1_500);
+        assert_eq!(budget.max_tokens(), 2_000);
     }
 
     #[test]

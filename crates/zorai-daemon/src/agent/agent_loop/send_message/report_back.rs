@@ -1,4 +1,10 @@
 use super::*;
+#[path = "budget_extension.rs"]
+mod budget_extension;
+use budget_extension::{
+    budget_extension_applies_to_runner, parse_successful_budget_extension,
+    should_exit_report_back_after_live_ceiling_sync,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(super) enum ReportBackReason {
@@ -188,6 +194,7 @@ impl<'a> SendMessageRunner<'a> {
     }
 
     pub(super) async fn maybe_force_budget_report_back(&mut self) -> bool {
+        self.sync_task_context_budget_from_live_task().await;
         if !should_force_budget_report_back(
             self.report_back_phase.is_some(),
             self.subagent_report.is_some(),
@@ -230,6 +237,7 @@ impl<'a> SendMessageRunner<'a> {
         &mut self,
         tool_name: &str,
         arguments: &str,
+        result_content: &str,
     ) -> Option<ToolCallDisposition> {
         if tool_name == zorai_protocol::tool_names::REPORT_SUBAGENT_OUTCOME {
             let args: serde_json::Value = serde_json::from_str(arguments).unwrap_or_default();
@@ -255,27 +263,80 @@ impl<'a> SendMessageRunner<'a> {
             return Some(ToolCallDisposition::BreakLoop);
         }
         if tool_name == zorai_protocol::tool_names::EXTEND_SUBAGENT_BUDGET {
-            let args: serde_json::Value = serde_json::from_str(arguments).unwrap_or_default();
-            let additional = args
-                .get("additional_tokens")
-                .and_then(|value| value.as_u64())
-                .map(|value| value.min(u32::MAX as u64) as u32)
-                .unwrap_or(0);
-            if let Some(budget) = self.task_context_budget.as_mut() {
-                if additional > 0 {
-                    budget.extend_max(additional);
-                }
+            let extension = parse_successful_budget_extension(arguments, result_content);
+            if !budget_extension_applies_to_runner(
+                self.task_id,
+                &self.tid,
+                extension.target_task_id.as_deref(),
+                extension.target_thread_id.as_deref(),
+            ) {
+                return None;
             }
-            if let Some(task) = self.current_task_snapshot.as_mut() {
-                task.context_budget_tokens = self
-                    .task_context_budget
-                    .as_ref()
-                    .map(|budget| budget.max_tokens());
+            if let Some(budget) = self.task_context_budget.as_mut() {
+                if let Some(new_max) = extension.new_max_tokens {
+                    budget.raise_max_to(new_max);
+                } else if extension.additional_tokens > 0 {
+                    budget.extend_max(extension.additional_tokens);
+                }
+                if let Some(task) = self.current_task_snapshot.as_mut() {
+                    task.context_budget_tokens = Some(budget.max_tokens());
+                }
             }
             self.terminated_for_budget = false;
             self.exit_report_back_phase();
         }
         None
+    }
+
+    async fn live_task_context_budget_tokens(&self) -> Option<u32> {
+        let task_id = self.task_id.or_else(|| {
+            self.current_task_snapshot
+                .as_ref()
+                .map(|task| task.id.as_str())
+        });
+        let tasks = self.engine.tasks.lock().await;
+        if let Some(task_id) = task_id {
+            if let Some(max_tokens) = tasks
+                .iter()
+                .find(|task| task.id == task_id)
+                .and_then(|task| task.context_budget_tokens)
+            {
+                return Some(max_tokens);
+            }
+        }
+        tasks
+            .iter()
+            .find(|task| {
+                task.thread_id.as_deref() == Some(self.tid.as_str()) && task.is_spawned_subagent()
+            })
+            .and_then(|task| task.context_budget_tokens)
+    }
+
+    pub(super) async fn sync_task_context_budget_from_live_task(&mut self) {
+        let Some(live_max) = self.live_task_context_budget_tokens().await else {
+            return;
+        };
+        let Some(budget) = self.task_context_budget.as_mut() else {
+            return;
+        };
+        let previous = budget.max_tokens();
+        budget.raise_max_to(live_max);
+        let ceiling_raised = budget.max_tokens() > previous;
+        if let Some(task) = self.current_task_snapshot.as_mut() {
+            task.context_budget_tokens = Some(budget.max_tokens());
+        }
+        let still_exceeded = matches!(
+            budget.check(),
+            crate::agent::subagent::context_budget::BudgetStatus::Exceeded { .. }
+        );
+        if should_exit_report_back_after_live_ceiling_sync(
+            self.report_back_phase.is_some(),
+            ceiling_raised,
+            still_exceeded,
+        ) {
+            self.terminated_for_budget = false;
+            self.exit_report_back_phase();
+        }
     }
 
     pub(super) async fn capture_text_report_back(&mut self, content: &str) {
@@ -375,78 +436,5 @@ impl<'a> SendMessageRunner<'a> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{
-        budget_overflow_decision, should_emit_deferred_turn_done,
-        should_emit_turn_done_on_text_completion, should_force_budget_report_back,
-        BudgetOverflowDecision,
-    };
-    use crate::agent::types::ContextOverflowAction;
-
-    #[test]
-    fn spawned_error_budget_forces_report_back_instead_of_stop() {
-        assert_eq!(
-            budget_overflow_decision(true, false, ContextOverflowAction::Error),
-            BudgetOverflowDecision::EnterReportBack
-        );
-    }
-
-    #[test]
-    fn top_level_error_budget_still_stops() {
-        assert_eq!(
-            budget_overflow_decision(false, false, ContextOverflowAction::Error),
-            BudgetOverflowDecision::Stop
-        );
-    }
-
-    #[test]
-    fn report_back_turn_is_budget_exempt() {
-        assert_eq!(
-            budget_overflow_decision(true, true, ContextOverflowAction::Error),
-            BudgetOverflowDecision::Continue
-        );
-    }
-
-    #[test]
-    fn captured_text_report_must_not_reenter_while_budget_still_exceeded() {
-        assert!(
-            !should_force_budget_report_back(false, true, true),
-            "text report-back clears the phase but already recorded a terminal child report; re-entering would burn another turn and emit Done before more model work"
-        );
-    }
-
-    #[test]
-    fn budget_exceeded_without_report_still_enters_report_back() {
-        assert!(should_force_budget_report_back(false, false, true));
-    }
-
-    #[test]
-    fn already_in_report_back_does_not_force_another_entry() {
-        assert!(!should_force_budget_report_back(true, false, true));
-    }
-
-    #[test]
-    fn continuing_into_budget_report_back_must_not_emit_done() {
-        assert!(
-            !should_emit_turn_done_on_text_completion(true),
-            "listeners treat Done as the end of the turn; emitting it before the extra report-back model call makes UI/stream go idle then resume"
-        );
-        assert!(
-            should_emit_turn_done_on_text_completion(false),
-            "a finished text completion still ends the turn"
-        );
-    }
-
-    #[test]
-    fn deferred_done_fires_after_report_back_continue_unless_approval_paused() {
-        assert!(
-            should_emit_deferred_turn_done(true, false),
-            "skipping Done on continue still requires a terminal Done when the turn actually ends"
-        );
-        assert!(
-            !should_emit_deferred_turn_done(true, true),
-            "approval pauses the turn; Done would clear activity while waiting"
-        );
-        assert!(!should_emit_deferred_turn_done(false, false));
-    }
-}
+#[path = "report_back_tests.rs"]
+mod tests;

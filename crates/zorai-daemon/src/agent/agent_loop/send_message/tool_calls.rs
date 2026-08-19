@@ -472,6 +472,7 @@ impl<'a> SendMessageRunner<'a> {
                 if let Some(disposition) = self.apply_successful_subagent_budget_tool(
                     tc.function.name.as_str(),
                     tc.function.arguments.as_str(),
+                    result.content.as_str(),
                 ) {
                     return Ok(match disposition {
                         ToolCallDisposition::ContinueTools => LoopDisposition::Continue,
@@ -974,6 +975,7 @@ impl<'a> SendMessageRunner<'a> {
         }
 
         if self.task_context_budget.is_some() {
+            self.sync_task_context_budget_from_live_task().await;
             let current_tokens = {
                 let threads = self.engine.threads.read().await;
                 threads
