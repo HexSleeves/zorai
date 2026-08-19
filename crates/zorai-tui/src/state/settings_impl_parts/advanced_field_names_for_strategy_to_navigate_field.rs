@@ -324,6 +324,7 @@ impl SettingsState {
                 26 => "feat_embedding_provider",
                 27 => "feat_embedding_model",
                 28 => "feat_embedding_dimensions",
+                29 => "feat_auto_thread_title",
                 _ => "",
             },
             SettingsTab::Advanced => match self.field_cursor {
@@ -412,7 +413,7 @@ impl SettingsState {
             SettingsTab::Agent => 11,
             SettingsTab::SubAgents => 1,
             SettingsTab::Concierge => 8,
-            SettingsTab::Features => 29,
+            SettingsTab::Features => 30,
             SettingsTab::Advanced => 25,
             SettingsTab::Plugins => 1,
             SettingsTab::Database => 1,

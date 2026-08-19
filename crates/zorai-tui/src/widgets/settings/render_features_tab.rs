@@ -438,6 +438,28 @@ pub(crate) fn render_features_tab<'a>(
     );
 
     lines.push(Line::raw(""));
+    lines.push(Line::from(Span::styled("  Threads", theme.fg_active)));
+    lines.push(Line::from(Span::styled(
+        "  Generate a title from the first operator message",
+        theme.fg_dim,
+    )));
+    lines.push(Line::raw(""));
+
+    let auto_thread_title = raw
+        .and_then(|r| r.get("auto_thread_title"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("off");
+    render_feature_field_line(
+        &mut lines,
+        settings,
+        29,
+        "Auto Title",
+        auto_thread_title,
+        "  [Enter/Space: cycle]",
+        theme,
+    );
+
+    lines.push(Line::raw(""));
     lines.push(Line::from(vec![
         Span::styled("  Hotkeys: ", theme.fg_dim),
         Span::styled("Ctrl+L", theme.fg_active),

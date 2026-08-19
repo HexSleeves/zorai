@@ -28,6 +28,7 @@ type ThreadActionKeys =
   | "setThreadTodos"
   | "getThreadTodos"
   | "setThreadDaemonId"
+  | "updateThreadTitle"
   | "toggleAgentPanel"
   | "setSearchQuery"
   | "getThreadsForPane";
@@ -86,7 +87,8 @@ export function createThreadActions(
         workspaceId: opts.workspaceId ?? null,
         surfaceId: opts.surfaceId ?? null,
         paneId: opts.paneId ?? null,
-        agent_name: get().agentSettings.agent_name,
+        agent_name: opts.agentName?.trim() || get().agentSettings.agent_name,
+        targetAgentId: opts.agentId?.trim() || null,
         title: opts.title ?? "New Conversation",
         createdAt: now,
         updatedAt: now,
@@ -307,6 +309,30 @@ export function createThreadActions(
           thread.id === threadId ? { ...thread, daemonThreadId } : thread);
         if (shouldPersistCurrentHistory(get().agentSettings)) {
           persistDaemonThreadMap(threads);
+        }
+        return { threads };
+      });
+    },
+    updateThreadTitle: (threadId, title) => {
+      const nextTitle = title.trim();
+      if (!nextTitle) {
+        return;
+      }
+      set((state) => {
+        let updatedThread = null as AgentState["threads"][number] | null;
+        const threads = state.threads.map((thread) => {
+          if (thread.id !== threadId && thread.daemonThreadId !== threadId) {
+            return thread;
+          }
+          updatedThread = { ...thread, title: nextTitle, updatedAt: Date.now() };
+          return updatedThread;
+        });
+        if (!updatedThread) {
+          return state;
+        }
+        if (shouldPersistCurrentHistory(get().agentSettings)) {
+          persistDaemonThreadMap(threads);
+          void getAgentDbApi()?.dbCreateThread?.(serializeThread(updatedThread));
         }
         return { threads };
       });

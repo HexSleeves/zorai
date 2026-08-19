@@ -194,6 +194,26 @@ impl TuiModel {
                 );
                 true
             }
+            "feat_auto_thread_title" => {
+                let modes = ["off", "rarog", "weles"];
+                let current = self
+                    .config
+                    .agent_config_raw
+                    .as_ref()
+                    .and_then(|r| r.get("auto_thread_title"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("off");
+                let current_idx = modes.iter().position(|mode| *mode == current).unwrap_or(0);
+                let next = modes[(current_idx + 1) % modes.len()];
+                self.send_daemon_command(DaemonCommand::SetConfigItem {
+                    key_path: "/auto_thread_title".to_string(),
+                    value_json: format!("\"{next}\""),
+                });
+                if let Some(ref mut raw) = self.config.agent_config_raw {
+                    raw["auto_thread_title"] = serde_json::Value::String(next.to_string());
+                }
+                true
+            }
             _ => false,
         }
     }
@@ -244,6 +264,7 @@ impl TuiModel {
                 | "feat_audio_stt_enabled"
                 | "feat_audio_tts_enabled"
                 | "feat_embedding_enabled"
+                | "feat_auto_thread_title"
                 | "whatsapp_link_device"
                 | "whatsapp_relink_device"
         ) || (self.current_settings_field_name().starts_with("tool_")

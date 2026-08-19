@@ -1,3 +1,5 @@
+import { getBridge } from "@/lib/bridge";
+import { useAgentStore } from "@/lib/agentStore";
 import { fetchGoalRuns, normalizeGoalRun } from "@/lib/goalRuns";
 import { useAgentMissionStore } from "@/lib/agentMissionStore";
 import { useSnippetStore } from "@/lib/snippetStore";
@@ -10,6 +12,15 @@ import {
   appendDaemonSystemMessage,
   normalizeBridgePayload,
 } from "./daemonHelpers";
+
+export function handleThreadTitleUpdatedEvent({ event }: { event: any }) {
+  const threadId = typeof event?.thread_id === "string" ? event.thread_id : "";
+  const title = typeof event?.title === "string" ? event.title.trim() : "";
+  if (!threadId || !title) {
+    return;
+  }
+  useAgentStore.getState().updateThreadTitle(threadId, title);
+}
 
 export function handleThreadCreatedEvent({
   event,
@@ -78,12 +89,17 @@ export function handleTaskUpdateEvent({ event, activePaneId, activeWorkspace, ad
   if (!task) return;
   if (task.status === "awaiting_approval") {
     const approvalId = task.awaiting_approval_id || task.id;
+    if (useAgentStore.getState().agentSettings.managed_security_level === "yolo") {
+      void getBridge()?.agentResolveTaskApproval?.(approvalId, "approve-once");
+      return;
+    }
     useAgentMissionStore.getState().upsertDaemonApproval({
       id: approvalId,
       paneId: activePaneId ?? task.session_id ?? "",
       workspaceId: activeWorkspace?.id ?? null,
       surfaceId: null,
       sessionId: task.session_id ?? null,
+      source: "agent-task",
       command: task.blocked_reason || task.title,
       reasons: [task.blocked_reason || "Managed command requires approval"],
       riskLevel: "medium",

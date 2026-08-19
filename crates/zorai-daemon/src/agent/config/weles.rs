@@ -124,7 +124,9 @@ pub(super) fn sanitize_weles_builtin_overrides_struct(
     );
 }
 
-pub(super) fn build_effective_weles_definition(config: &AgentConfig) -> SubAgentDefinition {
+pub(in crate::agent) fn build_effective_weles_definition(
+    config: &AgentConfig,
+) -> SubAgentDefinition {
     let mut overrides = config.builtin_sub_agents.weles.clone();
     sanitize_weles_builtin_overrides_struct(&mut overrides, &config.system_prompt);
     let reasoning_effort = resolve_weles_reasoning_effort(&overrides);

@@ -346,6 +346,10 @@ pub enum ChatAction {
         thread_id: String,
         title: String,
     },
+    ThreadTitleUpdated {
+        thread_id: String,
+        title: String,
+    },
     ThreadDeleted {
         thread_id: String,
     },

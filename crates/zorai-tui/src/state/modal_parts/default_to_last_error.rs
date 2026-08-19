@@ -38,6 +38,7 @@ pub enum ModalKind {
     Settings,
     EffortPicker,
     ContextWindowEditor,
+    CustomModelEditor,
     Notifications,
     ToolsPicker,
     ViewPicker,

@@ -278,9 +278,49 @@ pub struct AgentConfig {
     /// Cost tracking configuration (Phase v3.0: COST-01 through COST-04).
     #[serde(default)]
     pub cost: super::super::cost::CostConfig,
+    #[serde(default)]
+    pub auto_thread_title: AutoThreadTitleMode,
     /// Additional persisted agent settings used by richer frontends and the TUI.
     #[serde(flatten)]
     pub extra: HashMap<String, Value>,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum AutoThreadTitleMode {
+    #[default]
+    Off,
+    Rarog,
+    Weles,
+}
+
+impl AutoThreadTitleMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::Rarog => "rarog",
+            Self::Weles => "weles",
+        }
+    }
+
+    pub fn parse(value: &str) -> Self {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "rarog" => Self::Rarog,
+            "weles" => Self::Weles,
+            _ => Self::Off,
+        }
+    }
+
+    pub fn is_enabled(self) -> bool {
+        !matches!(self, Self::Off)
+    }
+}
+
+impl<'de> Deserialize<'de> for AutoThreadTitleMode {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = Option::<String>::deserialize(deserializer)?;
+        Ok(value.as_deref().map(Self::parse).unwrap_or_default())
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]

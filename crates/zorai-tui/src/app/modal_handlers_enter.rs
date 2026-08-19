@@ -1429,6 +1429,9 @@ pub(super) fn handle_modal_enter(model: &mut TuiModel, kind: modal::ModalKind) {
         modal::ModalKind::ContextWindowEditor => {
             model.commit_active_thread_context_window_editor();
         }
+        modal::ModalKind::CustomModelEditor => {
+            model.commit_active_thread_custom_model_editor();
+        }
         modal::ModalKind::WhatsAppLink => {}
         _ => {
             model.close_top_modal();

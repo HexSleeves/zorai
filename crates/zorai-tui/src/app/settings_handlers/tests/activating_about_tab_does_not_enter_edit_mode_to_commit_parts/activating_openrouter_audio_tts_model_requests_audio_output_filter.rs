@@ -448,6 +448,40 @@ fn settings_enter_toggles_embedding_enabled() {
         DaemonCommand::SetConfigItem {
             key_path,
             value_json,
-        } if key_path == "/semantic/embedding/enabled" && value_json == "true"
+        }         if key_path == "/semantic/embedding/enabled" && value_json == "true"
+    ));
+}
+
+#[test]
+fn settings_enter_cycles_auto_thread_title() {
+    let (mut model, mut daemon_rx) = make_model();
+    model.config.agent_config_raw = Some(serde_json::json!({}));
+    model
+        .modal
+        .reduce(modal::ModalAction::Push(modal::ModalKind::Settings));
+    focus_settings_field(&mut model, SettingsTab::Features, "feat_auto_thread_title");
+
+    let quit = model.handle_key_modal(
+        KeyCode::Enter,
+        KeyModifiers::NONE,
+        modal::ModalKind::Settings,
+    );
+
+    assert!(!quit);
+    assert_eq!(
+        model
+            .config
+            .agent_config_raw
+            .as_ref()
+            .and_then(|raw| raw.get("auto_thread_title"))
+            .and_then(|value| value.as_str()),
+        Some("rarog")
+    );
+    assert!(matches!(
+        daemon_rx.try_recv().expect("expected auto thread title cycle command"),
+        DaemonCommand::SetConfigItem {
+            key_path,
+            value_json,
+        } if key_path == "/auto_thread_title" && value_json == "\"rarog\""
     ));
 }

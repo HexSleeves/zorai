@@ -1990,6 +1990,7 @@ impl TuiModel {
                 modal::ModalKind::ContextWindowEditor => {
                     render_helpers::centered_rect(46, 28, area)
                 }
+                modal::ModalKind::CustomModelEditor => render_helpers::centered_rect(46, 28, area),
                 modal::ModalKind::Notifications => render_helpers::centered_rect(78, 78, area),
                 modal::ModalKind::WhatsAppLink => render_helpers::centered_rect(70, 80, area),
                 modal::ModalKind::ToolsPicker | modal::ModalKind::ViewPicker => {
@@ -2368,6 +2369,17 @@ impl TuiModel {
                         &self.theme,
                     );
                 }
+                modal::ModalKind::CustomModelEditor => {
+                    render_helpers::render_status_modal(
+                        frame,
+                        overlay_area,
+                        "CUSTOM MODEL",
+                        &self.custom_model_editor_body(),
+                        0,
+                        false,
+                        &self.theme,
+                    );
+                }
                 modal::ModalKind::Notifications => {
                     widgets::notifications::render(
                         frame,
@@ -2526,6 +2538,7 @@ impl TuiModel {
             modal::ModalKind::ErrorViewer => render_helpers::centered_rect(70, 45, area),
             modal::ModalKind::EffortPicker => render_helpers::centered_rect(35, 30, area),
             modal::ModalKind::ContextWindowEditor => render_helpers::centered_rect(46, 28, area),
+            modal::ModalKind::CustomModelEditor => render_helpers::centered_rect(46, 28, area),
             modal::ModalKind::Notifications => render_helpers::centered_rect(78, 78, area),
             modal::ModalKind::WhatsAppLink => render_helpers::centered_rect(70, 80, area),
             modal::ModalKind::ToolsPicker | modal::ModalKind::ViewPicker => {

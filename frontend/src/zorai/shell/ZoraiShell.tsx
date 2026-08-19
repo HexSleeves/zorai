@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { OperatorQuestionDock } from "@/components/OperatorQuestionDock";
 import { ActivityRail, ActivityView } from "../features/activity/ActivityView";
 import { DatabaseRail, DatabaseView } from "../features/database/DatabaseView";
 import { GoalsContext, GoalsRail, GoalsView } from "../features/goals/GoalsView";
@@ -6,7 +7,8 @@ import { SettingsRail, SettingsView } from "../features/settings/SettingsView";
 import { getDefaultZoraiSettingsTab, type ZoraiSettingsTabId } from "../features/settings/settingsTabs";
 import { ThreadsContext } from "../features/threads/ThreadsContextPanel";
 import { ThreadFilePreviewProvider } from "../features/threads/ThreadFilePreviewProvider";
-import { ThreadsRail, ThreadsView } from "../features/threads/ThreadsView";
+import { ThreadsView } from "../features/threads/ThreadsView";
+import { ThreadsRail } from "../features/threads/ThreadsRail";
 import { ToolsContext, ToolsRail, ToolsView } from "../features/tools/ToolsView";
 import { getDefaultZoraiTool, type ZoraiToolId } from "../features/tools/tools";
 import { WorkspacesRail, WorkspacesView } from "../features/workspaces/WorkspacesView";
@@ -119,6 +121,7 @@ export function ZoraiShell() {
             </div>
           </header>
           <div className="zorai-main-body">{renderMain(activeView, activeTool, setActiveTool, activeSettingsTab, setActiveSettingsTab, goalOpenRequest, activeDatabaseTable, selectDatabaseTable)}</div>
+          <OperatorQuestionDock />
         </main>
 
         <ZoraiContextPanel

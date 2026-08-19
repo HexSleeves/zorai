@@ -1360,6 +1360,18 @@ impl HistoryStore {
         Ok(count.map(|value| value.max(0) as usize))
     }
 
+    pub async fn update_thread_title(&self, id: &str, title: &str, updated_at: i64) -> Result<()> {
+        let id_owned = id.to_string();
+        let title_owned = title.to_string();
+        self.conn_db
+            .execute(
+                "UPDATE agent_threads SET title = ?2, updated_at = ?3 WHERE id = ?1 AND deleted_at IS NULL",
+                db::db_params![id_owned, title_owned, updated_at],
+            )
+            .await?;
+        Ok(())
+    }
+
     pub async fn update_thread_metadata_json(
         &self,
         id: &str,

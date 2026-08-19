@@ -42,7 +42,6 @@ import {
 } from "./persistence";
 import { MEMORY_MAX_CHARS, USER_MAX_CHARS } from "./types";
 import type { RiskLevel } from "./types";
-import { getBridge } from "../bridge";
 
 const initialState: PersistedMissionState = {
   operationalEvents: [],
@@ -215,6 +214,7 @@ export const useAgentMissionStore = create<AgentMissionState>((set, get) => ({
         workspaceId: opts.workspaceId ?? null,
         surfaceId: opts.surfaceId ?? null,
         sessionId: opts.sessionId ?? null,
+        source: opts.source,
         command: opts.command,
         reasons: opts.reasons,
         riskLevel: opts.riskLevel,
@@ -231,12 +231,6 @@ export const useAgentMissionStore = create<AgentMissionState>((set, get) => ({
     });
   },
   resolveApproval: (id, status) => {
-    const zorai = getBridge();
-    if (zorai?.agentResolveTaskApproval) {
-      const decision = status === "denied" ? "deny" : status === "approved-session" ? "approve-session" : "approve-once";
-      zorai.agentResolveTaskApproval(id, decision).catch(() => {});
-    }
-
     set((state) => {
       const approval = state.approvals.find((entry) => entry.id === id);
       if (!approval) return state;

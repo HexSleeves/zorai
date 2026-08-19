@@ -32,7 +32,7 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
     const { sendAgentCommand, sendAgentQuery } = runtime;
     const { logToFile, openAICodexAuthHandlers, saveTempAudioCapture } = options;
 
-    ipcMain.handle('agent-send-message', async (_event, threadId, content, sessionId, contextMessages, contentBlocksJson) => {
+    ipcMain.handle('agent-send-message', async (_event, threadId, content, sessionId, contextMessages, contentBlocksJson, targetAgentId) => {
         try {
             logToFile('info', 'agent-send-message', {
                 threadId,
@@ -40,12 +40,14 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
                 sessionId,
                 contextCount: Array.isArray(contextMessages) ? contextMessages.length : 0,
                 contentBlocksLen: typeof contentBlocksJson === 'string' ? contentBlocksJson.length : 0,
+                targetAgentId: typeof targetAgentId === 'string' && targetAgentId.trim() ? targetAgentId.trim() : null,
             });
             const cmd = {
                 type: 'send-message',
                 thread_id: threadId || null,
                 content,
                 session_id: typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : null,
+                target_agent_id: typeof targetAgentId === 'string' && targetAgentId.trim() ? targetAgentId.trim() : null,
             };
             if (Array.isArray(contextMessages) && contextMessages.length > 0) {
                 cmd.context_messages = contextMessages;
@@ -96,6 +98,7 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
                 thread_id: payload?.threadId,
                 suggestion_id: payload?.suggestionId,
                 session_id: typeof payload?.sessionId === 'string' && payload.sessionId.trim() ? payload.sessionId.trim() : null,
+                force_send: payload?.forceSend === true,
             });
             return { ok: true };
         } catch (err) {
@@ -113,6 +116,40 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
             return { ok: true };
         } catch (err) {
             return { ok: false, error: err.message };
+        }
+    });
+    ipcMain.handle('agent-handoff-thread', async (_event, payload) => {
+        try {
+            return await sendAgentQuery({
+                type: 'handoff-thread',
+                thread_id: payload?.threadId,
+                action: payload?.action,
+                target_agent_id: typeof payload?.targetAgentId === 'string' && payload.targetAgentId.trim() ? payload.targetAgentId.trim() : null,
+                reason: typeof payload?.reason === 'string' ? payload.reason : '',
+                summary: typeof payload?.summary === 'string' ? payload.summary : '',
+                requested_by: 'user',
+                session_id: typeof payload?.sessionId === 'string' && payload.sessionId.trim() ? payload.sessionId.trim() : null,
+            }, 'thread-handoff-result', 30000);
+        } catch (err) {
+            return { ok: false, thread_id: payload?.threadId ?? null, error: err?.message || String(err) };
+        }
+    });
+    ipcMain.handle('agent-get-operation-status', async (_event, id) => {
+        try {
+            return await sendAgentQuery({
+                type: 'get-operation-status',
+                operation_id: id,
+            }, 'operation-status', 30000);
+        } catch (err) {
+            return { ok: false, operation_id: id, error: err?.message || String(err) };
+        }
+    });
+    ipcMain.handle('agent-cancel-operation', async (_event, id) => {
+        try {
+            sendAgentCommand({ type: 'cancel-task', task_id: id });
+            return { ok: true };
+        } catch (err) {
+            return { ok: false, error: err?.message || String(err) };
         }
     });
     ipcMain.handle('agent-stop-stream', async (_event, threadId) => { try { sendAgentCommand({ type: 'stop-stream', thread_id: threadId }); } catch {} return { ok: true }; });
@@ -204,7 +241,7 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
     });
     ipcMain.handle('agent-cancel-task', async (_event, taskId) => { try { sendAgentCommand({ type: 'cancel-task', task_id: taskId }); return true; } catch { return false; } });
     ipcMain.handle('agent-list-tasks', async () => { try { return await sendAgentQuery({ type: 'list-tasks' }, 'task-list'); } catch { return []; } });
-    ipcMain.handle('agent-list-runs', async () => { try { return await sendAgentQuery({ type: 'list-runs' }, 'run-list'); } catch { return []; } });
+    ipcMain.handle('agent-list-runs', async (_event, parentThreadId) => { try { return await sendAgentQuery({ type: 'list-runs', parent_thread_id: typeof parentThreadId === 'string' && parentThreadId.trim() ? parentThreadId.trim() : null }, 'run-list'); } catch { return []; } });
     ipcMain.handle('agent-get-run', async (_event, runId) => { try { return await sendAgentQuery({ type: 'get-run', run_id: runId }, 'run-detail'); } catch { return null; } });
     ipcMain.handle('agent-list-todos', async () => { try { return await sendAgentQuery({ type: 'list-todos' }, 'todo-list'); } catch { return {}; } });
     ipcMain.handle('agent-get-todos', async (_event, threadId) => { try { return await sendAgentQuery({ type: 'get-todos', thread_id: threadId }, 'todo-detail'); } catch { return { thread_id: threadId, items: [] }; } });

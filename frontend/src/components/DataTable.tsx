@@ -72,7 +72,7 @@ export function DataTable({ data, maxRows = 200 }: DataTableProps) {
           onChange={(e) => setFilter(e.target.value)}
           placeholder="Filter rows..."
           style={{
-            background: "var(--bg-surface)",
+            background: "var(--zorai-bg-surface)",
             border: "1px solid var(--glass-border)",
             borderRadius: "var(--radius-md)",
             color: "var(--text-primary)",

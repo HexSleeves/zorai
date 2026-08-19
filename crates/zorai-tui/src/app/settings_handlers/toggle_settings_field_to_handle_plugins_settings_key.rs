@@ -285,6 +285,9 @@ impl TuiModel {
                     raw["semantic"]["embedding"]["enabled"] = serde_json::Value::Bool(next);
                 }
             }
+            "feat_auto_thread_title" => {
+                self.activate_settings_field();
+            }
             "whatsapp_link_device" => {
                 self.activate_settings_field();
             }

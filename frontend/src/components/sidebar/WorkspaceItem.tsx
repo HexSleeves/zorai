@@ -194,7 +194,7 @@ const iconBadgeStyle: React.CSSProperties = {
     minWidth: 32,
     height: 28,
     borderRadius: "var(--radius-sm)",
-    background: "var(--bg-surface)",
+    background: "var(--zorai-bg-surface)",
     border: "1px solid var(--glass-border)",
     display: "flex",
     alignItems: "center",
@@ -208,7 +208,7 @@ const iconBadgeStyle: React.CSSProperties = {
 
 const editInputStyle: React.CSSProperties = {
     width: "100%",
-    background: "var(--bg-surface)",
+    background: "var(--zorai-bg-surface)",
     border: "1px solid var(--glass-border)",
     color: "var(--text-primary)",
     borderRadius: "var(--radius-sm)",
@@ -218,7 +218,7 @@ const editInputStyle: React.CSSProperties = {
 };
 
 const secondaryEditButtonStyle: React.CSSProperties = {
-    background: "var(--bg-surface)",
+    background: "var(--zorai-bg-surface)",
     border: "1px solid var(--glass-border)",
     borderRadius: "var(--radius-sm)",
     color: "var(--text-muted)",
@@ -241,7 +241,7 @@ const indexBadgeStyle: React.CSSProperties = {
     fontSize: "var(--text-xs)",
     color: "var(--text-muted)",
     opacity: 0.6,
-    background: "var(--bg-surface)",
+    background: "var(--zorai-bg-surface)",
     border: "1px solid var(--glass-border)",
     borderRadius: "var(--radius-full)",
     padding: "2px 6px",
@@ -249,7 +249,7 @@ const indexBadgeStyle: React.CSSProperties = {
 
 const unreadBadgeStyle: React.CSSProperties = {
     background: "var(--accent)",
-    color: "var(--bg-primary)",
+    color: "var(--zorai-bg)",
     borderRadius: "var(--radius-full)",
     padding: "0 var(--space-1)",
     fontSize: "var(--text-xs)",

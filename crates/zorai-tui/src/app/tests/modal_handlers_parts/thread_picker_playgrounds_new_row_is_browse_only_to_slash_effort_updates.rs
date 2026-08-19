@@ -392,28 +392,31 @@ fn slash_model_custom_entry_updates_active_thread_owner_model() {
         .reduce(modal::ModalAction::Navigate(custom_index as i32));
     model.handle_modal_enter(modal::ModalKind::ModelPicker);
 
-    assert_eq!(model.modal.top(), Some(modal::ModalKind::Settings));
-    assert_eq!(model.settings.active_tab(), SettingsTab::Agent);
-    assert_eq!(model.settings.current_field_name(), "model");
-    assert_eq!(model.settings.editing_field(), Some("target_agent_model"));
+    assert_eq!(model.modal.top(), Some(modal::ModalKind::CustomModelEditor));
+    assert_ne!(model.modal.top(), Some(modal::ModalKind::Settings));
+    assert_eq!(
+        model.settings.editing_field(),
+        Some("thread_owner_custom_model")
+    );
+    assert!(model.custom_model_editor_body().contains("Pinned to Weles"));
     while !model.settings.edit_buffer().is_empty() {
         model.handle_key_modal(
             KeyCode::Backspace,
             KeyModifiers::NONE,
-            modal::ModalKind::Settings,
+            modal::ModalKind::CustomModelEditor,
         );
     }
     for ch in "vendor/custom-model".chars() {
         model.handle_key_modal(
             KeyCode::Char(ch),
             KeyModifiers::NONE,
-            modal::ModalKind::Settings,
+            modal::ModalKind::CustomModelEditor,
         );
     }
     model.handle_key_modal(
         KeyCode::Enter,
         KeyModifiers::NONE,
-        modal::ModalKind::Settings,
+        modal::ModalKind::CustomModelEditor,
     );
 
     let mut saw_target_update = false;

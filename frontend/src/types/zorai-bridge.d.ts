@@ -243,6 +243,31 @@ declare global {
         steps?: ZoraiGoalRunStep[];
     };
 
+    type ZoraiAgentThreadHandoffPayload = {
+        threadId: string;
+        action: string;
+        targetAgentId?: string | null;
+        reason: string;
+        summary: string;
+        sessionId?: string | null;
+    };
+
+    type ZoraiAgentThreadHandoffResult = {
+        ok: boolean;
+        thread_id: string;
+        active_agent_id?: string | null;
+        stack_depth?: number | null;
+        error?: string | null;
+    };
+
+    type ZoraiOperationStatusSnapshot = {
+        operation_id: string;
+        kind: string;
+        dedup?: string | null;
+        state: "accepted" | "started" | "completed" | "failed" | string;
+        revision: number;
+    };
+
     type ZoraiAgentRunStatus =
         | "queued"
         | "in_progress"
@@ -406,7 +431,7 @@ declare global {
         dbDeleteMessage?: (threadId: string, messageId: string) => Promise<boolean>;
         dbListMessages?: (threadId: string, limit?: number | null) => Promise<unknown[]>;
         agentAddTask?: (payload: { title: string; description: string; priority?: string; command?: string | null; sessionId?: string | null; scheduledAt?: number | null; dependencies?: string[] }) => Promise<unknown>;
-        agentListRuns?: () => Promise<ZoraiAgentRun[] | unknown>;
+        agentListRuns?: (parentThreadId?: string | null) => Promise<ZoraiAgentRun[] | unknown>;
         agentGetRun?: (runId: string) => Promise<ZoraiAgentRun | null | unknown>;
         agentListTodos?: () => Promise<Record<string, ZoraiTodoItem[]> | unknown>;
         agentGetTodos?: (threadId: string) => Promise<{ thread_id: string; items: ZoraiTodoItem[] } | ZoraiTodoItem[] | unknown>;
@@ -474,7 +499,7 @@ declare global {
         }) => Promise<{ sessionId: string; activeCommand?: string }>;
         stopTerminalSession?: (paneId: string, killSession?: boolean) => Promise<boolean>;
         executeManagedCommand?: (paneId: string | null, payload: unknown) => Promise<boolean | { output?: string }>;
-        agentSendMessage?: (threadId: string | null, content: string, sessionId?: string | null, contextMessages?: unknown[], contentBlocksJson?: string | null) => Promise<{ ok?: boolean; error?: string } | unknown>;
+        agentSendMessage?: (threadId: string | null, content: string, sessionId?: string | null, contextMessages?: unknown[], contentBlocksJson?: string | null, targetAgentId?: string | null) => Promise<{ ok?: boolean; error?: string } | unknown>;
         agentInternalDelegate?: (threadId: string | null, targetAgentId: string, content: string, sessionId?: string | null) => Promise<{ ok?: boolean; error?: string } | unknown>;
         agentThreadParticipantCommand?: (payload: {
             threadId: string;
@@ -487,7 +512,11 @@ declare global {
             threadId: string;
             suggestionId: string;
             sessionId?: string | null;
+            forceSend?: boolean;
         }) => Promise<{ ok?: boolean; error?: string } | unknown>;
+        agentHandoffThread?: (payload: ZoraiAgentThreadHandoffPayload) => Promise<ZoraiAgentThreadHandoffResult | { ok?: boolean; thread_id?: string | null; error?: string } | unknown>;
+        agentGetOperationStatus?: (id: string) => Promise<ZoraiOperationStatusSnapshot | { ok?: boolean; operation_id?: string; error?: string } | unknown>;
+        agentCancelOperation?: (id: string) => Promise<{ ok?: boolean; error?: string } | unknown>;
         agentDismissParticipantSuggestion?: (payload: {
             threadId: string;
             suggestionId: string;

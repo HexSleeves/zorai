@@ -55,8 +55,7 @@ impl<'a> SendMessageRunner<'a> {
                     provider_final_result,
                     upstream_thread_id,
                 )
-                .await?;
-                Ok(LoopDisposition::Break)
+                .await
             }
             Some(CompletionChunk::ToolCalls {
                 tool_calls,
@@ -165,7 +164,7 @@ impl<'a> SendMessageRunner<'a> {
         upstream_message: Option<CompletionUpstreamMessage>,
         provider_final_result: Option<CompletionProviderFinalResult>,
         upstream_thread_id: Option<String>,
-    ) -> Result<()> {
+    ) -> Result<LoopDisposition> {
         let turn_cost = if !self.config.cost.enabled {
             None
         } else {
@@ -232,6 +231,12 @@ impl<'a> SendMessageRunner<'a> {
                 turn_cost,
             )
             .await;
+        if self.report_back_phase.is_some() {
+            self.mark_last_assistant_report_back().await;
+            self.capture_text_report_back(&final_content).await;
+        }
+        let continue_for_report_back =
+            self.report_back_phase.is_none() && self.maybe_force_budget_report_back().await;
         Box::pin(
             self.engine
                 .maybe_auto_send_gateway_thread_response(&self.tid),
@@ -265,16 +270,18 @@ impl<'a> SendMessageRunner<'a> {
             )
             .await;
         self.provider_final_result = provider_final_result.clone();
-        if let Err(error) = self
-            .engine
-            .complete_workspace_thread_task_by_thread_id(&self.tid)
-            .await
-        {
-            tracing::warn!(
-                thread_id = %self.tid,
-                error = %error,
-                "failed to complete workspace thread task"
-            );
+        if !continue_for_report_back {
+            if let Err(error) = self
+                .engine
+                .complete_workspace_thread_task_by_thread_id(&self.tid)
+                .await
+            {
+                tracing::warn!(
+                    thread_id = %self.tid,
+                    error = %error,
+                    "failed to complete workspace thread task"
+                );
+            }
         }
 
         let _ = self.engine.event_tx.send(AgentEvent::Done {
@@ -291,10 +298,28 @@ impl<'a> SendMessageRunner<'a> {
             provider_final_result,
             message_id: persisted_message_id,
         });
-        Ok(())
+        if continue_for_report_back {
+            Ok(LoopDisposition::Continue)
+        } else {
+            Ok(LoopDisposition::Break)
+        }
     }
 
-    pub(super) async fn finish(self) -> Result<SendMessageOutcome> {
+    pub(super) async fn finish(mut self) -> Result<SendMessageOutcome> {
+        if self.report_back_phase.is_some() && self.subagent_report.is_none() {
+            let summary = self.synthesize_thread_summary().await;
+            self.capture_text_report_back(&summary).await;
+        } else if self.subagent_report.is_none()
+            && self.terminated_for_budget
+            && self.spawned_subagent_turn_active()
+        {
+            let summary = self.synthesize_thread_summary().await;
+            self.subagent_report = Some(SubagentTurnReport {
+                status: SubagentReportStatus::Error,
+                summary,
+                reason: Some("zorai_budget".to_string()),
+            });
+        }
         if !self.was_cancelled && self.max_loops > 0 && self.loop_count >= self.max_loops {
             let _ = self.engine.event_tx.send(AgentEvent::Error {
                 thread_id: self.tid.clone(),
@@ -412,6 +437,7 @@ impl<'a> SendMessageRunner<'a> {
             thread_id: self.tid,
             interrupted_for_approval: self.interrupted_for_approval,
             terminated_for_budget: self.terminated_for_budget,
+            subagent_report: self.subagent_report,
             upstream_message: final_upstream_message,
             provider_final_result: self.provider_final_result,
             fresh_runner_retry: self.fresh_runner_retry,

@@ -625,3 +625,41 @@ fn thread_created_moves_new_thread_to_front() {
     assert_eq!(threads[2].id, "oldest");
     assert_eq!(state.active_thread_id(), Some("new"));
 }
+
+#[test]
+fn thread_title_updated_replaces_existing_title_without_changing_selection() {
+    let mut state = ChatState::new();
+    state.reduce(ChatAction::ThreadCreated {
+        thread_id: "t1".into(),
+        title: "Please review the billing".into(),
+    });
+    state.reduce(ChatAction::ThreadCreated {
+        thread_id: "t2".into(),
+        title: "Keep this".into(),
+    });
+    state.reduce(ChatAction::SelectThread("t2".into()));
+    assert_eq!(state.active_thread_id(), Some("t2"));
+
+    state.reduce(ChatAction::ThreadTitleUpdated {
+        thread_id: "t1".into(),
+        title: "Billing invoice parser".into(),
+    });
+
+    assert_eq!(state.active_thread_id(), Some("t2"));
+    assert_eq!(
+        state
+            .threads()
+            .iter()
+            .find(|thread| thread.id == "t1")
+            .map(|thread| thread.title.as_str()),
+        Some("Billing invoice parser")
+    );
+    assert_eq!(
+        state
+            .threads()
+            .iter()
+            .find(|thread| thread.id == "t2")
+            .map(|thread| thread.title.as_str()),
+        Some("Keep this")
+    );
+}

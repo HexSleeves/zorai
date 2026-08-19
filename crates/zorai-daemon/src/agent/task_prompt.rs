@@ -25,7 +25,7 @@ pub(super) fn build_task_prompt(task: &AgentTask) -> String {
     prompt.push_str(
         "\nIf the task is more than a one-shot action, call update_todo immediately with a concise plan and keep it current as steps advance.",
     );
-    let is_top_level_task = task.parent_task_id.is_none();
+    let is_top_level_task = !task.is_spawned_subagent();
     if is_top_level_task {
         prompt.push_str(
             "\nIf this task is large and parallelizable, use spawn_subagent for bounded child work items and monitor them with list_subagents.",
@@ -85,10 +85,13 @@ pub(super) fn build_task_prompt(task: &AgentTask) -> String {
         }
     }
 
-    if let Some(parent_task_id) = task.parent_task_id.as_deref() {
-        prompt.push_str(&format!(
-            "\nParent task: {parent_task_id}\nYou are running as a supervised subagent. Stay tightly scoped to this assignment, avoid duplicating sibling work, and report concise results back through your normal response."
-        ));
+    if task.is_spawned_subagent() {
+        if let Some(parent_task_id) = task.parent_task_id.as_deref() {
+            prompt.push_str(&format!("\nParent task: {parent_task_id}"));
+        }
+        prompt.push_str(
+            "\nYou are running as a supervised subagent. Stay tightly scoped to this assignment, avoid duplicating sibling work, and report concise results back through your normal response.",
+        );
     }
 
     if let Some(parent_thread_id) = task.parent_thread_id.as_deref() {
@@ -652,6 +655,33 @@ mod tests {
         assert!(
             prompt.contains("check for `AGENTS.md`"),
             "general directory guidance must remain for subagents"
+        );
+    }
+
+    #[test]
+    fn build_task_prompt_omits_spawn_guidance_for_chat_spawned_subagents() {
+        let mut task = sample_task();
+        task.source = "subagent".to_string();
+        task.parent_thread_id = Some("thread-parent".to_string());
+
+        assert!(
+            task.is_spawned_subagent(),
+            "chat-spawned children are spawned even without a parent task id"
+        );
+
+        let prompt = build_task_prompt(&task);
+
+        assert!(
+            !prompt.contains("spawn_subagent"),
+            "a chat-spawned subagent must not be told to spawn its own children"
+        );
+        assert!(
+            !prompt.contains("list_subagents"),
+            "a chat-spawned subagent must not receive child-monitoring guidance"
+        );
+        assert!(
+            prompt.contains("You are running as a supervised subagent"),
+            "chat-spawned children still need the supervised scoping note"
         );
     }
 

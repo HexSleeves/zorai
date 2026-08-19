@@ -9,7 +9,7 @@
  * ───────────────────────────────────────────────────────────────────────── */
 .zorai-shell-card {
   position: relative;
-  background: var(--bg-primary);
+  background: var(--zorai-bg);
   border: 1px solid var(--border);
 }
 
@@ -100,7 +100,7 @@
 
 .zorai-chip:hover {
   border-color: var(--border-strong);
-  background: var(--bg-surface);
+  background: var(--zorai-bg-surface);
 }
 
 .zorai-chip--accent {
@@ -301,7 +301,7 @@
  * GLASS PANEL - Transparent overlay
  * ───────────────────────────────────────────────────────────────────────── */
 .zorai-glass-panel {
-  background: var(--bg-primary);
+  background: var(--zorai-bg);
   border: 1px solid var(--border);
 }
 
@@ -337,13 +337,13 @@
 }
 
 .zorai-btn--secondary {
-  background: var(--bg-surface);
+  background: var(--zorai-bg-surface);
   border: 1px solid var(--border);
   color: var(--text-secondary);
 }
 
 .zorai-btn--secondary:hover {
-  background: var(--bg-elevated);
+  background: var(--zorai-bg-elevated);
   border-color: var(--border-strong);
   color: var(--text-primary);
 }
@@ -461,7 +461,7 @@
 .zorai-focus-ring:focus-visible {
   outline: none;
   box-shadow:
-    0 0 0 2px var(--bg-primary),
+    0 0 0 2px var(--zorai-bg),
     0 0 0 4px var(--accent);
 }
 

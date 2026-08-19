@@ -369,7 +369,7 @@ export function TitleBar() {
                 padding: "0 4px",
                 borderRadius: "var(--radius-full)",
                 background: "var(--approval)",
-                color: "var(--bg-primary)",
+                color: "var(--zorai-bg)",
                 fontSize: 10,
                 fontWeight: 800,
               }}

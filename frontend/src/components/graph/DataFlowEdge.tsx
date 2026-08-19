@@ -72,7 +72,7 @@ export const DataFlowEdge = memo(function DataFlowEdge({
                 fontSize: 9,
                 fontWeight: 700,
                 color,
-                background: "var(--bg-primary)",
+                background: "var(--zorai-bg)",
                 padding: "1px 6px",
                 borderRadius: 0,
                 border: `1px solid ${color}`,

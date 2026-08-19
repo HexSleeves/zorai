@@ -4,6 +4,7 @@ import { useWorkspaceStore } from "../lib/workspaceStore";
 import { useNotificationStore } from "../lib/notificationStore";
 import { useAgentMissionStore } from "../lib/agentMissionStore";
 import { encodeTextToBase64 } from "./terminal-pane/utils";
+import { resolveApprovalAtSource } from "./approvalResolution";
 import { NotificationHeader } from "./notification-panel/NotificationHeader";
 import { NotificationList } from "./notification-panel/NotificationList";
 import type { TerminalNotification } from "../lib/types";
@@ -64,17 +65,22 @@ export function NotificationPanel({ style, className }: NotificationPanelProps =
       (entry) => entry.paneId === paneId && entry.status === "pending" && entry.handledAt === null
     );
 
-    if (pendingApproval && zorai?.resolveManagedApproval) {
-      const daemonDecision = decision === "approve" ? "approve-once" : "deny";
-      await zorai.resolveManagedApproval(paneId, pendingApproval.id, daemonDecision);
-      resolveApproval(pendingApproval.id, decision === "approve" ? "approved-once" : "denied");
+    let resolvedOrAnswered = false;
+    if (pendingApproval) {
+      const status = decision === "approve" ? "approved-once" : "denied";
+      resolvedOrAnswered = await resolveApprovalAtSource(zorai, pendingApproval, status);
+      if (resolvedOrAnswered) {
+        resolveApproval(pendingApproval.id, status);
+      }
     } else if (zorai?.sendTerminalInput) {
       const response = decision === "approve" ? "y\r" : "n\r";
-      await zorai.sendTerminalInput(paneId, encodeTextToBase64(response));
+      resolvedOrAnswered = Boolean(await zorai.sendTerminalInput(paneId, encodeTextToBase64(response)));
     }
 
-    clearPaneNotifications(paneId, "approval");
-    clearCanvasPanelStatus(paneId);
+    if (resolvedOrAnswered) {
+      clearPaneNotifications(paneId, "approval");
+      clearCanvasPanelStatus(paneId);
+    }
   };
 
   const handleNotificationAction = async (notification: TerminalNotification, actionId: string) => {
@@ -124,7 +130,7 @@ export function NotificationPanel({ style, className }: NotificationPanelProps =
           width: 440,
           maxWidth: "90vw",
           height: "100%",
-          background: "var(--bg-primary)",
+          background: "var(--zorai-bg)",
           borderLeft: "1px solid var(--glass-border)",
           display: "flex",
           flexDirection: "column",

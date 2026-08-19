@@ -219,7 +219,7 @@ export function SettingsPanel({ style, className }: SettingsPanelProps = {}) {
     >
       <div
         style={{
-          background: "var(--bg-primary)",
+          background: "var(--zorai-bg)",
           borderBottom: "1px solid var(--border)",
           display: "flex",
           height: "100%",

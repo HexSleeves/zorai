@@ -522,7 +522,7 @@ export function ChatView({
             style={{
               width: "min(520px, 100%)",
               border: "1px solid color-mix(in srgb, var(--warning) 55%, var(--border))",
-              background: "var(--bg-primary)",
+              background: "var(--zorai-bg)",
               borderRadius: "var(--radius-xl)",
               padding: "var(--space-4)",
               display: "grid",
@@ -574,7 +574,7 @@ export function ChatView({
               maxHeight: "80vh",
               overflow: "auto",
               border: "1px solid var(--border)",
-              background: "var(--bg-primary)",
+              background: "var(--zorai-bg)",
               borderRadius: "var(--radius-xl)",
               padding: "var(--space-4)",
               display: "grid",

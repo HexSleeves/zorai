@@ -1,0 +1,208 @@
+use super::*;
+use crate::state::settings::SettingsAction;
+
+const CUSTOM_MODEL_EDIT_FIELD: &str = "thread_owner_custom_model";
+
+impl TuiModel {
+    pub(crate) fn parse_custom_model_entry(raw: &str) -> Option<(String, String)> {
+        let trimmed = raw.trim();
+        if trimmed.is_empty() {
+            return None;
+        }
+        let (name, model_id) = if let Some((lhs, rhs)) = trimmed.split_once('|') {
+            (lhs.trim().to_string(), rhs.trim().to_string())
+        } else {
+            (String::new(), trimmed.to_string())
+        };
+        if model_id.is_empty() {
+            None
+        } else {
+            Some((name, model_id))
+        }
+    }
+
+    fn current_thread_custom_model_edit_value(&self) -> String {
+        if let Some(pending) = self.pending_target_agent_config.as_ref() {
+            return pending.model.clone();
+        }
+        if self.config.custom_model_name.trim().is_empty()
+            || self.config.custom_model_name == self.config.model
+        {
+            self.config.model.clone()
+        } else {
+            format!("{} | {}", self.config.custom_model_name, self.config.model)
+        }
+    }
+
+    pub(crate) fn open_active_thread_custom_model_editor(&mut self) {
+        if self.pending_target_agent_config.is_none() {
+            if let Some(pending) = self.active_thread_target_agent_config() {
+                self.pending_target_agent_config = Some(pending);
+            }
+        }
+        let current = self.current_thread_custom_model_edit_value();
+        let owner_label = self.active_thread_context_owner_label();
+        if self.modal.top() != Some(modal::ModalKind::CustomModelEditor) {
+            self.modal.reduce(modal::ModalAction::Push(
+                modal::ModalKind::CustomModelEditor,
+            ));
+        }
+        self.settings
+            .start_editing(CUSTOM_MODEL_EDIT_FIELD, &current);
+        self.status_line = format!("Enter custom model ID for {owner_label}");
+    }
+
+    pub(crate) fn custom_model_editor_body(&self) -> String {
+        let owner_label = self.active_thread_context_owner_label();
+        let buffer = self.settings.edit_buffer();
+        format!(
+            "Pinned to {owner_label}\n\nModel: {buffer}█\n\nEnter save   Esc cancel\nName | ID or just ID"
+        )
+    }
+
+    pub(crate) fn commit_active_thread_custom_model_editor(&mut self) {
+        let Some((name, model_id)) = Self::parse_custom_model_entry(self.settings.edit_buffer())
+        else {
+            self.status_line = "Model ID cannot be empty".to_string();
+            return;
+        };
+        self.apply_active_thread_custom_model(&name, &model_id);
+        self.settings.reduce(SettingsAction::ConfirmEdit);
+        self.pending_target_agent_config = None;
+        self.close_top_modal();
+    }
+
+    pub(crate) fn cancel_active_thread_custom_model_editor(&mut self) {
+        self.settings.reduce(SettingsAction::CancelEdit);
+        self.pending_target_agent_config = None;
+        self.close_top_modal();
+        self.status_line = "Model unchanged".to_string();
+    }
+
+    pub(crate) fn apply_active_thread_custom_model(&mut self, name: &str, model_id: &str) {
+        if let Some(pending) = self.pending_target_agent_config.clone() {
+            self.send_daemon_command(DaemonCommand::SetTargetAgentProviderModel {
+                target_agent_id: pending.target_agent_id.clone(),
+                provider_id: pending.provider_id.clone(),
+                model: model_id.to_string(),
+            });
+            apply_target_agent_custom_model_locally(
+                self,
+                &pending.target_agent_id,
+                &pending.target_agent_name,
+                &pending.provider_id,
+                model_id,
+            );
+            self.status_line = format!("{} model: {model_id}", pending.target_agent_name);
+            return;
+        }
+
+        apply_svarog_custom_model_locally(self, name, model_id);
+        if let Ok(value_json) =
+            serde_json::to_string(&serde_json::Value::String(model_id.to_string()))
+        {
+            self.send_daemon_command(DaemonCommand::SetConfigItem {
+                key_path: "/model".to_string(),
+                value_json: value_json.clone(),
+            });
+            self.send_daemon_command(DaemonCommand::SetConfigItem {
+                key_path: format!("/providers/{}/model", self.config.provider),
+                value_json: value_json.clone(),
+            });
+            self.send_daemon_command(DaemonCommand::SetConfigItem {
+                key_path: format!("/{}/model", self.config.provider),
+                value_json,
+            });
+        }
+        self.status_line = format!(
+            "{} model: {model_id}",
+            self.active_thread_context_owner_label()
+        );
+    }
+}
+
+fn apply_svarog_custom_model_locally(model: &mut TuiModel, name: &str, model_id: &str) {
+    model.config.model = model_id.to_string();
+    let resolved_context_window = providers::resolve_context_window_for_provider_auth(
+        &model.config.provider,
+        &model.config.auth_source,
+        &model.config.model,
+        name,
+    );
+    if providers::model_uses_context_window_override(
+        &model.config.provider,
+        &model.config.auth_source,
+        &model.config.model,
+        name,
+    ) {
+        model.config.custom_model_name = if name.is_empty() {
+            model_id.to_string()
+        } else {
+            name.to_string()
+        };
+        let next_context =
+            resolved_context_window.unwrap_or(providers::default_custom_model_context_window());
+        model.config.custom_context_window_tokens = Some(next_context);
+        model.config.context_window_tokens = next_context;
+    } else {
+        model.config.custom_model_name = if name.is_empty() {
+            String::new()
+        } else {
+            name.to_string()
+        };
+        model.config.custom_context_window_tokens = None;
+        model.config.context_window_tokens = resolved_context_window.unwrap_or(128_000);
+    }
+    model.config.api_transport = model.provider_transport_snapshot(
+        &model.config.provider,
+        &model.config.auth_source,
+        &model.config.model,
+        &model.config.api_transport,
+    );
+    if let Some(thread) = model.chat.active_thread_mut() {
+        thread.profile_provider = Some(model.config.provider.clone());
+        thread.profile_model = Some(model_id.to_string());
+        thread.runtime_provider = Some(model.config.provider.clone());
+        thread.runtime_model = Some(model_id.to_string());
+    }
+}
+
+fn apply_target_agent_custom_model_locally(
+    model: &mut TuiModel,
+    target_agent_id: &str,
+    target_agent_name: &str,
+    provider_id: &str,
+    model_id: &str,
+) {
+    if target_agent_id.eq_ignore_ascii_case(zorai_protocol::AGENT_ID_RAROG) {
+        model.concierge.model = Some(model_id.to_string());
+        if model.concierge.provider.as_deref().unwrap_or("").is_empty() {
+            model.concierge.provider = Some(provider_id.to_string());
+        }
+    }
+
+    for entry in &mut model.subagents.entries {
+        let id_matches = entry.id.eq_ignore_ascii_case(target_agent_id)
+            || entry
+                .id
+                .strip_suffix("_builtin")
+                .is_some_and(|alias| alias.eq_ignore_ascii_case(target_agent_id));
+        let name_matches = entry.name.eq_ignore_ascii_case(target_agent_name)
+            || entry.name.eq_ignore_ascii_case(target_agent_id);
+        if id_matches || name_matches {
+            entry.model = model_id.to_string();
+            entry.provider = provider_id.to_string();
+            if let Some(raw) = entry.raw_json.as_mut() {
+                raw["model"] = serde_json::Value::String(model_id.to_string());
+                raw["provider"] = serde_json::Value::String(provider_id.to_string());
+            }
+        }
+    }
+
+    if let Some(thread) = model.chat.active_thread_mut() {
+        thread.profile_provider = Some(provider_id.to_string());
+        thread.profile_model = Some(model_id.to_string());
+        thread.runtime_provider = Some(provider_id.to_string());
+        thread.runtime_model = Some(model_id.to_string());
+    }
+}

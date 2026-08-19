@@ -26,6 +26,8 @@ mod settings_modal_mouse_wheel_scrolls_overflowing_content_to_help_viewer;
 mod slash_context_updates_active_thread_owner_window;
 #[path = "modal_handlers_parts/slash_effort_picker_starts_on_active_thread_owner_effort_to_queued.rs"]
 mod slash_effort_picker_starts_on_active_thread_owner_effort_to_queued;
+#[path = "modal_handlers_parts/slash_model_custom_entry_uses_thread_owner_editor.rs"]
+mod slash_model_custom_entry_uses_thread_owner_editor;
 #[path = "modal_handlers_parts/statistics_modal_keyboard_cycles_tabs_and_filters_to_ctrl_a_toggles.rs"]
 mod statistics_modal_keyboard_cycles_tabs_and_filters_to_ctrl_a_toggles;
 #[path = "modal_handlers_parts/thread_picker_ctrl_s_on_stopped_thread_requires_confirmation_before.rs"]

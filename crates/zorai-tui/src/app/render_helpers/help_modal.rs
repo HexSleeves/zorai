@@ -200,10 +200,7 @@ fn help_modal_lines(theme: &ThemeTokens) -> Vec<Line<'static>> {
         ]),
         Line::from(vec![
             Span::styled("  /context [n]     ", theme.fg_active),
-            Span::styled(
-                "Set the current context window",
-                theme.fg_dim,
-            ),
+            Span::styled("Set the current context window", theme.fg_dim),
         ]),
         Line::from(vec![
             Span::styled("  /thread [agent]  ", theme.fg_active),

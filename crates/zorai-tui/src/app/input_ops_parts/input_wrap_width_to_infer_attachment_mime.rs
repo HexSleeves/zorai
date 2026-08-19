@@ -77,6 +77,14 @@ impl TuiModel {
                     }
                     return;
                 }
+                modal::ModalKind::CustomModelEditor => {
+                    for ch in text.chars() {
+                        if !matches!(ch, '\r' | '\n') {
+                            self.settings.reduce(SettingsAction::InsertChar(ch));
+                        }
+                    }
+                    return;
+                }
                 modal::ModalKind::CommandPalette => {
                     let query = text
                         .chars()

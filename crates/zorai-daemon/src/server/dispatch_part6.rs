@@ -859,6 +859,9 @@ pub(crate) async fn dispatch_part6(
             if provider_id == zorai_shared::providers::PROVIDER_ID_GITHUB_COPILOT {
                 let _ = crate::agent::copilot_auth::clear_stored_github_copilot_auth();
             }
+            if provider_id == zorai_shared::providers::PROVIDER_ID_CLAUDE_CODE_CLI {
+                let _ = crate::agent::claude_code_auth::logout_claude_code_cli();
+            }
             let mut config = agent.get_config().await;
             if let Some(entry) = config.providers.get_mut(&provider_id) {
                 entry.api_key.clear();

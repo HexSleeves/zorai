@@ -174,6 +174,42 @@ describe("deriveSpawnedAgentNavigationState", () => {
     expect(state.threadNavigationDepth).toBe(1);
     expect(state.backThreadTitle).toBe("Parent Thread");
   });
+
+  it("keeps completed spawned threads visible after their runs finish", () => {
+    const activeThread = makeThread("local-root", "Root Thread", "daemon-root");
+    const state = deriveSpawnedAgentNavigationState({
+      activeThread,
+      threads: [activeThread],
+      threadHistoryStack: [],
+      runs: [
+        makeRun({
+          id: "run-completed",
+          task_id: "task-completed",
+          title: "Completed Child",
+          status: "completed",
+          thread_id: "daemon-completed",
+          parent_thread_id: "daemon-root",
+          completed_at: 3,
+        }),
+        makeRun({
+          id: "run-failed",
+          task_id: "task-failed",
+          title: "Failed Child",
+          status: "failed",
+          thread_id: "daemon-failed",
+          parent_thread_id: "daemon-root",
+          completed_at: 4,
+          created_at: 2,
+        }),
+      ],
+    });
+
+    expect(state.tree?.roots.map((node) => [node.item.id, node.item.status])).toEqual([
+      ["run-failed", "failed"],
+      ["run-completed", "completed"],
+    ]);
+    expect(state.tree?.roots.every((node) => node.openable)).toBe(true);
+  });
 });
 
 describe("openSpawnedAgentThreadFromRun", () => {

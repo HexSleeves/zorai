@@ -58,12 +58,23 @@ fn is_workspace_agent_task(task: &AgentTask) -> bool {
             .is_some_and(|thread_id| thread_id.starts_with("workspace-thread:"))
 }
 
+pub(super) fn spawned_subagent_turn(task: Option<&AgentTask>, identity_is_spawned: bool) -> bool {
+    task.is_some_and(AgentTask::is_spawned_subagent) || identity_is_spawned
+}
+
 fn allow_workspace_task_tools(filter: &mut crate::agent::subagent::tool_filter::ToolFilter) {
     filter.allow_tools(
         crate::agent::tool_executor::workspace_task_tool_names()
             .iter()
             .copied(),
     );
+}
+
+fn allow_subagent_report_back_tools(filter: &mut crate::agent::subagent::tool_filter::ToolFilter) {
+    filter.allow_tools([
+        zorai_protocol::tool_names::REPORT_SUBAGENT_OUTCOME,
+        zorai_protocol::tool_names::EXTEND_SUBAGENT_BUDGET,
+    ]);
 }
 
 async fn load_current_task_for_send_message(
@@ -826,6 +837,9 @@ impl<'a> SendMessageRunner<'a> {
                     if is_workspace_agent_task(task) {
                         allow_workspace_task_tools(&mut filter);
                     }
+                    if task.is_spawned_subagent() {
+                        allow_subagent_report_back_tools(&mut filter);
+                    }
                     Some(filter)
                 } else {
                     None
@@ -878,6 +892,14 @@ impl<'a> SendMessageRunner<'a> {
                 .and_then(|responder| responder.tool_filter.as_mut())
             {
                 allow_workspace_task_tools(filter);
+            }
+        }
+        if current_task_snapshot
+            .as_ref()
+            .is_some_and(AgentTask::is_spawned_subagent)
+        {
+            if let Some(filter) = task_tool_filter.as_mut() {
+                allow_subagent_report_back_tools(filter);
             }
         }
         let initial_copilot_initiator = if record_operator {
@@ -983,6 +1005,12 @@ impl<'a> SendMessageRunner<'a> {
             }
             prompt
         } else {
+            let identity_is_spawned = engine
+                .thread_identity_metadata
+                .read()
+                .await
+                .get(&tid)
+                .is_some_and(|identity| identity.is_spawned_subagent());
             build_system_prompt(
                 &config,
                 &base_prompt,
@@ -990,9 +1018,7 @@ impl<'a> SendMessageRunner<'a> {
                 &memory_paths,
                 &agent_scope_id,
                 &sub_agents,
-                current_task_snapshot
-                    .as_ref()
-                    .is_some_and(|task| task.parent_task_id.is_some()),
+                spawned_subagent_turn(current_task_snapshot.as_ref(), identity_is_spawned),
                 operator_model_summary.as_deref(),
                 operational_context.as_deref(),
                 causal_guidance.as_deref(),
@@ -1279,6 +1305,9 @@ impl<'a> SendMessageRunner<'a> {
             was_cancelled: false,
             interrupted_for_approval: false,
             terminated_for_budget: false,
+            report_back_phase: None,
+            tools_before_report_back: None,
+            subagent_report: None,
             policy_aborted_retry: false,
             previous_tool_signature: None,
             previous_tool_outcome: None,
@@ -1730,6 +1759,170 @@ mod tests {
         assert_eq!(runner.config.provider, "task-provider");
         assert_eq!(runner.provider_config.model, "task-model");
         assert_eq!(runner.provider_config.context_window_tokens, 123_456);
+    }
+
+    fn spawnable_researcher() -> SubAgentDefinition {
+        SubAgentDefinition {
+            base_url: None,
+            claude_permission_mode: None,
+            id: "researcher".to_string(),
+            name: "Researcher".to_string(),
+            provider: "openai".to_string(),
+            model: "gpt-5.4-mini".to_string(),
+            role: Some("investigator".to_string()),
+            system_prompt: Some("Investigate the assigned area.".to_string()),
+            tool_whitelist: None,
+            tool_blacklist: None,
+            context_budget_tokens: None,
+            context_window_tokens: None,
+            max_duration_secs: None,
+            supervisor_config: None,
+            enabled: true,
+            builtin: false,
+            immutable_identity: false,
+            disable_allowed: true,
+            delete_allowed: true,
+            protected_reason: None,
+            reasoning_effort: None,
+            api_transport: None,
+            openrouter_provider_order: Vec::new(),
+            openrouter_provider_ignore: Vec::new(),
+            openrouter_allow_fallbacks: None,
+            huggingface_provider: None,
+            created_at: 1,
+        }
+    }
+
+    async fn insert_test_thread(engine: &AgentEngine, thread_id: &str, title: &str) {
+        engine.threads.write().await.insert(
+            thread_id.to_string(),
+            AgentThread {
+                id: thread_id.to_string(),
+                agent_name: None,
+                title: title.to_string(),
+                messages: vec![AgentMessage::user("continue", 1)],
+                pinned: false,
+                upstream_thread_id: None,
+                upstream_transport: None,
+                upstream_provider: None,
+                upstream_model: None,
+                upstream_assistant_id: None,
+                total_input_tokens: 0,
+                total_output_tokens: 0,
+                created_at: 1,
+                updated_at: 1,
+            },
+        );
+    }
+
+    #[tokio::test]
+    async fn spawned_subagent_system_prompt_omits_available_subagents() {
+        let root = tempdir().expect("tempdir");
+        let manager = SessionManager::new_test(root.path()).await;
+        let mut config = AgentConfig::default();
+        config.provider = "openai".to_string();
+        config.model = "gpt-5.4-mini".to_string();
+        config.base_url = "http://127.0.0.1:1/v1".to_string();
+        config.api_key = "test-key".to_string();
+        config.sub_agents.push(spawnable_researcher());
+        let engine = AgentEngine::new_test(manager, config, root.path()).await;
+
+        let main_thread_id = "thread_main_roster";
+        insert_test_thread(&engine, main_thread_id, "Main thread").await;
+        let main_runner = SendMessageRunner::initialize(
+            &engine,
+            Some(main_thread_id),
+            "plan the work",
+            &[],
+            "plan the work",
+            None,
+            None,
+            None,
+            None,
+            true,
+            true,
+            0,
+        )
+        .await
+        .expect("main-thread runner should initialize");
+        assert!(
+            main_runner
+                .system_prompt
+                .contains("## Available Sub-Agents")
+                && main_runner.system_prompt.contains("Researcher"),
+            "normal threads should still see the spawnable roster"
+        );
+
+        let child_thread_id = "thread_spawned_child";
+        insert_test_thread(&engine, child_thread_id, "Spawned child").await;
+        let child_task = engine
+            .enqueue_task(
+                "Investigate parser".to_string(),
+                "Stay scoped to the parser failure.".to_string(),
+                "normal",
+                None,
+                None,
+                Vec::new(),
+                None,
+                "subagent",
+                None,
+                None,
+                Some(main_thread_id.to_string()),
+                Some("daemon".to_string()),
+            )
+            .await;
+        engine
+            .set_thread_identity_from_task(child_thread_id, &child_task)
+            .await;
+
+        let child_runner = SendMessageRunner::initialize(
+            &engine,
+            Some(child_thread_id),
+            "execute spawned assignment",
+            &[],
+            "execute spawned assignment",
+            Some(&child_task.id),
+            None,
+            None,
+            None,
+            true,
+            true,
+            0,
+        )
+        .await
+        .expect("spawned-child runner should initialize");
+        assert!(
+            !child_runner
+                .system_prompt
+                .contains("## Available Sub-Agents")
+                && !child_runner
+                    .system_prompt
+                    .contains("## Subagent Supervision"),
+            "spawned subagents must not receive the spawnable roster in their initial prompt"
+        );
+
+        let continued_runner = SendMessageRunner::initialize(
+            &engine,
+            Some(child_thread_id),
+            "continue in the reserved child thread",
+            &[],
+            "continue in the reserved child thread",
+            None,
+            None,
+            None,
+            None,
+            true,
+            true,
+            0,
+        )
+        .await
+        .expect("continued spawned-thread runner should initialize");
+        assert!(
+            !continued_runner
+                .system_prompt
+                .contains("## Available Sub-Agents"),
+            "continuing a spawned child thread must still omit the spawnable roster"
+        );
     }
 
     #[test]

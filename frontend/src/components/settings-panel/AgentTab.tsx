@@ -598,7 +598,7 @@ export function AgentTab({
                                     fontSize: 11,
                                     fontFamily: "var(--font-mono)",
                                     color: "var(--text-muted)",
-                                    background: "var(--bg-surface)",
+                                    background: "var(--zorai-bg-surface)",
                                     padding: "3px 8px",
                                     border: "1px solid var(--border)",
                                     flex: 1,
@@ -669,7 +669,7 @@ export function AgentTab({
                                 marginBottom: 10,
                                 padding: "8px 10px",
                                 border: "1px solid var(--border)",
-                                background: "var(--bg-surface)",
+                                background: "var(--zorai-bg-surface)",
                             }}
                         >
                             <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>
@@ -874,7 +874,7 @@ export function AgentTab({
                                 fontSize: 11,
                                 fontFamily: "var(--font-mono)",
                                 color: "var(--text-muted)",
-                                background: "var(--bg-surface)",
+                                background: "var(--zorai-bg-surface)",
                                 padding: "3px 8px",
                                 border: "1px solid var(--border)",
                                 minWidth: 120,

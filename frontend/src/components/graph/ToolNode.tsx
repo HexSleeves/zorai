@@ -32,7 +32,7 @@ export const ToolNode = memo(function ToolNode({ data, selected }: NodeProps) {
           borderRadius: 0,
           background: selected
             ? "var(--bg-secondary)"
-            : "var(--bg-primary)",
+            : "var(--zorai-bg)",
           border: `1px solid ${selected ? "rgba(137, 180, 250, 0.36)" : "var(--glass-border)"}`,
           boxShadow: "none",
           transition: "all 0.15s ease",
@@ -101,5 +101,5 @@ const handleStyle: React.CSSProperties = {
   width: 8,
   height: 8,
   background: "var(--accent)",
-  border: "2px solid var(--bg-primary)",
+  border: "2px solid var(--zorai-bg)",
 };

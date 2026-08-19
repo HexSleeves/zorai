@@ -238,6 +238,30 @@ impl TuiModel {
             return false;
         }
 
+        if kind == modal::ModalKind::CustomModelEditor {
+            if matches!(
+                code,
+                KeyCode::Char('v' | 'V') if modifiers.contains(KeyModifiers::CONTROL)
+            ) || code == KeyCode::Char('\u{16}')
+                || (code == KeyCode::Insert && modifiers.contains(KeyModifiers::SHIFT))
+            {
+                self.paste_from_clipboard();
+                return false;
+            }
+            match code {
+                KeyCode::Enter => self.commit_active_thread_custom_model_editor(),
+                KeyCode::Esc => self.cancel_active_thread_custom_model_editor(),
+                KeyCode::Backspace => self.settings.reduce(SettingsAction::Backspace),
+                KeyCode::Char(c)
+                    if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+                {
+                    self.settings.reduce(SettingsAction::InsertChar(c));
+                }
+                _ => {}
+            }
+            return false;
+        }
+
         if kind == modal::ModalKind::Settings {
             if matches!(
                 code,

@@ -3,7 +3,7 @@ import {
   buildHydratedRemoteThread,
   isGatewayAgentThread,
   isInternalAgentThread,
-} from "./history";
+} from "./history.ts";
 
 describe("agent thread classification", () => {
   it("recognizes internal daemon threads by id or title", () => {
@@ -65,6 +65,38 @@ describe("buildHydratedRemoteThread", () => {
     expect(hydrated?.thread.activeContextWindowStart).toBe(2);
     expect(hydrated?.thread.activeContextWindowEnd).toBe(6);
     expect(hydrated?.thread.activeContextWindowTokens).toBe(12_345);
+  });
+
+  it("hydrates authoritative thread handoff state", () => {
+    const hydrated = buildHydratedRemoteThread(
+      {
+        id: "thread-handoff-state",
+        title: "Responder state",
+        thread_handoff_state: {
+          origin_agent_id: "swarog",
+          active_agent_id: "weles",
+          responder_stack: [
+            { agent_id: "swarog", agent_name: "Svarog", entered_at: 1 },
+            { agent_id: "weles", agent_name: "Weles", entered_at: 2, linked_thread_id: "handoff:1" },
+          ],
+          pending_approval_id: null,
+        },
+        messages: [],
+      },
+      "Svarog",
+    );
+
+    expect(hydrated?.thread).toMatchObject({
+      threadHandoffState: {
+        originAgentId: "swarog",
+        activeAgentId: "weles",
+        responderStack: [
+          { agentId: "swarog", agentName: "Svarog", enteredAt: 1, linkedThreadId: null },
+          { agentId: "weles", agentName: "Weles", enteredAt: 2, linkedThreadId: "handoff:1" },
+        ],
+        pendingApprovalId: null,
+      },
+    });
   });
 
   it("normalizes unix-second thread timestamps to milliseconds", () => {

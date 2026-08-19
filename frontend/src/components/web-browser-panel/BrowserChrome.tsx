@@ -56,7 +56,7 @@ export function BrowserChrome({
                         height: 26,
                         border: "1px solid var(--border)",
                         borderRadius: "var(--radius-sm)",
-                        background: "var(--bg-primary)",
+                        background: "var(--zorai-bg)",
                         color: "var(--text-primary)",
                         padding: "0 8px",
                         fontFamily: "var(--font-mono)",

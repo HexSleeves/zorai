@@ -70,6 +70,8 @@ export interface AgentState {
     surfaceId?: SurfaceId | null;
     paneId?: PaneId | null;
     title?: string;
+    agentId?: string | null;
+    agentName?: string | null;
   }) => string;
   deleteThread: (id: string) => void;
   setActiveThread: (id: string | null) => void;
@@ -88,6 +90,7 @@ export interface AgentState {
   setThreadTodos: (threadId: string, todos: AgentTodoItem[]) => void;
   getThreadTodos: (threadId: string) => AgentTodoItem[];
   setThreadDaemonId: (threadId: string, daemonThreadId: string | null) => void;
+  updateThreadTitle: (threadId: string, title: string) => void;
   toggleAgentPanel: () => void;
   setSearchQuery: (query: string) => void;
   updateAgentSetting: <K extends keyof AgentSettings>(key: K, value: AgentSettings[K]) => void;

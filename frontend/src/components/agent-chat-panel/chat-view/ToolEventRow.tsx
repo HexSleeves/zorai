@@ -1,9 +1,12 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { buildToolReviewPresentation } from "../toolReviewPresentation";
 import type { ToolEventGroup } from "./types";
 import { getToolDiffPresentation, ToolDiffView } from "./toolDiffPresentation";
 import { getToolIconPresentation } from "./toolIconPresentation";
 import { toolStatusTone } from "./toolStatusTone";
+import { extractToolArtifacts } from "./toolArtifacts";
+import { ToolArtifactChips } from "./ToolArtifactChips";
+import { RawToolPayload } from "./RawToolPayload";
 import {
   getToolFileTarget,
   getToolStructuredFields,
@@ -13,6 +16,10 @@ import {
 
 export function ToolEventRow({ group }: { group: ToolEventGroup }) {
   const [collapsed, setCollapsed] = useState(true);
+  const artifacts = useMemo(
+    () => extractToolArtifacts(group.toolArguments, group.resultContent),
+    [group.resultContent, group.toolArguments],
+  );
   const statusLabel = group.status.toUpperCase();
   const statusTone = toolStatusTone(group.status);
   const toolIcon = getToolIconPresentation(group.toolName, group.toolArguments);
@@ -41,18 +48,9 @@ export function ToolEventRow({ group }: { group: ToolEventGroup }) {
     };
 
   return (
-    <div style={{ padding: "8px 0 8px 0", fontFamily: "var(--font-mono)", whiteSpace: "pre-wrap", wordBreak: "break-word", overflowWrap: "anywhere", display: "flex", flexDirection: "column", gap: 6, borderRadius: "var(--radius-sm)", minWidth: 0, maxWidth: "100%", boxSizing: "border-box" }}>
-      <button
-        type="button"
-        onClick={() => setCollapsed((prev) => !prev)}
+    <div style={{ padding: 0, fontFamily: "var(--font-mono)", whiteSpace: "pre-wrap", wordBreak: "break-word", overflowWrap: "anywhere", display: "flex", flexDirection: "column", gap: 6, borderRadius: "var(--radius-sm)", minWidth: 0, maxWidth: "100%", boxSizing: "border-box" }}>
+      <div
         style={{
-          border: "none",
-          background: "transparent",
-          padding: 0,
-          color: "var(--text-primary)",
-          cursor: "pointer",
-          fontFamily: "var(--font-mono)",
-          fontSize: "var(--text-sm)",
           display: "flex",
           alignItems: "center",
           width: "100%",
@@ -60,57 +58,56 @@ export function ToolEventRow({ group }: { group: ToolEventGroup }) {
           minWidth: 0,
         }}
       >
-        <span style={{ color: "#DE600A" }}>{collapsed ? "▸" : "▾"}</span>
-        <div style={{ display: "flex", flexDirection: "row", gap: 4, alignItems: "center", justifyContent: "space-between", flex: 1, minWidth: 0 }}>
-          <span style={{ display: "flex", alignItems: "center", gap: 6, minWidth: 0, overflow: "hidden", flex: "1 1 auto" }}>
-            <span
-              aria-label={toolIcon.label}
-              title={toolIcon.label}
-              style={{
-                width: 22,
-                height: 22,
-                display: "inline-flex",
-                alignItems: "center",
-                justifyContent: "center",
-                border: "1px solid rgba(255,255,255,0.14)",
-                borderRadius: 4,
-                background: "rgba(255,255,255,0.04)",
-                color: "var(--text-muted)",
-                fontSize: 14,
-                fontWeight: 700,
-                letterSpacing: 0,
-                lineHeight: 1,
-                flexShrink: 0,
-              }}
-            >
-              {toolIcon.glyph}
-            </span>
-            <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{group.toolName}</span>
+        <button
+          type="button"
+          aria-expanded={!collapsed}
+          onClick={() => setCollapsed((prev) => !prev)}
+          style={{
+            border: "none",
+            background: "transparent",
+            padding: 0,
+            color: "var(--text-primary)",
+            cursor: "pointer",
+            fontFamily: "var(--font-mono)",
+            fontSize: "var(--text-sm)",
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            minWidth: 0,
+          }}
+        >
+          <span style={{ color: "#DE600A", fontSize: "var(--text-2xl)" }}>{collapsed ? "▸" : "▾"}</span>
+          <span
+            aria-label={toolIcon.label}
+            title={toolIcon.label}
+            style={{
+              width: 22,
+              height: 22,
+              display: "inline-flex",
+              alignItems: "center",
+              justifyContent: "center",
+              color: "var(--text-muted)",
+              fontSize: 14,
+              fontWeight: 700,
+              flexShrink: 0,
+            }}
+          >
+            {toolIcon.glyph}
           </span>
-          <div style={{ display: "flex", flexDirection: "row", gap: 8, alignItems: "center", fontSize: 8, flexShrink: 0 }}>
-            {reviewPresentation && (
-              <span
-                style={{
-                  fontSize: 11,
-                  fontWeight: 700,
-                  ...reviewToneStyle,
-                }}
-              >
-                {reviewPresentation.badgeLabel === "Blocked" ? "❌" : reviewPresentation.badgeLabel === "Flagged" ? "⚠️" : null}
-              </span>
-            )}
-            <span
-              style={{
-                color: statusTone.text,
-                fontSize: 11,
-                fontWeight: 700,
-              }}
-            >
-              {statusLabel === "DONE" ? "✅" : statusLabel === "REQUESTED" || statusLabel === "EXECUTING" ? "⏳" : statusLabel === "ERROR" ? "❌" : null}
+          <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{group.toolName}</span>
+        </button>
+        <ToolArtifactChips artifacts={artifacts} createdAt={group.createdAt} compact />
+        <div style={{ marginLeft: "auto", display: "flex", flexDirection: "row", gap: 8, alignItems: "center", fontSize: 8, flexShrink: 0 }}>
+          {reviewPresentation && (
+            <span style={{ fontSize: 11, fontWeight: 700, ...reviewToneStyle }}>
+              {reviewPresentation.badgeLabel === "Blocked" ? "⛔" : reviewPresentation.badgeLabel === "Flagged" ? "⚠️" : null}
             </span>
-          </div>
+          )}
+          <span style={{ color: statusTone.text, fontSize: 11, fontWeight: 700 }}>
+            {statusLabel === "DONE" ? "🟢" : statusLabel === "REQUESTED" || statusLabel === "EXECUTING" ? "🕝" : statusLabel === "ERROR" ? "🔴" : null}
+          </span>
         </div>
-      </button>
+      </div>
 
       {!collapsed && (
         <div style={{ display: "grid", gap: 8, minWidth: 0, padding: "8px 0 0 0" }}>
@@ -149,6 +146,10 @@ export function ToolEventRow({ group }: { group: ToolEventGroup }) {
             </div>
           )}
 
+          {artifacts.length > 0 ? (
+            <ToolArtifactChips artifacts={artifacts} createdAt={group.createdAt} />
+          ) : null}
+
           {fileTarget ? (
             <ToolFileTargetView label="file" path={fileTarget.path} summaryText={group.resultContent} />
           ) : toolDiff ? (
@@ -180,6 +181,9 @@ export function ToolEventRow({ group }: { group: ToolEventGroup }) {
               </div>
             </div>
           ) : null}
+
+          <RawToolPayload label="Raw arguments" raw={group.toolArguments} />
+          <RawToolPayload label="Raw result" raw={group.resultContent} />
 
           <div style={{ display: "flex", justifyContent: "flex-end" }}>
             <button

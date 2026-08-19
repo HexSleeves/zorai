@@ -193,7 +193,7 @@ export function SpawnedAgentsPanel({
         height: "100%",
         border: "1px solid var(--border)",
         borderRadius: compact ? "var(--radius-md)" : "var(--radius-xl)",
-        background: "var(--bg-primary)",
+        background: "var(--zorai-bg)",
         display: "flex",
         flexDirection: "column",
         overflow: "hidden",

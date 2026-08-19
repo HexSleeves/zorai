@@ -454,7 +454,11 @@ function createTerminalBridgeRuntime(options) {
         return true;
     }
     function resolveManagedApproval(_event, paneId, approvalId, decision) {
-        sendBridgeCommand(getBridgeForPane(paneId), { type: 'approval-decision', approval_id: approvalId, decision });
+        const bridge = terminalBridges.get(paneId);
+        if (!bridge || bridge.process.killed || !bridge.process.stdin.writable) {
+            return false;
+        }
+        sendBridgeCommand(bridge, { type: 'approval-decision', approval_id: approvalId, decision });
         return true;
     }
     function searchManagedHistory(_event, paneId, query, limit) {

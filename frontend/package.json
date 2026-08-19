@@ -122,6 +122,7 @@
         "dmg",
         "zip"
       ],
+      "icon": "assets/icon.icns",
       "extraResources": [
         {
           "from": "dist/zorai-daemon",

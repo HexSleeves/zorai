@@ -26,6 +26,7 @@ where
             content,
             session_id,
             context_messages,
+            target_agent_id,
         } => {
             let context_messages_json =
                 context_messages.and_then(|msgs| serde_json::to_string(&msgs).ok());
@@ -37,7 +38,7 @@ where
                     context_messages_json,
                     content_blocks_json: None,
                     client_surface: Some(zorai_protocol::ClientSurface::Electron),
-                    target_agent_id: None,
+                    target_agent_id,
                 })
                 .await?;
         }
@@ -178,14 +179,49 @@ where
                 .send(ClientMessage::AgentCancelTask { task_id })
                 .await?;
         }
+        AgentBridgeCommand::GetOperationStatus { operation_id } => {
+            framed
+                .send(ClientMessage::AgentGetOperationStatus { operation_id })
+                .await?;
+        }
         AgentBridgeCommand::ListTasks => {
             framed.send(ClientMessage::AgentListTasks).await?;
         }
-        AgentBridgeCommand::ListRuns => {
-            framed.send(ClientMessage::AgentListRuns).await?;
+        AgentBridgeCommand::ListRuns { parent_thread_id } => {
+            let message = match parent_thread_id {
+                Some(parent_thread_id) if !parent_thread_id.trim().is_empty() => {
+                    ClientMessage::AgentListRunsForParentThread {
+                        parent_thread_id: parent_thread_id.trim().to_string(),
+                    }
+                }
+                _ => ClientMessage::AgentListRuns,
+            };
+            framed.send(message).await?;
         }
         AgentBridgeCommand::GetRun { run_id } => {
             framed.send(ClientMessage::AgentGetRun { run_id }).await?;
+        }
+        AgentBridgeCommand::HandoffThread {
+            thread_id,
+            action,
+            target_agent_id,
+            reason,
+            summary,
+            requested_by,
+            session_id,
+        } => {
+            framed
+                .send(ClientMessage::AgentHandoffThread {
+                    thread_id,
+                    action,
+                    target_agent_id,
+                    reason,
+                    summary,
+                    requested_by,
+                    session_id,
+                    client_surface: Some(zorai_protocol::ClientSurface::Electron),
+                })
+                .await?;
         }
         AgentBridgeCommand::StartGoalRun {
             goal,
@@ -628,6 +664,36 @@ where
                 .send(ClientMessage::AgentGetCollaborationSessions { parent_task_id })
                 .await?;
         }
+        AgentBridgeCommand::SendParticipantSuggestion {
+            thread_id,
+            suggestion_id,
+            session_id,
+            force_send,
+        } => {
+            framed
+                .send(ClientMessage::AgentSendParticipantSuggestion {
+                    thread_id,
+                    suggestion_id,
+                    session_id,
+                    client_surface: Some(zorai_protocol::ClientSurface::Electron),
+                    force_send,
+                })
+                .await?;
+        }
+        AgentBridgeCommand::DismissParticipantSuggestion {
+            thread_id,
+            suggestion_id,
+            session_id,
+        } => {
+            framed
+                .send(ClientMessage::AgentDismissParticipantSuggestion {
+                    thread_id,
+                    suggestion_id,
+                    session_id,
+                    client_surface: Some(zorai_protocol::ClientSurface::Electron),
+                })
+                .await?;
+        }
         AgentBridgeCommand::ListGeneratedTools => {
             framed.send(ClientMessage::AgentListGeneratedTools).await?;
         }
@@ -930,6 +996,142 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn handoff_thread_command_emits_handoff_frame() {
+        let message = emitted_client_message(
+            r#"{"type":"handoff-thread","thread_id":"thread-1","action":"push_handoff","target_agent_id":"rarog","reason":"need concierge","summary":"take over","requested_by":"user","session_id":"session-1"}"#,
+        )
+        .await;
+
+        match message {
+            ClientMessage::AgentHandoffThread {
+                thread_id,
+                action,
+                target_agent_id,
+                reason,
+                summary,
+                requested_by,
+                session_id,
+                client_surface,
+            } => {
+                assert_eq!(thread_id, "thread-1");
+                assert_eq!(action, "push_handoff");
+                assert_eq!(target_agent_id.as_deref(), Some("rarog"));
+                assert_eq!(reason, "need concierge");
+                assert_eq!(summary, "take over");
+                assert_eq!(requested_by, "user");
+                assert_eq!(session_id.as_deref(), Some("session-1"));
+                assert_eq!(
+                    client_surface,
+                    Some(zorai_protocol::ClientSurface::Electron)
+                );
+            }
+            other => panic!("expected AgentHandoffThread, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn get_operation_status_command_emits_status_query_frame() {
+        let message =
+            emitted_client_message(r#"{"type":"get-operation-status","operation_id":"op-1"}"#)
+                .await;
+
+        match message {
+            ClientMessage::AgentGetOperationStatus { operation_id } => {
+                assert_eq!(operation_id, "op-1");
+            }
+            other => panic!("expected AgentGetOperationStatus, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn send_participant_suggestion_command_emits_force_send_frame() {
+        let message = emitted_client_message(
+            r#"{"type":"send-participant-suggestion","thread_id":"thread-1","suggestion_id":"sugg-1","session_id":"session-1","force_send":true}"#,
+        )
+        .await;
+
+        match message {
+            ClientMessage::AgentSendParticipantSuggestion {
+                thread_id,
+                suggestion_id,
+                session_id,
+                client_surface,
+                force_send,
+            } => {
+                assert_eq!(thread_id, "thread-1");
+                assert_eq!(suggestion_id, "sugg-1");
+                assert_eq!(session_id.as_deref(), Some("session-1"));
+                assert_eq!(
+                    client_surface,
+                    Some(zorai_protocol::ClientSurface::Electron)
+                );
+                assert!(force_send);
+            }
+            other => panic!("expected AgentSendParticipantSuggestion, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn send_participant_suggestion_command_defaults_force_send_false() {
+        let message = emitted_client_message(
+            r#"{"type":"send-participant-suggestion","thread_id":"thread-1","suggestion_id":"sugg-1"}"#,
+        )
+        .await;
+
+        match message {
+            ClientMessage::AgentSendParticipantSuggestion {
+                thread_id,
+                suggestion_id,
+                force_send,
+                ..
+            } => {
+                assert_eq!(thread_id, "thread-1");
+                assert_eq!(suggestion_id, "sugg-1");
+                assert!(!force_send);
+            }
+            other => panic!("expected AgentSendParticipantSuggestion, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn dismiss_participant_suggestion_command_emits_dismiss_frame() {
+        let message = emitted_client_message(
+            r#"{"type":"dismiss-participant-suggestion","thread_id":"thread-1","suggestion_id":"sugg-1","session_id":"session-1"}"#,
+        )
+        .await;
+
+        match message {
+            ClientMessage::AgentDismissParticipantSuggestion {
+                thread_id,
+                suggestion_id,
+                session_id,
+                client_surface,
+            } => {
+                assert_eq!(thread_id, "thread-1");
+                assert_eq!(suggestion_id, "sugg-1");
+                assert_eq!(session_id.as_deref(), Some("session-1"));
+                assert_eq!(
+                    client_surface,
+                    Some(zorai_protocol::ClientSurface::Electron)
+                );
+            }
+            other => panic!("expected AgentDismissParticipantSuggestion, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn cancel_task_command_remains_operation_cancellation_route() {
+        let message = emitted_client_message(r#"{"type":"cancel-task","task_id":"op-1"}"#).await;
+
+        match message {
+            ClientMessage::AgentCancelTask { task_id } => {
+                assert_eq!(task_id, "op-1");
+            }
+            other => panic!("expected AgentCancelTask, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
     async fn set_target_agent_reasoning_effort_command_maps_to_client_message() {
         let message = emitted_client_message(
             r#"{"type":"set-target-agent-reasoning-effort","target_agent_id":"rarog","reasoning_effort":"high"}"#,
@@ -1033,7 +1235,7 @@ mod tests {
     #[test]
     fn send_message_command_deserializes() {
         let command: AgentBridgeCommand = serde_json::from_str(
-            r#"{"type":"send-message","thread_id":"thread-1","content":"hello","session_id":null,"context_messages":null}"#,
+            r#"{"type":"send-message","thread_id":"thread-1","content":"hello","session_id":null,"context_messages":null,"target_agent_id":"weles"}"#,
         )
         .expect("send-message command should deserialize");
 
@@ -1043,11 +1245,13 @@ mod tests {
                 content,
                 session_id,
                 context_messages,
+                target_agent_id,
             } => {
                 assert_eq!(thread_id.as_deref(), Some("thread-1"));
                 assert_eq!(content, "hello");
                 assert!(session_id.is_none());
                 assert!(context_messages.is_none());
+                assert_eq!(target_agent_id.as_deref(), Some("weles"));
             }
             other => panic!("expected SendMessage command, got {other:?}"),
         }
@@ -1104,7 +1308,7 @@ mod tests {
     #[tokio::test]
     async fn send_message_command_emits_agent_send_message_frame() {
         let message = emitted_client_message(
-            r#"{"type":"send-message","thread_id":"thread-1","content":"hello","session_id":null,"context_messages":null}"#,
+            r#"{"type":"send-message","thread_id":"thread-1","content":"hello","session_id":null,"context_messages":null,"target_agent_id":"weles"}"#,
         )
         .await;
 
@@ -1127,7 +1331,7 @@ mod tests {
                     client_surface,
                     Some(zorai_protocol::ClientSurface::Electron)
                 );
-                assert!(target_agent_id.is_none());
+                assert_eq!(target_agent_id.as_deref(), Some("weles"));
             }
             other => panic!("expected AgentSendMessage, got {other:?}"),
         }

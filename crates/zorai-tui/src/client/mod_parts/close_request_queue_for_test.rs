@@ -72,6 +72,10 @@ pub enum ClientEvent {
         title: String,
         agent_name: Option<String>,
     },
+    ThreadTitleUpdated {
+        thread_id: String,
+        title: String,
+    },
     ThreadDeleted {
         thread_id: String,
         deleted: bool,

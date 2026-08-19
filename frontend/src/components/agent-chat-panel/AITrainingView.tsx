@@ -361,7 +361,7 @@ export function AITrainingView() {
                             borderRadius: "var(--radius-md)",
                             border: "1px solid var(--accent)",
                             background: "var(--accent)",
-                            color: "var(--bg-primary)",
+                            color: "var(--zorai-bg)",
                             cursor: requiresAction
                                 ? !canInstall || installState === "installing" ? "not-allowed" : "pointer"
                                 : !selectedProfile || !selectedProfile.available || launchState === "launching" ? "not-allowed" : "pointer",

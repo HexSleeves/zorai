@@ -133,7 +133,7 @@ export function useTerminalRuntime({
   pasteClipboard: () => Promise<void>;
   sendTextInput: (text: string, options?: TerminalSendOptions) => Promise<boolean>;
   trackInput: (text: string) => void;
-  requestApproval: (entry: { paneId: string; workspaceId: string | null; surfaceId: string | null; sessionId: string | null; command: string; reasons: string[]; riskLevel: RiskLevel; blastRadius: string }) => string;
+  requestApproval: (entry: { paneId: string; workspaceId: string | null; surfaceId: string | null; sessionId: string | null; source?: "local-terminal" | "terminal-bridge" | "agent-task"; command: string; reasons: string[]; riskLevel: RiskLevel; blastRadius: string }) => string;
   isCommandAllowed: (sessionId: string, command: string) => boolean;
   clearInlineApprovalPrompt: () => void;
   maybeRaiseInlineApprovalPrompt: (chunkText: string) => void;
@@ -148,7 +148,7 @@ export function useTerminalRuntime({
   recordError: (entry: any) => void;
   recordCognitiveOutput: (entry: any) => void;
   markApprovalHandled: (approvalId: string) => void;
-  upsertDaemonApproval: (entry: { id: string; paneId: string; workspaceId: string | null; surfaceId: string | null; sessionId: string | null; command: string; reasons: string[]; riskLevel: RiskLevel; blastRadius: string }) => void;
+  upsertDaemonApproval: (entry: { id: string; paneId: string; workspaceId: string | null; surfaceId: string | null; sessionId: string | null; source?: "local-terminal" | "terminal-bridge" | "agent-task"; command: string; reasons: string[]; riskLevel: RiskLevel; blastRadius: string }) => void;
   setSharedCursorMode: (mode: "idle" | "human" | "agent" | "approval") => void;
   setHistoryResults: (summary: string, hits: HistoryRecallHit[]) => void;
   setSymbolHits: (hits: SymbolRecallHit[]) => void;

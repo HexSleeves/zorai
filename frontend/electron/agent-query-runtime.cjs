@@ -56,6 +56,8 @@ const AGENT_QUERY_RESPONSE_TYPES = [
   'memory-provenance-retracted',
   'collaboration-sessions',
   'collaboration-vote-result',
+  'operation-status',
+  'thread-handoff-result',
   'generated-tools',
   'generated-tool-result',
   'speech-to-text-result',

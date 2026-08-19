@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentThread, SubAgentDefinition } from "@/lib/agentStore";
-import { buildThreadFilterTabs, daemonAgentFilterForThreadTab, DEFAULT_THREAD_DATE_FILTER, filterThreads, normalizeEpochMs, resolveThreadListSource } from "./threadFilterModel";
+import { buildThreadFilterTabs, daemonAgentFilterForThreadTab, DEFAULT_THREAD_DATE_FILTER, filterThreads, normalizeEpochMs, overlayStoreThreadTitles, resolveThreadCreationAgent, resolveThreadListSource } from "./threadFilterModel";
 
 function thread(overrides: Partial<AgentThread>): AgentThread {
   return {
@@ -28,6 +28,22 @@ function thread(overrides: Partial<AgentThread>): AgentThread {
 }
 
 describe("thread filters", () => {
+  it("resolves the selected fixed or dynamic agent as the owner of a new thread", () => {
+    const subAgents = [
+      { id: "reviewer", name: "Code Reviewer", builtin: false } as SubAgentDefinition,
+    ];
+
+    expect(resolveThreadCreationAgent("weles", subAgents)).toEqual({
+      id: "weles",
+      name: "Weles",
+    });
+    expect(resolveThreadCreationAgent("agent:reviewer", subAgents)).toEqual({
+      id: "reviewer",
+      name: "Code Reviewer",
+    });
+    expect(resolveThreadCreationAgent("goals", subAgents)).toBeNull();
+  });
+
   it("adds subagent thread tabs from configured subagents and loaded thread agent names", () => {
     const tabs = buildThreadFilterTabs(
       [
@@ -228,6 +244,20 @@ describe("thread filters", () => {
     const local = [thread({ id: "stale-local", title: "Stale" })];
     expect(resolveThreadListSource(null, local)).toEqual(local);
     expect(resolveThreadListSource([], local)).toEqual([]);
+  });
+
+  it("overlays generated store titles onto daemon thread list rows", () => {
+    const daemon = [
+      thread({ id: "daemon-1", title: "Please review the billing" }),
+      thread({ id: "daemon-2", title: "Keep this" }),
+    ];
+    const store = [
+      thread({ id: "local-1", daemonThreadId: "daemon-1", title: "Billing invoice parser" }),
+    ];
+    expect(overlayStoreThreadTitles(daemon, store).map((item) => item.title)).toEqual([
+      "Billing invoice parser",
+      "Keep this",
+    ]);
   });
 });
 

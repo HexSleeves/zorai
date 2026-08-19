@@ -42,7 +42,7 @@ export function SidebarActions({
                         onClick={(e) => { e.stopPropagation(); item.onClick(); }}
                         title={item.label}
                         style={{
-                            background: item.accent ? "rgba(59, 130, 246, 0.08)" : "var(--bg-surface)",
+                            background: item.accent ? "rgba(59, 130, 246, 0.08)" : "var(--zorai-bg-surface)",
                             border: "1px solid",
                             borderColor: item.accent ? "rgba(59, 130, 246, 0.2)" : "var(--glass-border)",
                             color: item.accent ? "var(--agent)" : "var(--text-muted)",
@@ -62,7 +62,7 @@ export function SidebarActions({
                             e.currentTarget.style.color = item.accent ? "var(--agent)" : "var(--text-primary)";
                         }}
                         onMouseLeave={(e) => {
-                            e.currentTarget.style.background = item.accent ? "rgba(59, 130, 246, 0.08)" : "var(--bg-surface)";
+                            e.currentTarget.style.background = item.accent ? "rgba(59, 130, 246, 0.08)" : "var(--zorai-bg-surface)";
                             e.currentTarget.style.color = item.accent ? "var(--agent)" : "var(--text-muted)";
                         }}
                     >

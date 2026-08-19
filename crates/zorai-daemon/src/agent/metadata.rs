@@ -88,6 +88,12 @@ impl ThreadIdentityMetadata {
         }
     }
 
+    pub(super) fn is_spawned_subagent(&self) -> bool {
+        self.source.as_deref() == Some("subagent")
+            || self.parent_task_id.is_some()
+            || self.parent_thread_id.is_some()
+    }
+
     fn normalized(mut self) -> Self {
         if self.goal_run_id.is_none() {
             self.goal_run_id = self.goal_id.clone();

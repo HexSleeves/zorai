@@ -107,6 +107,18 @@ export type RemoteAgentThreadRecord = {
   active_context_window_start?: number | null;
   active_context_window_end?: number | null;
   active_context_window_tokens?: number | null;
+  thread_handoff_state?: {
+    origin_agent_id?: string;
+    active_agent_id?: string;
+    responder_stack?: Array<{
+      agent_id?: string;
+      agent_name?: string;
+      entered_at?: number;
+      linked_thread_id?: string | null;
+    }>;
+    pending_approval_id?: string | null;
+  } | null;
+  handoff_state?: RemoteAgentThreadRecord["thread_handoff_state"];
   thread_participants?: Array<{
     agent_id?: string;
     agent_name?: string;
@@ -324,6 +336,26 @@ export function buildHydratedRemoteThread(
   const resolvedAgentName = typeof thread.agent_name === "string" && thread.agent_name.trim()
     ? thread.agent_name
     : agent_name;
+  const rawHandoffState = thread.thread_handoff_state ?? thread.handoff_state ?? null;
+  const threadHandoffState = rawHandoffState && typeof rawHandoffState === "object"
+    ? {
+      originAgentId: typeof rawHandoffState.origin_agent_id === "string" ? rawHandoffState.origin_agent_id : "",
+      activeAgentId: typeof rawHandoffState.active_agent_id === "string" ? rawHandoffState.active_agent_id : "",
+      responderStack: Array.isArray(rawHandoffState.responder_stack)
+        ? rawHandoffState.responder_stack
+          .filter((frame) => typeof frame?.agent_id === "string" && typeof frame?.agent_name === "string")
+          .map((frame) => ({
+            agentId: frame.agent_id as string,
+            agentName: frame.agent_name as string,
+            enteredAt: Number(frame.entered_at ?? 0),
+            linkedThreadId: typeof frame.linked_thread_id === "string" ? frame.linked_thread_id : null,
+          }))
+        : [],
+      pendingApprovalId: typeof rawHandoffState.pending_approval_id === "string"
+        ? rawHandoffState.pending_approval_id
+        : null,
+    }
+    : null;
 
   return {
     thread: {
@@ -411,6 +443,7 @@ export function buildHydratedRemoteThread(
             error: typeof suggestion.error === "string" ? suggestion.error : null,
           }))
         : [],
+      threadHandoffState,
     },
     messages,
   };
@@ -474,6 +507,7 @@ export function serializeThread(thread: AgentThread): AgentDbThreadRecord {
     last_preview: thread.lastMessagePreview,
     metadata_json: JSON.stringify({
       upstreamThreadId: thread.upstreamThreadId ?? null,
+      targetAgentId: thread.targetAgentId ?? null,
       upstreamTransport: thread.upstreamTransport ?? null,
       upstreamProvider: thread.upstreamProvider ?? null,
       upstreamModel: thread.upstreamModel ?? null,
@@ -551,6 +585,7 @@ export function deserializeThread(thread: AgentDbThreadRecord): AgentThread {
     compactionCount: 0,
     lastMessagePreview: thread.last_preview,
     upstreamThreadId: typeof metadata.upstreamThreadId === "string" ? metadata.upstreamThreadId : null,
+    targetAgentId: typeof metadata.targetAgentId === "string" ? metadata.targetAgentId : null,
     upstreamTransport: typeof metadata.upstreamTransport === "string"
       ? normalizeApiTransport(
         typeof metadata.upstreamProvider === "string"

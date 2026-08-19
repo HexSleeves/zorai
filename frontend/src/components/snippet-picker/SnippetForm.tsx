@@ -80,7 +80,7 @@ export function SnippetForm({
                     >
                         {snippet ? "Save" : "Create"}
                     </button>
-                    <button onClick={onCancel} style={{ ...actionBtnStyle, background: "var(--bg-primary)" }}>Cancel</button>
+                    <button onClick={onCancel} style={{ ...actionBtnStyle, background: "var(--zorai-bg)" }}>Cancel</button>
                 </div>
             </div>
         </div>

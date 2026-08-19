@@ -28,7 +28,7 @@ export function AgentChatPanelScaffold({ style, className }: { style?: CSSProper
         height: "100%",
         display: "flex",
         flexDirection: "column",
-        background: "var(--bg-primary)",
+        background: "var(--zorai-bg)",
         border: "1px solid var(--border)",
         borderRadius: "var(--radius-xl)",
         overflow: "hidden",
@@ -270,7 +270,7 @@ export function AgentChatPanelChatSurface() {
           border: "1px solid var(--border)",
           borderRadius: "var(--radius-xl)",
           overflow: "hidden",
-          background: "var(--bg-primary)",
+          background: "var(--zorai-bg)",
         }}
       >
         <ChatView

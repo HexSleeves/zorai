@@ -27,6 +27,7 @@ pub(crate) async fn dispatch_part4(
             | ClientMessage::AgentCancelTask { .. }
             | ClientMessage::AgentListTasks
             | ClientMessage::AgentListRuns
+            | ClientMessage::AgentListRunsForParentThread { .. }
             | ClientMessage::AgentGetRun { .. }
             | ClientMessage::AgentStartGoalRun { .. }
             | ClientMessage::AgentListGoalRuns { .. }
@@ -63,6 +64,7 @@ pub(crate) async fn dispatch_part4(
             | ClientMessage::AgentUnsubscribe
             | ClientMessage::AgentDeclareAsyncCommandCapability { .. }
             | ClientMessage::AgentGetOperationStatus { .. }
+            | ClientMessage::AgentHandoffThread { .. }
             | ClientMessage::AgentGetSubagentMetrics { .. }
             | ClientMessage::AgentGetSubsystemMetrics
             | ClientMessage::AgentListCheckpoints { .. }
@@ -303,6 +305,16 @@ pub(crate) async fn dispatch_part4(
 
         ClientMessage::AgentListRuns => {
             let runs = agent.list_runs().await;
+            let json = serde_json::to_string(&runs).unwrap_or_default();
+            framed
+                .send(DaemonMessage::AgentRunList { runs_json: json })
+                .await?;
+        }
+
+        ClientMessage::AgentListRunsForParentThread { parent_thread_id } => {
+            let runs = agent
+                .list_runs_for_parent_thread(parent_thread_id.trim())
+                .await;
             let json = serde_json::to_string(&runs).unwrap_or_default();
             framed
                 .send(DaemonMessage::AgentRunList { runs_json: json })
@@ -1335,6 +1347,87 @@ pub(crate) async fn dispatch_part4(
         ClientMessage::AgentDeclareAsyncCommandCapability { capability } => {
             framed
                 .send(DaemonMessage::AgentAsyncCommandCapabilityAck { capability })
+                .await?;
+        }
+
+        ClientMessage::AgentHandoffThread {
+            thread_id,
+            action,
+            target_agent_id,
+            reason,
+            summary,
+            requested_by,
+            session_id: _,
+            client_surface,
+        } => {
+            agent.mark_operator_present("thread_handoff").await;
+
+            let authorization_error = if let Some(client_surface) = client_surface {
+                agent
+                    .get_thread_client_surface(&thread_id)
+                    .await
+                    .filter(|expected_surface| {
+                        !client_surface_can_write_thread(*expected_surface, client_surface)
+                    })
+                    .map(|_| format!("unauthorized operator write for thread {thread_id}"))
+            } else {
+                None
+            };
+
+            let result = if let Some(error) = authorization_error {
+                zorai_protocol::ThreadHandoffResult {
+                    ok: false,
+                    thread_id: thread_id.clone(),
+                    active_agent_id: None,
+                    stack_depth: None,
+                    error: Some(error),
+                }
+            } else if requested_by.trim() != "user" {
+                zorai_protocol::ThreadHandoffResult {
+                    ok: false,
+                    thread_id: thread_id.clone(),
+                    active_agent_id: None,
+                    stack_depth: None,
+                    error: Some("direct thread handoff requires requested_by=user".to_string()),
+                }
+            } else {
+                match agent
+                    .apply_operator_thread_handoff(
+                        &thread_id,
+                        &action,
+                        target_agent_id.as_deref(),
+                        &reason,
+                        &summary,
+                    )
+                    .await
+                {
+                    Ok(event) => {
+                        let state = agent.thread_handoff_state(&thread_id).await;
+                        zorai_protocol::ThreadHandoffResult {
+                            ok: true,
+                            thread_id: thread_id.clone(),
+                            active_agent_id: Some(
+                                state
+                                    .as_ref()
+                                    .map(|state| state.active_agent_id.clone())
+                                    .unwrap_or(event.to_agent_id),
+                            ),
+                            stack_depth: state.map(|state| state.responder_stack.len()),
+                            error: None,
+                        }
+                    }
+                    Err(error) => zorai_protocol::ThreadHandoffResult {
+                        ok: false,
+                        thread_id: thread_id.clone(),
+                        active_agent_id: None,
+                        stack_depth: None,
+                        error: Some(error.to_string()),
+                    },
+                }
+            };
+
+            framed
+                .send(DaemonMessage::AgentThreadHandoffResult { result })
                 .await?;
         }
 

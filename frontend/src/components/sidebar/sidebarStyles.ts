@@ -108,7 +108,7 @@ export const pendingDotStyle: CSSProperties = {
 
 export const countBadgeStyle: CSSProperties = {
   background: "var(--accent)",
-  color: "var(--bg-primary)",
+  color: "var(--zorai-bg)",
   borderRadius: "var(--radius-full)",
   padding: "0 6px",
   fontSize: "var(--text-xs)",

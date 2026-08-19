@@ -100,7 +100,7 @@ export function ExecutionCanvas({ style, className }: ExecutionCanvasProps = {})
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: "var(--bg-primary)",
+          background: "var(--zorai-bg)",
           border: "1px solid var(--glass-border)",
           borderRadius: 0,
           width: "min(1500px, 96vw)",

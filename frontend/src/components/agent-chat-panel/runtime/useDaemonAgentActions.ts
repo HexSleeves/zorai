@@ -9,6 +9,7 @@ import { useWorkspaceStore } from "@/lib/workspaceStore";
 import { appendDaemonSystemMessage, normalizeBridgePayload, reloadDaemonThreadIntoLocalState } from "./daemonHelpers";
 import { parseLeadingAgentDirective, type AgentDirective } from "./agentDirective";
 import { builtinAgentSetupCandidate, isBuiltinPersonaSetupError } from "./builtinAgentSetupPreflight";
+import { resolveNewThreadTargetAgent } from "./newThreadTargetAgent";
 import type { BuiltinAgentSetupState } from "./types";
 
 type PendingBuiltinAgentSetup = BuiltinAgentSetupState & {
@@ -527,7 +528,15 @@ export function useDaemonAgentActions({
       }
 
       const daemonThreadId = daemonThreadIdRef.current;
-      await sendAgentMessage(daemonThreadId || threadId, text, preferredSessionId, contextMessages, contentBlocksJson);
+      const targetAgentId = resolveNewThreadTargetAgent(thread, daemonThreadId);
+      await sendAgentMessage(
+        daemonThreadId || threadId,
+        text,
+        preferredSessionId,
+        contextMessages,
+        contentBlocksJson,
+        targetAgentId,
+      );
     })();
 
     return true;

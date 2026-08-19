@@ -1422,7 +1422,7 @@ impl AgentEngine {
                         .unwrap_or(serde_json::Value::Array(Vec::new())),
                 );
             }
-            let (participants, suggestions, execution_profile) = tokio::join!(
+            let (participants, suggestions, execution_profile, handoff_state) = tokio::join!(
                 self.list_thread_participants(thread_id),
                 self.list_thread_participant_suggestions(thread_id),
                 async {
@@ -1432,6 +1432,7 @@ impl AgentEngine {
                         .get(thread_id)
                         .cloned()
                 },
+                self.thread_handoff_state(thread_id),
             );
             let nonempty = |value: Option<String>| {
                 value
@@ -1491,6 +1492,10 @@ impl AgentEngine {
                     detail.insert("agent_name".to_string(), serde_json::Value::String(name));
                 }
             }
+            detail.insert(
+                "thread_handoff_state".to_string(),
+                serde_json::to_value(handoff_state).unwrap_or(serde_json::Value::Null),
+            );
             detail.insert(
                 "thread_participants".to_string(),
                 serde_json::to_value(participants).unwrap_or(serde_json::Value::Array(Vec::new())),

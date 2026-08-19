@@ -309,7 +309,7 @@ export function ChatComposer({
             style={{
               fontSize: 10,
               fontFamily: "var(--font-mono)",
-              background: "var(--bg-surface)",
+              background: "var(--zorai-bg-surface)",
               color: "var(--text-secondary)",
               border: "1px solid var(--glass-border)",
               borderRadius: 3,

@@ -130,7 +130,7 @@ export function OperatorModelControls({ enabled }: { enabled: boolean }) {
             marginBottom: 8,
             padding: 10,
             border: "1px solid var(--border)",
-            background: "var(--bg-surface)",
+            background: "var(--zorai-bg-surface)",
         }}>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 <button

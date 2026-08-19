@@ -2194,6 +2194,12 @@ impl ChatState {
                 }
             }
 
+            ChatAction::ThreadTitleUpdated { thread_id, title } => {
+                if let Some(thread) = self.threads.iter_mut().find(|t| t.id == thread_id) {
+                    thread.title = title;
+                }
+            }
+
             ChatAction::ThreadDeleted { thread_id } => {
                 self.threads.retain(|thread| thread.id != thread_id);
                 self.thread_activity.remove(&thread_id);

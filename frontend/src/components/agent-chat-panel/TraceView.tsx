@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { ReasoningStream } from "../ReasoningStream";
 import { useAgentMissionStore } from "../../lib/agentMissionStore";
 import type { AgentTodoItem } from "../../lib/agentStore";
 import type { GoalRun, GoalRunEvent } from "../../lib/goalRuns";
+import { filterTraceActivityEvents, type TraceActivityCategory } from "./traceActivityFilters";
 import { DEFAULT_PAGE_SIZE, EmptyPanel, MetricRibbon, PageSizeSelect, PaginationControls, SectionTitle, inputStyle } from "./shared";
 
 export function TraceView({
@@ -20,51 +21,39 @@ export function TraceView({
 }) {
     const [searchQuery, setSearchQuery] = useState("");
     const [dateFilter, setDateFilter] = useState("");
+    const [activityCategory, setActivityCategory] = useState<TraceActivityCategory>("all");
     const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
     const [reasoningPage, setReasoningPage] = useState(1);
     const [plannerPage, setPlannerPage] = useState(1);
     const [timelinePage, setTimelinePage] = useState(1);
 
-    const matchesDate = (timestamp: number) => {
+    const matchesDate = useCallback((timestamp: number) => {
         if (!dateFilter) return true;
         const date = new Date(timestamp);
         const year = date.getFullYear();
         const month = String(date.getMonth() + 1).padStart(2, "0");
         const day = String(date.getDate()).padStart(2, "0");
         return `${year}-${month}-${day}` === dateFilter;
-    };
+    }, [dateFilter]);
 
     const normalizedQuery = searchQuery.trim().toLowerCase();
 
-    const filteredCognitiveEvents = useMemo(() => {
-        return cognitiveEvents.filter((event) => {
-            if (!matchesDate(event.timestamp)) return false;
-            if (!normalizedQuery) return true;
+    const filteredActivity = useMemo(() => filterTraceActivityEvents({
+        operationalEvents,
+        cognitiveEvents,
+        category: activityCategory,
+        query: searchQuery,
+        date: dateFilter,
+    }), [activityCategory, cognitiveEvents, dateFilter, operationalEvents, searchQuery]);
 
-            return [event.source, event.content]
-                .join(" ")
-                .toLowerCase()
-                .includes(normalizedQuery);
-        });
-    }, [cognitiveEvents, dateFilter, normalizedQuery]);
-
-    const filteredOperationalEvents = useMemo(() => {
-        return operationalEvents.filter((event) => {
-            if (!matchesDate(event.timestamp)) return false;
-            if (!normalizedQuery) return true;
-
-            return [event.kind, event.command ?? "", event.message ?? "", event.blastRadius ?? ""]
-                .join(" ")
-                .toLowerCase()
-                .includes(normalizedQuery);
-        });
-    }, [operationalEvents, dateFilter, normalizedQuery]);
+    const filteredCognitiveEvents = filteredActivity.cognitive;
+    const filteredOperationalEvents = filteredActivity.operational;
 
     useEffect(() => {
         setReasoningPage(1);
         setPlannerPage(1);
         setTimelinePage(1);
-    }, [searchQuery, dateFilter, pageSize]);
+    }, [searchQuery, dateFilter, pageSize, activityCategory]);
 
     const visibleCognitiveEvents = useMemo(() => {
         const start = (reasoningPage - 1) * pageSize;
@@ -102,7 +91,7 @@ export function TraceView({
                     .includes(normalizedQuery);
             })
             .sort((a, b) => b.event.timestamp - a.event.timestamp);
-    }, [dateFilter, goalRuns, normalizedQuery]);
+    }, [goalRuns, matchesDate, normalizedQuery]);
 
     const visiblePlannerEvents = useMemo(() => {
         const start = (plannerPage - 1) * pageSize;
@@ -135,6 +124,18 @@ export function TraceView({
                     onChange={(event) => setDateFilter(event.target.value)}
                     style={{ ...inputStyle, flex: "0 0 auto", minWidth: 170 }}
                 />
+                <select
+                    aria-label="Activity category"
+                    value={activityCategory}
+                    onChange={(event) => setActivityCategory(event.target.value as TraceActivityCategory)}
+                    style={{ ...inputStyle, flex: "0 0 auto", minWidth: 170 }}
+                >
+                    <option value="all">All activity</option>
+                    <option value="metacognition">Metacognition</option>
+                    <option value="operations">Operations</option>
+                    <option value="handoffs">Handoffs</option>
+                    <option value="participants">Participants</option>
+                </select>
                 <PageSizeSelect value={pageSize} onChange={setPageSize} />
             </div>
 

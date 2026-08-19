@@ -1,0 +1,349 @@
+use super::*;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum ReportBackReason {
+    ExecutionBudget,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum BudgetOverflowDecision {
+    Continue,
+    RelyOnCompaction,
+    EnterReportBack,
+    Stop,
+}
+
+pub(super) fn budget_overflow_decision(
+    is_spawned_subagent: bool,
+    already_in_report_back: bool,
+    overflow_action: ContextOverflowAction,
+) -> BudgetOverflowDecision {
+    if already_in_report_back {
+        return BudgetOverflowDecision::Continue;
+    }
+    match overflow_action {
+        ContextOverflowAction::Error if is_spawned_subagent => {
+            BudgetOverflowDecision::EnterReportBack
+        }
+        ContextOverflowAction::Error => BudgetOverflowDecision::Stop,
+        _ => BudgetOverflowDecision::RelyOnCompaction,
+    }
+}
+
+pub(super) fn parse_subagent_report_status(status: &str) -> Option<SubagentReportStatus> {
+    match status.trim() {
+        "done" => Some(SubagentReportStatus::Done),
+        "cancelled" | "canceled" => Some(SubagentReportStatus::Cancelled),
+        "error" => Some(SubagentReportStatus::Error),
+        _ => None,
+    }
+}
+
+impl<'a> SendMessageRunner<'a> {
+    pub(super) fn spawned_subagent_turn_active(&self) -> bool {
+        self.current_task_snapshot
+            .as_ref()
+            .is_some_and(crate::agent::types::AgentTask::is_spawned_subagent)
+    }
+
+    pub(super) async fn enter_execution_budget_report_back(&mut self) -> bool {
+        if self.report_back_phase.is_some() || !self.spawned_subagent_turn_active() {
+            return false;
+        }
+        let consumed = self
+            .task_context_budget
+            .as_ref()
+            .map(|budget| budget.consumed())
+            .unwrap_or(0);
+        let max = self
+            .task_context_budget
+            .as_ref()
+            .map(|budget| budget.max_tokens())
+            .unwrap_or(0);
+        let prompt = format!(
+            "Execution budget exceeded ({consumed}/{max} visible output tokens). Reporting back is not counted against this budget.\n\nYou must call exactly one of:\n- `extend_subagent_budget` with additional_tokens and reason, which actually raises this thread's budget so you can continue.\n- `report_subagent_outcome` with status `done`, `cancelled`, or `error` and a concrete summary of what was completed, what remains, and any artifacts.\nDo not continue other tools until one of those two calls succeeds."
+        );
+        if !self
+            .engine
+            .append_system_thread_message(&self.tid, prompt)
+            .await
+        {
+            return false;
+        }
+        self.engine.emit_workflow_notice(
+            &self.tid,
+            "budget-report-back",
+            "Output token budget exceeded; reporting back is budget-exempt.",
+            None,
+        );
+        self.report_back_phase = Some(ReportBackReason::ExecutionBudget);
+        self.terminated_for_budget = false;
+        self.restrict_tools_to_report_back();
+        if self.max_loops > 0 && self.loop_count >= self.max_loops {
+            self.max_loops = self.loop_count.saturating_add(1);
+        }
+        true
+    }
+
+    fn restrict_tools_to_report_back(&mut self) {
+        if let Some(filter) = self.task_tool_filter.as_mut() {
+            filter.allow_tools([
+                zorai_protocol::tool_names::REPORT_SUBAGENT_OUTCOME,
+                zorai_protocol::tool_names::EXTEND_SUBAGENT_BUDGET,
+            ]);
+        }
+        if self.tools_before_report_back.is_none() {
+            self.tools_before_report_back = Some(self.tools.clone());
+        }
+        let is_report_back_tool = |name: &str| {
+            matches!(
+                name,
+                zorai_protocol::tool_names::REPORT_SUBAGENT_OUTCOME
+                    | zorai_protocol::tool_names::EXTEND_SUBAGENT_BUDGET
+            )
+        };
+        self.tools
+            .retain(|tool| is_report_back_tool(&tool.function.name));
+        let mut extra: Vec<_> = self
+            .tools_before_report_back
+            .as_ref()
+            .into_iter()
+            .flatten()
+            .chain(self.deferred_tool_pool.iter())
+            .filter(|tool| is_report_back_tool(&tool.function.name))
+            .cloned()
+            .collect();
+        if extra.len() < 2 {
+            extra.extend(
+                crate::agent::tool_executor::get_available_tools(
+                    &self.config,
+                    &self.engine.data_dir,
+                    false,
+                )
+                .into_iter()
+                .filter(|tool| is_report_back_tool(&tool.function.name)),
+            );
+        }
+        for tool in extra {
+            if !self
+                .tools
+                .iter()
+                .any(|existing| existing.function.name == tool.function.name)
+            {
+                self.tools.push(tool);
+            }
+        }
+    }
+
+    pub(super) async fn maybe_force_budget_report_back(&mut self) -> bool {
+        if self.report_back_phase.is_some() || !self.spawned_subagent_turn_active() {
+            return false;
+        }
+        let Some(budget) = self.task_context_budget.as_mut() else {
+            return false;
+        };
+        let current_tokens = {
+            let threads = self.engine.threads.read().await;
+            threads
+                .get(&self.tid)
+                .map(|thread| {
+                    crate::agent::subagent::context_budget::visible_output_budget_tokens(
+                        &thread.messages,
+                    )
+                })
+                .unwrap_or(0)
+        };
+        budget.set_consumed(current_tokens);
+        match budget.check() {
+            crate::agent::subagent::context_budget::BudgetStatus::Exceeded {
+                overflow_action: ContextOverflowAction::Error,
+                ..
+            } => self.enter_execution_budget_report_back().await,
+            _ => false,
+        }
+    }
+
+    pub(super) fn exit_report_back_phase(&mut self) {
+        self.report_back_phase = None;
+        if let Some(tools) = self.tools_before_report_back.take() {
+            self.tools = tools;
+        }
+    }
+
+    pub(super) fn apply_successful_subagent_budget_tool(
+        &mut self,
+        tool_name: &str,
+        arguments: &str,
+    ) -> Option<ToolCallDisposition> {
+        if tool_name == zorai_protocol::tool_names::REPORT_SUBAGENT_OUTCOME {
+            let args: serde_json::Value = serde_json::from_str(arguments).unwrap_or_default();
+            let status = args
+                .get("status")
+                .and_then(|value| value.as_str())
+                .and_then(parse_subagent_report_status)
+                .unwrap_or(SubagentReportStatus::Error);
+            let summary = args
+                .get("summary")
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .unwrap_or("subagent reported without a summary")
+                .to_string();
+            self.subagent_report = Some(SubagentTurnReport {
+                status,
+                summary,
+                reason: self.report_back_phase.map(|_| "zorai_budget".to_string()),
+            });
+            self.terminated_for_budget = false;
+            self.exit_report_back_phase();
+            return Some(ToolCallDisposition::BreakLoop);
+        }
+        if tool_name == zorai_protocol::tool_names::EXTEND_SUBAGENT_BUDGET {
+            let args: serde_json::Value = serde_json::from_str(arguments).unwrap_or_default();
+            let additional = args
+                .get("additional_tokens")
+                .and_then(|value| value.as_u64())
+                .map(|value| value.min(u32::MAX as u64) as u32)
+                .unwrap_or(0);
+            if let Some(budget) = self.task_context_budget.as_mut() {
+                if additional > 0 {
+                    budget.extend_max(additional);
+                }
+            }
+            if let Some(task) = self.current_task_snapshot.as_mut() {
+                task.context_budget_tokens = self
+                    .task_context_budget
+                    .as_ref()
+                    .map(|budget| budget.max_tokens());
+            }
+            self.terminated_for_budget = false;
+            self.exit_report_back_phase();
+        }
+        None
+    }
+
+    pub(super) async fn capture_text_report_back(&mut self, content: &str) {
+        if self.report_back_phase.is_none() || self.subagent_report.is_some() {
+            return;
+        }
+        let summary = {
+            let trimmed = content.trim();
+            if !trimmed.is_empty() {
+                trimmed.to_string()
+            } else {
+                self.synthesize_thread_summary().await
+            }
+        };
+        self.subagent_report = Some(SubagentTurnReport {
+            status: SubagentReportStatus::Error,
+            summary,
+            reason: Some("zorai_budget".to_string()),
+        });
+        self.terminated_for_budget = true;
+        self.exit_report_back_phase();
+    }
+
+    pub(super) async fn synthesize_thread_summary(&self) -> String {
+        let threads = self.engine.threads.read().await;
+        threads
+            .get(&self.tid)
+            .map(|thread| {
+                crate::agent::subagent::context_budget::synthesize_visible_assistant_summary(
+                    &thread.messages,
+                )
+            })
+            .unwrap_or_else(|| "(no usable assistant summary was recorded)".to_string())
+    }
+
+    pub(super) async fn mark_last_assistant_report_back(&self) {
+        let mut threads = self.engine.threads.write().await;
+        if let Some(thread) = threads.get_mut(&self.tid) {
+            if let Some(message) = thread
+                .messages
+                .iter_mut()
+                .rev()
+                .find(|message| message.role == crate::agent::types::MessageRole::Assistant)
+            {
+                message.message_kind = crate::agent::types::AgentMessageKind::ReportBack;
+            }
+        }
+    }
+
+    pub(super) async fn finish_spawned_subagent_on_unrecoverable_error(
+        &mut self,
+        error: &anyhow::Error,
+    ) -> bool {
+        if !self.spawned_subagent_turn_active() {
+            return false;
+        }
+        let message = error.to_string();
+        let provider_quota = crate::agent::llm_client::parse_structured_upstream_failure(&message)
+            .is_some_and(|failure| {
+                let combined = format!(
+                    "{}\n{}",
+                    failure.summary.to_ascii_lowercase(),
+                    failure.diagnostics.to_string().to_ascii_lowercase()
+                );
+                combined.contains("quota")
+                    || combined.contains("insufficient credit")
+                    || combined.contains("insufficient credits")
+                    || combined.contains("billing hard limit")
+                    || combined.contains("payment required")
+            })
+            || {
+                let lower = message.to_ascii_lowercase();
+                lower.contains("quota exceeded")
+                    || lower.contains("insufficient credit")
+                    || lower.contains("insufficient credits")
+                    || lower.contains("billing hard limit")
+                    || lower.contains("payment required")
+            };
+        if self.report_back_phase.is_none() && !provider_quota {
+            return false;
+        }
+        let summary = self.synthesize_thread_summary().await;
+        let reason = if provider_quota {
+            "provider_quota"
+        } else {
+            "zorai_budget"
+        };
+        self.subagent_report = Some(SubagentTurnReport {
+            status: SubagentReportStatus::Error,
+            summary,
+            reason: Some(reason.to_string()),
+        });
+        self.terminated_for_budget = self.report_back_phase.is_some() && !provider_quota;
+        self.exit_report_back_phase();
+        true
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{budget_overflow_decision, BudgetOverflowDecision};
+    use crate::agent::types::ContextOverflowAction;
+
+    #[test]
+    fn spawned_error_budget_forces_report_back_instead_of_stop() {
+        assert_eq!(
+            budget_overflow_decision(true, false, ContextOverflowAction::Error),
+            BudgetOverflowDecision::EnterReportBack
+        );
+    }
+
+    #[test]
+    fn top_level_error_budget_still_stops() {
+        assert_eq!(
+            budget_overflow_decision(false, false, ContextOverflowAction::Error),
+            BudgetOverflowDecision::Stop
+        );
+    }
+
+    #[test]
+    fn report_back_turn_is_budget_exempt() {
+        assert_eq!(
+            budget_overflow_decision(true, true, ContextOverflowAction::Error),
+            BudgetOverflowDecision::Continue
+        );
+    }
+}

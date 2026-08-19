@@ -102,6 +102,7 @@ impl DaemonClient {
             suggestion_id,
             session_id: None,
             client_surface: Some(zorai_protocol::ClientSurface::Tui),
+            force_send: false,
         })
     }
 

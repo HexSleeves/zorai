@@ -184,6 +184,7 @@ export function buildDaemonAgentConfig(
     tool_call_delay_ms: agentSettings.tool_call_delay_ms,
     llm_stream_chunk_timeout_secs: agentSettings.llm_stream_chunk_timeout_secs,
     auto_retry: agentSettings.auto_retry,
+    auto_thread_title: agentSettings.auto_thread_title,
     context_window_tokens: providerConfig
       ? getEffectiveContextWindow(providerKey, providerConfig)
       : 128000,

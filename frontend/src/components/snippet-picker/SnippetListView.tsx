@@ -68,7 +68,7 @@ export function SnippetListView({
                             style={{
                                 ...closeBtnStyle,
                                 border: "1px solid var(--border)",
-                                background: ownerFilter === value ? "var(--bg-surface)" : "transparent",
+                                background: ownerFilter === value ? "var(--zorai-bg-surface)" : "transparent",
                                 color: ownerFilter === value ? "var(--text-primary)" : "var(--text-secondary)",
                                 padding: "4px 8px",
                                 fontSize: 10,
@@ -99,7 +99,7 @@ export function SnippetListView({
                         }}
                         onClick={() => onUse(snippet)}
                         onMouseEnter={(event) => {
-                            event.currentTarget.style.background = "var(--bg-surface)";
+                            event.currentTarget.style.background = "var(--zorai-bg-surface)";
                         }}
                         onMouseLeave={(event) => {
                             event.currentTarget.style.background = "transparent";

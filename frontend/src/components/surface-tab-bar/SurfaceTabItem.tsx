@@ -121,7 +121,7 @@ export function SurfaceTabItem({
                         }}
                         autoFocus
                         style={{
-                            background: "var(--bg-surface)",
+                            background: "var(--zorai-bg-surface)",
                             border: "1px solid var(--glass-border)",
                             color: "var(--text-primary)",
                             borderRadius: "var(--radius-sm)",
@@ -201,7 +201,7 @@ export function SurfaceTabItem({
                         minWidth: 160,
                         border: "1px solid var(--glass-border)",
                         borderRadius: "var(--radius-md)",
-                        background: "var(--bg-primary)",
+                        background: "var(--zorai-bg)",
                         boxShadow: "var(--shadow-sm)",
                         zIndex: 70,
                         display: "grid",

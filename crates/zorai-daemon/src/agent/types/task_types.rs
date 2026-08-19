@@ -379,6 +379,12 @@ pub struct AgentRun {
     pub last_error: Option<String>,
 }
 
+impl AgentTask {
+    pub(crate) fn is_spawned_subagent(&self) -> bool {
+        self.source == "subagent" || self.parent_task_id.is_some()
+    }
+}
+
 fn default_source() -> String {
     "user".into()
 }

@@ -83,6 +83,14 @@ impl TuiModel {
                 self.handle_thread_created_event(thread_id, title, agent_name);
                 None
             }
+            ClientEvent::ThreadTitleUpdated { thread_id, title } => {
+                if !title.trim().is_empty() {
+                    self.chat
+                        .reduce(chat::ChatAction::ThreadTitleUpdated { thread_id, title });
+                    self.sync_open_thread_picker();
+                }
+                None
+            }
             ClientEvent::ThreadDeleted { thread_id, deleted } => {
                 if deleted {
                     self.deleted_thread_ids.insert(thread_id.clone());
