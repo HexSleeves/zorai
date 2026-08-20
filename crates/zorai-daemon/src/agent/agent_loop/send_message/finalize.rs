@@ -302,20 +302,7 @@ impl<'a> SendMessageRunner<'a> {
     }
 
     pub(super) async fn finish(mut self) -> Result<SendMessageOutcome> {
-        if self.report_back_phase.is_some() && self.subagent_report.is_none() {
-            let summary = self.synthesize_thread_summary().await;
-            self.capture_text_report_back(&summary).await;
-        } else if self.subagent_report.is_none()
-            && self.terminated_for_budget
-            && self.spawned_subagent_turn_active()
-        {
-            let summary = self.synthesize_thread_summary().await;
-            self.subagent_report = Some(SubagentTurnReport {
-                status: SubagentReportStatus::Error,
-                summary,
-                reason: Some("zorai_budget".to_string()),
-            });
-        }
+        self.apply_finish_subagent_synthesis().await;
         if super::report_back::should_emit_tool_execution_limit_error(
             self.was_cancelled,
             self.max_loops,

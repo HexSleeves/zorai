@@ -2,9 +2,10 @@ use super::*;
 #[path = "budget_extension.rs"]
 mod budget_extension;
 use budget_extension::{
-    budget_extension_applies_to_runner, max_loops_after_successful_budget_extend,
-    max_loops_for_budget_report_back, parse_successful_budget_extension,
-    should_exit_report_back_after_live_ceiling_sync,
+    budget_extension_applies_to_runner, finish_subagent_synthesis,
+    max_loops_after_successful_budget_extend, max_loops_for_budget_report_back,
+    parse_successful_budget_extension, should_exit_report_back_after_live_ceiling_sync,
+    should_mark_terminated_after_failed_report_back_entry, FinishSubagentSynthesis,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -229,7 +230,13 @@ impl<'a> SendMessageRunner<'a> {
             crate::agent::subagent::context_budget::BudgetStatus::Exceeded {
                 overflow_action: ContextOverflowAction::Error,
                 ..
-            } => self.enter_execution_budget_report_back().await,
+            } => {
+                let entered = self.enter_execution_budget_report_back().await;
+                if should_mark_terminated_after_failed_report_back_entry(entered) {
+                    self.terminated_for_budget = true;
+                }
+                entered
+            }
             _ => false,
         }
     }
@@ -238,6 +245,40 @@ impl<'a> SendMessageRunner<'a> {
         self.report_back_phase = None;
         if let Some(tools) = self.tools_before_report_back.take() {
             self.tools = tools;
+        }
+    }
+
+    pub(super) async fn apply_finish_subagent_synthesis(&mut self) {
+        match finish_subagent_synthesis(
+            self.was_cancelled,
+            self.report_back_phase.is_some(),
+            self.subagent_report.is_some(),
+            self.terminated_for_budget,
+            self.spawned_subagent_turn_active(),
+        ) {
+            FinishSubagentSynthesis::CancelledReport => {
+                let summary = self.synthesize_thread_summary().await;
+                self.subagent_report = Some(SubagentTurnReport {
+                    status: SubagentReportStatus::Cancelled,
+                    summary,
+                    reason: Some("cancelled".to_string()),
+                });
+                self.terminated_for_budget = false;
+                self.exit_report_back_phase();
+            }
+            FinishSubagentSynthesis::BudgetTextReport => {
+                let summary = self.synthesize_thread_summary().await;
+                self.capture_text_report_back(&summary).await;
+            }
+            FinishSubagentSynthesis::BudgetErrorReport => {
+                let summary = self.synthesize_thread_summary().await;
+                self.subagent_report = Some(SubagentTurnReport {
+                    status: SubagentReportStatus::Error,
+                    summary,
+                    reason: Some("zorai_budget".to_string()),
+                });
+            }
+            FinishSubagentSynthesis::None => {}
         }
     }
 
@@ -358,7 +399,8 @@ impl<'a> SendMessageRunner<'a> {
     }
 
     pub(super) async fn capture_text_report_back(&mut self, content: &str) {
-        if self.report_back_phase.is_none() || self.subagent_report.is_some() {
+        if self.was_cancelled || self.report_back_phase.is_none() || self.subagent_report.is_some()
+        {
             return;
         }
         let summary = {
@@ -452,7 +494,6 @@ impl<'a> SendMessageRunner<'a> {
         true
     }
 }
-
 #[cfg(test)]
 #[path = "report_back_tests.rs"]
 mod tests;
