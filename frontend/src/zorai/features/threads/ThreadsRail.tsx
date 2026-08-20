@@ -15,6 +15,7 @@ import {
   type ThreadFilterTab,
 } from "./threadFilterModel";
 import { openThreadTarget } from "./openThreadTarget";
+import { ZORAI_FOCUS_SEARCH_EVENT, consumePendingFocusSearch } from "../../shell/zoraiNavigationEvents";
 
 const THREAD_FILTER_FETCH_DEBOUNCE_MS = 1000;
 
@@ -31,6 +32,7 @@ export function ThreadsRail() {
   const [loadingTab, setLoadingTab] = useState<ThreadFilterTab | null>(null);
   const pendingFetchIdRef = useRef(0);
   const loadedAgentFilterRef = useRef<string | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
   const goalThreadIdSet = useMemo(() => goalThreadIds(runtime.goalRunsForTrace), [runtime.goalRunsForTrace]);
   const daemonAgentFilter = useMemo(() => daemonAgentFilterForThreadTab(tab), [tab]);
   const fetchKey = daemonAgentFilter ?? "__all__";
@@ -67,6 +69,17 @@ export function ThreadsRail() {
   useEffect(() => {
     void refreshSubAgents();
   }, [refreshSubAgents]);
+
+  useEffect(() => {
+    const focusSearch = () => {
+      searchInputRef.current?.focus();
+      searchInputRef.current?.select();
+    };
+    if (consumePendingFocusSearch()) focusSearch();
+    const onFocusSearch = () => focusSearch();
+    window.addEventListener(ZORAI_FOCUS_SEARCH_EVENT, onFocusSearch);
+    return () => window.removeEventListener(ZORAI_FOCUS_SEARCH_EVENT, onFocusSearch);
+  }, []);
 
   useEffect(() => {
     pendingFetchIdRef.current += 1;
@@ -131,7 +144,7 @@ export function ThreadsRail() {
         </button>
         <button type="button" className="zorai-ghost-button" onClick={refreshSelectedTab}>Refresh</button>
       </div>
-      <input className="zorai-search-input" value={runtime.searchQuery} onChange={(event) => runtime.setSearchQuery(event.target.value)} placeholder="Search threads" />
+      <input ref={searchInputRef} className="zorai-search-input" value={runtime.searchQuery} onChange={(event) => runtime.setSearchQuery(event.target.value)} placeholder="Search threads" />
       <div className="zorai-thread-filter-tabs" aria-label="Thread source filters">
         {fixedThreadTabs.map((item) => (
           <button

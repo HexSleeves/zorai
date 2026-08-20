@@ -530,4 +530,17 @@ describe("Zorai feature surfaces", () => {
     expect(source).toContain("openThreadTarget");
     expect(source).toContain("navigateZorai");
   });
+
+  it("routes the native window menu into current Zorai surfaces", () => {
+    const appSource = readFeature("../ZoraiApp.tsx");
+    const commandSource = readFeature("../shell/zoraiAppCommands.ts");
+    const shellSource = readFeature("../shell/ZoraiShell.tsx");
+
+    expect(appSource).toContain("useZoraiAppCommands");
+    expect(appSource).toContain("CommandPalette");
+    expect(commandSource).toContain("toggle-command-palette");
+    expect(commandSource).toContain("onAppCommand");
+    expect(shellSource).toContain("settingsTab");
+    expect(shellSource).toContain("toggleContext");
+  });
 });

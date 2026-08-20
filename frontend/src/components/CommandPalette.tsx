@@ -4,6 +4,10 @@ import { useWorkspaceStore } from "../lib/workspaceStore";
 import { useSettingsStore } from "../lib/settingsStore";
 import { useKeybindStore } from "../lib/keybindStore";
 import { BUILTIN_THEMES } from "../lib/themes";
+import { handleZoraiAppCommand } from "../zorai/shell/zoraiAppCommands";
+import { navigateZorai } from "../zorai/shell/zoraiNavigationEvents";
+import { zoraiNavItems } from "../zorai/shell/navigation";
+import { zoraiTools } from "../zorai/features/tools/tools";
 import { CommandPaletteHeader } from "./command-palette/CommandPaletteHeader";
 import { CommandPaletteResults } from "./command-palette/CommandPaletteResults";
 import type { Command, CommandPaletteProps } from "./command-palette/shared";
@@ -11,27 +15,6 @@ import type { Command, CommandPaletteProps } from "./command-palette/shared";
 export function CommandPalette({ style, className }: CommandPaletteProps = {}) {
   const open = useWorkspaceStore((s) => s.commandPaletteOpen);
   const toggle = useWorkspaceStore((s) => s.toggleCommandPalette);
-  const splitActive = useWorkspaceStore((s) => s.splitActive);
-  const createSurface = useWorkspaceStore((s) => s.createSurface);
-  const closeSurface = useWorkspaceStore((s) => s.closeSurface);
-  const createWorkspace = useWorkspaceStore((s) => s.createWorkspace);
-  const activePaneId = useWorkspaceStore((s) => s.activePaneId);
-  const closePane = useWorkspaceStore((s) => s.closePane);
-  const toggleZoom = useWorkspaceStore((s) => s.toggleZoom);
-  const toggleSidebar = useWorkspaceStore((s) => s.toggleSidebar);
-  const toggleNotificationPanel = useWorkspaceStore((s) => s.toggleNotificationPanel);
-  const toggleSettings = useWorkspaceStore((s) => s.toggleSettings);
-  const toggleSessionVault = useWorkspaceStore((s) => s.toggleSessionVault);
-  const toggleCommandLog = useWorkspaceStore((s) => s.toggleCommandLog);
-  const toggleSearch = useWorkspaceStore((s) => s.toggleSearch);
-  const toggleSnippetPicker = useWorkspaceStore((s) => s.toggleSnippetPicker);
-  const toggleAgentPanel = useWorkspaceStore((s) => s.toggleAgentPanel);
-  const toggleCommandHistory = useWorkspaceStore((s) => s.toggleCommandHistory);
-  const toggleSystemMonitor = useWorkspaceStore((s) => s.toggleSystemMonitor);
-  const toggleCanvas = useWorkspaceStore((s) => s.toggleCanvas);
-  const toggleTimeTravel = useWorkspaceStore((s) => s.toggleTimeTravel);
-  const applyPresetLayout = useWorkspaceStore((s) => s.applyPresetLayout);
-  const activeSurface = useWorkspaceStore((s) => s.activeSurface());
   const updateSetting = useSettingsStore((s) => s.updateSetting);
   const settings = useSettingsStore((s) => s.settings);
   const bindings = useKeybindStore((s) => s.bindings);
@@ -51,33 +34,25 @@ export function CommandPalette({ style, className }: CommandPaletteProps = {}) {
   };
 
   const commands: Command[] = [
-    { id: "split-h", label: "Split Horizontal", category: "Layout", shortcut: shortcutFor("splitHorizontal"), action: () => splitActive("horizontal") },
-    { id: "split-v", label: "Split Vertical", category: "Layout", shortcut: shortcutFor("splitVertical"), action: () => splitActive("vertical") },
-    { id: "close-pane", label: "Close Active Pane", category: "Layout", shortcut: shortcutFor("closePane"), action: () => { const id = activePaneId(); if (id) closePane(id); } },
-    { id: "zoom-pane", label: "Toggle Zoom Pane", category: "Layout", shortcut: shortcutFor("toggleZoom"), action: toggleZoom },
-    { id: "layout-single", label: "Layout: Single Pane", category: "Layout", action: () => applyPresetLayout("single") },
-    { id: "layout-2col", label: "Layout: 2 Columns", category: "Layout", action: () => applyPresetLayout("2-columns") },
-    { id: "layout-3col", label: "Layout: 3 Columns", category: "Layout", action: () => applyPresetLayout("3-columns") },
-    { id: "layout-grid", label: "Layout: Grid 2×2", category: "Layout", action: () => applyPresetLayout("grid-2x2") },
-    { id: "layout-main-stack", label: "Layout: Main + Stack", category: "Layout", action: () => applyPresetLayout("main-stack") },
-    { id: "new-surface", label: "New Surface", category: "Surface", shortcut: shortcutFor("newSurface"), action: () => createSurface() },
-    { id: "close-surface", label: "Close Surface", category: "Surface", shortcut: shortcutFor("closeSurface"), action: () => { if (activeSurface) closeSurface(activeSurface.id); } },
-    { id: "new-workspace", label: "New Workspace", category: "Workspace", shortcut: shortcutFor("newWorkspace"), action: () => createWorkspace() },
-    { id: "toggle-sidebar", label: "Toggle Sidebar", category: "View", shortcut: shortcutFor("toggleSidebar"), action: toggleSidebar },
-    { id: "notifications", label: "Notifications", category: "View", shortcut: shortcutFor("toggleNotifications"), action: toggleNotificationPanel },
-    { id: "settings", label: "Settings", category: "View", shortcut: shortcutFor("toggleSettings"), action: toggleSettings },
-    { id: "session-vault", label: "Session Vault", category: "View", shortcut: shortcutFor("toggleSessionVault"), action: toggleSessionVault },
-    { id: "command-log", label: "Command Log", category: "View", shortcut: shortcutFor("toggleCommandLog"), action: toggleCommandLog },
-    { id: "find-in-buffer", label: "Find in Buffer", category: "View", shortcut: shortcutFor("toggleSearch"), action: toggleSearch },
-    { id: "snippets", label: "Snippets", category: "Agent", shortcut: shortcutFor("toggleSnippets"), action: toggleSnippetPicker },
-    { id: "agent-panel", label: "Mission Console", category: "Agent", shortcut: shortcutFor("toggleAgentPanel"), action: toggleAgentPanel },
+    ...zoraiNavItems.map((item) => ({
+      id: `view-${item.id}`,
+      label: item.label,
+      category: "Navigate",
+      action: () => navigateZorai({ view: item.id }),
+    })),
+    { id: "new-thread", label: "New Thread", category: "Threads", shortcut: shortcutFor("newSurface"), action: () => { handleZoraiAppCommand("new-surface"); } },
+    { id: "search-threads", label: "Search Threads", category: "Threads", shortcut: shortcutFor("toggleSearch"), action: () => { handleZoraiAppCommand("toggle-search"); } },
+    { id: "toggle-context", label: "Toggle Context Panel", category: "View", shortcut: shortcutFor("toggleSidebar"), action: () => { handleZoraiAppCommand("toggle-sidebar"); } },
+    ...zoraiTools.map((tool) => ({
+      id: `tool-${tool.id}`,
+      label: tool.title,
+      category: "Tools",
+      action: () => navigateZorai({ view: "tools" as const, tool: tool.id }),
+    })),
+    { id: "about", label: "About", category: "View", action: () => { handleZoraiAppCommand("about"); } },
     { id: "image-prompt", label: "🖼 Image Prompt", category: "Agent", action: () => composeImagePrompt() },
-    { id: "command-history", label: "Command History", category: "Agent", shortcut: shortcutFor("toggleCommandHistory"), action: toggleCommandHistory },
-    { id: "system-monitor", label: "System Monitor", category: "View", shortcut: shortcutFor("toggleSystemMonitor"), action: toggleSystemMonitor },
-    { id: "execution-canvas", label: "Execution Canvas", category: "View", shortcut: shortcutFor("toggleCanvas"), action: toggleCanvas },
-    { id: "time-travel", label: "Time Travel Snapshots", category: "View", shortcut: shortcutFor("toggleTimeTravel"), action: toggleTimeTravel },
-    { id: "verify-integrity", label: "Verify WORM Integrity", category: "Infrastructure", action: () => { (getBridge())?.verifyIntegrity?.(); } },
-    { id: "generate-skill", label: "Generate Skill from History", category: "Infrastructure", action: toggleAgentPanel },
+    { id: "time-travel", label: "Time Travel Snapshots", category: "View", shortcut: shortcutFor("toggleTimeTravel"), action: () => { handleZoraiAppCommand("toggle-time-travel"); } },
+    { id: "verify-integrity", label: "Verify WORM Integrity", category: "Infrastructure", action: () => { getBridge()?.verifyIntegrity?.(); } },
     { id: "toggle-sandbox", label: "Toggle Sandbox", category: "Infrastructure", action: () => updateSetting("sandboxEnabled", !settings.sandboxEnabled) },
     ...BUILTIN_THEMES.map((theme) => ({
       id: `theme-${theme.name}`,

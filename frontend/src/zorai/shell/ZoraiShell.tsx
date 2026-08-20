@@ -40,6 +40,11 @@ export function ZoraiShell() {
       const detail = (event as CustomEvent<ZoraiNavigateDetail>).detail;
       if (detail.view) setActiveView(detail.view);
       if (detail.tool) setActiveTool(detail.tool);
+      if (detail.settingsTab) {
+        setActiveSettingsTab(detail.settingsTab);
+        if (!detail.view) setActiveView("settings");
+      }
+      if (detail.toggleContext) setContextOpen((current) => !current);
       if (detail.returnTarget !== undefined) setReturnTarget(detail.returnTarget);
       if (detail.goalRunId) {
         setGoalOpenRequest((current) => ({ id: detail.goalRunId ?? "", nonce: (current?.nonce ?? 0) + 1 }));

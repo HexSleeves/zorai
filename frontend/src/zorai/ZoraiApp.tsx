@@ -4,7 +4,9 @@ import { AgentChatPanelProvider } from "@/components/agent-chat-panel/runtime";
 import { ConciergeToast } from "@/components/ConciergeToast";
 import { OperatorProfileOnboardingPanel } from "@/components/OperatorProfileOnboardingPanel";
 import { OperatorQuestionOverlay } from "@/components/OperatorQuestionOverlay";
+import { CommandPalette } from "@/components/CommandPalette";
 import { SetupOnboardingPanel } from "@/components/SetupOnboardingPanel";
+import { TimeTravelSlider } from "@/components/TimeTravelSlider";
 import { ToastViewport } from "@/components/ToastViewport";
 import { getBridge } from "@/lib/bridge";
 import { useAgentStore } from "@/lib/agentStore";
@@ -12,10 +14,12 @@ import { useAuditStore } from "@/lib/auditStore";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { useWorkspaceStore } from "@/lib/workspaceStore";
 import { shouldAutoStartOperatorProfileFromConcierge } from "./conciergeEvents";
+import { useZoraiAppCommands } from "./shell/zoraiAppCommands";
 import { ZoraiShell } from "./shell/ZoraiShell";
 
 export function ZoraiApp() {
   const operatorProfileAutoStartRequested = useRef(false);
+  useZoraiAppCommands();
 
   useEffect(() => {
     useWorkspaceStore.setState({ agentPanelOpen: true });
@@ -85,6 +89,8 @@ export function ZoraiApp() {
   return (
     <AgentChatPanelProvider>
       <ZoraiShell />
+      <CommandPalette />
+      <TimeTravelSlider />
       <SetupOnboardingPanel />
       <OperatorProfileOnboardingPanel />
       <AgentApprovalOverlay />
