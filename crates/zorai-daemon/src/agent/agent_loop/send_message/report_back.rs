@@ -2,7 +2,8 @@ use super::*;
 #[path = "budget_extension.rs"]
 mod budget_extension;
 use budget_extension::{
-    budget_extension_applies_to_runner, parse_successful_budget_extension,
+    budget_extension_applies_to_runner, max_loops_after_successful_budget_extend,
+    max_loops_for_budget_report_back, parse_successful_budget_extension,
     should_exit_report_back_after_live_ceiling_sync,
 };
 
@@ -137,9 +138,7 @@ impl<'a> SendMessageRunner<'a> {
         self.report_back_phase = Some(ReportBackReason::ExecutionBudget);
         self.terminated_for_budget = false;
         self.restrict_tools_to_report_back();
-        if self.max_loops > 0 && self.loop_count >= self.max_loops {
-            self.max_loops = self.loop_count.saturating_add(1);
-        }
+        self.max_loops = max_loops_for_budget_report_back(self.max_loops, self.loop_count);
         true
     }
 
@@ -233,6 +232,14 @@ impl<'a> SendMessageRunner<'a> {
         }
     }
 
+    fn grant_continuation_loops_after_budget_extend(&mut self) {
+        self.max_loops = max_loops_after_successful_budget_extend(
+            self.max_loops,
+            self.loop_count,
+            self.config.max_tool_loops,
+        );
+    }
+
     pub(super) fn apply_successful_subagent_budget_tool(
         &mut self,
         tool_name: &str,
@@ -284,6 +291,7 @@ impl<'a> SendMessageRunner<'a> {
             }
             self.terminated_for_budget = false;
             self.exit_report_back_phase();
+            self.grant_continuation_loops_after_budget_extend();
         }
         None
     }
@@ -336,6 +344,7 @@ impl<'a> SendMessageRunner<'a> {
         ) {
             self.terminated_for_budget = false;
             self.exit_report_back_phase();
+            self.grant_continuation_loops_after_budget_extend();
         }
     }
 

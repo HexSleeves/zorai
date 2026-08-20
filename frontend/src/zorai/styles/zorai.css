@@ -1570,7 +1570,6 @@
   border: 1px solid var(--zorai-border);
   background: var(--zorai-bg-panel);
   color: var(--zorai-muted);
-  height: 140px;
   cursor: pointer;
 }
 
