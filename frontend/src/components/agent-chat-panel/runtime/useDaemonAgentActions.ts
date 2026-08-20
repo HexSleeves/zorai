@@ -495,8 +495,9 @@ export function useDaemonAgentActions({
 
       daemonLocalThreadRef.current = threadId;
 
+      const daemonThreadId = daemonThreadIdRef.current ?? thread?.daemonThreadId ?? null;
       let contextMessages: unknown[] | undefined;
-      {
+      if (!daemonThreadId) {
         const existingMessages = useAgentStore.getState().getThreadMessages(threadId);
         const historyMessages = existingMessages
           .filter((message) => !message.isStreaming && !message.isCompactionSummary)
@@ -527,7 +528,6 @@ export function useDaemonAgentActions({
         }
       }
 
-      const daemonThreadId = daemonThreadIdRef.current;
       const targetAgentId = resolveNewThreadTargetAgent(thread, daemonThreadId);
       await sendAgentMessage(
         daemonThreadId || threadId,

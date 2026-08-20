@@ -29,6 +29,7 @@ import {
   handleTodoUpdateEvent,
   handleWorkspaceCommand,
 } from "./daemonEventHandlers";
+import { finalizeStreamingAssistantMessages } from "./threadTurnState";
 
 export function resolveDaemonEventLocalThreadId(
   event: any,
@@ -305,6 +306,7 @@ export function useDaemonAgentEvents({
           if (typeof event.message_id === "string" && event.message_id.length > 0) {
             replaceMessageIdAtTail(tid, event.message_id, (m) => m.role === "assistant");
           }
+          finalizeStreamingAssistantMessages(tid);
           break;
         }
         case "tool_call": {
@@ -413,6 +415,7 @@ export function useDaemonAgentEvents({
           useAgentMissionStore.getState().setSharedCursorMode("idle");
           ensureStreamingAssistantMessage(tid);
           updateLastAssistantMessage(tid, `Error: ${event.message}`, false);
+          finalizeStreamingAssistantMessages(tid);
           break;
         }
         case "thread_created": {

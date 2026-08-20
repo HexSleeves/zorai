@@ -46,6 +46,19 @@ export function ThreadsView() {
     () => [...runtime.messages].reverse().find((message) => message.role === "user" && message.content.trim()),
     [runtime.messages],
   );
+  const regenerateAssistantMessage = useCallback((messageId: string) => {
+    const index = runtime.messages.findIndex((entry) => entry.id === messageId);
+    if (index <= 0) return;
+    const previousUserMessage = runtime.messages
+      .slice(0, index)
+      .reverse()
+      .find((entry) => entry.role === "user" && entry.content.trim());
+    if (!previousUserMessage) return;
+    runtime.sendMessage({
+      text: previousUserMessage.content,
+      localContentBlocks: previousUserMessage.contentBlocks,
+    });
+  }, [runtime.messages, runtime.sendMessage]);
   const retryLastMessage = useCallback(() => {
     if (!latestUserMessage) return;
     runtime.sendMessage({
@@ -212,6 +225,13 @@ export function ThreadsView() {
               speechLoading={speech.loadingMessageId === message.id}
               speechQueued={speech.queuedMessageIds.includes(message.id)}
               onSpeak={() => void speech.speakMessage(message)}
+              onFeedback={message.role === "assistant"
+                ? (reaction) => runtime.submitMessageFeedback(runtime.activeThread?.id ?? message.threadId, message.id, reaction)
+                : undefined}
+              onRegenerate={message.role === "assistant" ? () => regenerateAssistantMessage(message.id) : undefined}
+              onDelete={runtime.activeThread?.id || message.threadId
+                ? () => runtime.deleteMessage(runtime.activeThread?.id ?? message.threadId, message.id)
+                : undefined}
               onRetry={isRetryableErrorMessage(message)
                 && isMessageFromCurrentViewSession(message, viewMountedAtRef.current)
                 && latestUserMessage
@@ -299,7 +319,7 @@ function ThreadHeader({
         </button>
         <button
           type="button"
-          className="zorai-status-pill zorai-operations-indicator"
+          className="zorai-ghost-button"
           disabled={activeOperationCount === 0}
           onClick={onOpenOperations}
         >

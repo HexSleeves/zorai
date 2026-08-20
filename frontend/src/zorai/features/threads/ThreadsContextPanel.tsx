@@ -179,7 +179,7 @@ function TodoContext({ todos }: { todos: AgentTodoItem[] }) {
         <article key={todo.id} className="zorai-todo-context-item">
           <span className={`zorai-todo-checkbox zorai-todo-checkbox--${todo.status}`} aria-hidden="true" />
           <div>
-            <strong>{todo.content}</strong>
+            <span>{todo.content}</span>
             <span>{todo.status.replace(/_/g, " ")}</span>
           </div>
         </article>
