@@ -76,7 +76,9 @@ export function ThreadsRail() {
       searchInputRef.current?.select();
     };
     if (consumePendingFocusSearch()) focusSearch();
-    const onFocusSearch = () => focusSearch();
+    const onFocusSearch = () => {
+      if (consumePendingFocusSearch()) focusSearch();
+    };
     window.addEventListener(ZORAI_FOCUS_SEARCH_EVENT, onFocusSearch);
     return () => window.removeEventListener(ZORAI_FOCUS_SEARCH_EVENT, onFocusSearch);
   }, []);
