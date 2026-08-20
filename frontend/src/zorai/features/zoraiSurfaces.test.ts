@@ -530,4 +530,30 @@ describe("Zorai feature surfaces", () => {
     expect(source).toContain("openThreadTarget");
     expect(source).toContain("navigateZorai");
   });
+
+  it("routes the native window menu into current Zorai surfaces", () => {
+    const appSource = readFeature("../ZoraiApp.tsx");
+    const commandSource = readFeature("../shell/zoraiAppCommands.ts");
+    const shellSource = readFeature("../shell/ZoraiShell.tsx");
+
+    expect(appSource).toContain("useZoraiAppCommands");
+    expect(appSource).toContain("CommandPalette");
+    expect(commandSource).toContain("toggle-command-palette");
+    expect(commandSource).toContain("onAppCommand");
+    expect(shellSource).toContain("settingsTab");
+    expect(shellSource).toContain("toggleContext");
+  });
+
+  it("consumes pending thread search focus when the live event is handled", () => {
+    // Why: Search while Threads is already open focuses via the delayed event and
+    // never remounts the rail. If that handler skips consumePendingFocusSearch,
+    // the next remount still auto-selects the search field.
+    const railSource = readFeature("./threads/ThreadsRail.tsx");
+    const handler = railSource.slice(
+      railSource.indexOf("const onFocusSearch"),
+      railSource.indexOf("window.addEventListener(ZORAI_FOCUS_SEARCH_EVENT"),
+    );
+
+    expect(handler).toContain("consumePendingFocusSearch");
+  });
 });

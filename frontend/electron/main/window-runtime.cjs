@@ -1,3 +1,20 @@
+function resolveWindowFrameOptions(platform = process.platform) {
+    const useNativeFrame = platform === 'win32' || platform === 'linux';
+    return {
+        frame: useNativeFrame,
+        titleBarStyle: useNativeFrame ? 'default' : 'hidden',
+    };
+}
+
+function loadWindowIcon(options) {
+    const iconPath = resolveWindowIcon(options);
+    const icon = options.nativeImage.createFromPath(iconPath);
+    if (icon.isEmpty()) {
+        throw new Error(`Failed to load Electron window icon: ${iconPath}`);
+    }
+    return icon;
+}
+
 function resolveWindowIcon(options) {
     const {
         electronDir,
@@ -14,6 +31,7 @@ function createWindowRuntime(options) {
         app,
         BrowserWindow,
         Menu,
+        nativeImage,
         getMainWindow,
         logToFile,
         path,
@@ -82,16 +100,14 @@ function createWindowRuntime(options) {
 
     function createWindow() {
         const { width: screenW, height: screenH } = screen.getPrimaryDisplay().workAreaSize;
-        const useNativeFrame = process.platform === 'win32';
+        const frameOptions = resolveWindowFrameOptions();
         const mainWindow = new BrowserWindow({
             width: Math.min(1400, screenW),
             height: Math.min(900, screenH),
             minWidth: 600,
             minHeight: 400,
-            frame: useNativeFrame,
-            titleBarStyle: useNativeFrame ? 'default' : 'hidden',
+            ...frameOptions,
             autoHideMenuBar: false,
-            titleBarOverlay: useNativeFrame ? undefined : process.platform === 'win32' ? { color: '#181825', symbolColor: '#cdd6f4', height: 36 } : undefined,
             webPreferences: {
                 preload: path.join(options.electronDir, 'preload.cjs'),
                 nodeIntegration: false,
@@ -99,8 +115,9 @@ function createWindowRuntime(options) {
                 webviewTag: true,
             },
             title: appName,
-            icon: resolveWindowIcon({
+            icon: loadWindowIcon({
                 electronDir: options.electronDir,
+                nativeImage,
                 path,
             }),
             backgroundColor: '#1e1e2e',
@@ -142,4 +159,4 @@ function createWindowRuntime(options) {
     return { createWindow, setWindowOpacity };
 }
 
-module.exports = { createWindowRuntime, resolveWindowIcon };
+module.exports = { createWindowRuntime, loadWindowIcon, resolveWindowFrameOptions, resolveWindowIcon };

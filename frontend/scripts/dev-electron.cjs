@@ -1,10 +1,19 @@
 const { spawn } = require("node:child_process");
 const path = require("node:path");
+const { installLinuxDevLauncher } = require("./linux-dev-launcher.cjs");
 
+const frontendDir = path.join(__dirname, "..");
 const electronBinary = require("electron");
 
+try {
+    installLinuxDevLauncher({ electronBinary, frontendDir });
+} catch (error) {
+    console.error("[zorai] Failed to install the Linux development launcher:", error?.message || String(error));
+    process.exit(1);
+}
+
 const child = spawn(electronBinary, ["."], {
-    cwd: path.join(__dirname, ".."),
+    cwd: frontendDir,
     stdio: "inherit",
     env: {
         ...process.env,
