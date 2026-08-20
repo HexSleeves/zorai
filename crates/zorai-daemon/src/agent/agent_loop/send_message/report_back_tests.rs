@@ -1,7 +1,7 @@
 use super::{
     budget_overflow_decision, should_emit_deferred_turn_done,
-    should_emit_turn_done_on_text_completion, should_force_budget_report_back,
-    BudgetOverflowDecision,
+    should_emit_tool_execution_limit_error, should_emit_turn_done_on_text_completion,
+    should_force_budget_report_back, BudgetOverflowDecision,
 };
 use crate::agent::types::ContextOverflowAction;
 
@@ -70,4 +70,19 @@ fn deferred_done_fires_after_report_back_continue_unless_approval_paused() {
         "approval pauses the turn; Done would clear activity while waiting"
     );
     assert!(!should_emit_deferred_turn_done(false, false));
+}
+
+#[test]
+fn successful_report_after_last_loop_must_not_emit_tool_limit_error() {
+    assert!(
+        !should_emit_tool_execution_limit_error(false, 9, 9, true),
+        "report-back bumps max_loops by one; that extra iteration ends with loop_count >= max_loops, but a successful report is the real outcome. Listeners treat AgentEvent::Error as a failed thread while the dispatcher records the report"
+    );
+    assert!(
+        should_emit_tool_execution_limit_error(false, 8, 8, false),
+        "hitting the configured tool-loop cap without a child report is still a tool-limit failure"
+    );
+    assert!(!should_emit_tool_execution_limit_error(true, 8, 8, false));
+    assert!(!should_emit_tool_execution_limit_error(false, 0, 12, false));
+    assert!(!should_emit_tool_execution_limit_error(false, 8, 7, false));
 }

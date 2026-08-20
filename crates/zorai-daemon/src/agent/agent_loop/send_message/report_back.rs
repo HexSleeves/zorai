@@ -56,6 +56,15 @@ pub(super) fn should_emit_deferred_turn_done(
     needs_turn_done && !interrupted_for_approval
 }
 
+pub(super) fn should_emit_tool_execution_limit_error(
+    was_cancelled: bool,
+    max_loops: u32,
+    loop_count: u32,
+    has_terminal_subagent_report: bool,
+) -> bool {
+    !was_cancelled && max_loops > 0 && loop_count >= max_loops && !has_terminal_subagent_report
+}
+
 pub(super) fn parse_subagent_report_status(status: &str) -> Option<SubagentReportStatus> {
     match status.trim() {
         "done" => Some(SubagentReportStatus::Done),

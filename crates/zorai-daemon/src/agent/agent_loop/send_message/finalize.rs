@@ -316,7 +316,12 @@ impl<'a> SendMessageRunner<'a> {
                 reason: Some("zorai_budget".to_string()),
             });
         }
-        if !self.was_cancelled && self.max_loops > 0 && self.loop_count >= self.max_loops {
+        if super::report_back::should_emit_tool_execution_limit_error(
+            self.was_cancelled,
+            self.max_loops,
+            self.loop_count,
+            self.subagent_report.is_some(),
+        ) {
             let _ = self.engine.event_tx.send(AgentEvent::Error {
                 thread_id: self.tid.clone(),
                 message: "Tool execution limit reached".into(),
