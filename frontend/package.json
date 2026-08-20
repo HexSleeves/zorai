@@ -72,7 +72,9 @@
     },
     "files": [
       "dist/**/*",
-      "electron/**/*"
+      "electron/**/*",
+      "assets/icon.png",
+      "assets/icon.ico"
     ],
     "extraResources": [
       {

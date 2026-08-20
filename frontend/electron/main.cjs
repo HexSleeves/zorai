@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, clipboard, ipcMain, screen, shell, session } = require('electron');
+const { app, BrowserWindow, Menu, clipboard, ipcMain, nativeImage, screen, shell, session } = require('electron');
 const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 const net = require('net');
@@ -90,6 +90,7 @@ const windowRuntime = createWindowRuntime({
     app,
     BrowserWindow,
     Menu,
+    nativeImage,
     electronDir: __dirname,
     getMainWindow: () => mainWindow,
     logToFile,
