@@ -944,14 +944,21 @@
   border-bottom: 1px solid var(--zorai-border);
 }
 
-.zorai-todo-context-item strong {
+.zorai-todo-context-item > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.zorai-todo-context-title {
   display: block;
+  color: var(--zorai-text);
   font-size: var(--text-sm);
   line-height: 1.45;
   word-break: break-word;
 }
 
-.zorai-todo-context-item span:not(.zorai-todo-checkbox) {
+.zorai-todo-context-status {
   color: var(--zorai-muted);
   font-size: var(--text-sm);
 }

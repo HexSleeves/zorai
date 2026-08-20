@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentMessage } from "@/lib/agentStore";
-import { threadTurnIsActive } from "./threadTurnState";
+import { finalizeThreadTurnMessages, threadTurnIsActive } from "./threadTurnState";
 
 function message(partial: Partial<AgentMessage> & Pick<AgentMessage, "id" | "role">): AgentMessage {
   return {
@@ -43,5 +43,31 @@ describe("threadTurnIsActive", () => {
       message({ id: "user-2", role: "user", content: "queued follow-up" }),
       message({ id: "asst-final", role: "assistant", content: "done", isStreaming: false }),
     ])).toBe(true);
+  });
+
+  it("clears after stop finalizes leftover in-flight tool rows", () => {
+    // Why: abort in the tool_call gap only used to clear assistant isStreaming.
+    // requested/executing rows then kept threadTurnIsActive true, so the composer
+    // queued instead of sending the next follow-up.
+    const messages = [
+      message({ id: "asst-1", role: "assistant", content: "Calling tools...", isStreaming: false }),
+      message({ id: "tool-1", role: "tool", toolCallId: "call-1", toolName: "read_file", toolStatus: "requested" }),
+    ];
+    expect(threadTurnIsActive(messages)).toBe(true);
+    expect(threadTurnIsActive(finalizeThreadTurnMessages(messages))).toBe(false);
+  });
+});
+
+describe("finalizeThreadTurnMessages", () => {
+  it("closes leftover executing tools as stopped errors without touching completed ones", () => {
+    const finalized = finalizeThreadTurnMessages([
+      message({ id: "tool-open", role: "tool", toolCallId: "call-1", toolName: "read_file", toolStatus: "executing" }),
+      message({ id: "tool-done", role: "tool", toolCallId: "call-2", toolName: "read_file", toolStatus: "done", content: "ok" }),
+      message({ id: "asst-stale", role: "assistant", content: "", isStreaming: true }),
+    ]);
+
+    expect(finalized[0]).toMatchObject({ toolStatus: "error", content: "(stopped)" });
+    expect(finalized[1]).toMatchObject({ toolStatus: "done", content: "ok" });
+    expect(finalized[2]?.isStreaming).toBe(false);
   });
 });
