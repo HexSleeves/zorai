@@ -86,12 +86,50 @@ pub(super) fn max_loops_after_successful_budget_extend(
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum FinishSubagentSynthesis {
+    None,
+    CancelledReport,
+    BudgetTextReport,
+    BudgetErrorReport,
+}
+
+pub(super) fn finish_subagent_synthesis(
+    was_cancelled: bool,
+    in_report_back: bool,
+    has_report: bool,
+    terminated_for_budget: bool,
+    spawned: bool,
+) -> FinishSubagentSynthesis {
+    if has_report {
+        return FinishSubagentSynthesis::None;
+    }
+    if was_cancelled {
+        if in_report_back || spawned {
+            return FinishSubagentSynthesis::CancelledReport;
+        }
+        return FinishSubagentSynthesis::None;
+    }
+    if in_report_back {
+        return FinishSubagentSynthesis::BudgetTextReport;
+    }
+    if terminated_for_budget && spawned {
+        return FinishSubagentSynthesis::BudgetErrorReport;
+    }
+    FinishSubagentSynthesis::None
+}
+
+pub(super) fn should_mark_terminated_after_failed_report_back_entry(entered: bool) -> bool {
+    !entered
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        budget_extension_applies_to_runner, max_loops_after_successful_budget_extend,
-        max_loops_for_budget_report_back, parse_successful_budget_extension,
-        should_exit_report_back_after_live_ceiling_sync,
+        budget_extension_applies_to_runner, finish_subagent_synthesis,
+        max_loops_after_successful_budget_extend, max_loops_for_budget_report_back,
+        parse_successful_budget_extension, should_exit_report_back_after_live_ceiling_sync,
+        should_mark_terminated_after_failed_report_back_entry, FinishSubagentSynthesis,
     };
 
     #[test]
@@ -199,5 +237,40 @@ mod tests {
             loop_count_after_extend_turn < max_after_extend,
             "the extend call consumes the +1 report-back iteration; without a continuation allotment the runner hits max_loops and the dispatcher marks the child completed"
         );
+    }
+
+    #[test]
+    fn cancelled_report_back_must_not_synthesize_budget_exceeded() {
+        assert_eq!(
+            finish_subagent_synthesis(true, true, false, false, true),
+            FinishSubagentSynthesis::CancelledReport,
+            "cancelling during report-back must not record zorai_budget; the dispatcher would tell the parent to extend instead of treating the child as cancelled"
+        );
+        assert_eq!(
+            finish_subagent_synthesis(false, true, false, false, true),
+            FinishSubagentSynthesis::BudgetTextReport
+        );
+        assert_eq!(
+            finish_subagent_synthesis(true, false, false, true, true),
+            FinishSubagentSynthesis::CancelledReport,
+            "a cancelled spawned turn must stay cancelled even if the budget flag was already set"
+        );
+        assert_eq!(
+            finish_subagent_synthesis(false, false, false, true, true),
+            FinishSubagentSynthesis::BudgetErrorReport
+        );
+        assert_eq!(
+            finish_subagent_synthesis(false, true, true, false, true),
+            FinishSubagentSynthesis::None
+        );
+    }
+
+    #[test]
+    fn text_completion_must_terminate_when_report_back_entry_fails() {
+        assert!(
+            should_mark_terminated_after_failed_report_back_entry(false),
+            "the tool-loop path sets terminated_for_budget when enter_execution_budget_report_back fails; text completion must do the same or a spawned child is completed while still over budget"
+        );
+        assert!(!should_mark_terminated_after_failed_report_back_entry(true));
     }
 }
