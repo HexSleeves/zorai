@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import type { AgentMessage } from "@/lib/agentStore";
+import { finalizeThreadTurnMessages, threadTurnIsActive } from "@/components/agent-chat-panel/runtime/threadTurnState";
 import {
   createQueuedComposerMessage,
   queuedComposerLabel,
@@ -41,5 +43,81 @@ describe("queued composer follow-ups", () => {
       hasSendNow: true,
       queueLength: 1,
     })).toBe(false);
+  });
+
+  it("does not auto-send the next follow-up during the tool_call gap", () => {
+    const isStreaming = threadTurnIsActive([
+      {
+        id: "asst-1",
+        threadId: "thread-1",
+        createdAt: 1,
+        role: "assistant",
+        content: "Calling tools...",
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        isCompactionSummary: false,
+        isStreaming: false,
+      } satisfies AgentMessage,
+      {
+        id: "tool-1",
+        threadId: "thread-1",
+        createdAt: 2,
+        role: "tool",
+        content: "",
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        isCompactionSummary: false,
+        toolCallId: "call-1",
+        toolName: "read_file",
+        toolStatus: "requested",
+      } satisfies AgentMessage,
+    ]);
+
+    expect(shouldDispatchQueuedFollowUp({
+      isStreaming,
+      awaitingStreamStart: false,
+      hasSendNow: true,
+      queueLength: 1,
+    })).toBe(false);
+  });
+
+  it("dispatches the send-now follow-up after stop closes leftover tool rows", () => {
+    const isStreaming = threadTurnIsActive(finalizeThreadTurnMessages([
+      {
+        id: "asst-1",
+        threadId: "thread-1",
+        createdAt: 1,
+        role: "assistant",
+        content: "Calling tools...",
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        isCompactionSummary: false,
+        isStreaming: false,
+      } satisfies AgentMessage,
+      {
+        id: "tool-1",
+        threadId: "thread-1",
+        createdAt: 2,
+        role: "tool",
+        content: "",
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        isCompactionSummary: false,
+        toolCallId: "call-1",
+        toolName: "read_file",
+        toolStatus: "requested",
+      } satisfies AgentMessage,
+    ]));
+
+    expect(shouldDispatchQueuedFollowUp({
+      isStreaming,
+      awaitingStreamStart: false,
+      hasSendNow: true,
+      queueLength: 0,
+    })).toBe(true);
   });
 });

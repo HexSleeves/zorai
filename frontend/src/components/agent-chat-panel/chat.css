@@ -705,6 +705,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-size: var(--text-sm-plus);
 }
 
 .acp-tool-row__status {
@@ -717,7 +718,7 @@
 }
 
 .acp-tool-row__badge {
-  font-size: 11px;
+  font-size: var(--text-xs);
   font-weight: 700;
 }
 
@@ -896,7 +897,7 @@
   min-width: 0;
   max-width: 100%;
   overflow-wrap: anywhere;
-  font-size: var(--text-sm);
+  font-size: var(--text-sm-plus);
   line-height: 1.65;
 }
 

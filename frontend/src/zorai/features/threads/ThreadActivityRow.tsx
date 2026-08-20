@@ -147,9 +147,9 @@ export function ThreadActivityRow({
                 id={`zorai-operation-${operation.operationId}`}
                 className="zorai-operation-row"
               >
-                <span className={`zorai-status-pill zorai-status-pill--${state}`}>{state}</span>
-                <code>{operation.operationId}</code>
-                {operation.tool ? <span>{operation.tool}</span> : null}
+                {state && state !== "unknown" ? <span className={`zorai-status-pill zorai-status-pill--${state}`}>{state}</span> : null}
+                {operation.operationId && operation.operationId !== "unknown" ? <code>{operation.operationId}</code> : null }
+                {operation.tool ? <span className="zorai-operation-tool">{operation.tool}</span> : null}
                 {actionable ? (
                   <div className="zorai-card-actions">
                     <button

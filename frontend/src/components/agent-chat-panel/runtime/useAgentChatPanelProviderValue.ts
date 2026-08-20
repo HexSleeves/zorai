@@ -33,6 +33,7 @@ import {
   shouldFollowThreadHistoryBottom,
 } from "./threadHistoryScroll";
 import { useLegacyAgentMessaging } from "./useLegacyAgentMessaging";
+import { finalizeStreamingAssistantMessages, threadTurnIsActive } from "./threadTurnState";
 import type {
   AgentChatPanelRuntimeValue,
   AgentChatPanelView,
@@ -431,6 +432,7 @@ export function useAgentChatPanelProviderValue(): {
     if (lastMessage?.role === "assistant" && lastMessage.isStreaming) {
       updateLastAssistantMessage(targetThreadId, lastMessage.content || "(stopped)", false);
     }
+    finalizeStreamingAssistantMessages(targetThreadId);
   }, [activeThreadId, agentSettings.agent_backend, updateLastAssistantMessage]);
 
   const { sendMessageLegacy } = useLegacyAgentMessaging({
@@ -625,7 +627,7 @@ export function useAgentChatPanelProviderValue(): {
     () => filterThreadsForBrowserView(searchedThreads, view),
     [searchedThreads, view],
   );
-  const isStreamingResponse = messages.some((message) => message.role === "assistant" && message.isStreaming === true);
+  const isStreamingResponse = threadTurnIsActive(messages);
   const canOpenSpawnedThread = useCallback((run: AgentRun) => {
     if (!run.thread_id) {
       return false;
