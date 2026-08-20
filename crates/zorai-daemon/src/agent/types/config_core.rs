@@ -119,6 +119,9 @@ pub struct AgentConfig {
     pub assistant_id: String,
     #[serde(default)]
     pub enable_honcho_memory: bool,
+    /// Optional fail-open export of agent turns to MLflow via OTLP/HTTP.
+    #[serde(default)]
+    pub mlflow_tracing: crate::agent::mlflow_tracing::MlflowTracingConfig,
     #[serde(default)]
     pub honcho_api_key: String,
     #[serde(default)]

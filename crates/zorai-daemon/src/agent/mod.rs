@@ -71,6 +71,7 @@ mod memory_flush;
 mod memory_palace;
 mod messaging;
 mod metadata;
+pub(crate) mod mlflow_tracing;
 pub(crate) mod morphogenesis;
 mod notifications;
 pub(crate) mod openai_codex_auth;
