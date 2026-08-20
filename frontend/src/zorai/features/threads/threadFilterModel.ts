@@ -31,6 +31,33 @@ export function resolveThreadListSource<T>(
   return daemonFilteredThreads ?? fallbackThreads;
 }
 
+export function overlayStoreThreadTitles<T extends { id: string; title: string }>(
+  daemonThreads: T[],
+  storeThreads: Array<{ id: string; title: string; daemonThreadId?: string | null }>,
+): T[] {
+  if (storeThreads.length === 0) {
+    return daemonThreads;
+  }
+  const titlesById = new Map<string, string>();
+  for (const thread of storeThreads) {
+    const title = thread.title.trim();
+    if (!title) {
+      continue;
+    }
+    titlesById.set(thread.id, thread.title);
+    if (thread.daemonThreadId) {
+      titlesById.set(thread.daemonThreadId, thread.title);
+    }
+  }
+  return daemonThreads.map((thread) => {
+    const title = titlesById.get(thread.id);
+    if (!title || title === thread.title) {
+      return thread;
+    }
+    return { ...thread, title };
+  });
+}
+
 export function filterThreads(
   threads: AgentThread[],
   options: {
@@ -120,6 +147,24 @@ function registerDynamicAgentTab(
   if (labelKey) {
     aliases.set(`label:${labelKey}`, id);
   }
+}
+
+export function resolveThreadCreationAgent(
+  tab: ThreadFilterTab,
+  subAgents: SubAgentDefinition[],
+): { id: string; name: string } | null {
+  if (tab === "svarog") return { id: "svarog", name: "Svarog" };
+  if (tab === "rarog") return { id: "rarog", name: "Rarog" };
+  if (tab === "weles") return { id: "weles", name: "Weles" };
+  if (!tab.startsWith("agent:")) return null;
+
+  const id = tab.slice("agent:".length).trim();
+  if (!id) return null;
+  const definition = subAgents.find((entry) => normalizeAgentTabId(entry.id) === id);
+  return {
+    id,
+    name: (definition?.name ?? "").trim() || displayNameForAgentId(id),
+  };
 }
 
 export function daemonAgentFilterForThreadTab(tab: ThreadFilterTab): string | null {

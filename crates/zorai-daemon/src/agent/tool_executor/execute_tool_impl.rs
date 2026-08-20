@@ -1748,6 +1748,12 @@ async fn dispatch_tool_execution(
             }
         }
         tool_names::LIST_SUBAGENTS => execute_list_subagents(args, agent, thread_id, task_id).await,
+        tool_names::REPORT_SUBAGENT_OUTCOME => {
+            execute_report_subagent_outcome(args, agent, thread_id, task_id).await
+        }
+        tool_names::EXTEND_SUBAGENT_BUDGET => {
+            execute_extend_subagent_budget(args, agent, thread_id, task_id).await
+        }
         tool_names::MESSAGE_AGENT => {
             Box::pin(execute_message_agent(
                 args, agent, thread_id, task_id, session_id,

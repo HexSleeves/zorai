@@ -166,6 +166,8 @@ mod move_workspace_task_from_args_to_activate_workspace_board_target;
 mod open_new_goal_view_to_delete_workspace_task_from_args;
 #[path = "commands_parts/slash_context.rs"]
 mod slash_context;
+#[path = "commands_parts/slash_model.rs"]
+mod slash_model;
 #[path = "commands_parts/stage_mission_control_assignment_modal_edit_to_open_selected_spawned.rs"]
 mod stage_mission_control_assignment_modal_edit_to_open_selected_spawned;
 #[path = "commands_parts/submit_prompt_to_copy_message.rs"]

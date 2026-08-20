@@ -37,7 +37,7 @@ export function TabBar() {
             cursor: "pointer",
             background:
               id === activePaneId
-                ? "var(--bg-primary)"
+                ? "var(--zorai-bg)"
                 : "transparent",
             color:
               id === activePaneId

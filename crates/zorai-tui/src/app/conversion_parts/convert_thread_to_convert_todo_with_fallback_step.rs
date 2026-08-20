@@ -96,6 +96,23 @@ pub(crate) fn convert_thread(t: crate::wire::AgentThread) -> chat::AgentThread {
                 error: suggestion.error,
             })
             .collect(),
+        thread_handoff_state: t
+            .thread_handoff_state
+            .map(|state| chat::ThreadHandoffState {
+                origin_agent_id: state.origin_agent_id,
+                active_agent_id: state.active_agent_id,
+                responder_stack: state
+                    .responder_stack
+                    .into_iter()
+                    .map(|frame| chat::ThreadHandoffFrame {
+                        agent_id: frame.agent_id,
+                        agent_name: frame.agent_name,
+                        entered_at: frame.entered_at,
+                        linked_thread_id: frame.linked_thread_id,
+                    })
+                    .collect(),
+                pending_approval_id: state.pending_approval_id,
+            }),
         runtime_provider: None,
         runtime_model: None,
         runtime_reasoning_effort: None,

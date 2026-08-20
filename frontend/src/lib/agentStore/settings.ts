@@ -23,6 +23,7 @@ import {
 } from "../chatHistoryPageSize.ts";
 
 export type CompactionStrategy = "heuristic" | "weles" | "custom_model";
+export type AutoThreadTitleMode = "off" | "rarog" | "weles";
 
 export interface AgentCompactionWelesSettings {
   provider: AgentProviderId;
@@ -167,6 +168,7 @@ export interface AgentSettings {
   semantic_embedding_dimensions: number;
   semantic_embedding_batch_size: number;
   semantic_embedding_max_concurrency: number;
+  auto_thread_title: AutoThreadTitleMode;
   reasoning_effort: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
   auto_compact_context: boolean;
   max_context_messages: number;
@@ -300,6 +302,7 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   semantic_embedding_dimensions: 1536,
   semantic_embedding_batch_size: 64,
   semantic_embedding_max_concurrency: 2,
+  auto_thread_title: "off",
   reasoning_effort: "high",
   auto_compact_context: true,
   max_context_messages: 100,
@@ -366,6 +369,14 @@ function normalizeParticipantObserverRestoreWindowHours(value: unknown): number 
     return DEFAULT_AGENT_SETTINGS.participant_observer_restore_window_hours;
   }
   return Math.max(0, Math.min(24 * 30, Math.trunc(numericValue)));
+}
+
+export function normalizeAutoThreadTitleMode(value: unknown): AutoThreadTitleMode {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (raw === "rarog" || raw === "weles") {
+    return raw;
+  }
+  return "off";
 }
 
 export function normalizeAutoRefreshIntervalSecs(value: unknown): number {
@@ -678,6 +689,9 @@ export function normalizeAgentSettingsFromSource(source: DiskAgentSettings): Age
       source.semantic?.embedding?.batch_size ?? DEFAULT_AGENT_SETTINGS.semantic_embedding_batch_size,
     semantic_embedding_max_concurrency:
       source.semantic?.embedding?.max_concurrency ?? DEFAULT_AGENT_SETTINGS.semantic_embedding_max_concurrency,
+    auto_thread_title: normalizeAutoThreadTitleMode(
+      source.auto_thread_title ?? DEFAULT_AGENT_SETTINGS.auto_thread_title,
+    ),
     reasoning_effort: (source.reasoning_effort ?? DEFAULT_AGENT_SETTINGS.reasoning_effort) as AgentSettings["reasoning_effort"],
     auto_compact_context: source.auto_compact_context ?? DEFAULT_AGENT_SETTINGS.auto_compact_context,
     max_context_messages: source.max_context_messages ?? DEFAULT_AGENT_SETTINGS.max_context_messages,

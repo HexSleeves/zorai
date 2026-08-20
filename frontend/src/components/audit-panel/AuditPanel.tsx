@@ -61,7 +61,7 @@ export function AuditPanel() {
           width: 440,
           maxWidth: "90vw",
           height: "100%",
-          background: "var(--bg-primary)",
+          background: "var(--zorai-bg)",
           borderLeft: "1px solid var(--glass-border)",
           display: "flex",
           flexDirection: "column",

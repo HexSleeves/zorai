@@ -112,6 +112,7 @@ export function createTerminalEventHandler({
     workspaceId: string | null;
     surfaceId: string | null;
     sessionId: string | null;
+    source?: "local-terminal" | "terminal-bridge" | "agent-task";
     command: string;
     reasons: string[];
     riskLevel: string;
@@ -249,6 +250,7 @@ export function createTerminalEventHandler({
         workspaceId: paneWorkspaceId ?? null,
         surfaceId: paneSurfaceId ?? null,
         sessionId: event.sessionId ?? requestedSessionIdRef.current ?? null,
+        source: "terminal-bridge",
         command: approval.command,
         reasons: approval.reasons ?? [],
         riskLevel: approval.riskLevel ?? approval.risk_level ?? "high",

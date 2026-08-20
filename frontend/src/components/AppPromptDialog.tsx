@@ -89,7 +89,7 @@ export function AppPromptDialog({
           borderRadius: "var(--radius-xl)",
           overflow: "hidden",
           border: "1px solid var(--border-strong)",
-          background: "var(--bg-primary)",
+          background: "var(--zorai-bg)",
           boxShadow: "var(--shadow-sm)",
         }}
       >

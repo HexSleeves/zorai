@@ -6,8 +6,8 @@ use super::{
     GitInfo, HistorySearchHit, ManagedCommandSource, OperationStatusSnapshot,
     OscNotificationPayload, PluginCommandInfo, PluginInfo, SessionId, SessionInfo,
     SkillVariantPublic, SnapshotInfo, SymbolMatch, TaskApprovalRule, TelemetryLedgerStatus,
-    ToolListResultPublic, ToolSearchResultPublic, WorkspaceNotice, WorkspaceSettings,
-    WorkspaceTask,
+    ThreadHandoffResult, ToolListResultPublic, ToolSearchResultPublic, WorkspaceNotice,
+    WorkspaceSettings, WorkspaceTask,
 };
 
 #[rustfmt::skip]
@@ -189,4 +189,5 @@ pub enum DaemonMessage {
     DatabaseBackendState { backend: Option<String>, sync_url: Option<String>, has_token: bool, seeded_at: Option<i64> },
     DatabaseBackendUpdated,
     DatabaseSyncResult { ok: bool, message: String },
+    AgentThreadHandoffResult { result: ThreadHandoffResult },
 }

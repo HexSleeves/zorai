@@ -5,7 +5,7 @@ import { getAgentBridge, shouldUseDaemonRuntime } from "@/lib/agentDaemonConfig"
 import { fetchAgentRuns, isSubagentRun, type AgentRun } from "@/lib/agentRuns";
 import { fetchThreadTodos } from "@/lib/agentTodos";
 import { resolveReactChatHistoryMessageLimit } from "@/lib/chatHistoryPageSize";
-import { deriveSpawnedAgentTree, pruneSpawnedAgentTreeToLive } from "@/lib/spawnedAgentTree";
+import { deriveSpawnedAgentTree } from "@/lib/spawnedAgentTree";
 import type { SpawnedAgentTree } from "@/lib/spawnedAgentTree";
 import { getTerminalController } from "@/lib/terminalRegistry";
 import { useAgentMissionStore } from "@/lib/agentMissionStore";
@@ -33,8 +33,12 @@ import {
   shouldFollowThreadHistoryBottom,
 } from "./threadHistoryScroll";
 import { useLegacyAgentMessaging } from "./useLegacyAgentMessaging";
-import type { AgentChatPanelRuntimeValue, AgentChatPanelView } from "./types";
-import { fetchHydratedRemoteThreads } from "./threadListQueries";
+import type {
+  AgentChatPanelRuntimeValue,
+  AgentChatPanelView,
+} from "./types";
+import { createThreadCollaborationActions } from "./threadCollaborationActions";
+import { fetchHydratedRemoteThreads, findThreadByAuthoritativeIdentity } from "./threadListQueries";
 import {
   pinnedMessageBudgetChars,
   sumMessageContentChars,
@@ -151,7 +155,7 @@ export function deriveSpawnedAgentNavigationState({
     : null;
 
   return {
-    tree: pruneSpawnedAgentTreeToLive(deriveSpawnedAgentTree(runs, activeDaemonThreadId)),
+    tree: deriveSpawnedAgentTree(runs, activeDaemonThreadId),
     canGoBackThread: threadHistoryStack.length > 0,
     threadNavigationDepth: threadHistoryStack.length,
     backThreadTitle,
@@ -345,7 +349,8 @@ export function useAgentChatPanelProviderValue(): {
   const storeTodos = useAgentStore((state) => activeThreadId ? state.todos[activeThreadId] : undefined);
   const allMessagesByThread = useAgentStore((state) => state.messages);
   const activeThread = threads.find((thread) => thread.id === activeThreadId);
-
+  const activeDaemonThreadId = activeThread?.daemonThreadId ?? null;
+  const activeDaemonThreadIdRef = useRef<string | null>(activeDaemonThreadId);
   const operationalEvents = useAgentMissionStore((state) => state.operationalEvents);
   const cognitiveEvents = useAgentMissionStore((state) => state.cognitiveEvents);
   const contextSnapshots = useAgentMissionStore((state) => state.contextSnapshots);
@@ -478,9 +483,21 @@ export function useAgentChatPanelProviderValue(): {
   }, [daemonTodosByThread, setThreadTodos, threads]);
 
   const refreshSpawnedAgentRuns = useCallback(async () => {
-    const runs = await fetchAgentRuns();
+    if (!activeDaemonThreadId) {
+      activeDaemonThreadIdRef.current = null;
+      setSpawnedAgentRuns([]);
+      return;
+    }
+    activeDaemonThreadIdRef.current = activeDaemonThreadId;
+    const runs = await fetchAgentRuns(activeDaemonThreadId);
+    if (activeDaemonThreadIdRef.current !== activeDaemonThreadId) return;
     setSpawnedAgentRuns(runs.filter(isSubagentRun));
-  }, []);
+  }, [activeDaemonThreadId]);
+
+  useEffect(() => {
+    activeDaemonThreadIdRef.current = activeDaemonThreadId;
+    setSpawnedAgentRuns([]);
+  }, [activeDaemonThreadId]);
 
   useEffect(() => {
     void refreshSpawnedAgentRuns();
@@ -873,8 +890,7 @@ export function useAgentChatPanelProviderValue(): {
 
   const openThread = useCallback((threadId: string) => {
     const state = useAgentStore.getState();
-    const thread = state.threads.find((entry) => entry.id === threadId)
-      ?? state.threads.find((entry) => entry.daemonThreadId === threadId || entry.upstreamThreadId === threadId);
+    const thread = findThreadByAuthoritativeIdentity(state.threads, threadId);
     const localId = thread?.id ?? threadId;
     daemonLocalThreadRef.current = localId;
     daemonThreadIdRef.current = thread?.daemonThreadId ?? null;
@@ -914,6 +930,14 @@ export function useAgentChatPanelProviderValue(): {
     });
   }, [activeThreadId, agentSettings.react_chat_history_page_size]);
 
+  const reloadCollaborationThread = useCallback(async (daemonThreadId: string) => {
+    await reloadDaemonThreadIntoLocalState({
+      daemonThreadId,
+      setThreadTodos,
+      setDaemonTodosByThread,
+    });
+  }, [setThreadTodos]);
+
   const sendMessage = useCallback((payload: { text: string; contentBlocksJson?: string | null; localContentBlocks?: import("@/lib/agentStore/types").AgentContentBlock[] }) => {
     if (!payload.text.trim() && !payload.contentBlocksJson) return;
     if (shouldUseDaemonRuntime(agentSettings.agent_backend) && sendDaemonMessage(payload)) {
@@ -922,24 +946,31 @@ export function useAgentChatPanelProviderValue(): {
     sendMessageLegacy(payload.text);
   }, [agentSettings.agent_backend, sendDaemonMessage, sendMessageLegacy]);
 
-  const sendParticipantSuggestion = useCallback(async (threadId: string, suggestionId: string, forceSend = false) => {
-    const zorai = getAgentBridge();
-    if (!zorai?.agentSendParticipantSuggestion) {
-      return;
-    }
-    if (forceSend && activeThreadId) {
-      stopStreaming(activeThreadId);
-    }
-    await zorai.agentSendParticipantSuggestion({ threadId, suggestionId, sessionId: null });
-  }, [activeThreadId, stopStreaming]);
+  const collaborationActions = useMemo(() => createThreadCollaborationActions({
+    getActiveDaemonThread: () => {
+      const state = useAgentStore.getState();
+      const localThreadId = state.activeThreadId;
+      const thread = localThreadId
+        ? state.threads.find((entry) => entry.id === localThreadId)
+        : undefined;
+      const daemonThreadId = thread?.daemonThreadId ?? null;
+      return localThreadId && daemonThreadId ? { localThreadId, daemonThreadId } : null;
+    },
+    getBridge: getAgentBridge,
+    reloadThread: reloadCollaborationThread,
+    stopStreaming,
+  }), [reloadCollaborationThread, stopStreaming]);
 
-  const dismissParticipantSuggestion = useCallback(async (threadId: string, suggestionId: string) => {
-    const zorai = getAgentBridge();
-    if (!zorai?.agentDismissParticipantSuggestion) {
-      return;
-    }
-    await zorai.agentDismissParticipantSuggestion({ threadId, suggestionId, sessionId: null });
-  }, []);
+  const {
+    pushHandoff,
+    returnHandoff,
+    upsertParticipant,
+    deactivateParticipant,
+    getOperationStatus,
+    cancelOperation,
+    sendParticipantSuggestion,
+    dismissParticipantSuggestion,
+  } = collaborationActions;
 
   const pinMessageForCompaction = useCallback(async (threadId: string, messageId: string) => {
     const thread = useAgentStore.getState().threads.find((entry) => entry.id === threadId);
@@ -1131,6 +1162,12 @@ export function useAgentChatPanelProviderValue(): {
     messagesEndRef,
     inputRef,
     sendMessage,
+    pushHandoff,
+    returnHandoff,
+    upsertParticipant,
+    deactivateParticipant,
+    getOperationStatus,
+    cancelOperation,
     sendParticipantSuggestion,
     dismissParticipantSuggestion,
     deleteMessage,
@@ -1223,6 +1260,12 @@ export function useAgentChatPanelProviderValue(): {
     welesHealth,
     createThread,
     sendMessage,
+    pushHandoff,
+    returnHandoff,
+    upsertParticipant,
+    deactivateParticipant,
+    getOperationStatus,
+    cancelOperation,
     sendParticipantSuggestion,
   ]);
 

@@ -403,6 +403,25 @@ pub(crate) fn add_available_tools_part_c(
             "limit": { "type": "integer", "description": "Maximum subagents to return (default: 20)" }
         }
     })));
+    tools.push(tool_def(tool_names::REPORT_SUBAGENT_OUTCOME, "Spawned child only. Report final job status and a usable summary. This report is not counted against the execution budget.", serde_json::json!({
+        "type": "object",
+        "properties": {
+            "status": { "type": "string", "enum": ["done", "cancelled", "error"], "description": "done if complete, cancelled if stopped, error if blocked including provider quota" },
+            "summary": { "type": "string", "description": "Concrete summary of completed work, remaining gaps, and artifacts" }
+        },
+        "required": ["status", "summary"]
+    })));
+    tools.push(tool_def(tool_names::EXTEND_SUBAGENT_BUDGET, "Raise a spawned child's visible-output token budget on that child thread. Child may self-call; parent may pass child_task_id or child_thread_id.", serde_json::json!({
+        "type": "object",
+        "properties": {
+            "child_task_id": { "type": "string", "description": "Target child task; omit when calling from the child itself" },
+            "child_thread_id": { "type": "string", "description": "Target child thread; omit when calling from the child itself" },
+            "additional_tokens": { "type": "integer", "description": "Extra visible output tokens to add to the child ceiling" },
+            "additional_wall_time_secs": { "type": "integer", "description": "Optional extra wall-clock seconds" },
+            "reason": { "type": "string", "description": "Why more budget is required" }
+        },
+        "required": ["additional_tokens", "reason"]
+    })));
     tools.push(tool_def(tool_names::MESSAGE_AGENT, "Send a private internal DM to another zorai agent and get the reply; it does not switch the visible thread responder. Use `handoff_thread_agent` when the operator should talk to another agent directly.", serde_json::json!({
         "type": "object",
         "properties": {

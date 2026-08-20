@@ -23,6 +23,7 @@ impl DaemonClient {
             DaemonMessage::AgentEvent { .. } => "AgentEvent",
             DaemonMessage::AgentThreadList { .. } => "AgentThreadList",
             DaemonMessage::AgentThreadDetail { .. } => "AgentThreadDetail",
+            DaemonMessage::AgentThreadHandoffResult { .. } => "AgentThreadHandoffResult",
             DaemonMessage::AgentThreadDetailChunk { .. } => "AgentThreadDetailChunk",
             DaemonMessage::SessionSpawned { .. } => "SessionSpawned",
             DaemonMessage::ApprovalRequired { .. } => "ApprovalRequired",

@@ -25,6 +25,7 @@ import {
   handlePayloadMessageEvent,
   handleTaskUpdateEvent,
   handleThreadCreatedEvent,
+  handleThreadTitleUpdatedEvent,
   handleTodoUpdateEvent,
   handleWorkspaceCommand,
 } from "./daemonEventHandlers";
@@ -375,6 +376,10 @@ export function useDaemonAgentEvents({
         case "approval_required": {
           const approvalId = typeof event.approval_id === "string" ? event.approval_id : "";
           if (!approvalId) break;
+          if (useAgentStore.getState().agentSettings.managed_security_level === "yolo") {
+            void getAgentBridge()?.agentResolveTaskApproval?.(approvalId, "approve-once");
+            break;
+          }
           const reasons = Array.isArray(event.reasons)
             ? event.reasons.map((reason: unknown) => String(reason))
             : [];
@@ -384,6 +389,7 @@ export function useDaemonAgentEvents({
             workspaceId: activeWorkspace?.id ?? null,
             surfaceId: null,
             sessionId: typeof event.thread_id === "string" ? event.thread_id : null,
+            source: "agent-task",
             command: String(event.command ?? approvalId),
             reasons: reasons.length > 0 ? reasons : ["Managed command requires approval"],
             riskLevel: normalizeApprovalRiskLevel(event.risk_level),
@@ -424,6 +430,10 @@ export function useDaemonAgentEvents({
             setThreadTodos,
             setView,
           });
+          break;
+        }
+        case "thread_title_updated": {
+          handleThreadTitleUpdatedEvent({ event });
           break;
         }
         case "thread_reload_required": {

@@ -35,29 +35,10 @@ export function compactionArtifactDisplayText(message: AgentMessage): string {
 function ActionBtn({ label, onClick }: { label: string; onClick: () => void }) {
   return (
     <button
+      className="acp-action-btn"
       onClick={(event) => {
         event.stopPropagation();
         onClick();
-      }}
-      style={{
-        background: "transparent",
-        border: "none",
-        color: "var(--text-muted)",
-        cursor: "pointer",
-        fontSize: 10,
-        fontWeight: 600,
-        padding: "3px 6px",
-        borderRadius: "var(--radius-sm)",
-        transition: "color var(--transition-fast)",
-        whiteSpace: "nowrap",
-      }}
-      onMouseEnter={(event) => {
-        event.currentTarget.style.color = "var(--text-primary)";
-        event.currentTarget.style.background = "rgba(255,255,255,0.06)";
-      }}
-      onMouseLeave={(event) => {
-        event.currentTarget.style.color = "var(--text-muted)";
-        event.currentTarget.style.background = "transparent";
       }}
     >
       {label}
@@ -155,54 +136,23 @@ export function MessageBubble({
     return (
       <div
         id={`agent-message-${message.id}`}
-        style={{
-          width: "100%",
-          borderTop: "1px solid color-mix(in srgb, var(--text-muted) 35%, transparent)",
-          borderBottom: "1px solid color-mix(in srgb, var(--text-muted) 35%, transparent)",
-          padding: "var(--space-3) 0",
-          display: "grid",
-          gap: "var(--space-2)",
-        }}
+        className="acp-compaction"
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >
-        <div style={{ fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--text-muted)" }}>
-          ---- auto compaction ----
-        </div>
-        <div style={{ fontSize: "var(--text-sm)", lineHeight: 1.6, whiteSpace: "pre-wrap", color: "var(--text-secondary)" }}>
-          {visibleContent || "rule based"}
-        </div>
+        <div className="acp-compaction__rule">---- auto compaction ----</div>
+        <div className="acp-compaction__body">{visibleContent || "rule based"}</div>
         {compactionContent.length > 280 && (
           <button
+            className="acp-toggle-btn"
             onClick={() => setExpandedCompaction((current) => !current)}
-            style={{
-              background: "transparent",
-              border: "1px solid var(--glass-border)",
-              color: "var(--text-muted)",
-              cursor: "pointer",
-              fontSize: 11,
-              padding: "4px 8px",
-              width: "fit-content",
-            }}
           >
             {expandedCompaction ? "Collapse" : "Expand"}
           </button>
         )}
-        <div style={{ fontSize: 11, letterSpacing: "0.16em", textTransform: "uppercase", color: "var(--text-muted)" }}>
-          ------------------------
-        </div>
+        <div className="acp-compaction__rule">------------------------</div>
         {hovered && !message.isStreaming && (
-          <div
-            style={{
-              display: "flex",
-              gap: 2,
-              background: "var(--bg-secondary)",
-              border: "1px solid var(--glass-border)",
-              borderRadius: "var(--radius-sm)",
-              padding: 2,
-              width: "fit-content",
-            }}
-          >
+          <div className="acp-compaction__actions">
             <ActionBtn label={copied ? "Copied!" : "Copy"} onClick={handleCopy} />
             {onDelete && <ActionBtn label="Delete" onClick={onDelete} />}
             {onFork && <ActionBtn label="Fork" onClick={() => { void onFork(); }} />}
@@ -214,73 +164,37 @@ export function MessageBubble({
   }
 
   return (
-    <div style={{ display: "flex", justifyContent: isUser ? "flex-end" : "flex-start", minWidth: 0, maxWidth: "100%" }}>
+    <div className={isUser ? "acp-message-row acp-message-row--user" : "acp-message-row"}>
       <div
         id={`agent-message-${message.id}`}
-        style={{
-          maxWidth: "min(85%, 100%)",
-          minWidth: 0,
-          boxSizing: "border-box",
-          position: "relative",
-          borderRadius: "var(--radius-lg)",
-          fontSize: "var(--text-sm)",
-          lineHeight: 1.6,
-          background: isUser ? "var(--bg-secondary)" : isSystem || isTool ? "var(--bg-secondary)" : "transparent",
-          color: isUser ? "#b2fff8" : "var(--text-primary)",
-          border: "1px solid",
-          borderColor: isUser ? "rgba(94, 231, 223, 0.28)" : isSystem || isTool ? "rgba(120, 168, 209, 0.22)" : "transparent",
-          wordBreak: "break-word",
-          overflowWrap: "anywhere",
-          userSelect: "auto",
-          fontFamily: "var(--font-mono)",
-          padding: isAssistant ? 0 : "var(--space-3)",
-        }}
+        className={[
+          "acp-message",
+          isUser ? "acp-message--user" : "",
+          isSystem ? "acp-message--system" : "",
+          isTool ? "acp-message--tool" : "",
+          isAssistant ? "acp-message--assistant" : "",
+          message.pinnedForCompaction ? "acp-message--pinned" : "",
+        ].filter(Boolean).join(" ")}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >
         {isAssistant && (
-          <div style={{ display: "flex", alignItems: "center", gap: 8, color: "#5ee7df", opacity: 0.95, marginBottom: 4, fontSize: 12 }}>
+          <div className="acp-message__author">
             <span>{`> ${message.authorAgentName || "assistant"}`}</span>
             {message.pinnedForCompaction && (
-              <span style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--warning)" }}>
-                pinned
-              </span>
+              <span className="acp-message__pinned">pinned</span>
             )}
           </div>
         )}
 
         {!isAssistant && message.pinnedForCompaction && (
-          <div style={{ fontSize: 10, letterSpacing: "0.12em", textTransform: "uppercase", color: "var(--warning)", marginBottom: 6 }}>
-            pinned
-          </div>
+          <div className="acp-message__pinned">pinned</div>
         )}
 
         {isAssistant && message.reasoning && (
-          <details
-            style={{
-              marginTop: 8,
-              minWidth: 0,
-              border: "1px solid rgba(255,255,255,0.1)",
-              borderRadius: "var(--radius-sm)",
-              background: "rgba(255,255,255,0.01)",
-              padding: 8,
-            }}
-          >
-            <summary style={{ cursor: "pointer", fontSize: 11, color: "var(--text-muted)", userSelect: "auto" }}>
-              Reasoning
-            </summary>
-            <div
-              style={{
-                marginTop: 6,
-                fontSize: 12,
-                color: "var(--text-secondary)",
-                userSelect: "auto",
-                maxHeight: "min(42vh, 360px)",
-                overflow: "auto",
-                minWidth: 0,
-                overflowWrap: "anywhere",
-              }}
-            >
+          <details className="acp-reasoning">
+            <summary>Reasoning</summary>
+            <div className="acp-reasoning__body">
               <MarkdownContent content={message.reasoning} />
             </div>
           </details>
@@ -289,76 +203,38 @@ export function MessageBubble({
         {isAssistant && providerFinalResult && (
           <div style={{ marginTop: 8, display: "grid", gap: 6 }}>
             <button
+              className="acp-toggle-btn acp-toggle-btn--capitalize"
               onClick={() => setExpandedProviderResult((current) => !current)}
-              style={{
-                background: "transparent",
-                border: "1px solid var(--glass-border)",
-                color: "var(--text-muted)",
-                cursor: "pointer",
-                fontSize: 11,
-                padding: "4px 8px",
-                width: "fit-content",
-                textTransform: "capitalize",
-              }}
             >
               {expandedProviderResult
                 ? `Hide ${providerFinalResult.label}`
                 : `Show ${providerFinalResult.label}`}
             </button>
             {expandedProviderResult && (
-              <pre
-                style={{
-                  margin: 0,
-                  padding: "8px",
-                  background: "rgba(255,255,255,0.04)",
-                  border: "1px solid rgba(255,255,255,0.08)",
-                  fontSize: 11,
-                  lineHeight: 1.45,
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  fontFamily: "var(--font-mono)",
-                  color: "var(--text-secondary)",
-                }}
-              >
-                {providerFinalResult.prettyJson}
-              </pre>
+              <pre className="acp-pre">{providerFinalResult.prettyJson}</pre>
             )}
           </div>
         )}
 
         {handoffEvent ? (
-          <div style={{ display: "grid", gap: 8 }}>
-            <div style={{ fontSize: "var(--text-xs)", color: "var(--agent)", fontWeight: 700 }}>
-              Thread Handoff
-            </div>
-            <div style={{ fontSize: 12, color: "var(--text-primary)" }}>
+          <div className="acp-handoff">
+            <div className="acp-handoff__title">Thread Handoff</div>
+            <div className="acp-handoff__route">
               {(handoffEvent.from_agent_name ?? "Agent")} {"->"} {(handoffEvent.to_agent_name ?? "Agent")}
             </div>
             {handoffEvent.reason && (
-              <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
-                {handoffEvent.reason}
-              </div>
+              <div className="acp-handoff__reason">{handoffEvent.reason}</div>
             )}
             {handoffEvent.summary && (
               <div style={{ display: "grid", gap: 6 }}>
                 <button
+                  className="acp-toggle-btn"
                   onClick={() => setExpandedHandoff((current) => !current)}
-                  style={{
-                    background: "transparent",
-                    border: "1px solid var(--glass-border)",
-                    color: "var(--text-muted)",
-                    cursor: "pointer",
-                    fontSize: 11,
-                    padding: "4px 8px",
-                    width: "fit-content",
-                  }}
                 >
                   {expandedHandoff ? "Collapse Summary" : "Expand Summary"}
                 </button>
                 {expandedHandoff && (
-                  <div style={{ padding: "8px", background: "rgba(2, 10, 18, 0.55)", border: "1px solid rgba(120, 168, 209, 0.22)", fontSize: 12, lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                    {handoffEvent.summary}
-                  </div>
+                  <div className="acp-handoff__summary">{handoffEvent.summary}</div>
                 )}
               </div>
             )}
@@ -369,9 +245,7 @@ export function MessageBubble({
               <span style={{ fontSize: "var(--text-xs)", color: "var(--agent)", fontWeight: 700 }}>
                 Tool: {message.toolName}
               </span>
-              <span style={{ fontSize: 10, color: "var(--text-muted)", border: "1px solid var(--glass-border)", padding: "1px 6px" }}>
-                {toolStatusLabel}
-              </span>
+              <span className="acp-pill">{toolStatusLabel}</span>
             </div>
 
             {fileTarget ? (
@@ -381,7 +255,7 @@ export function MessageBubble({
             ) : structuredArgDetails ? (
               <ToolStructuredValueView label="args" fields={structuredArgDetails} />
             ) : message.toolArguments ? (
-              <pre style={{ margin: 0, padding: "8px", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", fontSize: 11, lineHeight: 1.4, whiteSpace: "pre-wrap", wordBreak: "break-word", fontFamily: "var(--font-mono)" }}>
+              <pre className="acp-pre">
                 {(() => {
                   try {
                     return JSON.stringify(JSON.parse(message.toolArguments), null, 2);
@@ -395,46 +269,34 @@ export function MessageBubble({
             {!fileTarget && structuredResult ? (
               <ToolStructuredValueView label="result" fields={structuredResult} />
             ) : !fileTarget && message.content ? (
-              <div style={{ padding: "8px", background: "rgba(2, 10, 18, 0.55)", border: "1px solid rgba(120, 168, 209, 0.22)", fontSize: 12, lineHeight: 1.45, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
-                {message.content}
-              </div>
+              <div className="acp-tool-result">{message.content}</div>
             ) : null}
           </div>
         ) : (
           <>
             <MarkdownContent content={displayContent} />
             {mediaBlocks.length > 0 && (
-              <div style={{ display: "grid", gap: 8, marginTop: 8 }}>
+              <div className="acp-media">
                 {mediaBlocks.map((block, index) => {
                   const source = block.data_url || block.url;
                   if (!source) return null;
                   return block.type === "image" ? (
-                    <figure
-                      key={`${message.id}:media:${index}`}
-                      style={{ margin: 0, display: "grid", gap: 6 }}
-                    >
+                    <figure key={`${message.id}:media:${index}`} className="acp-media__figure">
                       <img
                         src={source}
                         alt={block.mime_type || "attached image"}
-                        style={{ maxWidth: "100%", borderRadius: "var(--radius-md)", border: "1px solid var(--glass-border)" }}
+                        className="acp-media__img"
                       />
-                      <figcaption style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                      <figcaption className="acp-media__caption">
                         Image attachment{block.mime_type ? ` · ${block.mime_type}` : ""}
                       </figcaption>
                     </figure>
                   ) : (
-                    <div
-                      key={`${message.id}:media:${index}`}
-                      style={{ display: "grid", gap: 6, padding: 8, border: "1px solid var(--glass-border)", borderRadius: "var(--radius-md)" }}
-                    >
-                      <div style={{ fontSize: 11, color: "var(--text-muted)" }}>
+                    <div key={`${message.id}:media:${index}`} className="acp-media__audio">
+                      <div className="acp-media__caption">
                         Audio attachment{block.mime_type ? ` · ${block.mime_type}` : ""}
                       </div>
-                      <audio
-                        controls
-                        src={source}
-                        style={{ width: "100%" }}
-                      />
+                      <audio controls src={source} />
                     </div>
                   );
                 })}
@@ -443,31 +305,16 @@ export function MessageBubble({
           </>
         )}
 
-        {message.isStreaming && <span style={{ opacity: 0.5, marginLeft: 4 }}>▌</span>}
+        {message.isStreaming && <span className="acp-message__streaming-cursor">▌</span>}
 
         {message.model && !isUser && (!isAssistant || hovered) && (
-          <div style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", marginTop: "var(--space-1)" }}>
+          <div className="acp-message__model">
             {message.provider}/{message.model}
           </div>
         )}
 
         {isAssistant && !message.isStreaming && (message.totalTokens > 0 || message.cost !== undefined || message.tps !== undefined) && (
-          <div
-            style={{
-              fontSize: 11,
-              color: "var(--text-muted)",
-              marginTop: 4,
-              display: "flex",
-              flexWrap: "wrap",
-              gap: 10,
-              opacity: hovered ? 1 : 0,
-              maxHeight: hovered ? 40 : 0,
-              overflow: "hidden",
-              transform: hovered ? "translateY(0)" : "translateY(-4px)",
-              transition: "opacity 180ms ease, max-height 240ms ease, transform 180ms ease",
-              pointerEvents: hovered ? "auto" : "none",
-            }}
-          >
+          <div className="acp-message__usage">
             <span>∑ {message.totalTokens.toLocaleString()} (⇅ {message.inputTokens.toLocaleString()} / {message.outputTokens.toLocaleString()})</span>
             {message.reasoningTokens !== undefined && <span>🧠 {message.reasoningTokens}</span>}
             {message.audioTokens !== undefined && message.audioTokens > 0 && <span>🎵 {message.audioTokens}</span>}
@@ -478,21 +325,7 @@ export function MessageBubble({
         )}
 
         {hovered && !message.isStreaming && (
-          <div
-            style={{
-              position: "absolute",
-              top: -28,
-              right: isUser ? 0 : undefined,
-              left: isUser ? undefined : 0,
-              display: "flex",
-              gap: 2,
-              background: "var(--bg-secondary)",
-              border: "1px solid var(--glass-border)",
-              borderRadius: "var(--radius-sm)",
-              padding: 2,
-              boxShadow: "var(--shadow-md)",
-            }}
-          >
+          <div className="acp-message__actions">
             <ActionBtn label={copied ? "Copied!" : "Copy"} onClick={handleCopy} />
             {message.pinnedForCompaction
               ? onUnpin && <ActionBtn label="Unpin" onClick={() => { void onUnpin(); }} />

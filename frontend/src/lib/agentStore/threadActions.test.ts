@@ -119,6 +119,21 @@ describe("agentStore spawned thread navigation", () => {
     expect((useAgentStore.getState() as any).threadHistoryStack).toEqual([]);
   });
 
+  it("creates a thread owned by an explicitly selected agent", () => {
+    resetStoreState([], null, []);
+
+    const store = useAgentStore.getState();
+    const createdThreadId = store.createThread({
+      title: "review-thread",
+      agentId: "reviewer",
+      agentName: "Code Reviewer",
+    });
+    const createdThread = useAgentStore.getState().threads.find((thread) => thread.id === createdThreadId);
+
+    expect(createdThread?.agent_name).toBe("Code Reviewer");
+    expect(createdThread?.targetAgentId).toBe("reviewer");
+  });
+
   it("clears spawned-thread history when creating a new thread", () => {
     resetStoreState([makeThread("thread-a"), makeThread("thread-b")], "thread-b", ["thread-a"]);
 
@@ -127,5 +142,29 @@ describe("agentStore spawned thread navigation", () => {
 
     expect(useAgentStore.getState().activeThreadId).toBe(createdThreadId);
     expect((useAgentStore.getState() as any).threadHistoryStack).toEqual([]);
+  });
+});
+
+describe("agentStore generated thread titles", () => {
+  it("replaces titles for local and daemon thread ids", () => {
+    const local = makeThread("local-1");
+    local.title = "Please review the billing invoice parser";
+    local.daemonThreadId = "daemon-1";
+    resetStoreState([local, makeThread("thread-b")], "local-1", []);
+
+    useAgentStore.getState().updateThreadTitle("daemon-1", "Billing invoice parser");
+
+    expect(useAgentStore.getState().threads.find((thread) => thread.id === "local-1")?.title).toBe(
+      "Billing invoice parser",
+    );
+    expect(useAgentStore.getState().threads.find((thread) => thread.id === "thread-b")?.title).toBe(
+      "thread-b",
+    );
+  });
+
+  it("ignores empty generated titles", () => {
+    resetStoreState([makeThread("thread-a")], "thread-a", []);
+    useAgentStore.getState().updateThreadTitle("thread-a", "   ");
+    expect(useAgentStore.getState().threads[0]?.title).toBe("thread-a");
   });
 });

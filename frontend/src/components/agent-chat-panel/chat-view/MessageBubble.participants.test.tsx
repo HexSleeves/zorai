@@ -22,10 +22,9 @@ describe("MessageBubble participant authorship", () => {
       />,
     );
 
-    expect(html).toContain("max-width:min(85%, 100%)");
-    expect(html).toContain("min-width:0");
-    expect(html).toContain("overflow-wrap:anywhere");
-    expect(html).toContain("max-height:min(42vh, 360px)");
+    expect(html).toContain("acp-message");
+    expect(html).toContain("acp-md");
+    expect(html).toContain("acp-reasoning__body");
   });
 
   it("renders the assistant author name when present", () => {

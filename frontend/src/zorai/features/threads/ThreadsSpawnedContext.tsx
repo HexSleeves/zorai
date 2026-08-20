@@ -20,11 +20,7 @@ export function SpawnedContext({
   openSpawnedThread: (run: AgentRun) => Promise<boolean>;
   goBackThread: () => void;
 }) {
-  if (!tree) {
-    return <div className="zorai-empty">No spawned agents for this thread yet.</div>;
-  }
-
-  const backLabel = backThreadTitle ? `Back to ${backThreadTitle}` : "Back";
+  const backLabel = backThreadTitle ? `Back to ${backThreadTitle.slice(0, 10)}...` : "Back";
 
   return (
     <section className="zorai-spawned-context">
@@ -38,7 +34,8 @@ export function SpawnedContext({
         </button>
       </div>
       <div className="zorai-spawned-context__list">
-        {tree.anchor ? (
+        {!tree ? <div className="zorai-empty">No spawned agents for this thread yet.</div> : null}
+        {tree?.anchor ? (
           <SpawnedContextNode
             node={tree.anchor}
             depth={0}
@@ -47,7 +44,7 @@ export function SpawnedContext({
             openSpawnedThread={openSpawnedThread}
           />
         ) : null}
-        {tree.roots.map((root) => (
+        {tree?.roots.map((root) => (
           <SpawnedContextNode
             key={root.item.id}
             node={root}

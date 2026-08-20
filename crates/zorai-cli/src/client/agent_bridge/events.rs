@@ -1,7 +1,7 @@
 use anyhow::Result;
 use futures::StreamExt;
 use tokio_util::codec::Framed;
-use zorai_protocol::{DaemonMessage, ZoraiCodec};
+use zorai_protocol::{DaemonMessage, OperationLifecycleState, ZoraiCodec};
 
 use super::emit_agent_event;
 
@@ -36,6 +36,15 @@ fn extend_thread_detail_chunk(
         "type": "thread-detail",
         "data": serde_json::from_str::<serde_json::Value>(&thread_json).unwrap_or_default(),
     })))
+}
+
+fn operation_lifecycle_state_name(state: OperationLifecycleState) -> &'static str {
+    match state {
+        OperationLifecycleState::Accepted => "accepted",
+        OperationLifecycleState::Started => "started",
+        OperationLifecycleState::Completed => "completed",
+        OperationLifecycleState::Failed => "failed",
+    }
 }
 
 fn bridge_event_from_daemon_message(message: &DaemonMessage) -> Option<serde_json::Value> {
@@ -89,6 +98,20 @@ fn bridge_event_from_daemon_message(message: &DaemonMessage) -> Option<serde_jso
         DaemonMessage::AgentCollaborationVoteResult { report_json } => Some(serde_json::json!({
             "type": "collaboration-vote-result",
             "data": serde_json::from_str::<serde_json::Value>(report_json).unwrap_or_default(),
+        })),
+        DaemonMessage::AgentThreadHandoffResult { result } => Some(serde_json::json!({
+            "type": "thread-handoff-result",
+            "data": result,
+        })),
+        DaemonMessage::OperationStatus { snapshot } => Some(serde_json::json!({
+            "type": "operation-status",
+            "data": {
+                "operation_id": snapshot.operation_id,
+                "kind": snapshot.kind,
+                "dedup": snapshot.dedup,
+                "state": operation_lifecycle_state_name(snapshot.state),
+                "revision": snapshot.revision,
+            }
         })),
         DaemonMessage::AgentGeneratedTools { tools_json } => Some(serde_json::json!({
             "type": "generated-tools",
@@ -931,6 +954,62 @@ mod tests {
                 "data": {
                     "session_id": "session-1",
                     "resolution": "resolved"
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn translates_thread_handoff_result_event() {
+        let event = bridge_event_from_daemon_message(&DaemonMessage::AgentThreadHandoffResult {
+            result: zorai_protocol::ThreadHandoffResult {
+                ok: true,
+                thread_id: "thread-1".to_string(),
+                active_agent_id: Some("rarog".to_string()),
+                stack_depth: Some(2),
+                error: None,
+            },
+        })
+        .expect("thread handoff result should translate");
+
+        assert_eq!(
+            event,
+            serde_json::json!({
+                "type": "thread-handoff-result",
+                "data": {
+                    "ok": true,
+                    "thread_id": "thread-1",
+                    "active_agent_id": "rarog",
+                    "stack_depth": 2,
+                    "error": null,
+                }
+            })
+        );
+    }
+
+    #[test]
+    fn translates_operation_status_event() {
+        let event = bridge_event_from_daemon_message(&DaemonMessage::OperationStatus {
+            snapshot: zorai_protocol::OperationStatusSnapshot {
+                operation_id: "op-1".to_string(),
+                kind: "handoff".to_string(),
+                dedup: Some("thread:thread-1".to_string()),
+                state: zorai_protocol::OperationLifecycleState::Started,
+                revision: 7,
+            },
+        })
+        .expect("operation status should translate");
+
+        assert_eq!(
+            event,
+            serde_json::json!({
+                "type": "operation-status",
+                "data": {
+                    "operation_id": "op-1",
+                    "kind": "handoff",
+                    "dedup": "thread:thread-1",
+                    "state": "started",
+                    "revision": 7,
                 }
             })
         );

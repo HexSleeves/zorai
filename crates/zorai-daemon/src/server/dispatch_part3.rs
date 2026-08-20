@@ -874,6 +874,7 @@ pub(crate) async fn dispatch_part3(
             thread_id,
             suggestion_id,
             client_surface,
+            force_send,
             ..
         } => {
             if let Some(client_surface) = client_surface {
@@ -895,6 +896,9 @@ pub(crate) async fn dispatch_part3(
                 .await;
             let agent = agent.clone();
             tokio::spawn(async move {
+                if force_send {
+                    agent.stop_stream(&thread_id).await;
+                }
                 if let Err(error) = agent
                     .send_thread_participant_suggestion(&thread_id, &suggestion_id, None)
                     .await

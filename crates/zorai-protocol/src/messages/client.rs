@@ -219,7 +219,7 @@ pub enum ClientMessage {
     AgentSearchTools { query: String, #[serde(default)] limit: Option<usize>, #[serde(default)] offset: Option<usize> },
     AgentInternalDelegate { thread_id: Option<String>, target_agent_id: String, content: String, session_id: Option<String>, #[serde(default)] client_surface: Option<ClientSurface> },
     AgentThreadParticipantCommand { thread_id: String, target_agent_id: String, action: String, #[serde(default)] instruction: Option<String>, session_id: Option<String>, #[serde(default)] client_surface: Option<ClientSurface> },
-    AgentSendParticipantSuggestion { thread_id: String, suggestion_id: String, session_id: Option<String>, #[serde(default)] client_surface: Option<ClientSurface> },
+    AgentSendParticipantSuggestion { thread_id: String, suggestion_id: String, session_id: Option<String>, #[serde(default)] client_surface: Option<ClientSurface>, #[serde(default)] force_send: bool },
     AgentDismissParticipantSuggestion { thread_id: String, suggestion_id: String, session_id: Option<String>, #[serde(default)] client_surface: Option<ClientSurface> },
     AgentExecuteMemoryTool { tool_name: String, args_json: String },
     AgentPinThreadMessageForCompaction { thread_id: String, message_id: String },
@@ -267,4 +267,6 @@ pub enum ClientMessage {
     DatabaseGetBackend,
     DatabaseSetBackend { #[serde(default)] backend: Option<String>, #[serde(default)] sync_url: Option<String> },
     DatabaseSyncNow,
+    AgentListRunsForParentThread { parent_thread_id: String },
+    AgentHandoffThread { thread_id: String, action: String, #[serde(default)] target_agent_id: Option<String>, reason: String, summary: String, requested_by: String, #[serde(default)] session_id: Option<String>, #[serde(default)] client_surface: Option<ClientSurface> },
 }

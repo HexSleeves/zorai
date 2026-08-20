@@ -41,7 +41,7 @@ export const closeBtnStyle: CSSProperties = {
 };
 
 export const inputStyle: CSSProperties = {
-    background: "var(--bg-surface)",
+    background: "var(--zorai-bg-surface)",
     border: "1px solid var(--border)",
     borderRadius: 0,
     color: "var(--text-primary)",

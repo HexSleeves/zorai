@@ -348,7 +348,7 @@ export function FileManagerPanel({ style, className }: FileManagerPanelProps = {
                 flexDirection: "column",
                 borderLeft: fullscreen ? "none" : "1px solid var(--border)",
                 border: fullscreen ? "1px solid var(--border)" : undefined,
-                background: "var(--bg-primary)",
+                background: "var(--zorai-bg)",
                 overflow: "hidden",
                 position: "relative",
                 inset: fullscreen ? 0 : undefined,

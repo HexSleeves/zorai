@@ -227,7 +227,7 @@ export function GeneratedToolsPanel({ enabled }: { enabled: boolean }) {
             marginBottom: 8,
             padding: 10,
             border: "1px solid var(--border)",
-            background: "var(--bg-surface)",
+            background: "var(--zorai-bg-surface)",
         }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                 <div>

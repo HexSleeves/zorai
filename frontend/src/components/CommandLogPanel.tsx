@@ -106,7 +106,7 @@ export function CommandLogPanel({ style, className }: CommandLogPanelProps = {})
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: "var(--bg-primary)",
+          background: "var(--zorai-bg)",
           border: "1px solid var(--glass-border)",
           borderRadius: 0,
           width: "min(1380px, 96vw)",

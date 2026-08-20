@@ -36,6 +36,7 @@ import { applyRarogContextWindow } from "../threads/threadRuntimeActions";
 import { canonicalThreadAgentId } from "../threads/threadFilterModel";
 import { embeddingSettingsPatchForModelSelection } from "./embeddingSettings";
 import { duckDuckGoSafeSearchOptions, searchProviderOptions } from "./searchProviders";
+import { buildTerminalFontOptions } from "./terminalFontOptions";
 import type { ZoraiSettingsTabId } from "./settingsTabs";
 import {
   formatProviderValidationError,
@@ -62,7 +63,7 @@ export const conciergeReasoningEffortOptions: Array<{ value: AgentSettings["reas
   { value: "xhigh", label: "xhigh" },
   { value: "max", label: "max" },
 ];
-const APP_VERSION = "0.9.38";
+const APP_VERSION = "0.9.39";
 const APP_AUTHOR = "Mariusz Kurman";
 const APP_GITHUB = "mkurman/zorai";
 const APP_HOMEPAGE = "zorai.app";
@@ -320,18 +321,22 @@ function AuthPanel() {
           const providerValidation = validationResult[state.provider_id];
           const isTestingProvider = providerValidation?.state === "testing";
 
+          const usesLocalCliAuth = state.provider_id === "claude-code-cli";
+
           return (
             <div key={`${state.provider_id}-${state.auth_source}`} className="zorai-setting-row">
               <div><strong>{state.authenticated ? "●" : "○"} {state.provider_name}</strong><span>{state.model ? `${state.model} / ` : ""}{state.auth_source}</span>{providerValidation ? <span>{providerValidation.message}</span> : null}</div>
               <div className="zorai-card-actions">
-                <button type="button" className="zorai-ghost-button" onClick={() => {
-                  setLoginTarget(loginTarget === state.provider_id ? null : state.provider_id);
-                  setLoginKey("");
-                }}>API Key</button>
+                {usesLocalCliAuth ? null : (
+                  <button type="button" className="zorai-ghost-button" onClick={() => {
+                    setLoginTarget(loginTarget === state.provider_id ? null : state.provider_id);
+                    setLoginKey("");
+                  }}>API Key</button>
+                )}
                 {state.authenticated ? <button type="button" className="zorai-ghost-button" onClick={() => void logoutProvider(state.provider_id)}>Logout</button> : null}
                 <button type="button" className="zorai-ghost-button" disabled={isTestingProvider} onClick={() => void runTest(state.provider_id, state.base_url, state.auth_source)}>{getProviderValidationButtonLabel(validationResult, state.provider_id)}</button>
               </div>
-              {loginTarget === state.provider_id ? (
+              {!usesLocalCliAuth && loginTarget === state.provider_id ? (
                 <div className="zorai-setting-row">
                   <div><strong>API Key</strong><span>Stored by the daemon provider auth store.</span></div>
                   <input className="zorai-input" type="password" value={loginKey} onChange={(event) => setLoginKey(event.target.value)} />
@@ -349,6 +354,28 @@ function AuthPanel() {
 function InterfacePanel() {
   const settings = useSettingsStore((state) => state.settings);
   const updateSetting = useSettingsStore((state) => state.updateSetting);
+  const [systemFonts, setSystemFonts] = useState<string[]>([]);
+
+  useEffect(() => {
+    let active = true;
+    const getSystemFonts = getBridge()?.getSystemFonts;
+    if (!getSystemFonts) return () => { active = false; };
+
+    void getSystemFonts()
+      .then((fonts) => {
+        if (active && Array.isArray(fonts)) setSystemFonts(fonts);
+      })
+      .catch(() => {
+        if (active) setSystemFonts([]);
+      });
+
+    return () => { active = false; };
+  }, []);
+
+  const fontOptions = useMemo(
+    () => buildTerminalFontOptions(systemFonts, settings.fontFamily),
+    [settings.fontFamily, systemFonts],
+  );
 
   return (
     <SettingsGrid>
@@ -358,6 +385,18 @@ function InterfacePanel() {
             {BUILTIN_THEMES.map((theme) => <option key={theme.name} value={theme.name}>{theme.name}</option>)}
           </select>
         </SettingRow>
+        <SettingRow label="Terminal Font" description="Font used by standard and infinite-canvas terminals.">
+          <select
+            className="zorai-input"
+            value={settings.fontFamily}
+            onChange={(event) => updateSetting("fontFamily", event.target.value)}
+            style={{ fontFamily: settings.fontFamily }}
+          >
+            {fontOptions.map((font) => <option key={font} value={font} style={{ fontFamily: font }}>{font}</option>)}
+          </select>
+        </SettingRow>
+        <NumberRow label="Font Size" description="Terminal text size in pixels." value={settings.fontSize} onChange={(value) => updateSetting("fontSize", value)} min={8} max={28} />
+        <DecimalNumberRow label="Line Height" description="Terminal row-height multiplier." value={settings.lineHeight} onChange={(value) => updateSetting("lineHeight", value)} min={0.8} max={2} step={0.1} />
         <Metric label="Terminal focus" value="tab:focus" />
         <Metric label="Threads" value="ctrl+t" />
         <Metric label="Goals" value="ctrl+g" />
@@ -690,6 +729,15 @@ function FeaturesPanel() {
         <NumberRow label="Dimensions" description="Embedding vector dimensions." value={agentSettings.semantic_embedding_dimensions} onChange={(value) => updateAgentSetting("semantic_embedding_dimensions", value)} min={1} max={32768} />
         <NumberRow label="Batch Size" description="Embedding request batch size." value={agentSettings.semantic_embedding_batch_size} onChange={(value) => updateAgentSetting("semantic_embedding_batch_size", value)} min={1} max={512} />
         <NumberRow label="Concurrency" description="Concurrent embedding requests." value={agentSettings.semantic_embedding_max_concurrency} onChange={(value) => updateAgentSetting("semantic_embedding_max_concurrency", value)} min={1} max={16} />
+      </Panel>
+      <Panel section="Features" title="Threads">
+        <SettingRow label="Auto Title" description="Generate a thread title from the first operator message using Rarog, WELES, or leave titles unchanged.">
+          <select className="zorai-input" value={agentSettings.auto_thread_title ?? "off"} onChange={(event) => updateAgentSetting("auto_thread_title", event.target.value as AgentSettings["auto_thread_title"])}>
+            <option value="off">Off</option>
+            <option value="rarog">Rarog</option>
+            <option value="weles">Weles</option>
+          </select>
+        </SettingRow>
       </Panel>
     </SettingsGrid>
   );
@@ -1099,6 +1147,14 @@ function NumberRow({ label, description, value, onChange, min, max }: { label: s
   return (
     <SettingRow label={label} description={description}>
       <input className="zorai-input" type="number" min={min} max={max} value={value} onChange={(event) => onChange(Number(event.target.value))} />
+    </SettingRow>
+  );
+}
+
+function DecimalNumberRow({ label, description, value, onChange, min, max, step }: { label: string; description: string; value: number; onChange: (value: number) => void; min: number; max: number; step: number }) {
+  return (
+    <SettingRow label={label} description={description}>
+      <input className="zorai-input" type="number" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
     </SettingRow>
   );
 }

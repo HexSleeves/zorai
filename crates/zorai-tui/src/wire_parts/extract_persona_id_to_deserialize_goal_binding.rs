@@ -173,6 +173,33 @@ pub struct AgentThread {
 
     #[serde(default)]
     pub queued_participant_suggestions: Vec<ThreadParticipantSuggestion>,
+
+    #[serde(default)]
+    pub thread_handoff_state: Option<ThreadHandoffState>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct ThreadHandoffFrame {
+    #[serde(default)]
+    pub agent_id: String,
+    #[serde(default)]
+    pub agent_name: String,
+    #[serde(default)]
+    pub entered_at: u64,
+    #[serde(default)]
+    pub linked_thread_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+pub struct ThreadHandoffState {
+    #[serde(default)]
+    pub origin_agent_id: String,
+    #[serde(default)]
+    pub active_agent_id: String,
+    #[serde(default)]
+    pub responder_stack: Vec<ThreadHandoffFrame>,
+    #[serde(default)]
+    pub pending_approval_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

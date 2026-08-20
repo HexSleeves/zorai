@@ -34,6 +34,13 @@ impl<'a> SendMessageRunner<'a> {
             .get_thread_memory_injection_state(&self.tid)
             .await;
         let client_surface = self.engine.get_thread_client_surface(&self.tid).await;
+        let identity_is_spawned = self
+            .engine
+            .thread_identity_metadata
+            .read()
+            .await
+            .get(&self.tid)
+            .is_some_and(|identity| identity.is_spawned_subagent());
         self.system_prompt = build_system_prompt(
             &self.config,
             &self.base_prompt,
@@ -41,9 +48,10 @@ impl<'a> SendMessageRunner<'a> {
             &self.memory_paths,
             &self.agent_scope_id,
             &sub_agents,
-            self.current_task_snapshot
-                .as_ref()
-                .is_some_and(|task| task.parent_task_id.is_some()),
+            super::setup::spawned_subagent_turn(
+                self.current_task_snapshot.as_ref(),
+                identity_is_spawned,
+            ),
             self.operator_model_summary.as_deref(),
             self.operational_context.as_deref(),
             causal_guidance.as_deref(),

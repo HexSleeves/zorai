@@ -38,7 +38,7 @@
   --bg-primary: #0a0f18;
   --bg-secondary: #0f1520;
   --bg-tertiary: #141c28;
-  --bg-surface: #1a2432;
+  --bg-surface: #0c111a;
   --bg-elevated: #212e3e;
   --bg-canvas: #060a10;
   --bg-overlay: rgba(2, 4, 6, 0.92);
@@ -237,16 +237,16 @@
                "Cousine", Consolas, "Liberation Mono", monospace;
   --font-display: var(--font-ui);
   
-  --text-2xs: 9px;
-  --text-xs: 10px;
-  --text-sm: 11px;
-  --text-base: 12px;
-  --text-md: 13px;
-  --text-lg: 14px;
-  --text-xl: 16px;
-  --text-2xl: 18px;
-  --text-3xl: 20px;
-  --text-4xl: 24px;
+  --text-2xs: 10px;
+  --text-xs: 11px;
+  --text-sm: 12px;
+  --text-base: 14px;
+  --text-md: 15px;
+  --text-lg: 16px;
+  --text-xl: 18px;
+  --text-2xl: 20px;
+  --text-3xl: 22px;
+  --text-4xl: 26px;
   --text-5xl: 32px;
   
   --font-light: 300;
@@ -382,7 +382,7 @@
   --glass-light: transparent;
   --glass-medium: transparent;
   --glass-heavy: rgba(255, 255, 255, 0.04);
-  --glass-dark: var(--bg-primary);
+  --glass-dark: var(--zorai-bg);
   --glass-darker: var(--bg-deep);
 
   --glass-gradient-top: none;

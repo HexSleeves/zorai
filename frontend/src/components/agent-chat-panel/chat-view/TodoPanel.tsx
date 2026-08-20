@@ -23,63 +23,23 @@ export function TodoPanel({
   }
 
   return (
-    <div
-      style={{
-        borderTop: "1px solid var(--border)",
-        background: "var(--bg-secondary)",
-        padding: "var(--space-2) var(--space-3)",
-      }}
-    >
-      <button
-        type="button"
-        onClick={onToggle}
-        style={{
-          width: "100%",
-          border: "none",
-          background: "transparent",
-          padding: 0,
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: "var(--space-2)",
-          cursor: "pointer",
-          color: "var(--text-primary)",
-        }}
-      >
-        <span style={{ fontSize: "var(--text-xs)", fontWeight: 700 }}>Todo</span>
-        <span style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+    <div className="acp-todo">
+      <button type="button" className="acp-todo__toggle" onClick={onToggle}>
+        <span className="acp-todo__title">Todo</span>
+        <span className="acp-todo__preview">
           {todos.length} item{todos.length === 1 ? "" : "s"}{todoPreview ? ` · ${todoPreview}` : ""}
         </span>
       </button>
       {expanded && (
-        <div style={{ marginTop: "var(--space-2)", display: "flex", flexDirection: "column", gap: "var(--space-1)" }}>
+        <div className="acp-todo__list">
           {sortedTodos.map((item) => (
-            <div
-              key={item.id}
-              style={{
-                display: "flex",
-                alignItems: "center",
-                gap: "var(--space-2)",
-                padding: "6px 8px",
-                borderRadius: "var(--radius-sm)",
-                background: "var(--bg-tertiary)",
-              }}
-            >
+            <div key={item.id} className="acp-todo__item">
               <span
-                style={{
-                  width: 8,
-                  height: 8,
-                  borderRadius: "50%",
-                  background: todoStatusColor(item.status),
-                  flexShrink: 0,
-                }}
+                className="acp-todo__dot"
+                style={{ background: todoStatusColor(item.status) }}
               />
-              <span style={{ fontSize: "var(--text-sm)", color: "var(--text-primary)", flex: 1 }}>
-                {item.content}
-              </span>
-              <span style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", textTransform: "capitalize" }}>
-                {item.status.replace(/_/g, " ")}
-              </span>
+              <span className="acp-todo__content">{item.content}</span>
+              <span className="acp-todo__status">{item.status.replace(/_/g, " ")}</span>
             </div>
           ))}
         </div>

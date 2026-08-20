@@ -1,5 +1,5 @@
 use super::super::*;
-use crate::agent::{copilot_auth, openai_codex_auth, provider_resolution};
+use crate::agent::{claude_code_auth, copilot_auth, openai_codex_auth, provider_resolution};
 use zorai_shared::providers::{PROVIDER_ID_GITHUB_COPILOT, PROVIDER_ID_OPENAI};
 
 impl AgentEngine {
@@ -385,7 +385,7 @@ impl AgentEngine {
                 states.push(ProviderAuthState {
                     provider_id: def.id.to_string(),
                     provider_name: def.name.to_string(),
-                    authenticated: crate::agent::llm_client::claude_cli_available(),
+                    authenticated: claude_code_auth::claude_code_cli_authenticated(),
                     auth_source: AuthSource::default(),
                     model: pc
                         .map(|pc| pc.model.clone())

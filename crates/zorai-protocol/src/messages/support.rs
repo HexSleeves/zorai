@@ -32,6 +32,33 @@ mod json_string_or_value {
 use super::{SessionId, WorkspaceId};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThreadHandoffResult {
+    pub ok: bool,
+    pub thread_id: String,
+    #[serde(default)]
+    pub active_agent_id: Option<String>,
+    #[serde(default)]
+    pub stack_depth: Option<usize>,
+    #[serde(default)]
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct AgentHandoffThreadRequest {
+    pub thread_id: String,
+    pub action: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub target_agent_id: Option<String>,
+    pub reason: String,
+    pub summary: String,
+    pub requested_by: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub client_surface: Option<ClientSurface>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AsyncCommandCapability {
     pub version: u32,
     pub supports_operation_acceptance: bool,

@@ -1792,32 +1792,14 @@ pub(crate) async fn execute_handoff_thread_agent(
         other => anyhow::bail!("invalid 'requested_by' argument: {other}"),
     };
 
-    let request = match action {
-        "push_handoff" => crate::agent::PendingThreadHandoffActivation {
-            thread_id: thread_id.to_string(),
-            kind: crate::agent::ThreadHandoffKind::Push,
-            target_agent_id: Some(
-                args.get("target_agent_id")
-                    .and_then(|value| value.as_str())
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                    .ok_or_else(|| anyhow::anyhow!("push_handoff requires 'target_agent_id'"))?
-                    .to_string(),
-            ),
-            requested_by,
-            reason: reason.to_string(),
-            summary: summary.to_string(),
-        },
-        "return_handoff" => crate::agent::PendingThreadHandoffActivation {
-            thread_id: thread_id.to_string(),
-            kind: crate::agent::ThreadHandoffKind::Return,
-            target_agent_id: None,
-            requested_by,
-            reason: reason.to_string(),
-            summary: summary.to_string(),
-        },
-        other => anyhow::bail!("unsupported handoff action: {other}"),
-    };
+    let request = crate::agent::build_thread_handoff_activation(
+        thread_id,
+        action,
+        args.get("target_agent_id").and_then(|value| value.as_str()),
+        requested_by,
+        reason,
+        summary,
+    )?;
 
     let requires_approval = matches!(
         (request.kind, request.requested_by),

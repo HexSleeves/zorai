@@ -32,6 +32,16 @@ export type WorkspaceStoreState = ReturnType<typeof useWorkspaceStore.getState>;
 export type SnippetStoreState = ReturnType<typeof useSnippetStore.getState>;
 export type TranscriptStoreState = ReturnType<typeof useTranscriptStore.getState>;
 
+export type ThreadMutationResult = { ok: true } | { ok: false; error: string };
+
+export type OperationStatusView = {
+  operationId: string;
+  kind: string;
+  state: "accepted" | "started" | "completed" | "failed" | "unknown";
+  revision: number;
+  dedup?: string | null;
+};
+
 export type AgentChatPanelRuntimeValue = {
   togglePanel: () => void;
   activeWorkspace: ReturnType<WorkspaceStoreState["activeWorkspace"]>;
@@ -91,6 +101,12 @@ export type AgentChatPanelRuntimeValue = {
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
   sendMessage: (payload: { text: string; contentBlocksJson?: string | null; localContentBlocks?: AgentContentBlock[] }) => void;
+  pushHandoff: (request: { targetAgentId: string; reason: string; summary: string }) => Promise<ThreadMutationResult>;
+  returnHandoff: (request: { reason: string; summary: string }) => Promise<ThreadMutationResult>;
+  upsertParticipant: (request: { targetAgentId: string; instruction: string }) => Promise<ThreadMutationResult>;
+  deactivateParticipant: (targetAgentId: string) => Promise<ThreadMutationResult>;
+  getOperationStatus: (operationId: string) => Promise<OperationStatusView | null>;
+  cancelOperation: (operationId: string) => Promise<ThreadMutationResult>;
   sendParticipantSuggestion: (threadId: string, suggestionId: string, forceSend?: boolean) => Promise<void>;
   dismissParticipantSuggestion: (threadId: string, suggestionId: string) => Promise<void>;
   deleteMessage: (threadId: string, messageId: string) => void;

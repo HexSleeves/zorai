@@ -37,6 +37,11 @@ impl DaemonClient {
                     Err(err) => warn!("Failed to parse thread detail: {}", err),
                 }
             }
+            DaemonMessage::AgentThreadHandoffResult { result } => {
+                let _ = event_tx
+                    .send(ClientEvent::ThreadHandoffResult(result))
+                    .await;
+            }
             DaemonMessage::AgentThreadDetailChunk {
                 thread_id,
                 thread_json_chunk,

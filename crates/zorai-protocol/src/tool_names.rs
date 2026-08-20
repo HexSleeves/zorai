@@ -42,6 +42,7 @@ pub const DISCOVER_SKILLS: &str = "discover_skills";
 pub const DISPATCH_VIA_BID_PROTOCOL: &str = "dispatch_via_bid_protocol";
 pub const DEPLOY: &str = "deploy";
 pub const ENQUEUE_TASK: &str = "enqueue_task";
+pub const EXTEND_SUBAGENT_BUDGET: &str = "extend_subagent_budget";
 pub const EQUALIZE_LAYOUT: &str = "equalize_layout";
 pub const EDIT_FILE: &str = "edit_file";
 pub const EXECUTE_COMMAND: &str = "execute_command";
@@ -135,6 +136,7 @@ pub const READ_SKILL: &str = "read_skill";
 pub const READ_SOUL: &str = "read_soul";
 pub const READ_USER: &str = "read_user";
 pub const RELOAD_EMERGENT_PROTOCOL_REGISTRY: &str = "reload_emergent_protocol_registry";
+pub const REPORT_SUBAGENT_OUTCOME: &str = "report_subagent_outcome";
 pub const RENAME_PANE: &str = "rename_pane";
 pub const REPLACE_IN_FILE: &str = "replace_in_file";
 pub const RERUN_ROUTINE: &str = "rerun_routine";
@@ -398,6 +400,8 @@ pub const AGENT_TOOLS: &[&str] = &[
     LIST_PARTICIPANTS,
     SPAWN_SUBAGENT,
     LIST_SUBAGENTS,
+    REPORT_SUBAGENT_OUTCOME,
+    EXTEND_SUBAGENT_BUDGET,
     MESSAGE_AGENT,
     HANDOFF_THREAD_AGENT,
     ROUTE_TO_SPECIALIST,

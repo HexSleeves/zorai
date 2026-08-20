@@ -209,7 +209,7 @@ export function Toggle({ value, onChange }: { value: boolean; onChange: (value: 
     return (
         <button onClick={() => onChange(!value)} style={{
             width: 36, height: 20, borderRadius: 0, border: "none",
-            background: value ? "var(--accent)" : "var(--bg-surface)",
+            background: value ? "var(--accent)" : "var(--zorai-bg-surface)",
             cursor: "pointer", position: "relative", transition: "background 0.2s",
         }}>
             <div style={{
@@ -221,7 +221,7 @@ export function Toggle({ value, onChange }: { value: boolean; onChange: (value: 
 }
 
 export const inputStyle: CSSProperties = {
-    background: "var(--bg-surface)", border: "1px solid var(--border)",
+    background: "var(--zorai-bg-surface)", border: "1px solid var(--border)",
     borderRadius: 0, color: "var(--text-primary)", fontSize: 12,
     padding: "3px 8px", fontFamily: "inherit", outline: "none", width: 200,
 };
@@ -232,18 +232,18 @@ export const headerBtnStyle: CSSProperties = {
 };
 
 export const addBtnStyle: CSSProperties = {
-    background: "var(--bg-surface)", border: "1px solid var(--border)",
+    background: "var(--zorai-bg-surface)", border: "1px solid var(--border)",
     color: "var(--text-primary)", cursor: "pointer", fontSize: 11,
     padding: "4px 10px", borderRadius: 0, marginTop: 8,
 };
 
 export const kbdStyle: CSSProperties = {
-    background: "var(--bg-surface)", padding: "2px 6px", borderRadius: 0,
+    background: "var(--zorai-bg-surface)", padding: "2px 6px", borderRadius: 0,
     fontSize: 10, fontFamily: "var(--font-mono)",
 };
 
 export const rebindBtnStyle: CSSProperties = {
-    background: "var(--bg-surface)",
+    background: "var(--zorai-bg-surface)",
     border: "1px solid var(--border)",
     borderRadius: 0,
     color: "var(--text-primary)",
@@ -253,7 +253,7 @@ export const rebindBtnStyle: CSSProperties = {
 };
 
 export const smallBtnStyle: CSSProperties = {
-    background: "var(--bg-surface)",
+    background: "var(--zorai-bg-surface)",
     border: "1px solid var(--border)",
     borderRadius: 0,
     color: "var(--text-primary)",
@@ -443,14 +443,14 @@ export function ModelSelector({ providerId, value, customName, onChange, disable
 
     if (useCustom) {
         return (
-            <div style={{ display: "grid", gap: 4, width: "100%" }}>
+            <div className="zorai-input" style={{ display: "grid", gap: 4, width: "100%" }}>
                 <input
                     type="text"
                     value={custom_model_name}
                     onChange={(e) => setCustomModelName(e.target.value)}
                     placeholder="Display name (optional)"
                     disabled={disabled}
-                    style={{ ...inputStyle, width: "100%" }}
+                    style={{ ...inputStyle, width: "100%", background: "none", border: "none" }}
                 />
                 <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                     <input
@@ -491,7 +491,7 @@ export function ModelSelector({ providerId, value, customName, onChange, disable
     }
 
     return (
-        <div ref={containerRef} style={{ position: "relative" }}>
+        <div className="zorai-input" ref={containerRef} style={{ position: "relative" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
                 <input
                     ref={inputRef}
@@ -507,7 +507,7 @@ export function ModelSelector({ providerId, value, customName, onChange, disable
                     }}
                     placeholder="Select or type model ID"
                     disabled={disabled}
-                    style={{ ...inputStyle, flex: 1 }}
+                    style={{ ...inputStyle, flex: 1, background: "none", border: "none" }}
                 />
                 {canFetch && (
                     <button
@@ -528,7 +528,7 @@ export function ModelSelector({ providerId, value, customName, onChange, disable
                     top: "100%",
                     left: 0,
                     right: 0,
-                    background: "var(--bg-surface)",
+                    background: "var(--zorai-bg-surface)",
                     border: "1px solid var(--border)",
                     maxHeight: 240,
                     overflowY: "auto",
@@ -573,7 +573,7 @@ export function ModelSelector({ providerId, value, customName, onChange, disable
                                     alignItems: "center",
                                 }}
                                 onMouseEnter={(e) => {
-                                    (e.target as HTMLElement).style.background = "var(--bg-hover)";
+                                    (e.target as HTMLElement).style.background = "var(--zorai-bg-active)";
                                 }}
                                 onMouseLeave={(e) => {
                                     (e.target as HTMLElement).style.background = 
@@ -595,7 +595,7 @@ export function ModelSelector({ providerId, value, customName, onChange, disable
                                                     padding: "3px 5px",
                                                     border: "1px solid var(--border)",
                                                     color: "var(--text-secondary)",
-                                                    background: "var(--bg-elevated)",
+                                                    background: "var(--zorai-bg-elevated)",
                                                     textTransform: "uppercase",
                                                     letterSpacing: "0.04em",
                                                 }}
@@ -634,7 +634,7 @@ export function ModelSelector({ providerId, value, customName, onChange, disable
                             style={{
                                 padding: "8px 10px",
                                 cursor: "pointer",
-                                background: "var(--bg-surface)",
+                                background: "var(--zorai-bg-surface)",
                                 borderTop: filteredModels.length > 0 ? "1px solid var(--border)" : "none",
                                 color: search ? "var(--accent)" : "var(--text-secondary)",
                             }}

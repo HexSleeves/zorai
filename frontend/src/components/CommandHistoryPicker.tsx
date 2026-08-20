@@ -109,7 +109,7 @@ export function CommandHistoryPicker({ style, className }: CommandHistoryPickerP
           style={{
             width: "100%",
             padding: "14px 16px",
-            background: "var(--bg-primary)",
+            background: "var(--zorai-bg)",
             border: "none",
             borderBottom: "1px solid var(--border)",
             color: "var(--text-primary)",
@@ -141,7 +141,7 @@ export function CommandHistoryPicker({ style, className }: CommandHistoryPickerP
                   cursor: "pointer",
                   display: "grid",
                   gap: 4,
-                  background: selectedIndex === i ? "var(--bg-surface)" : "transparent",
+                  background: selectedIndex === i ? "var(--zorai-bg-surface)" : "transparent",
                 }}
               >
                 <div style={{ fontSize: 13, fontFamily: "var(--font-mono)", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>

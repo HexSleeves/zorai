@@ -38,7 +38,7 @@ export function SearchOverlayControls({
                 }}
                 placeholder="Search in buffer..."
                 style={{
-                    background: "var(--bg-surface)",
+                    background: "var(--zorai-bg-surface)",
                     border: "1px solid var(--border)",
                     borderRadius: 4,
                     color: "var(--text-primary)",

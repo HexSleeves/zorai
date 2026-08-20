@@ -328,7 +328,7 @@ export function Sidebar() {
         minWidth: `${sidebarWidth}px`,
         maxWidth: `${sidebarWidth}px`,
         minHeight: 0,
-        background: "var(--bg-primary)",
+        background: "var(--zorai-bg)",
         borderRight: "1px solid var(--border)",
         display: "flex",
         flexDirection: "column",

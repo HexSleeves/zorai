@@ -73,6 +73,9 @@ where
                                         crate::agent::types::AgentEvent::ThreadCreated {
                                             ..
                                         } => "thread_created",
+                                        crate::agent::types::AgentEvent::ThreadTitleUpdated {
+                                            ..
+                                        } => "thread_title_updated",
                                         crate::agent::types::AgentEvent::ThreadReloadRequired {
                                             ..
                                         } => "thread_reload_required",

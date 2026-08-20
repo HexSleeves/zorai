@@ -21,6 +21,14 @@ function asRemoteThreadArray(value: unknown): unknown[] {
     return [];
 }
 
+export function findThreadByAuthoritativeIdentity(
+    threads: AgentThread[],
+    targetThreadId: string,
+): AgentThread | undefined {
+    return threads.find((thread) => thread.id === targetThreadId)
+        ?? threads.find((thread) => thread.daemonThreadId === targetThreadId);
+}
+
 export async function fetchHydratedRemoteThreads(params: {
     agentListThreads: AgentListThreads;
     fallbackAgentName: string;

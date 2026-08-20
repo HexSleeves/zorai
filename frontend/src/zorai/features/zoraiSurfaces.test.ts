@@ -171,6 +171,13 @@ describe("Zorai feature surfaces", () => {
     expect(panelSource).toContain("GitHub");
     expect(panelSource).toContain("Homepage");
     expect(panelSource).toContain("Web Search");
+    expect(panelSource).toContain("getSystemFonts");
+    expect(panelSource).toContain('updateSetting("fontFamily"');
+    expect(panelSource).toContain('updateSetting("fontSize"');
+    expect(panelSource).toContain('updateSetting("lineHeight"');
+    expect(panelSource).toContain("Terminal Font");
+    expect(panelSource).toContain("Font Size");
+    expect(panelSource).toContain("Line Height");
     expect(panelSource).toContain("SubAgentsTab");
     expect(readFeature("../../components/settings-panel/SubAgentsTab.tsx")).toContain("Edit Sub-Agent");
     expect(readFeature("../../components/settings-panel/SubAgentsTab.tsx")).toContain("Back");
@@ -178,6 +185,18 @@ describe("Zorai feature surfaces", () => {
     expect(readFeature("../../components/settings-panel/SubAgentsTab.tsx")).toContain("showForm ? null");
     expect(panelSource).toContain("selectPlugin");
     expect(panelSource).toContain("pluginUpdateSettings");
+  });
+
+  it("applies shared terminal typography to standard and infinite-canvas terminals", () => {
+    const terminalRuntimeSource = readFeature("../../components/terminal-pane/useTerminalRuntime.ts");
+    const layoutSource = readFeature("../../components/LayoutContainer.tsx");
+    const canvasSource = readFeature("../../components/InfiniteCanvasSurface.tsx");
+
+    expect(terminalRuntimeSource).toContain("fontFamily: settings.fontFamily");
+    expect(terminalRuntimeSource).toContain("fontSize: settings.fontSize");
+    expect(terminalRuntimeSource).toContain("lineHeight: settings.lineHeight");
+    expect(layoutSource).toContain("<TerminalPane");
+    expect(canvasSource).toContain("<TerminalPane");
   });
 
   it("keeps Settings scrollable inside the Zorai shell", () => {
@@ -194,6 +213,7 @@ describe("Zorai feature surfaces", () => {
     const featuresSource = readFunctionSource(panelSource, "function FeaturesPanel()", "function AdvancedPanel()");
 
     expect(featuresSource).toContain("semantic_embedding_enabled");
+    expect(featuresSource).toContain("auto_thread_title");
     expect(featuresSource).toContain("semantic_embedding_provider");
     expect(featuresSource).toContain("semantic_embedding_model");
     expect(featuresSource).toContain("filterAudioProviderOptions");
@@ -345,7 +365,8 @@ describe("Zorai feature surfaces", () => {
     expect(source).toContain("Record voice message");
     expect(speechSource).toContain("agentTextToSpeech");
     expect(speechSource).toContain("loadingMessageId");
-    expect(viewSource).toContain("Speak");
+    expect(viewSource).toContain("onSpeak");
+    expect(readFeature("./threads/NativeThreadMessageBubble.tsx")).toContain("Read aloud");
   });
 
   it("keeps TUI-style pinned message controls in native Threads", () => {
@@ -436,58 +457,61 @@ describe("Zorai feature surfaces", () => {
   });
 
   it("keeps assistant reasoning separate from visible message content", () => {
-    const source = readFeature("./threads/ThreadsView.tsx");
+    const messageSource = readFeature("./threads/NativeThreadMessageBubble.tsx");
     const css = readFeature("../styles/zorai.css");
 
-    expect(source).toContain("zorai-message__reasoning-toggle");
-    expect(source).toContain("hasVisibleContent");
-    expect(source).not.toContain("reasoningPreview");
-    expect(source).not.toContain("zorai-message__content--preview");
-    expect(source).not.toContain("summarizeThreadMessageText");
-    expect(source).toContain("Reasoning");
-    expect(source).not.toContain("open={message.isStreaming ? true : undefined}");
-    expect(source).not.toContain("<p className=\"zorai-message__reasoning\">");
+    expect(messageSource).toContain("zorai-message__reasoning-toggle");
+    expect(messageSource).toContain("hasVisibleContent");
+    expect(messageSource).not.toContain("reasoningPreview");
+    expect(messageSource).not.toContain("zorai-message__content--preview");
+    expect(messageSource).not.toContain("summarizeThreadMessageText");
+    expect(messageSource).toContain("Reasoning");
+    expect(messageSource).not.toContain("open={message.isStreaming ? true : undefined}");
+    expect(messageSource).not.toContain("<p className=\"zorai-message__reasoning\">");
     expect(css).toMatch(/\.zorai-message__reasoning\s*{[^}]*border:\s*1px solid var\(--zorai-border\)/s);
     expect(css).toMatch(/\.zorai-message__reasoning\s*>\s*div\s*{[^}]*max-height:\s*min\(42vh, 360px\)/s);
   });
 
-  it("renders system metacognition messages as collapsed rows like tool calls", () => {
+  it("renders classified system activity as collapsed rows like tool calls", () => {
     const source = readFeature("./threads/ThreadsView.tsx");
+    const rowSource = readFeature("./threads/ThreadActivityRow.tsx");
 
-    expect(source).toContain("isMetacognitionSystemMessage");
-    expect(source).toContain("Meta-cognitive intervention");
-    expect(source).toContain("MetacognitionEventRow");
-    expect(source).toContain("const [collapsed, setCollapsed] = useState(true)");
-    expect(source).toContain("return <MetacognitionEventRow");
+    expect(source).toContain("classifyThreadActivityMessage");
+    expect(source).toContain("ThreadActivityRow");
+    expect(source).toContain("onRefreshOperation={runtime.getOperationStatus}");
+    expect(source).toContain("onCancelOperation={runtime.cancelOperation}");
+    expect(rowSource).toContain("const [expanded, setExpanded] = useState(false)");
+    expect(rowSource).toContain("activity.rawText");
   });
 
   it("fetches latest thread pages on selection and older pages on scroll-up", () => {
     const source = readFeature("./threads/ThreadsView.tsx");
+    const railSource = readFeature("./threads/ThreadsRail.tsx");
     const runtimeSource = readFeature("../../components/agent-chat-panel/runtime/useAgentChatPanelProviderValue.ts");
     const eventsSource = readFeature("../../components/agent-chat-panel/runtime/useDaemonAgentEvents.ts");
 
-    expect(source).toContain("openThreadTarget");
-    expect(source).not.toContain("runtime.openThread(thread.id)");
-    expect(source).toContain("DEFAULT_THREAD_DATE_FILTER");
-    expect(source).toContain("Loading threads.");
-    expect(source).toContain("loadedAgentFilterRef.current == null ? 0");
-    expect(source).toContain("refreshSubAgents");
+    expect(railSource).toContain("openThreadTarget");
+    expect(railSource).not.toContain("runtime.openThread(thread.id)");
+    expect(railSource).toContain("DEFAULT_THREAD_DATE_FILTER");
+    expect(railSource).toContain("Loading threads.");
+    expect(railSource).toContain("loadedAgentFilterRef.current == null ? 0");
+    expect(railSource).toContain("refreshSubAgents");
     expect(source).toContain("onScroll");
     expect(source).toContain("loadOlderThreadMessages");
-    expect(source).toContain("threadHistoryLabel");
-    expect(source).toContain("threadTabs");
-    expect(source).toContain("fixedThreadTabs");
-    expect(source).toContain("agentFilterOptions");
-    expect(source).toContain("Agents & subagents");
+    expect(railSource).toContain("threadHistoryLabel");
+    expect(railSource).toContain("threadTabs");
+    expect(railSource).toContain("fixedThreadTabs");
+    expect(railSource).toContain("agentFilterOptions");
+    expect(railSource).toContain("Agents & subagents");
     expect(source).toContain("Loading messages");
-    expect(source).not.toContain("threadTabs.map");
-    expect(source).toContain("dateFilters");
-    expect(source).toContain("includeInternal: true");
-    expect(source).toContain("resolveThreadListSource(daemonFilteredThreads, runtime.filteredThreads)");
-    expect(source).not.toContain("daemonFilteredThreads?.length");
-    expect(source).toContain("fetchKey");
-    expect(source).toContain("[daemonAgentFilter, fetchKey, fetchThreadList, tab]");
-    expect(source).not.toContain("[daemonAgentFilter, runtime, tab]");
+    expect(railSource).not.toContain("threadTabs.map");
+    expect(railSource).toContain("dateFilters");
+    expect(railSource).toContain("includeInternal: true");
+    expect(railSource).toContain("resolveThreadListSource(daemonFilteredThreads, runtime.filteredThreads)");
+    expect(railSource).not.toContain("daemonFilteredThreads?.length");
+    expect(railSource).toContain("fetchKey");
+    expect(railSource).toContain("[daemonAgentFilter, fetchKey, fetchThreadList, tab]");
+    expect(railSource).not.toContain("[daemonAgentFilter, runtime, tab]");
     expect(source).toContain("resolveThreadHistoryScrollAction");
     expect(runtimeSource).toContain("loadThreadPage");
     expect(runtimeSource).toContain("latestLoadedThreadIdRef");

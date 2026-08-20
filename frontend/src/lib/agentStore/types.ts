@@ -1,6 +1,20 @@
 import type { ToolCall, WelesReviewMeta } from "../agentTools";
 import type { PaneId, SurfaceId, WorkspaceId } from "../types";
 
+export interface ThreadHandoffFrame {
+  agentId: string;
+  agentName: string;
+  enteredAt: number;
+  linkedThreadId?: string | null;
+}
+
+export interface ThreadHandoffState {
+  originAgentId: string;
+  activeAgentId: string;
+  responderStack: ThreadHandoffFrame[];
+  pendingApprovalId?: string | null;
+}
+
 export interface ThreadParticipantState {
   agentId: string;
   agentName: string;
@@ -31,6 +45,7 @@ export interface AgentThread {
   surfaceId: SurfaceId | null;
   paneId: PaneId | null;
   agent_name: string;
+  targetAgentId?: string | null;
   title: string;
   createdAt: number;
   updatedAt: number;
@@ -56,6 +71,7 @@ export interface AgentThread {
   upstreamAssistantId?: string | null;
   threadParticipants?: ThreadParticipantState[];
   queuedParticipantSuggestions?: ThreadParticipantSuggestion[];
+  threadHandoffState?: ThreadHandoffState | null;
 }
 
 export type AgentRole = "user" | "assistant" | "system" | "tool";

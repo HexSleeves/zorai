@@ -68,7 +68,7 @@ export function SurfaceCreateButton({
                         top: menuTop,
                         minWidth: menuWidth,
                         border: "1px solid var(--glass-border)",
-                        background: "var(--bg-primary)",
+                        background: "var(--zorai-bg)",
                         borderRadius: "var(--radius-md)",
                         boxShadow: "var(--shadow-sm), 0 12px 28px rgba(0,0,0,0.28)",
                         zIndex: 2600,

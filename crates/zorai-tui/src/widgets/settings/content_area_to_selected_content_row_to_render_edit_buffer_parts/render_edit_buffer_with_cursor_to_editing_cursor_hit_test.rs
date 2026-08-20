@@ -287,6 +287,7 @@ pub(crate) fn settings_field_can_toggle(settings: &SettingsState, config: &Confi
             | "feat_audio_stt_enabled"
             | "feat_audio_tts_enabled"
             | "feat_embedding_enabled"
+            | "feat_auto_thread_title"
             | "whatsapp_link_device"
             | "whatsapp_relink_device"
     ) || field.starts_with("tool_")

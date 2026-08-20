@@ -986,6 +986,25 @@ fn start_daemon_bridge(
                                     session_id,
                                 );
                             }
+                            DaemonCommand::ThreadHandoff {
+                                thread_id,
+                                action,
+                                target_agent_id,
+                                reason,
+                                summary,
+                            } => {
+                                forward_bridge_command_result(
+                                    &daemon_event_tx,
+                                    "thread handoff",
+                                    client.send_thread_handoff(
+                                        thread_id,
+                                        action,
+                                        target_agent_id,
+                                        reason,
+                                        summary,
+                                    ),
+                                );
+                            }
                             DaemonCommand::SendParticipantSuggestion {
                                 thread_id,
                                 suggestion_id,

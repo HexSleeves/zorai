@@ -38,22 +38,14 @@ export function getToolDiffPresentation(toolName: string, toolArguments: string)
 export function ToolDiffView({ label = "changes", sections }: { label?: string; sections: ToolDiffSection[] }) {
     return (
         <div>
-            <div style={{ color: "var(--text-muted)", fontSize: 11 }}>{label}</div>
-            <div style={{ border: "1px solid rgba(255,255,255,0.08)", background: "rgba(7, 12, 18, 0.84)", borderRadius: "var(--radius-sm)", overflow: "hidden" }}>
+            <div className="acp-field-label">{label}</div>
+            <div className="acp-diff">
                 {sections.map((section, sectionIndex) => (
-                    <div key={sectionIndex} style={{ borderTop: sectionIndex === 0 ? "none" : "1px solid rgba(255,255,255,0.08)" }}>
+                    <div key={sectionIndex} className="acp-diff__section">
                         {section.lines.map((line, lineIndex) => (
                             <div
                                 key={`${sectionIndex}_${lineIndex}`}
-                                style={{
-                                    padding: "3px 8px",
-                                    fontFamily: "var(--font-mono)",
-                                    fontSize: 11,
-                                    lineHeight: 1.45,
-                                    whiteSpace: "pre-wrap",
-                                    wordBreak: "break-word",
-                                    ...styleForLineKind(line.kind),
-                                }}
+                                className={`acp-diff__line acp-diff__line--${line.kind}`}
                             >
                                 {line.text || " "}
                             </div>
@@ -206,25 +198,6 @@ function splitContentLines(value: string): string[] {
 
 function normalizeNewlines(value: string): string {
     return value.replace(/\r\n?/g, "\n");
-}
-
-function styleForLineKind(kind: ToolDiffLineKind): Record<string, string | number> {
-    switch (kind) {
-        case "file":
-            return { color: "#8ED0FF", background: "rgba(31, 84, 128, 0.22)", fontWeight: 700 };
-        case "hunk":
-            return { color: "#FFD37A", background: "rgba(110, 76, 16, 0.28)" };
-        case "add":
-            return { color: "#B8F2C4", background: "rgba(24, 92, 48, 0.32)" };
-        case "remove":
-            return { color: "#FFC1C1", background: "rgba(120, 34, 34, 0.32)" };
-        case "context":
-            return { color: "var(--text-primary)" };
-        case "meta":
-            return { color: "var(--text-muted)" };
-        default:
-            return { color: "var(--text-primary)" };
-    }
 }
 
 function getPathArg(args: Record<string, unknown>): string | null {

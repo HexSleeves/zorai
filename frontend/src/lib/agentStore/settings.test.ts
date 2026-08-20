@@ -114,3 +114,11 @@ test("participant observer restore window defaults and preserves disabled sentin
 
   expect(normalized.participant_observer_restore_window_hours).toBe(0);
 });
+
+test("auto thread title defaults to off and rejects unknown providers", () => {
+  expect(DEFAULT_AGENT_SETTINGS.auto_thread_title).toBe("off");
+  expect(normalizeAgentSettingsFromSource({ auto_thread_title: "rarog" } as any).auto_thread_title).toBe("rarog");
+  expect(normalizeAgentSettingsFromSource({ auto_thread_title: "WELES" } as any).auto_thread_title).toBe("weles");
+  expect(normalizeAgentSettingsFromSource({ auto_thread_title: "mystery" } as any).auto_thread_title).toBe("off");
+  expect(buildDaemonAgentConfig(DEFAULT_AGENT_SETTINGS).auto_thread_title).toBe("off");
+});

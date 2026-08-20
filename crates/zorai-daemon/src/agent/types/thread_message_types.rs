@@ -328,6 +328,7 @@ pub enum AgentMessageKind {
     #[default]
     Normal,
     CompactionArtifact,
+    ReportBack,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]

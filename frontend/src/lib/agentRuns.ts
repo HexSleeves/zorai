@@ -36,14 +36,14 @@ export interface AgentRun {
     last_error?: string | null;
 }
 
-export async function fetchAgentRuns(): Promise<AgentRun[]> {
+export async function fetchAgentRuns(parentThreadId?: string | null): Promise<AgentRun[]> {
     const zorai = getBridge();
     if (!zorai?.agentListRuns) {
         return [];
     }
 
     try {
-        const result = await zorai.agentListRuns();
+        const result = await zorai.agentListRuns(parentThreadId);
         return Array.isArray(result) ? (result as AgentRun[]) : [];
     } catch {
         return [];

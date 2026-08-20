@@ -467,6 +467,20 @@ impl<'a> SendMessageRunner<'a> {
                 ToolCallDisposition::RestartLoop => return Ok(LoopDisposition::Continue),
                 ToolCallDisposition::BreakLoop => return Ok(LoopDisposition::Break),
             }
+
+            if !result.is_error {
+                if let Some(disposition) = self.apply_successful_subagent_budget_tool(
+                    tc.function.name.as_str(),
+                    tc.function.arguments.as_str(),
+                    result.content.as_str(),
+                ) {
+                    return Ok(match disposition {
+                        ToolCallDisposition::ContinueTools => LoopDisposition::Continue,
+                        ToolCallDisposition::RestartLoop => LoopDisposition::Continue,
+                        ToolCallDisposition::BreakLoop => LoopDisposition::Break,
+                    });
+                }
+            }
         }
 
         if self.was_cancelled {
@@ -562,7 +576,11 @@ impl<'a> SendMessageRunner<'a> {
                 author_agent_id: Some(author_agent_id),
                 author_agent_name: Some(author_agent_name),
                 reasoning: msg_reasoning,
-                message_kind: AgentMessageKind::Normal,
+                message_kind: if self.report_back_phase.is_some() {
+                    AgentMessageKind::ReportBack
+                } else {
+                    AgentMessageKind::Normal
+                },
                 compaction_strategy: None,
                 compaction_payload: None,
                 offloaded_payload_id: None,
@@ -956,47 +974,70 @@ impl<'a> SendMessageRunner<'a> {
             }
         }
 
-        if self.termination_tool_calls.is_multiple_of(5) {
-            if let Some(budget) = self.task_context_budget.as_mut() {
-                let current_tokens = {
-                    let threads = self.engine.threads.read().await;
-                    threads
-                        .get(&self.tid)
-                        .map(|thread| {
-                            crate::agent::subagent::context_budget::visible_output_budget_tokens(
-                                &thread.messages,
-                            )
-                        })
-                        .unwrap_or(0) as u32
-                };
+        if self.task_context_budget.is_some() {
+            self.sync_task_context_budget_from_live_task().await;
+            let current_tokens = {
+                let threads = self.engine.threads.read().await;
+                threads
+                    .get(&self.tid)
+                    .map(|thread| {
+                        crate::agent::subagent::context_budget::visible_output_budget_tokens(
+                            &thread.messages,
+                        )
+                    })
+                    .unwrap_or(0)
+            };
+            let overflow_action = self.task_context_budget.as_mut().and_then(|budget| {
                 budget.set_consumed(current_tokens);
                 match budget.check() {
                     crate::agent::subagent::context_budget::BudgetStatus::Exceeded {
                         overflow_action,
                         ..
-                    } => match overflow_action {
-                        crate::agent::types::ContextOverflowAction::Error => {
-                            tracing::warn!(thread_id = %self.tid, "output token budget exceeded - stopping");
-                            self.terminated_for_budget = true;
-                            self.engine.emit_workflow_notice(
-                                &self.tid,
-                                "budget-exceeded",
-                                "Output token budget exceeded, execution stopped.",
-                                None,
-                            );
-                            return true;
-                        }
-                        _ => {
-                            tracing::info!(thread_id = %self.tid, "output token budget exceeded - relying on compaction");
-                        }
-                    },
+                    } => Some(overflow_action),
                     crate::agent::subagent::context_budget::BudgetStatus::Warning {
                         consumed,
                         max,
                     } => {
                         tracing::debug!(thread_id = %self.tid, consumed, max, "context budget warning");
+                        None
                     }
-                    _ => {}
+                    _ => None,
+                }
+            });
+            if let Some(overflow_action) = overflow_action {
+                let is_spawned = self.spawned_subagent_turn_active();
+                let already_in_report_back = self.report_back_phase.is_some();
+                match super::report_back::budget_overflow_decision(
+                    is_spawned,
+                    already_in_report_back,
+                    overflow_action,
+                ) {
+                    super::report_back::BudgetOverflowDecision::EnterReportBack => {
+                        tracing::warn!(
+                            thread_id = %self.tid,
+                            "output token budget exceeded - forcing budget-exempt report-back"
+                        );
+                        if self.enter_execution_budget_report_back().await {
+                            return false;
+                        }
+                        self.terminated_for_budget = true;
+                        return true;
+                    }
+                    super::report_back::BudgetOverflowDecision::Stop => {
+                        tracing::warn!(thread_id = %self.tid, "output token budget exceeded - stopping");
+                        self.terminated_for_budget = true;
+                        self.engine.emit_workflow_notice(
+                            &self.tid,
+                            "budget-exceeded",
+                            "Output token budget exceeded, execution stopped.",
+                            None,
+                        );
+                        return true;
+                    }
+                    super::report_back::BudgetOverflowDecision::RelyOnCompaction => {
+                        tracing::info!(thread_id = %self.tid, "output token budget exceeded - relying on compaction");
+                    }
+                    super::report_back::BudgetOverflowDecision::Continue => {}
                 }
             }
         }

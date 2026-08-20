@@ -509,7 +509,7 @@ html, body {
 .stat-card, .card, .doc-card { padding: 1.25rem; }
 
 .stat-card {
-  background: var(--bg-elevated);
+  background: var(--zorai-bg-elevated);
   border-color: var(--line-subtle);
 }
 .stat-card strong { 

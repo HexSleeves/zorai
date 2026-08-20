@@ -164,7 +164,7 @@ export function SidebarMenus({
             minWidth: 160,
             border: "1px solid var(--glass-border)",
             borderRadius: "var(--radius-md)",
-            background: "var(--bg-primary)",
+            background: "var(--zorai-bg)",
             boxShadow: "var(--shadow-sm)",
             padding: 4,
             display: "grid",

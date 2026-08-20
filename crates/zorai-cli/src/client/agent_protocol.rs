@@ -40,6 +40,8 @@ pub(super) enum AgentBridgeCommand {
         session_id: Option<String>,
         #[serde(default, deserialize_with = "deserialize_context_messages")]
         context_messages: Option<Vec<zorai_protocol::AgentDbMessage>>,
+        #[serde(default)]
+        target_agent_id: Option<String>,
     },
     InternalDelegate {
         thread_id: Option<String>,
@@ -87,6 +89,9 @@ pub(super) enum AgentBridgeCommand {
         #[serde(default)]
         reaction: Option<String>,
     },
+    GetOperationStatus {
+        operation_id: String,
+    },
     AddTask {
         title: String,
         description: String,
@@ -101,9 +106,23 @@ pub(super) enum AgentBridgeCommand {
         task_id: String,
     },
     ListTasks,
-    ListRuns,
+    ListRuns {
+        #[serde(default)]
+        parent_thread_id: Option<String>,
+    },
     GetRun {
         run_id: String,
+    },
+    HandoffThread {
+        thread_id: String,
+        action: String,
+        #[serde(default)]
+        target_agent_id: Option<String>,
+        reason: String,
+        summary: String,
+        requested_by: String,
+        #[serde(default)]
+        session_id: Option<String>,
     },
     StartGoalRun {
         goal: String,
@@ -315,6 +334,20 @@ pub(super) enum AgentBridgeCommand {
     GetCollaborationSessions {
         #[serde(default)]
         parent_task_id: Option<String>,
+    },
+    SendParticipantSuggestion {
+        thread_id: String,
+        suggestion_id: String,
+        #[serde(default)]
+        session_id: Option<String>,
+        #[serde(default)]
+        force_send: bool,
+    },
+    DismissParticipantSuggestion {
+        thread_id: String,
+        suggestion_id: String,
+        #[serde(default)]
+        session_id: Option<String>,
     },
     VoteOnCollaborationDisagreement {
         parent_task_id: String,

@@ -31,6 +31,7 @@ mod participant_management;
 mod render_helpers;
 mod rendering;
 mod settings_handlers;
+mod thread_handoff;
 mod workspace_actor_picker;
 mod workspace_create_modal;
 #[cfg(test)]

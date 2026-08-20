@@ -1360,6 +1360,16 @@ impl AgentEngine {
         refs
     }
 
+    pub async fn list_runs_for_parent_thread(&self, parent_thread_id: &str) -> Vec<AgentRun> {
+        let tasks = self
+            .list_parent_thread_subagent_tasks(parent_thread_id, None)
+            .await;
+        let sessions = self.session_manager.list().await;
+        let mut runs = project_task_runs(&tasks, &sessions);
+        runs.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        runs
+    }
+
     pub async fn list_runs(&self) -> Vec<AgentRun> {
         let tasks = self
             .list_tasks_filtered(&crate::history::AgentTaskListQuery {

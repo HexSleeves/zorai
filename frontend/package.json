@@ -1,7 +1,7 @@
 {
   "name": "zorai",
   "private": true,
-  "version": "0.9.38",
+  "version": "0.9.39",
   "description": "Daemon-first agentic runtime with AI-native workflows",
   "homepage": "https://zorai.app",
   "author": {
@@ -122,6 +122,7 @@
         "dmg",
         "zip"
       ],
+      "icon": "assets/icon.icns",
       "extraResources": [
         {
           "from": "dist/zorai-daemon",

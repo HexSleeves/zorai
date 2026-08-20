@@ -68,6 +68,74 @@ mod tests {
     }
 
     #[test]
+    fn thread_handoff_state_wire_conversion_preserves_full_ordered_state() {
+        let wire_thread: crate::wire::AgentThread = serde_json::from_str(
+            r#"{
+                "id": "thread-detail-handoff",
+                "title": "Thread detail handoff",
+                "thread_handoff_state": {
+                    "origin_agent_id": "swarog",
+                    "active_agent_id": "weles",
+                    "responder_stack": [
+                        {
+                            "agent_id": "swarog",
+                            "agent_name": "Svarog",
+                            "entered_at": 10,
+                            "linked_thread_id": null
+                        },
+                        {
+                            "agent_id": "weles",
+                            "agent_name": "Weles",
+                            "entered_at": 20,
+                            "linked_thread_id": "thread-weles"
+                        }
+                    ],
+                    "pending_approval_id": null
+                }
+            }"#,
+        )
+        .expect("thread-detail handoff payload should deserialize");
+
+        let converted = convert_thread(wire_thread);
+        let handoff = converted
+            .thread_handoff_state
+            .as_ref()
+            .expect("thread detail should retain handoff state");
+
+        assert_eq!(handoff.origin_agent_id, "swarog");
+        assert_eq!(handoff.active_agent_id, "weles");
+        assert_eq!(handoff.responder_stack.len(), 2);
+
+        let svarog = &handoff.responder_stack[0];
+        assert_eq!(svarog.agent_id, "swarog");
+        assert_eq!(svarog.agent_name, "Svarog");
+        assert_eq!(svarog.entered_at, 10);
+        assert_eq!(svarog.linked_thread_id, None);
+
+        let weles = &handoff.responder_stack[1];
+        assert_eq!(weles.agent_id, "weles");
+        assert_eq!(weles.agent_name, "Weles");
+        assert_eq!(weles.entered_at, 20);
+        assert_eq!(weles.linked_thread_id.as_deref(), Some("thread-weles"));
+        assert_eq!(handoff.pending_approval_id, None);
+    }
+
+    #[test]
+    fn thread_handoff_state_wire_conversion_accepts_legacy_thread_without_state() {
+        let wire_thread: crate::wire::AgentThread = serde_json::from_str(
+            r#"{
+                "id": "legacy-thread",
+                "title": "Legacy thread"
+            }"#,
+        )
+        .expect("legacy thread payload should deserialize");
+
+        let converted = convert_thread(wire_thread);
+
+        assert_eq!(converted.thread_handoff_state, None);
+    }
+
+    #[test]
     fn copy_to_clipboard_keeps_owner_alive_after_write() {
         reset_last_copied_text();
 

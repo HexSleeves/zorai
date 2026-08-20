@@ -324,6 +324,111 @@ async fn run_goal_plan_review_connection_liveness_test(subscribe: bool) {
 }
 
 #[tokio::test]
+async fn direct_user_thread_handoff_push_return_and_errors_keep_connection_alive() {
+    let mut conn = spawn_test_connection().await;
+    let thread_id = "thread-direct-user-handoff";
+
+    conn.agent.threads.write().await.insert(
+        thread_id.to_string(),
+        crate::agent::types::AgentThread {
+            id: thread_id.to_string(),
+            agent_name: Some(crate::agent::agent_identity::MAIN_AGENT_NAME.to_string()),
+            title: "Direct handoff".to_string(),
+            messages: vec![crate::agent::types::AgentMessage::user("handoff", 1)],
+            pinned: false,
+            upstream_thread_id: None,
+            upstream_transport: None,
+            upstream_provider: None,
+            upstream_model: None,
+            upstream_assistant_id: None,
+            created_at: 1,
+            updated_at: 2,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
+        },
+    );
+
+    conn.framed
+        .send(ClientMessage::AgentHandoffThread {
+            thread_id: thread_id.to_string(),
+            action: "push_handoff".to_string(),
+            target_agent_id: Some("weles".to_string()),
+            reason: "Need governance review".to_string(),
+            summary: "Continue as Weles".to_string(),
+            requested_by: "user".to_string(),
+            session_id: None,
+            client_surface: Some(zorai_protocol::ClientSurface::Electron),
+        })
+        .await
+        .expect("send direct handoff push");
+
+    match conn.recv().await {
+        DaemonMessage::AgentThreadHandoffResult { result } => {
+            assert!(result.ok, "push should succeed: {:?}", result.error);
+            assert_eq!(result.thread_id, thread_id);
+            assert_eq!(result.active_agent_id.as_deref(), Some("weles"));
+            assert_eq!(result.stack_depth, Some(2));
+        }
+        other => panic!("expected handoff result, got {other:?}"),
+    }
+
+    conn.framed
+        .send(ClientMessage::AgentHandoffThread {
+            thread_id: thread_id.to_string(),
+            action: "return_handoff".to_string(),
+            target_agent_id: None,
+            reason: "Review complete".to_string(),
+            summary: "Return to previous responder".to_string(),
+            requested_by: "user".to_string(),
+            session_id: None,
+            client_surface: Some(zorai_protocol::ClientSurface::Electron),
+        })
+        .await
+        .expect("send direct handoff return");
+
+    match conn.recv().await {
+        DaemonMessage::AgentThreadHandoffResult { result } => {
+            assert!(result.ok, "return should succeed: {:?}", result.error);
+            assert_eq!(result.active_agent_id.as_deref(), Some("swarog"));
+            assert_eq!(result.stack_depth, Some(1));
+        }
+        other => panic!("expected return handoff result, got {other:?}"),
+    }
+
+    conn.framed
+        .send(ClientMessage::AgentHandoffThread {
+            thread_id: thread_id.to_string(),
+            action: "push_handoff".to_string(),
+            target_agent_id: Some("weles".to_string()),
+            reason: "Invalid direct caller".to_string(),
+            summary: "Must be rejected".to_string(),
+            requested_by: "agent".to_string(),
+            session_id: None,
+            client_surface: Some(zorai_protocol::ClientSurface::Electron),
+        })
+        .await
+        .expect("send invalid direct handoff");
+
+    match conn.recv().await {
+        DaemonMessage::AgentThreadHandoffResult { result } => {
+            assert!(!result.ok);
+            assert!(result
+                .error
+                .as_deref()
+                .is_some_and(|error| error.contains("requested_by=user")));
+        }
+        other => panic!("expected rejected handoff result, got {other:?}"),
+    }
+
+    conn.framed
+        .send(ClientMessage::Ping)
+        .await
+        .expect("send ping");
+    assert!(matches!(conn.recv().await, DaemonMessage::Pong));
+    conn.shutdown().await;
+}
+
+#[tokio::test]
 async fn list_agent_events_notification_snapshot_excludes_inactive_entries() {
     let mut conn = spawn_test_connection().await;
 

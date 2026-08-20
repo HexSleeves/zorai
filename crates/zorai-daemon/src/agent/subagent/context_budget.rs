@@ -96,6 +96,17 @@ impl ContextBudget {
     pub fn overflow_action(&self) -> ContextOverflowAction {
         self.overflow_action
     }
+
+    /// Raise the token ceiling without resetting consumed work.
+    pub fn extend_max(&mut self, additional: u32) {
+        self.max_tokens = self.max_tokens.saturating_add(additional.max(256));
+    }
+
+    pub fn raise_max_to(&mut self, max_tokens: u32) {
+        if max_tokens > self.max_tokens {
+            self.max_tokens = max_tokens.max(256);
+        }
+    }
 }
 
 /// Count the visible assistant output tokens that apply to a sub-agent's
@@ -108,9 +119,40 @@ impl ContextBudget {
 pub(crate) fn visible_output_budget_tokens(messages: &[AgentMessage]) -> u32 {
     messages
         .iter()
-        .filter(|message| message.role == MessageRole::Assistant)
+        .filter(|message| {
+            message.role == MessageRole::Assistant
+                && message.message_kind != crate::agent::types::AgentMessageKind::ReportBack
+        })
         .map(visible_assistant_message_tokens)
         .fold(0u32, u32::saturating_add)
+}
+
+pub(crate) fn synthesize_visible_assistant_summary(messages: &[AgentMessage]) -> String {
+    let mut parts = Vec::new();
+    for message in messages.iter().rev() {
+        if message.role != MessageRole::Assistant {
+            continue;
+        }
+        let content = message.content.trim();
+        if content.is_empty() {
+            continue;
+        }
+        parts.push(content.to_string());
+        if parts.len() >= 3 {
+            break;
+        }
+    }
+    parts.reverse();
+    let summary = parts.join("\n\n");
+    if summary.is_empty() {
+        return "(no usable assistant summary was recorded)".to_string();
+    }
+    if summary.chars().count() <= 4_000 {
+        summary
+    } else {
+        let truncated: String = summary.chars().take(4_000).collect();
+        format!("{truncated}…")
+    }
 }
 
 fn visible_assistant_message_tokens(message: &AgentMessage) -> u32 {
@@ -250,6 +292,52 @@ mod tests {
         budget.record(u32::MAX - 10);
         budget.record(100);
         assert_eq!(budget.consumed(), u32::MAX);
+    }
+
+    #[test]
+    fn extend_max_raises_ceiling_without_resetting_consumed() {
+        let mut budget = ContextBudget::new(1_000, ContextOverflowAction::Error);
+        budget.set_consumed(1_400);
+        assert!(matches!(budget.check(), BudgetStatus::Exceeded { .. }));
+        budget.extend_max(500);
+        assert_eq!(budget.max_tokens(), 1_500);
+        assert_eq!(budget.consumed(), 1_400);
+        assert!(matches!(budget.check(), BudgetStatus::Warning { .. }));
+    }
+
+    #[test]
+    fn raise_max_to_adopts_higher_persisted_ceiling_without_resetting_consumed() {
+        let mut budget = ContextBudget::new(1_000, ContextOverflowAction::Error);
+        budget.set_consumed(1_400);
+        budget.raise_max_to(1_512);
+        assert_eq!(budget.max_tokens(), 1_512);
+        assert_eq!(budget.consumed(), 1_400);
+        assert!(matches!(budget.check(), BudgetStatus::Warning { .. }));
+    }
+
+    #[test]
+    fn raise_max_to_does_not_lower_an_already_higher_ceiling() {
+        let mut budget = ContextBudget::new(2_000, ContextOverflowAction::Error);
+        budget.raise_max_to(1_500);
+        assert_eq!(budget.max_tokens(), 2_000);
+    }
+
+    #[test]
+    fn visible_output_budget_tokens_ignore_report_back_messages() {
+        let counted = assistant_message("visible work output", None, 7, 0, None);
+        let mut report = assistant_message(
+            "forced report-back summary should not count",
+            None,
+            7,
+            0,
+            None,
+        );
+        report.message_kind = crate::agent::types::AgentMessageKind::ReportBack;
+        let without_report = visible_output_budget_tokens(&[counted.clone()]);
+        assert_eq!(
+            visible_output_budget_tokens(&[counted, report]),
+            without_report
+        );
     }
 
     #[test]

@@ -73,7 +73,7 @@ pub struct ThreadHandoffState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub(super) struct PendingThreadHandoffActivation {
+pub(crate) struct PendingThreadHandoffActivation {
     pub thread_id: String,
     pub kind: ThreadHandoffKind,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -81,6 +81,49 @@ pub(super) struct PendingThreadHandoffActivation {
     pub requested_by: ThreadHandoffRequestedBy,
     pub reason: String,
     pub summary: String,
+}
+
+pub(crate) fn build_thread_handoff_activation(
+    thread_id: &str,
+    action: &str,
+    target_agent_id: Option<&str>,
+    requested_by: ThreadHandoffRequestedBy,
+    reason: &str,
+    summary: &str,
+) -> Result<PendingThreadHandoffActivation> {
+    let thread_id = thread_id.trim();
+    if thread_id.is_empty() {
+        anyhow::bail!("handoff_thread_agent requires a thread context");
+    }
+    let reason = reason.trim();
+    if reason.is_empty() {
+        anyhow::bail!("missing 'reason' argument");
+    }
+    let summary = summary.trim();
+    if summary.is_empty() {
+        anyhow::bail!("missing 'summary' argument");
+    }
+
+    let (kind, target_agent_id) = match action.trim() {
+        "push_handoff" => {
+            let target = target_agent_id
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| anyhow::anyhow!("push_handoff requires 'target_agent_id'"))?;
+            (ThreadHandoffKind::Push, Some(target.to_string()))
+        }
+        "return_handoff" => (ThreadHandoffKind::Return, None),
+        other => anyhow::bail!("unsupported handoff action: {other}"),
+    };
+
+    Ok(PendingThreadHandoffActivation {
+        thread_id: thread_id.to_string(),
+        kind,
+        target_agent_id,
+        requested_by,
+        reason: reason.to_string(),
+        summary: summary.to_string(),
+    })
 }
 
 pub(super) fn default_agent_id_for_thread(
@@ -357,6 +400,25 @@ fn thread_handoff_approval_command(request: &PendingThreadHandoffActivation) -> 
 }
 
 impl AgentEngine {
+    pub(crate) async fn apply_operator_thread_handoff(
+        &self,
+        thread_id: &str,
+        action: &str,
+        target_agent_id: Option<&str>,
+        reason: &str,
+        summary: &str,
+    ) -> Result<ThreadHandoffEvent> {
+        let request = build_thread_handoff_activation(
+            thread_id,
+            action,
+            target_agent_id,
+            ThreadHandoffRequestedBy::User,
+            reason,
+            summary,
+        )?;
+        self.apply_thread_handoff_activation(&request, None).await
+    }
+
     pub async fn thread_handoff_state(&self, thread_id: &str) -> Option<ThreadHandoffState> {
         self.thread_handoff_states
             .read()

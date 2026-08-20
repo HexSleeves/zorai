@@ -408,9 +408,7 @@ export function ThreadComposer() {
 
       <div className="zorai-thread-composer__footer">
         <span>
-          {runtime.isStreamingResponse
-            ? "Enter queues the message — it sends when the agent finishes."
-            : "Enter sends. Shift+Enter adds a new line. Ctrl+M records a voice message. Ctrl+L reads the last agent's message."}
+          Enter sends. Shift+Enter adds a new line. Ctrl+M records. Ctrl+L reads.
         </span>
       </div>
     </div>

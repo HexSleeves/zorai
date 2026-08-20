@@ -139,6 +139,7 @@ async fn electron_operator_can_update_tui_participant_suggestions_during_zorai_m
             suggestion_id: "sugg-1".to_string(),
             session_id: None,
             client_surface: Some(zorai_protocol::ClientSurface::Electron),
+            force_send: false,
         })
         .await
         .expect("send suggestion command");

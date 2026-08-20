@@ -8,6 +8,7 @@ use crate::agent::llm_client::{
 mod finalize;
 mod loop_core;
 mod prompt;
+mod report_back;
 mod setup;
 mod tool_calls;
 pub(crate) mod tool_results;
@@ -129,6 +130,7 @@ impl AgentEngine {
                         thread_id: crate::agent::concierge::CONCIERGE_THREAD_ID.to_string(),
                         interrupted_for_approval: false,
                         terminated_for_budget: false,
+                        subagent_report: None,
                         upstream_message: None,
                         provider_final_result: None,
                         fresh_runner_retry: None,
@@ -158,6 +160,7 @@ impl AgentEngine {
                                 thread_id,
                                 interrupted_for_approval: false,
                                 terminated_for_budget: false,
+                                subagent_report: None,
                                 upstream_message: None,
                                 provider_final_result: None,
                                 fresh_runner_retry: None,
@@ -502,6 +505,12 @@ impl<'a> SendMessageRunner<'a> {
                     if self.was_cancelled {
                         break;
                     }
+                    if self
+                        .finish_spawned_subagent_on_unrecoverable_error(&error)
+                        .await
+                    {
+                        break;
+                    }
                     return Err(error);
                 }
             };
@@ -515,6 +524,12 @@ impl<'a> SendMessageRunner<'a> {
                         self.fresh_runner_retry = Some(FreshRunnerRetryRequest {
                             scheduled_retry_cycles: signal.scheduled_retry_cycles,
                         });
+                        break;
+                    }
+                    if self
+                        .finish_spawned_subagent_on_unrecoverable_error(&error)
+                        .await
+                    {
                         break;
                     }
                     return Err(error);

@@ -92,6 +92,26 @@ impl DaemonClient {
         })
     }
 
+    pub fn send_thread_handoff(
+        &self,
+        thread_id: String,
+        action: String,
+        target_agent_id: Option<String>,
+        reason: String,
+        summary: String,
+    ) -> Result<()> {
+        self.send(ClientMessage::AgentHandoffThread {
+            thread_id,
+            action,
+            target_agent_id,
+            reason,
+            summary,
+            requested_by: "user".to_string(),
+            session_id: None,
+            client_surface: Some(zorai_protocol::ClientSurface::Tui),
+        })
+    }
+
     pub fn send_participant_suggestion(
         &self,
         thread_id: String,
@@ -102,6 +122,7 @@ impl DaemonClient {
             suggestion_id,
             session_id: None,
             client_surface: Some(zorai_protocol::ClientSurface::Tui),
+            force_send: false,
         })
     }
 

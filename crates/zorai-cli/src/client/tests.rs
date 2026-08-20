@@ -370,6 +370,80 @@ fn operator_profile_bridge_commands_deserialize_failures() {
 }
 
 #[test]
+fn handoff_bridge_command_deserializes() {
+    let cmd: AgentBridgeCommand = serde_json::from_str(
+        r#"{"type":"handoff-thread","thread_id":"thread-1","action":"push_handoff","target_agent_id":"rarog","reason":"operator requested","summary":"handoff now","requested_by":"user","session_id":"session-1"}"#,
+    )
+    .expect("handoff-thread must deserialize");
+    match cmd {
+        AgentBridgeCommand::HandoffThread {
+            thread_id,
+            action,
+            target_agent_id,
+            reason,
+            summary,
+            requested_by,
+            session_id,
+        } => {
+            assert_eq!(thread_id, "thread-1");
+            assert_eq!(action, "push_handoff");
+            assert_eq!(target_agent_id.as_deref(), Some("rarog"));
+            assert_eq!(reason, "operator requested");
+            assert_eq!(summary, "handoff now");
+            assert_eq!(requested_by, "user");
+            assert_eq!(session_id.as_deref(), Some("session-1"));
+        }
+        _ => panic!("unexpected variant for handoff-thread"),
+    }
+}
+
+#[test]
+fn operation_status_bridge_command_deserializes() {
+    let cmd: AgentBridgeCommand =
+        serde_json::from_str(r#"{"type":"get-operation-status","operation_id":"op-1"}"#)
+            .expect("get-operation-status must deserialize");
+    match cmd {
+        AgentBridgeCommand::GetOperationStatus { operation_id } => {
+            assert_eq!(operation_id, "op-1");
+        }
+        _ => panic!("unexpected variant for get-operation-status"),
+    }
+}
+
+#[test]
+fn participant_suggestion_bridge_commands_deserialize_force_send() {
+    let cmd: AgentBridgeCommand = serde_json::from_str(
+        r#"{"type":"send-participant-suggestion","thread_id":"thread-1","suggestion_id":"sugg-1","session_id":"session-1","force_send":true}"#,
+    )
+    .expect("send-participant-suggestion must deserialize");
+    match cmd {
+        AgentBridgeCommand::SendParticipantSuggestion {
+            thread_id,
+            suggestion_id,
+            session_id,
+            force_send,
+        } => {
+            assert_eq!(thread_id, "thread-1");
+            assert_eq!(suggestion_id, "sugg-1");
+            assert_eq!(session_id.as_deref(), Some("session-1"));
+            assert!(force_send);
+        }
+        _ => panic!("unexpected variant for send-participant-suggestion"),
+    }
+
+    let cmd: AgentBridgeCommand = serde_json::from_str(
+        r#"{"type":"send-participant-suggestion","thread_id":"thread-1","suggestion_id":"sugg-1"}"#,
+    )
+    .expect("send-participant-suggestion must deserialize with default force_send");
+    match cmd {
+        AgentBridgeCommand::SendParticipantSuggestion { force_send, .. } => {
+            assert!(!force_send);
+        }
+        _ => panic!("unexpected variant for send-participant-suggestion default"),
+    }
+}
+
+#[test]
 fn generated_tool_bridge_commands_deserialize() {
     let json = r#"{"type":"list-generated-tools"}"#;
     let cmd: AgentBridgeCommand =

@@ -81,14 +81,14 @@ input:hover,
 textarea:hover,
 select:hover {
   border-color: var(--border-strong);
-  background: var(--bg-tertiary);
+  background: var(--zorai-bg-active);
 }
 
 input:focus,
 textarea:focus,
 select:focus {
   border-color: var(--accent);
-  background: var(--bg-tertiary);
+  background: var(--zorai-bg-active);
 }
 
 input::placeholder,
@@ -110,7 +110,7 @@ textarea::placeholder {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--bg-elevated);
+  background: var(--zorai-bg-elevated);
   border-radius: var(--radius-full);
   border: 1px solid transparent;
 }
@@ -125,7 +125,7 @@ textarea::placeholder {
 
 * {
   scrollbar-width: thin;
-  scrollbar-color: var(--bg-elevated) transparent;
+  scrollbar-color: var(--zorai-bg-elevated) transparent;
 }
 
 /* ═══════════════════════════════════════════════════════════════════════════

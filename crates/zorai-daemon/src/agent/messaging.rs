@@ -566,7 +566,7 @@ impl AgentEngine {
             Some(id) => id,
             None => self.reserve_unique_thread_id().await,
         };
-        let title = content.chars().take(50).collect::<String>();
+        let title = super::thread_title::placeholder_thread_title(content);
         let mut created = false;
         let resolved_target = if let Some(target_agent_id) = target_agent_id {
             Some(crate::agent::agent_identity::resolve_agent_target(
@@ -641,6 +641,7 @@ impl AgentEngine {
         }
         if created {
             self.clear_thread_message_hydration_pending(&id).await;
+            self.queue_auto_thread_title_if_enabled(&id, content).await;
         }
         (id, created)
     }

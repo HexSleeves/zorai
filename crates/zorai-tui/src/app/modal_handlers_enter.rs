@@ -349,6 +349,9 @@ pub(super) fn handle_modal_enter(model: &mut TuiModel, kind: modal::ModalKind) {
         modal::ModalKind::ThreadParticipants => {
             model.handle_thread_participants_modal_enter();
         }
+        modal::ModalKind::ThreadHandoff => {
+            model.submit_thread_handoff_modal_action();
+        }
         modal::ModalKind::ThreadParticipantAgentPicker => {
             model.submit_thread_participant_agent_picker();
         }
@@ -1428,6 +1431,9 @@ pub(super) fn handle_modal_enter(model: &mut TuiModel, kind: modal::ModalKind) {
         }
         modal::ModalKind::ContextWindowEditor => {
             model.commit_active_thread_context_window_editor();
+        }
+        modal::ModalKind::CustomModelEditor => {
+            model.commit_active_thread_custom_model_editor();
         }
         modal::ModalKind::WhatsAppLink => {}
         _ => {

@@ -275,6 +275,7 @@ export function attachTerminalSessionBridge({
             workspaceId: paneWorkspaceId ?? null,
             surfaceId: paneSurfaceId ?? null,
             sessionId: requestedSessionIdRef.current ?? null,
+            source: "local-terminal",
             command,
             reasons: risk.reasons,
             riskLevel: risk.riskLevel,

@@ -28,6 +28,18 @@ impl DaemonClient {
                     })
                     .await;
             }
+            "thread_title_updated" => {
+                let title = get_string(&event, "title").unwrap_or_default();
+                let thread_id = get_string(&event, "thread_id").unwrap_or_default();
+                if title.trim().is_empty()
+                    || Self::is_hidden_agent_thread(Some(thread_id.as_str()), Some(title.as_str()))
+                {
+                    return;
+                }
+                let _ = event_tx
+                    .send(ClientEvent::ThreadTitleUpdated { thread_id, title })
+                    .await;
+            }
             "thread_reload_required" => {
                 let thread_id = get_string(&event, "thread_id").unwrap_or_default();
                 if Self::is_hidden_agent_thread(Some(thread_id.as_str()), None) {

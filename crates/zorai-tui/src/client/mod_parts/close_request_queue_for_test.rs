@@ -72,6 +72,10 @@ pub enum ClientEvent {
         title: String,
         agent_name: Option<String>,
     },
+    ThreadTitleUpdated {
+        thread_id: String,
+        title: String,
+    },
     ThreadDeleted {
         thread_id: String,
         deleted: bool,
@@ -84,6 +88,7 @@ pub enum ClientEvent {
     ThreadReloadRequired {
         thread_id: String,
     },
+    ThreadHandoffResult(zorai_protocol::ThreadHandoffResult),
     MessageFeedbackUpdated {
         thread_id: String,
         message_id: String,

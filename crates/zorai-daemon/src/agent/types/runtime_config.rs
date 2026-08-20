@@ -257,6 +257,7 @@ impl Default for AgentConfig {
             episodic: super::super::episodic::EpisodicConfig::default(),
             uncertainty: super::super::uncertainty::UncertaintyConfig::default(),
             cost: super::super::cost::CostConfig::default(),
+            auto_thread_title: AutoThreadTitleMode::Off,
             extra: HashMap::new(),
         }
     }

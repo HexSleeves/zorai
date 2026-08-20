@@ -55,8 +55,7 @@ impl<'a> SendMessageRunner<'a> {
                     provider_final_result,
                     upstream_thread_id,
                 )
-                .await?;
-                Ok(LoopDisposition::Break)
+                .await
             }
             Some(CompletionChunk::ToolCalls {
                 tool_calls,
@@ -165,7 +164,7 @@ impl<'a> SendMessageRunner<'a> {
         upstream_message: Option<CompletionUpstreamMessage>,
         provider_final_result: Option<CompletionProviderFinalResult>,
         upstream_thread_id: Option<String>,
-    ) -> Result<()> {
+    ) -> Result<LoopDisposition> {
         let turn_cost = if !self.config.cost.enabled {
             None
         } else {
@@ -232,6 +231,13 @@ impl<'a> SendMessageRunner<'a> {
                 turn_cost,
             )
             .await;
+        if self.report_back_phase.is_some() {
+            self.mark_last_assistant_report_back().await;
+            self.capture_text_report_back(&final_content).await;
+        }
+        let continue_for_report_back = self.subagent_report.is_none()
+            && self.report_back_phase.is_none()
+            && self.maybe_force_budget_report_back().await;
         Box::pin(
             self.engine
                 .maybe_auto_send_gateway_thread_response(&self.tid),
@@ -265,6 +271,10 @@ impl<'a> SendMessageRunner<'a> {
             )
             .await;
         self.provider_final_result = provider_final_result.clone();
+        if !super::report_back::should_emit_turn_done_on_text_completion(continue_for_report_back) {
+            self.needs_turn_done = true;
+            return Ok(LoopDisposition::Continue);
+        }
         if let Err(error) = self
             .engine
             .complete_workspace_thread_task_by_thread_id(&self.tid)
@@ -277,29 +287,61 @@ impl<'a> SendMessageRunner<'a> {
             );
         }
 
-        let _ = self.engine.event_tx.send(AgentEvent::Done {
-            thread_id: self.tid.clone(),
+        self.emit_turn_done(
             input_tokens,
             output_tokens,
-            cost: turn_cost,
-            provider: Some(self.config.provider.clone()),
-            model: Some(self.provider_config.model.clone()),
+            turn_cost,
             tps,
             generation_ms,
-            reasoning: final_reasoning,
+            final_reasoning,
             upstream_message,
             provider_final_result,
-            message_id: persisted_message_id,
-        });
-        Ok(())
+            persisted_message_id,
+        );
+        Ok(LoopDisposition::Break)
     }
 
-    pub(super) async fn finish(self) -> Result<SendMessageOutcome> {
-        if !self.was_cancelled && self.max_loops > 0 && self.loop_count >= self.max_loops {
+    pub(super) async fn finish(mut self) -> Result<SendMessageOutcome> {
+        if self.report_back_phase.is_some() && self.subagent_report.is_none() {
+            let summary = self.synthesize_thread_summary().await;
+            self.capture_text_report_back(&summary).await;
+        } else if self.subagent_report.is_none()
+            && self.terminated_for_budget
+            && self.spawned_subagent_turn_active()
+        {
+            let summary = self.synthesize_thread_summary().await;
+            self.subagent_report = Some(SubagentTurnReport {
+                status: SubagentReportStatus::Error,
+                summary,
+                reason: Some("zorai_budget".to_string()),
+            });
+        }
+        if super::report_back::should_emit_tool_execution_limit_error(
+            self.was_cancelled,
+            self.max_loops,
+            self.loop_count,
+            self.subagent_report.is_some(),
+        ) {
             let _ = self.engine.event_tx.send(AgentEvent::Error {
                 thread_id: self.tid.clone(),
                 message: "Tool execution limit reached".into(),
             });
+        }
+        if super::report_back::should_emit_deferred_turn_done(
+            self.needs_turn_done,
+            self.interrupted_for_approval,
+        ) {
+            self.emit_turn_done(
+                0,
+                0,
+                None,
+                None,
+                None,
+                None,
+                None,
+                self.provider_final_result.clone(),
+                None,
+            );
         }
 
         if self.task_id.is_some() {
@@ -412,6 +454,7 @@ impl<'a> SendMessageRunner<'a> {
             thread_id: self.tid,
             interrupted_for_approval: self.interrupted_for_approval,
             terminated_for_budget: self.terminated_for_budget,
+            subagent_report: self.subagent_report,
             upstream_message: final_upstream_message,
             provider_final_result: self.provider_final_result,
             fresh_runner_retry: self.fresh_runner_retry,

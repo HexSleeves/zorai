@@ -13,6 +13,7 @@ impl DaemonClient {
             message @ (DaemonMessage::AgentEvent { .. }
             | DaemonMessage::AgentThreadList { .. }
             | DaemonMessage::AgentThreadDetail { .. }
+            | DaemonMessage::AgentThreadHandoffResult { .. }
             | DaemonMessage::AgentThreadDetailChunk { .. }
             | DaemonMessage::AgentTaskList { .. }
             | DaemonMessage::AgentGoalRunList { .. }

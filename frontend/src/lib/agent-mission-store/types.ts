@@ -63,6 +63,8 @@ export interface ContextSnapshot {
   userMemoryChars: number;
 }
 
+export type ApprovalSource = "local-terminal" | "terminal-bridge" | "agent-task";
+
 export interface ApprovalRequest {
   id: string;
   createdAt: number;
@@ -70,6 +72,7 @@ export interface ApprovalRequest {
   workspaceId: string | null;
   surfaceId: string | null;
   sessionId: string | null;
+  source?: ApprovalSource;
   command: string;
   reasons: string[];
   riskLevel: RiskLevel;
@@ -165,7 +168,7 @@ export interface AgentMissionState {
   setHistoryResults: (summary: string, hits: HistoryRecallHit[]) => void;
   setSymbolHits: (hits: SymbolRecallHit[]) => void;
   setSnapshots: (hits: SnapshotRecord[]) => void;
-  upsertDaemonApproval: (opts: { id: string; paneId: string; workspaceId?: string | null; surfaceId?: string | null; sessionId?: string | null; command: string; reasons: string[]; riskLevel: RiskLevel; blastRadius: string }) => void;
+  upsertDaemonApproval: (opts: { id: string; paneId: string; workspaceId?: string | null; surfaceId?: string | null; sessionId?: string | null; source?: ApprovalSource; command: string; reasons: string[]; riskLevel: RiskLevel; blastRadius: string }) => void;
   recordSessionReady: (opts: { paneId: string; workspaceId?: string | null; surfaceId?: string | null; sessionId?: string | null }) => void;
   recordCommandStarted: (opts: { paneId: string; workspaceId?: string | null; surfaceId?: string | null; sessionId?: string | null; command: string }) => void;
   recordCommandFinished: (opts: { paneId: string; workspaceId?: string | null; surfaceId?: string | null; sessionId?: string | null; command?: string | null; exitCode?: number | null; durationMs?: number | null }) => void;
@@ -173,7 +176,7 @@ export interface AgentMissionState {
   recordError: (opts: { paneId: string; workspaceId?: string | null; surfaceId?: string | null; sessionId?: string | null; message: string }) => void;
   recordOperationalEvent: (opts: { paneId: string; workspaceId?: string | null; surfaceId?: string | null; sessionId?: string | null; kind: OperationalEvent["kind"]; command?: string | null; message?: string | null; exitCode?: number | null; durationMs?: number | null; riskLevel?: RiskLevel | null; blastRadius?: string | null }) => void;
   recordCognitiveOutput: (opts: { paneId: string; workspaceId?: string | null; surfaceId?: string | null; sessionId?: string | null; text: string }) => void;
-  requestApproval: (opts: { paneId: string; workspaceId?: string | null; surfaceId?: string | null; sessionId?: string | null; command: string; reasons: string[]; riskLevel: RiskLevel; blastRadius: string }) => string;
+  requestApproval: (opts: { paneId: string; workspaceId?: string | null; surfaceId?: string | null; sessionId?: string | null; source?: ApprovalSource; command: string; reasons: string[]; riskLevel: RiskLevel; blastRadius: string }) => string;
   resolveApproval: (id: string, status: "approved-once" | "approved-session" | "denied") => void;
   markApprovalHandled: (id: string) => void;
   isCommandAllowed: (sessionKey: string, command: string) => boolean;

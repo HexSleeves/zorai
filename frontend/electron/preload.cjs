@@ -245,9 +245,12 @@ const bridgeApi = {
     },
 
     // Agent engine (daemon-side)
-    agentSendMessage: (threadId, content, sessionId, contextMessages, contentBlocksJson) => ipcRenderer.invoke('agent-send-message', threadId, content, sessionId, contextMessages, contentBlocksJson),
+    agentSendMessage: (threadId, content, sessionId, contextMessages, contentBlocksJson, targetAgentId) => ipcRenderer.invoke('agent-send-message', threadId, content, sessionId, contextMessages, contentBlocksJson, targetAgentId),
     agentInternalDelegate: (threadId, targetAgentId, content, sessionId) => ipcRenderer.invoke('agent-internal-delegate', threadId, targetAgentId, content, sessionId),
     agentThreadParticipantCommand: (payload) => ipcRenderer.invoke('agent-thread-participant-command', payload),
+    agentHandoffThread: (payload) => ipcRenderer.invoke('agent-handoff-thread', payload),
+    agentGetOperationStatus: (id) => ipcRenderer.invoke('agent-get-operation-status', id),
+    agentCancelOperation: (id) => ipcRenderer.invoke('agent-cancel-operation', id),
     agentSendParticipantSuggestion: (payload) => ipcRenderer.invoke('agent-send-participant-suggestion', payload),
     agentDismissParticipantSuggestion: (payload) => ipcRenderer.invoke('agent-dismiss-participant-suggestion', payload),
     agentStopStream: (threadId) => ipcRenderer.invoke('agent-stop-stream', threadId),
@@ -260,7 +263,7 @@ const bridgeApi = {
     agentAddTask: (payload) => ipcRenderer.invoke('agent-add-task', payload),
     agentCancelTask: (taskId) => ipcRenderer.invoke('agent-cancel-task', taskId),
     agentListTasks: () => ipcRenderer.invoke('agent-list-tasks'),
-    agentListRuns: () => ipcRenderer.invoke('agent-list-runs'),
+    agentListRuns: (parentThreadId) => ipcRenderer.invoke('agent-list-runs', parentThreadId),
     agentGetRun: (runId) => ipcRenderer.invoke('agent-get-run', runId),
     agentListTodos: () => ipcRenderer.invoke('agent-list-todos'),
     agentGetTodos: (threadId) => ipcRenderer.invoke('agent-get-todos', threadId),

@@ -56,6 +56,94 @@ describe("openThreadTarget", () => {
     } as any);
   });
 
+  it("fetches the discord source when only its upstream J-Space goal child is stored", async () => {
+    const gatewayDaemonId = "thread_ac6a1ccd-27a5-48bc-9afe-173891cfbebb";
+    const goal = makeThread(
+      "local-jspace-goal",
+      "goal:goal_71a4ce66-147d-4a6a-80a3-77a4bdcadb6e",
+    );
+    goal.title = "J-Space P1-P5 live smoke ZAI";
+    goal.upstreamThreadId = gatewayDaemonId;
+    useAgentStore.setState({
+      threads: [goal],
+      messages: { "local-jspace-goal": [] },
+      todos: { "local-jspace-goal": [] },
+      activeThreadId: "local-jspace-goal",
+      threadHistoryStack: [],
+    } as any);
+    agentGetThread.mockResolvedValue({
+      id: gatewayDaemonId,
+      title: "discord mariuszkurman",
+      agent_name: "glmus",
+      messages: [{ id: "gateway-message", role: "user", content: "Who are you bruh?", timestamp: 10 }],
+      total_message_count: 1,
+      loaded_message_start: 0,
+      loaded_message_end: 1,
+    });
+    const runtime = makeRuntime({ threads: [goal] });
+
+    await expect(openThreadTarget(runtime, gatewayDaemonId)).resolves.toBe(true);
+
+    expect(agentGetThread).toHaveBeenCalledWith(gatewayDaemonId, {
+      messageLimit: expect.any(Number),
+      messageOffset: 0,
+    });
+    const gateway = useAgentStore.getState().threads.find(
+      (thread) => thread.daemonThreadId === gatewayDaemonId,
+    );
+    expect(gateway?.title).toBe("discord mariuszkurman");
+    expect(runtime.openThread).toHaveBeenCalledWith(gateway?.id);
+    expect(runtime.openThread).not.toHaveBeenCalledWith("local-jspace-goal");
+  });
+
+  it("opens the discord source thread instead of its J-Space goal child", async () => {
+    const gatewayDaemonId = "thread_ac6a1ccd-27a5-48bc-9afe-173891cfbebb";
+    const goal = makeThread(
+      "local-jspace-goal",
+      "goal:goal_71a4ce66-147d-4a6a-80a3-77a4bdcadb6e",
+    );
+    goal.title = "J-Space P1-P5 live smoke ZAI";
+    goal.upstreamThreadId = gatewayDaemonId;
+    const gateway = makeThread("local-discord", gatewayDaemonId);
+    gateway.title = "discord mariuszkurman";
+    useAgentStore.setState({
+      threads: [goal, gateway],
+      messages: { "local-jspace-goal": [], "local-discord": [] },
+      todos: { "local-jspace-goal": [], "local-discord": [] },
+      activeThreadId: "local-jspace-goal",
+      threadHistoryStack: [],
+    } as any);
+    const runtime = makeRuntime({ threads: [goal, gateway] });
+
+    await expect(openThreadTarget(runtime, gatewayDaemonId)).resolves.toBe(true);
+
+    expect(runtime.openThread).toHaveBeenCalledWith("local-discord");
+    expect(runtime.openThread).not.toHaveBeenCalledWith("local-jspace-goal");
+    expect(agentGetThread).not.toHaveBeenCalled();
+  });
+
+  it("prefers the canonical gateway daemon thread over an earlier upstream-linked Svarog thread", async () => {
+    const decoy = makeThread("local-svarog", "daemon-svarog");
+    decoy.title = "Unrelated Svarog thread";
+    decoy.upstreamThreadId = "gateway-discord-thread";
+    const gateway = makeThread("local-gateway", "gateway-discord-thread");
+    gateway.title = "discord mariuszkurman";
+    useAgentStore.setState({
+      threads: [decoy, gateway],
+      messages: { "local-svarog": [], "local-gateway": [] },
+      todos: { "local-svarog": [], "local-gateway": [] },
+      activeThreadId: "local-svarog",
+      threadHistoryStack: [],
+    } as any);
+    const runtime = makeRuntime({ threads: [decoy, gateway] });
+
+    await expect(openThreadTarget(runtime, "gateway-discord-thread")).resolves.toBe(true);
+
+    expect(runtime.openThread).toHaveBeenCalledWith("local-gateway");
+    expect(runtime.openThread).not.toHaveBeenCalledWith("local-svarog");
+    expect(agentGetThread).not.toHaveBeenCalled();
+  });
+
   it("opens a locally known thread without listing every other thread", async () => {
     const runtime = makeRuntime();
 

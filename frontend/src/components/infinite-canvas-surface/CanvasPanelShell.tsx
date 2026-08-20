@@ -199,7 +199,7 @@ export function CanvasPanelShell({
         boxShadow: panel.status === "needs_approval"
           ? "0 0 0 1px var(--approval), 0 0 24px rgba(251, 191, 36, 0.22)"
           : "none",
-        background: "var(--bg-primary)",
+        background: "var(--zorai-bg)",
         borderRadius: "8px",
         overflow: "hidden",
       }}

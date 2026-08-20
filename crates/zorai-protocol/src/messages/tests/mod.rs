@@ -434,6 +434,7 @@ fn client_message_supports_participant_suggestion_send() {
         suggestion_id: "sugg-1".to_string(),
         session_id: None,
         client_surface: None,
+        force_send: false,
     };
     let bytes = bincode::serialize(&msg).unwrap();
     let decoded: ClientMessage = bincode::deserialize(&bytes).unwrap();
@@ -442,8 +443,9 @@ fn client_message_supports_participant_suggestion_send() {
         ClientMessage::AgentSendParticipantSuggestion {
             thread_id,
             suggestion_id,
+            force_send,
             ..
-        } if thread_id == "thread-1" && suggestion_id == "sugg-1"
+        } if thread_id == "thread-1" && suggestion_id == "sugg-1" && !force_send
     ));
 }
 
@@ -465,6 +467,140 @@ fn client_message_supports_participant_suggestion_dismiss() {
             ..
         } if thread_id == "thread-1" && suggestion_id == "sugg-1"
     ));
+}
+
+#[test]
+fn client_message_roundtrips_agent_handoff_thread() {
+    let msg = ClientMessage::AgentHandoffThread {
+        thread_id: "thread-1".to_string(),
+        action: "push_handoff".to_string(),
+        target_agent_id: Some("rarog".to_string()),
+        reason: "operator requested concierge".to_string(),
+        summary: "Continue the visible thread.".to_string(),
+        requested_by: "user".to_string(),
+        session_id: Some("session-1".to_string()),
+        client_surface: Some(ClientSurface::Electron),
+    };
+    let bytes = bincode::serialize(&msg).unwrap();
+    let decoded: ClientMessage = bincode::deserialize(&bytes).unwrap();
+    match decoded {
+        ClientMessage::AgentHandoffThread {
+            thread_id,
+            action,
+            target_agent_id,
+            reason,
+            summary,
+            requested_by,
+            session_id,
+            client_surface,
+        } => {
+            assert_eq!(thread_id, "thread-1");
+            assert_eq!(action, "push_handoff");
+            assert_eq!(target_agent_id.as_deref(), Some("rarog"));
+            assert_eq!(reason, "operator requested concierge");
+            assert_eq!(summary, "Continue the visible thread.");
+            assert_eq!(requested_by, "user");
+            assert_eq!(session_id.as_deref(), Some("session-1"));
+            assert_eq!(client_surface, Some(ClientSurface::Electron));
+        }
+        other => panic!("unexpected variant: {:?}", other),
+    }
+}
+
+#[test]
+fn client_message_agent_handoff_thread_defaults_surface() {
+    let decoded: ClientMessage = serde_json::from_value(serde_json::json!({
+        "AgentHandoffThread": {
+            "thread_id": "thread-1",
+            "action": "return_handoff",
+            "target_agent_id": null,
+            "reason": "done",
+            "summary": "Returning to previous agent.",
+            "requested_by": "agent",
+            "session_id": null
+        }
+    }))
+    .unwrap();
+
+    match decoded {
+        ClientMessage::AgentHandoffThread { client_surface, .. } => {
+            assert_eq!(client_surface, None);
+        }
+        other => panic!("unexpected variant: {:?}", other),
+    }
+}
+
+#[test]
+fn daemon_message_roundtrips_thread_handoff_result() {
+    let msg = DaemonMessage::AgentThreadHandoffResult {
+        result: ThreadHandoffResult {
+            ok: true,
+            thread_id: "thread-1".to_string(),
+            active_agent_id: Some("rarog".to_string()),
+            stack_depth: Some(2),
+            error: None,
+        },
+    };
+    let bytes = bincode::serialize(&msg).unwrap();
+    let decoded: DaemonMessage = bincode::deserialize(&bytes).unwrap();
+    match decoded {
+        DaemonMessage::AgentThreadHandoffResult { result } => {
+            assert!(result.ok);
+            assert_eq!(result.thread_id, "thread-1");
+            assert_eq!(result.active_agent_id.as_deref(), Some("rarog"));
+            assert_eq!(result.stack_depth, Some(2));
+            assert!(result.error.is_none());
+        }
+        other => panic!("unexpected variant: {:?}", other),
+    }
+}
+
+#[test]
+fn client_message_roundtrips_participant_suggestion_force_send() {
+    let msg = ClientMessage::AgentSendParticipantSuggestion {
+        thread_id: "thread-1".to_string(),
+        suggestion_id: "sugg-1".to_string(),
+        session_id: None,
+        client_surface: Some(ClientSurface::Electron),
+        force_send: true,
+    };
+    let bytes = bincode::serialize(&msg).unwrap();
+    let decoded: ClientMessage = bincode::deserialize(&bytes).unwrap();
+    match decoded {
+        ClientMessage::AgentSendParticipantSuggestion {
+            thread_id,
+            suggestion_id,
+            client_surface,
+            force_send,
+            ..
+        } => {
+            assert_eq!(thread_id, "thread-1");
+            assert_eq!(suggestion_id, "sugg-1");
+            assert_eq!(client_surface, Some(ClientSurface::Electron));
+            assert!(force_send);
+        }
+        other => panic!("unexpected variant: {:?}", other),
+    }
+}
+
+#[test]
+fn client_message_participant_suggestion_defaults_force_send() {
+    let decoded: ClientMessage = serde_json::from_value(serde_json::json!({
+        "AgentSendParticipantSuggestion": {
+            "thread_id": "thread-1",
+            "suggestion_id": "sugg-1",
+            "session_id": null,
+            "client_surface": null
+        }
+    }))
+    .unwrap();
+
+    match decoded {
+        ClientMessage::AgentSendParticipantSuggestion { force_send, .. } => {
+            assert!(!force_send);
+        }
+        other => panic!("unexpected variant: {:?}", other),
+    }
 }
 
 #[test]

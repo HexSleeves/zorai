@@ -238,6 +238,30 @@ impl TuiModel {
             return false;
         }
 
+        if kind == modal::ModalKind::CustomModelEditor {
+            if matches!(
+                code,
+                KeyCode::Char('v' | 'V') if modifiers.contains(KeyModifiers::CONTROL)
+            ) || code == KeyCode::Char('\u{16}')
+                || (code == KeyCode::Insert && modifiers.contains(KeyModifiers::SHIFT))
+            {
+                self.paste_from_clipboard();
+                return false;
+            }
+            match code {
+                KeyCode::Enter => self.commit_active_thread_custom_model_editor(),
+                KeyCode::Esc => self.cancel_active_thread_custom_model_editor(),
+                KeyCode::Backspace => self.settings.reduce(SettingsAction::Backspace),
+                KeyCode::Char(c)
+                    if !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) =>
+                {
+                    self.settings.reduce(SettingsAction::InsertChar(c));
+                }
+                _ => {}
+            }
+            return false;
+        }
+
         if kind == modal::ModalKind::Settings {
             if matches!(
                 code,
@@ -1484,35 +1508,59 @@ impl TuiModel {
             return false;
         }
 
-        if kind == modal::ModalKind::ThreadParticipants {
+        if kind == modal::ModalKind::ThreadParticipants || kind == modal::ModalKind::ThreadHandoff {
             match code {
                 KeyCode::Esc => {
                     self.close_top_modal();
                 }
                 KeyCode::Down | KeyCode::Char('j') => {
-                    self.sync_thread_participants_modal_item_count();
+                    if kind == modal::ModalKind::ThreadParticipants {
+                        self.sync_thread_participants_modal_item_count();
+                    } else {
+                        self.sync_thread_handoff_modal_item_count();
+                    }
                     self.modal.reduce(modal::ModalAction::Navigate(1))
                 }
                 KeyCode::Up | KeyCode::Char('k') => {
-                    self.sync_thread_participants_modal_item_count();
+                    if kind == modal::ModalKind::ThreadParticipants {
+                        self.sync_thread_participants_modal_item_count();
+                    } else {
+                        self.sync_thread_handoff_modal_item_count();
+                    }
                     self.modal.reduce(modal::ModalAction::Navigate(-1))
                 }
                 KeyCode::Enter => self.handle_modal_enter(kind),
                 KeyCode::PageDown => {
-                    self.sync_thread_participants_modal_item_count();
+                    if kind == modal::ModalKind::ThreadParticipants {
+                        self.sync_thread_participants_modal_item_count();
+                    } else {
+                        self.sync_thread_handoff_modal_item_count();
+                    }
                     self.modal.reduce(modal::ModalAction::Navigate(5))
                 }
                 KeyCode::PageUp => {
-                    self.sync_thread_participants_modal_item_count();
+                    if kind == modal::ModalKind::ThreadParticipants {
+                        self.sync_thread_participants_modal_item_count();
+                    } else {
+                        self.sync_thread_handoff_modal_item_count();
+                    }
                     self.modal.reduce(modal::ModalAction::Navigate(-5))
                 }
                 KeyCode::Home => {
-                    self.sync_thread_participants_modal_item_count();
+                    if kind == modal::ModalKind::ThreadParticipants {
+                        self.sync_thread_participants_modal_item_count();
+                    } else {
+                        self.sync_thread_handoff_modal_item_count();
+                    }
                     self.modal
                         .reduce(modal::ModalAction::Navigate(i32::MIN / 2))
                 }
                 KeyCode::End => {
-                    self.sync_thread_participants_modal_item_count();
+                    if kind == modal::ModalKind::ThreadParticipants {
+                        self.sync_thread_participants_modal_item_count();
+                    } else {
+                        self.sync_thread_handoff_modal_item_count();
+                    }
                     self.modal
                         .reduce(modal::ModalAction::Navigate(i32::MAX / 2))
                 }

@@ -27,6 +27,7 @@ pub struct AgentThread {
     pub total_output_tokens: u64,
     pub thread_participants: Vec<ThreadParticipantState>,
     pub queued_participant_suggestions: Vec<ThreadParticipantSuggestionVm>,
+    pub thread_handoff_state: Option<ThreadHandoffState>,
     pub runtime_provider: Option<String>,
     pub runtime_model: Option<String>,
     pub runtime_reasoning_effort: Option<String>,
@@ -67,6 +68,22 @@ pub struct ThreadParticipantSuggestionVm {
     pub auto_send_at: Option<u64>,
     pub source_message_timestamp: Option<u64>,
     pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ThreadHandoffFrame {
+    pub agent_id: String,
+    pub agent_name: String,
+    pub entered_at: u64,
+    pub linked_thread_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ThreadHandoffState {
+    pub origin_agent_id: String,
+    pub active_agent_id: String,
+    pub responder_stack: Vec<ThreadHandoffFrame>,
+    pub pending_approval_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -343,6 +360,10 @@ pub enum ChatAction {
         total_message_count: usize,
     },
     ThreadCreated {
+        thread_id: String,
+        title: String,
+    },
+    ThreadTitleUpdated {
         thread_id: String,
         title: String,
     },

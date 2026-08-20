@@ -308,6 +308,7 @@ pub(super) fn build_system_prompt(
                 - When spawning a child for directory or repository work, include the relevant path in the assignment and pass along any applicable `AGENTS.md` guidance when one exists; do not frame reading it as the child's first goal.\n\
              - Keep each subagent narrow in scope and avoid creating duplicate child assignments.\n\
              - Monitor child progress with `list_subagents` and integrate their results before declaring the parent task complete.\n\
+             - If a child reports that it exhausted its execution budget and still has useful remaining work, call `extend_subagent_budget` on that child thread instead of respawning from scratch.\n\
              - Do not use `list_agents` to check spawned child progress; it only lists runtime targets.\n\
              - Do not busy-wait on child agents. If there is no other useful work to do after delegating, send a normal progress update and stop so zorai can resume you when children finish.\n\
              - Spawned agents carry their own Slavic persona. Treat those identities as real collaborators with bounded scope, not as disposable copies of yourself.\n",
@@ -323,6 +324,13 @@ pub(super) fn build_system_prompt(
         );
 
         super::task_prompt::append_sub_agent_registry(&mut prompt, sub_agents);
+    } else {
+        prompt.push_str(
+            "\n\n## Subagent Report-Back\n\
+             - Your final report is not counted against the execution budget.\n\
+             - If the execution budget is exhausted, call `extend_subagent_budget` to raise this thread's ceiling, or `report_subagent_outcome` with status `done`, `cancelled`, or `error` and a concrete summary.\n\
+             - If a provider quota or billing limit stops you independently of zorai, call `report_subagent_outcome` with status `error` and summarize what was completed.\n",
+        );
     }
 
     prompt

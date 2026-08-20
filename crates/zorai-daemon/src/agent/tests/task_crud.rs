@@ -1032,6 +1032,63 @@ async fn list_runs_reads_persisted_tasks_after_live_queue_clear() {
 }
 
 #[tokio::test]
+async fn list_runs_for_parent_thread_excludes_unrelated_history_and_keeps_terminal_children() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+
+    let matching = engine
+        .enqueue_task(
+            "Matching completed child".to_string(),
+            "belongs to the selected parent thread".to_string(),
+            "normal",
+            None,
+            None,
+            Vec::new(),
+            None,
+            "subagent",
+            None,
+            None,
+            Some("thread-selected".to_string()),
+            Some("daemon".to_string()),
+        )
+        .await;
+    let unrelated = engine
+        .enqueue_task(
+            "Unrelated historical child".to_string(),
+            "belongs to another parent thread".to_string(),
+            "normal",
+            None,
+            None,
+            Vec::new(),
+            None,
+            "subagent",
+            None,
+            None,
+            Some("thread-other".to_string()),
+            Some("daemon".to_string()),
+        )
+        .await;
+    {
+        let mut tasks = engine.tasks.lock().await;
+        let selected = tasks
+            .iter_mut()
+            .find(|task| task.id == matching.id)
+            .expect("matching task should exist");
+        selected.status = TaskStatus::Completed;
+        selected.completed_at = Some(selected.created_at + 1);
+    }
+    engine.persist_tasks().await;
+
+    let runs = engine.list_runs_for_parent_thread("thread-selected").await;
+
+    assert_eq!(runs.len(), 1);
+    assert_eq!(runs[0].id, matching.id);
+    assert_eq!(runs[0].status, TaskStatus::Completed);
+    assert!(!runs.iter().any(|run| run.id == unrelated.id));
+}
+
+#[tokio::test]
 async fn list_tasks_reads_persisted_tasks_after_live_queue_clear() {
     let root = tempdir().expect("temp dir");
     let manager = SessionManager::new_test(root.path()).await;
