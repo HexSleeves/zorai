@@ -6,9 +6,12 @@ use super::*;
 mod finalization_impl;
 #[path = "goal_planner/progress.rs"]
 mod progress_impl;
+#[path = "goal_planner/stagnation.rs"]
+pub(in crate::agent) mod stagnation;
 
 pub(super) const GOAL_FINAL_REVIEW_SOURCE: &str = "goal_final_review";
 pub(in crate::agent) const GOAL_VERIFICATION_SOURCE: &str = "goal_verification";
+pub(in crate::agent) const GOAL_PROGRESS_SUPERVISION_SOURCE: &str = "goal_progress_supervision";
 const GOAL_REVIEWER_ROLE_ID: &str = "reviewer";
 const GOAL_REVIEW_VERDICT_PASS: &str = "VERDICT: PASS";
 const GOAL_REVIEW_VERDICT_FAIL: &str = "VERDICT: FAIL";
@@ -1081,3 +1084,7 @@ mod tests;
 #[cfg(test)]
 #[path = "tests/goal_planner_structured_fallback.rs"]
 mod structured_fallback_tests;
+
+#[cfg(test)]
+#[path = "goal_planner/stagnation_tests.rs"]
+mod stagnation_tests;

@@ -2256,6 +2256,8 @@ async fn verifier_completion_advances_goal_step_and_resolves_proof_checks() {
                 verifier: "cargo test -p zorai-daemon goal_planner -- --exact (exit 0)".to_string(),
                 coverage: "structured verdict handling and step advancement".to_string(),
                 gaps: None,
+                scores: None,
+                is_new_best: None,
             }),
         )
         .await;

@@ -133,7 +133,7 @@ async fn persist_reflection_skill_activation_note(
 }
 
 impl AgentEngine {
-    async fn active_goal_tasks(&self, goal_run_id: &str) -> Vec<AgentTask> {
+    pub(in crate::agent) async fn active_goal_tasks(&self, goal_run_id: &str) -> Vec<AgentTask> {
         let active_statuses = [
             TaskStatus::Queued,
             TaskStatus::InProgress,

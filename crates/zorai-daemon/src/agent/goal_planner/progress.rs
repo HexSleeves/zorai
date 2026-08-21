@@ -904,6 +904,146 @@ impl AgentEngine {
         Ok(())
     }
 
+    /// Enqueue a bounded progress-supervisor task on the goal thread after
+    /// stagnation was detected (AVO-style trajectory supervision). The task
+    /// reviews the lineage digest and proposes exactly three concrete
+    /// alternative directions. The `goal_stagnation_pending:<goal_run_id>`
+    /// consolidation key is cleared when this task reaches any terminal
+    /// status (`handle_goal_run_task_terminal` below).
+    async fn enqueue_progress_supervision_task(
+        &self,
+        goal_run_id: &str,
+        reason: &super::stagnation::StagnationReason,
+        snapshot: &GoalRun,
+    ) -> Result<()> {
+        let progress_state: super::stagnation::GoalProgressState = self
+            .history
+            .get_consolidation_state(&super::stagnation::goal_progress_state_key(
+                goal_run_id,
+            ))
+            .await?
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default();
+        let lineage_digest = super::stagnation::lineage_digest(&progress_state, snapshot);
+        let supervision_description = format!(
+            "Progress supervision for goal run `{}`.\n\n\
+             Stagnation was detected: {reason}.\n\
+             You are the progress supervisor. Review the lineage digest below (committed \
+             steps, score trajectory, failure fingerprints) and the goal ledger, then \
+             produce EXACTLY THREE concrete alternative directions the goal run should \
+             try next to escape the plateau. Each direction must be specific enough to \
+             execute as a step (state what to change, why the current line of exploration \
+             stalled, and how success would be measured). Do not restate directions that \
+             match the recorded failure fingerprints or already-attempted approaches.\n\n\
+             Goal:\n{}\n\n\
+             Lineage digest:\n{}",
+            snapshot.title,
+            crate::agent::goal_dossier::goal_ledger_prompt_block(snapshot),
+            lineage_digest,
+        );
+
+        let supervision_task = self
+            .enqueue_task(
+                format!("Progress supervision: {}", snapshot.title),
+                supervision_description,
+                task_priority_to_str(snapshot.priority),
+                None,
+                snapshot.session_id.clone(),
+                Vec::new(),
+                None,
+                GOAL_PROGRESS_SUPERVISION_SOURCE,
+                Some(snapshot.id.clone()),
+                None,
+                snapshot.thread_id.clone(),
+                None,
+            )
+            .await;
+
+        let updated_task = {
+            let mut tasks = self.tasks.lock().await;
+            let Some(task) = tasks
+                .iter_mut()
+                .find(|task| task.id == supervision_task.id)
+            else {
+                anyhow::bail!("progress supervision task disappeared after enqueue");
+            };
+            task.goal_run_title = Some(snapshot.title.clone());
+            task.goal_step_id = None;
+            task.goal_step_title = None;
+            task.thread_id = snapshot.thread_id.clone();
+            task.logs.push(make_task_log_entry(
+                task.retry_count,
+                TaskLogLevel::Warn,
+                "progress_supervision",
+                &format!("progress supervisor: stagnation detected ({reason})"),
+                Some(lineage_digest.clone()),
+            ));
+            task.clone()
+        };
+
+        let updated_goal = {
+            let mut goal_runs = self.goal_runs.lock().await;
+            let Some(goal_run) = goal_runs.iter_mut().find(|item| item.id == snapshot.id)
+            else {
+                anyhow::bail!("goal run missing while queuing progress supervision");
+            };
+            goal_run.updated_at = now_millis();
+            if !goal_run
+                .child_task_ids
+                .iter()
+                .any(|id| id == &updated_task.id)
+            {
+                goal_run.child_task_ids.push(updated_task.id.clone());
+            }
+            goal_run.child_task_count = goal_run.child_task_ids.len() as u32;
+            goal_run
+                .events
+                .push(make_goal_run_event("progress_supervision", "stagnation detected; supervisor queued to propose alternative directions", Some(reason.to_string())));
+            goal_run.clone()
+        };
+
+        self.persist_tasks().await;
+        self.persist_goal_runs().await;
+        self.emit_task_update(
+            &updated_task,
+            Some("Progress supervisor queued after stagnation".into()),
+        );
+        self.emit_goal_run_update(
+            &updated_goal,
+            Some(format!(
+                "Stagnation detected ({reason}); supervisor queued"
+            )),
+        );
+        Ok(())
+    }
+
+    /// Clear the stagnation-pending guard once a goal-run task reaches a
+    /// terminal status. Called for every goal-run task completion/failure so
+    /// the supervisor task itself releases the guard when it finishes.
+    async fn clear_goal_stagnation_pending_if_released(&self, goal_run_id: &str) -> Result<()> {
+        let pending_key = super::stagnation::goal_stagnation_pending_key(goal_run_id);
+        if self
+            .history
+            .get_consolidation_state(&pending_key)
+            .await?
+            .as_deref()
+            != Some("true")
+        {
+            return Ok(());
+        }
+        let still_active: bool = self
+            .active_goal_tasks(goal_run_id)
+            .await
+            .iter()
+            .any(|task| task.source == GOAL_PROGRESS_SUPERVISION_SOURCE);
+        if !still_active {
+            self.history
+                .set_consolidation_state(&pending_key, "false", now_millis())
+                .await?;
+        }
+        Ok(())
+    }
+
     pub(in crate::agent) async fn sync_goal_run_with_task(
         &self,
         goal_run_id: &str,
@@ -1207,6 +1347,68 @@ impl AgentEngine {
                 .unwrap_or_else(|| "step completed".to_string());
             thread_summary = Some(format!("{base_summary}\nEvidence — {evidence_line}"));
         }
+
+        // ── progress supervision: merge verdict + check stagnation ──
+        if let Some(ref record) = review_record {
+            let now = now_millis();
+            let progress_key = super::stagnation::goal_progress_state_key(goal_run_id);
+            let progress_state: super::stagnation::GoalProgressState = self
+                .history
+                .get_consolidation_state(&progress_key)
+                .await?
+                .and_then(|raw| serde_json::from_str(&raw).ok())
+                .unwrap_or_default();
+            let (new_state, is_new_best) =
+                super::stagnation::merge_verdict(&progress_state, record, now);
+            if is_new_best {
+                // Persist is_new_best annotation on the record itself
+                // (the daemon's copy stored in consolidation state).
+                let mut annotated = record.clone();
+                annotated.evidence = annotated.evidence.map(|mut ev| {
+                    ev.is_new_best = Some(true);
+                    ev
+                });
+                let annotated_json = serde_json::to_string(&annotated)?;
+                self.history
+                    .set_consolidation_state(
+                        &super::goal_step_verdict_state_key(&record.task_id),
+                        &annotated_json,
+                        now,
+                    )
+                    .await?;
+            }
+            // Persist updated progress state.
+            let new_state_json = serde_json::to_string(&new_state)?;
+            self.history
+                .set_consolidation_state(&progress_key, &new_state_json, now)
+                .await?;
+
+            let thresholds = super::stagnation::ProgressSupervisionThresholds::default();
+            if let Some(reason) =
+                super::stagnation::should_intervene(&new_state, &thresholds)
+            {
+                let pending_key =
+                    super::stagnation::goal_stagnation_pending_key(goal_run_id);
+                let already_pending = self
+                    .history
+                    .get_consolidation_state(&pending_key)
+                    .await?
+                    .as_deref()
+                    == Some("true");
+                if !already_pending {
+                    self.history
+                        .set_consolidation_state(&pending_key, "true", now)
+                        .await?;
+                    self.enqueue_progress_supervision_task(
+                        goal_run_id,
+                        &reason,
+                        &snapshot,
+                    )
+                    .await?;
+                }
+            }
+        }
+
         let updated = {
             let mut goal_runs = self.goal_runs.lock().await;
             let Some(goal_run) = goal_runs.iter_mut().find(|item| item.id == goal_run_id) else {
