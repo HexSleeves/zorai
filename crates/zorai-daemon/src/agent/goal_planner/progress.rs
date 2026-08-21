@@ -154,8 +154,13 @@ fn legacy_review_failure_reason(review_result: String) -> String {
 }
 
 fn stale_goal_step_task_reason(goal_run: &GoalRun, task: &AgentTask) -> Option<String> {
-    let task_step_id = task.goal_step_id.as_deref()?;
     let current_step = goal_run.steps.get(goal_run.current_step_index)?;
+    let Some(task_step_id) = task.goal_step_id.as_deref() else {
+        return Some(format!(
+            "task {} has no goal step binding while current step is '{}' at index {}",
+            task.id, current_step.id, goal_run.current_step_index
+        ));
+    };
     if current_step.id == task_step_id {
         return None;
     }

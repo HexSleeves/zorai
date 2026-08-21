@@ -1203,6 +1203,73 @@ async fn sync_goal_run_with_task_emits_owner_only_changes_and_persists_them() {
 }
 
 #[tokio::test]
+async fn progress_supervisor_sync_does_not_steal_live_step_owner() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let goal_run_id = "goal-supervisor-must-not-sync-step";
+    let impl_task_id = "task-impl-live-step";
+    let staged = runtime_owner_profile("operator-override", "anthropic", "claude-opus", None);
+    let live_owner = runtime_owner_profile("step-owner", "openai", "gpt-4o-mini", Some("medium"));
+
+    let mut goal_run = sample_goal_run_with_kind(
+        goal_run_id,
+        GoalRunStepKind::Command,
+        "Keep implementing the current step",
+    );
+    goal_run.active_task_id = Some(impl_task_id.to_string());
+    goal_run.current_step_owner_profile = Some(live_owner.clone());
+    goal_run.step_owner_overrides.insert(0, staged.clone());
+    if let Some(step) = goal_run.steps.get_mut(0) {
+        step.status = GoalRunStepStatus::InProgress;
+        step.task_id = Some(impl_task_id.to_string());
+    }
+    engine.goal_runs.lock().await.push_back(goal_run);
+
+    let mut supervisor = sample_completed_goal_task(
+        goal_run_id,
+        "task-progress-supervisor",
+        GOAL_PROGRESS_SUPERVISION_SOURCE,
+    );
+    supervisor.status = TaskStatus::InProgress;
+    supervisor.progress = 10;
+    supervisor.completed_at = None;
+    supervisor.result = None;
+    supervisor.goal_step_id = None;
+    supervisor.goal_step_title = None;
+    supervisor.override_provider = Some("anthropic".to_string());
+    supervisor.override_model = Some("claude-opus".to_string());
+
+    engine
+        .sync_goal_run_with_task(goal_run_id, &supervisor)
+        .await;
+
+    let updated = engine
+        .goal_runs
+        .lock()
+        .await
+        .iter()
+        .find(|item| item.id == goal_run_id)
+        .cloned()
+        .expect("goal run should still exist");
+    assert_eq!(
+        updated.active_task_id.as_deref(),
+        Some(impl_task_id),
+        "unbound progress supervisor must not replace the live step's active_task_id"
+    );
+    assert_eq!(
+        updated.current_step_owner_profile.as_ref(),
+        Some(&live_owner),
+        "unbound progress supervisor must not rewrite current_step_owner_profile"
+    );
+    assert_eq!(
+        updated.step_owner_overrides.get(&0),
+        Some(&staged),
+        "unbound progress supervisor must not consume a staged step owner override"
+    );
+}
+
+#[tokio::test]
 async fn sync_goal_run_with_task_preserves_captured_subagent_owner_profile_after_registry_change() {
     let root = tempdir().expect("temp dir");
     let manager = SessionManager::new_test(root.path()).await;
