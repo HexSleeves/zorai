@@ -1,5 +1,5 @@
 use super::super::{
-    make_task_log_entry, now_millis, task_by_id_for_tool_scope, AgentEngine, AgentTask, Result,
+    make_task_log_entry, now_millis, task_by_id_for_tool_scope, AgentEngine, Result,
     TaskLogLevel,
 };
 use super::wakeup::{wake_child_thread, wake_parent_for_ask};
