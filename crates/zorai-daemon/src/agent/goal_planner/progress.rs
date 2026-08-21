@@ -1041,6 +1041,62 @@ impl AgentEngine {
         Ok(())
     }
 
+    async fn apply_goal_progress_supervision(
+        &self,
+        goal_run_id: &str,
+        snapshot: &GoalRun,
+        record: &GoalStepReviewRecord,
+    ) -> Result<()> {
+        let now = now_millis();
+        let progress_key = super::stagnation::goal_progress_state_key(goal_run_id);
+        let progress_state: super::stagnation::GoalProgressState = self
+            .history
+            .get_consolidation_state(&progress_key)
+            .await?
+            .and_then(|raw| serde_json::from_str(&raw).ok())
+            .unwrap_or_default();
+        let (new_state, is_new_best) =
+            super::stagnation::merge_verdict(&progress_state, record, now);
+        if is_new_best {
+            let mut annotated = record.clone();
+            annotated.evidence = annotated.evidence.map(|mut ev| {
+                ev.is_new_best = Some(true);
+                ev
+            });
+            let annotated_json = serde_json::to_string(&annotated)?;
+            self.history
+                .set_consolidation_state(
+                    &super::goal_step_verdict_state_key(&record.task_id),
+                    &annotated_json,
+                    now,
+                )
+                .await?;
+        }
+        let new_state_json = serde_json::to_string(&new_state)?;
+        self.history
+            .set_consolidation_state(&progress_key, &new_state_json, now)
+            .await?;
+
+        let thresholds = super::stagnation::ProgressSupervisionThresholds::default();
+        if let Some(reason) = super::stagnation::should_intervene(&new_state, &thresholds) {
+            let pending_key = super::stagnation::goal_stagnation_pending_key(goal_run_id);
+            let already_pending = self
+                .history
+                .get_consolidation_state(&pending_key)
+                .await?
+                .as_deref()
+                == Some("true");
+            if !already_pending {
+                self.history
+                    .set_consolidation_state(&pending_key, "true", now)
+                    .await?;
+                self.enqueue_progress_supervision_task(goal_run_id, &reason, snapshot)
+                    .await?;
+            }
+        }
+        Ok(())
+    }
+
     pub(in crate::agent) async fn sync_goal_run_with_task(
         &self,
         goal_run_id: &str,
@@ -1304,6 +1360,8 @@ impl AgentEngine {
             if let Some(record) = self.load_goal_step_review_record(&task.id).await? {
                 Self::validate_goal_step_review_record(task, goal_run_id, &record)?;
                 review_record = Some(record.clone());
+                self.apply_goal_progress_supervision(goal_run_id, &snapshot, &record)
+                    .await?;
                 if matches!(record.verdict, GoalStepReviewVerdict::Fail) {
                     let failure_reason = structured_review_failure_reason(&record);
                     self.requeue_goal_step_to_pending(goal_run_id, &failure_reason, Some(task))
@@ -1343,60 +1401,6 @@ impl AgentEngine {
                 .clone()
                 .unwrap_or_else(|| "step completed".to_string());
             thread_summary = Some(format!("{base_summary}\nEvidence — {evidence_line}"));
-        }
-
-        // ── progress supervision: merge verdict + check stagnation ──
-        if let Some(ref record) = review_record {
-            let now = now_millis();
-            let progress_key = super::stagnation::goal_progress_state_key(goal_run_id);
-            let progress_state: super::stagnation::GoalProgressState = self
-                .history
-                .get_consolidation_state(&progress_key)
-                .await?
-                .and_then(|raw| serde_json::from_str(&raw).ok())
-                .unwrap_or_default();
-            let (new_state, is_new_best) =
-                super::stagnation::merge_verdict(&progress_state, record, now);
-            if is_new_best {
-                // Persist is_new_best annotation on the record itself
-                // (the daemon's copy stored in consolidation state).
-                let mut annotated = record.clone();
-                annotated.evidence = annotated.evidence.map(|mut ev| {
-                    ev.is_new_best = Some(true);
-                    ev
-                });
-                let annotated_json = serde_json::to_string(&annotated)?;
-                self.history
-                    .set_consolidation_state(
-                        &super::goal_step_verdict_state_key(&record.task_id),
-                        &annotated_json,
-                        now,
-                    )
-                    .await?;
-            }
-            // Persist updated progress state.
-            let new_state_json = serde_json::to_string(&new_state)?;
-            self.history
-                .set_consolidation_state(&progress_key, &new_state_json, now)
-                .await?;
-
-            let thresholds = super::stagnation::ProgressSupervisionThresholds::default();
-            if let Some(reason) = super::stagnation::should_intervene(&new_state, &thresholds) {
-                let pending_key = super::stagnation::goal_stagnation_pending_key(goal_run_id);
-                let already_pending = self
-                    .history
-                    .get_consolidation_state(&pending_key)
-                    .await?
-                    .as_deref()
-                    == Some("true");
-                if !already_pending {
-                    self.history
-                        .set_consolidation_state(&pending_key, "true", now)
-                        .await?;
-                    self.enqueue_progress_supervision_task(goal_run_id, &reason, &snapshot)
-                        .await?;
-                }
-            }
         }
 
         let updated = {

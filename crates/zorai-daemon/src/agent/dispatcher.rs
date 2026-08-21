@@ -1658,12 +1658,6 @@ impl AgentEngine {
                 .await;
             if idle {
                 let _ = self.stop_stream(parent_thread_id).await;
-                if attempt > 0 {
-                    self.active_visible_thread_continuation_flushes
-                        .lock()
-                        .await
-                        .remove(parent_thread_id);
-                }
             } else {
                 tracing::info!(
                     thread_id = %parent_thread_id,
@@ -1814,7 +1808,8 @@ fn stream_entry_is_idle_for_subagent_wakeup(
         None => true,
         Some(entry) if entry.token.is_cancelled() => true,
         Some(entry) => {
-            now_ms.saturating_sub(entry.last_progress_at) >= SUBAGENT_PARENT_STALE_STREAM_MS
+            entry.last_progress_kind == StreamProgressKind::Started
+                && now_ms.saturating_sub(entry.last_progress_at) >= SUBAGENT_PARENT_STALE_STREAM_MS
         }
     }
 }
@@ -2526,6 +2521,36 @@ mod tests {
             SUBAGENT_PARENT_STALE_STREAM_MS
         ));
         assert!(stream_entry_is_idle_for_subagent_wakeup(None, 1_000));
+
+        let tool_in_flight = StreamCancellationEntry {
+            generation: 1,
+            token: CancellationToken::new(),
+            retry_now: Arc::new(tokio::sync::Notify::new()),
+            started_at: 0,
+            last_progress_at: 0,
+            last_progress_kind: StreamProgressKind::ToolCalls,
+            last_progress_excerpt: String::new(),
+        };
+        assert!(
+            !stream_entry_is_idle_for_subagent_wakeup(
+                Some(&tool_in_flight),
+                SUBAGENT_PARENT_STALE_STREAM_MS
+            ),
+            "a live tool call must not be treated as an abandoned leftover stream"
+        );
+        let content_in_flight = StreamCancellationEntry {
+            generation: 1,
+            token: CancellationToken::new(),
+            retry_now: Arc::new(tokio::sync::Notify::new()),
+            started_at: 0,
+            last_progress_at: 0,
+            last_progress_kind: StreamProgressKind::Content,
+            last_progress_excerpt: String::new(),
+        };
+        assert!(!stream_entry_is_idle_for_subagent_wakeup(
+            Some(&content_in_flight),
+            SUBAGENT_PARENT_STALE_STREAM_MS
+        ));
     }
 
     #[tokio::test]

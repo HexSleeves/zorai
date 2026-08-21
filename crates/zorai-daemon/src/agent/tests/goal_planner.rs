@@ -2484,6 +2484,23 @@ async fn verifier_fail_verdict_requeues_current_step() {
         retried_description.contains("build output is incomplete"),
         "retry context should carry the prior diagnosis"
     );
+
+    let progress_raw = engine
+        .history
+        .get_consolidation_state(&super::stagnation::goal_progress_state_key(goal_run_id))
+        .await
+        .expect("load progress state")
+        .expect("a structured Fail verdict must update progress state before requeue");
+    let progress: super::stagnation::GoalProgressState =
+        serde_json::from_str(&progress_raw).expect("parse progress state");
+    assert_eq!(
+        progress.consecutive_failures, 1,
+        "Fail reviews must feed consecutive_failures so repeated fingerprints can later intervene"
+    );
+    assert_eq!(
+        progress.last_failure_fingerprint.as_deref(),
+        Some("build output is incomplete")
+    );
 }
 
 #[tokio::test]
@@ -2562,6 +2579,79 @@ async fn repeated_step_failures_warn_about_approach_switch() {
     assert!(
         retried_description.contains("switch approach or escalate"),
         "two diagnosed failures should trigger the approach-switch warning"
+    );
+}
+
+#[tokio::test]
+async fn repeated_structured_fail_fingerprint_enqueues_progress_supervisor() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let goal_run_id = "goal-repeated-fail-fingerprint";
+    let diagnosis = "tests still fail: missing parser token";
+
+    let mut goal_run =
+        sample_goal_run_with_kind(goal_run_id, GoalRunStepKind::Command, "Fix the parser");
+    goal_run.steps[0].status = GoalRunStepStatus::InProgress;
+    goal_run.steps[0].task_id = Some("task-impl-fingerprint".to_string());
+    engine.goal_runs.lock().await.push_back(goal_run);
+
+    let implementation_task =
+        sample_completed_goal_task(goal_run_id, "task-impl-fingerprint", "goal_run");
+    engine
+        .handle_goal_run_step_completion(goal_run_id, &implementation_task)
+        .await
+        .expect("implementation completion should queue verification");
+
+    for attempt in 1..=3 {
+        let verifier_task = engine
+            .tasks
+            .lock()
+            .await
+            .iter()
+            .find(|task| task.source == "goal_verification")
+            .cloned()
+            .expect("verification task should exist");
+        let mut failed_verifier = verifier_task.clone();
+        failed_verifier.status = TaskStatus::Completed;
+        failed_verifier.result = Some(diagnosis.to_string());
+        write_goal_step_review_record(
+            &engine,
+            &failed_verifier,
+            GoalStepReviewVerdict::Fail,
+            diagnosis,
+        )
+        .await;
+        write_step_completion_marker(&engine, goal_run_id, 0).await;
+        engine
+            .handle_goal_run_step_completion(goal_run_id, &failed_verifier)
+            .await
+            .expect("fail verdict should apply progress tracking");
+        if attempt < 3 {
+            engine
+                .handle_goal_run_step_completion(goal_run_id, &implementation_task)
+                .await
+                .expect("requeued implementation should queue verification again");
+        }
+    }
+
+    let progress_raw = engine
+        .history
+        .get_consolidation_state(&super::stagnation::goal_progress_state_key(goal_run_id))
+        .await
+        .expect("load progress state")
+        .expect("repeated Fail verdicts must persist progress state");
+    let progress: super::stagnation::GoalProgressState =
+        serde_json::from_str(&progress_raw).expect("parse progress state");
+    assert_eq!(progress.consecutive_failures, 3);
+    assert!(
+        engine
+            .tasks
+            .lock()
+            .await
+            .iter()
+            .any(|task| task.source == GOAL_PROGRESS_SUPERVISION_SOURCE),
+        "RepeatedFailureFingerprint must enqueue the progress supervisor from Fail reviews"
     );
 }
 
