@@ -269,4 +269,11 @@ pub enum ClientMessage {
     DatabaseSyncNow,
     AgentListRunsForParentThread { parent_thread_id: String },
     AgentHandoffThread { thread_id: String, action: String, #[serde(default)] target_agent_id: Option<String>, reason: String, summary: String, requested_by: String, #[serde(default)] session_id: Option<String>, #[serde(default)] client_surface: Option<ClientSurface> },
+    // Append-only protocol extension: keep new variants after all legacy wire discriminants.
+    AgentGetMlflowTracingStatus,
+    AgentTestMlflowTracingConnection,
+    AgentSendMlflowTracingTestTrace,
+    AgentListMlflowTracingHeaders,
+    AgentSetMlflowTracingHeader { name: String, value: String },
+    AgentDeleteMlflowTracingHeader { name: String },
 }

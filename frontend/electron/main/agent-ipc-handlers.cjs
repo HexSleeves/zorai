@@ -282,6 +282,12 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
     ipcMain.handle('agent-request-concierge-welcome', async () => { try { sendAgentCommand({ type: 'request-concierge-welcome' }); return { ok: true }; } catch { return { ok: false }; } });
     ipcMain.handle('dismiss-audit-entry', async (_event, entryId) => { try { sendAgentCommand({ type: 'audit-dismiss', entry_id: entryId }); return { ok: true }; } catch (err) { return { ok: false, error: err.message }; } });
     ipcMain.handle('agent-get-config', async () => sendAgentQuery({ type: 'get-config' }, 'config'));
+    ipcMain.handle('agent-get-mlflow-tracing-status', async () => sendAgentQuery({ type: 'get-mlflow-tracing-status' }, 'mlflow-tracing-status'));
+    ipcMain.handle('agent-test-mlflow-tracing-connection', async () => sendAgentQuery({ type: 'test-mlflow-tracing-connection' }, 'mlflow-tracing-test-result', 15000));
+    ipcMain.handle('agent-send-mlflow-tracing-test-trace', async () => sendAgentQuery({ type: 'send-mlflow-tracing-test-trace' }, 'mlflow-tracing-test-result', 15000));
+    ipcMain.handle('agent-list-mlflow-tracing-headers', async () => sendAgentQuery({ type: 'list-mlflow-tracing-headers' }, 'mlflow-tracing-headers'));
+    ipcMain.handle('agent-set-mlflow-tracing-header', async (_event, name, value) => sendAgentQuery({ type: 'set-mlflow-tracing-header', name, value }, 'mlflow-tracing-headers'));
+    ipcMain.handle('agent-delete-mlflow-tracing-header', async (_event, name) => sendAgentQuery({ type: 'delete-mlflow-tracing-header', name }, 'mlflow-tracing-headers'));
     ipcMain.handle('agent-external-runtime-migration-status', async () => sendAgentQuery({ type: 'external-runtime-migration-status' }, 'external-runtime-migration', 15000));
     ipcMain.handle('agent-external-runtime-migration-preview', async (_event, runtime, configPath) => sendAgentQuery({
         type: 'external-runtime-migration-preview',

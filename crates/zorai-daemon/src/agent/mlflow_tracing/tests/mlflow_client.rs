@@ -78,6 +78,7 @@ fn spawn_server(
 }
 
 fn effective(uri: String, experiment_id: Option<String>) -> MlflowTracingEffectiveConfig {
+    let _guard = crate::test_support::env_test_lock();
     let config = MlflowTracingConfig {
         tracking_uri: uri,
         experiment_id,
