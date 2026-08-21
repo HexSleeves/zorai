@@ -1257,6 +1257,17 @@ impl AgentEngine {
                     }
                     _ => {}
                 }
+                if let Some(goal_run_id) = updated.goal_run_id.as_deref() {
+                    if let Err(error) =
+                        self.clear_goal_stagnation_pending_if_released(goal_run_id).await
+                    {
+                        tracing::warn!(
+                            goal_run_id,
+                            error = %error,
+                            "failed to clear stagnation pending guard"
+                        );
+                    }
+                }
                 Ok(())
             }
             Err(error) => {
@@ -1380,6 +1391,17 @@ impl AgentEngine {
                 }
                 if updated.status == TaskStatus::Failed {
                     self.notify_task_terminal_state(&updated).await;
+                }
+                if let Some(goal_run_id) = updated.goal_run_id.as_deref() {
+                    if let Err(error) =
+                        self.clear_goal_stagnation_pending_if_released(goal_run_id).await
+                    {
+                        tracing::warn!(
+                            goal_run_id,
+                            error = %error,
+                            "failed to clear stagnation pending guard"
+                        );
+                    }
                 }
                 Ok(())
             }

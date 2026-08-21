@@ -1020,7 +1020,10 @@ impl AgentEngine {
     /// Clear the stagnation-pending guard once a goal-run task reaches a
     /// terminal status. Called for every goal-run task completion/failure so
     /// the supervisor task itself releases the guard when it finishes.
-    async fn clear_goal_stagnation_pending_if_released(&self, goal_run_id: &str) -> Result<()> {
+    pub(in crate::agent) async fn clear_goal_stagnation_pending_if_released(
+        &self,
+        goal_run_id: &str,
+    ) -> Result<()> {
         let pending_key = super::stagnation::goal_stagnation_pending_key(goal_run_id);
         if self
             .history

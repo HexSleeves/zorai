@@ -5237,3 +5237,143 @@ async fn plan_goal_run_populates_dossier_units_and_proof_checks() {
     assert_eq!(dossier.units[0].proof_checks.len(), 1);
     assert_eq!(dossier.units[0].proof_checks[0].id, "proof-build-debug");
 }
+#[tokio::test]
+async fn clear_goal_stagnation_pending_released_after_supervision_task_completes() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let config = AgentConfig::default();
+    let engine = AgentEngine::new_test(manager, config, root.path()).await;
+
+    let goal_run_id = "goal-stagnation-clear";
+    let goal_run = sample_goal_run_with_kind(
+        goal_run_id,
+        GoalRunStepKind::Command,
+        "test stagnation guard clear",
+    );
+    engine.goal_runs.lock().await.push_back(goal_run);
+
+    // Set the stagnation-pending guard to "true"
+    let pending_key = crate::agent::goal_planner::stagnation::goal_stagnation_pending_key(
+        goal_run_id,
+    );
+    engine
+        .history
+        .set_consolidation_state(&pending_key, "true", now_millis())
+        .await
+        .expect("set pending key");
+
+    // Create a completed supervision task (simulates the supervisor having finished)
+    let mut supervision_task = engine
+        .enqueue_task(
+            "Progress supervision: goal-stagnation-clear".to_string(),
+            "supervision work".to_string(),
+            "normal",
+            None,
+            None,
+            Vec::new(),
+            None,
+            crate::agent::goal_planner::GOAL_PROGRESS_SUPERVISION_SOURCE,
+            Some(goal_run_id.to_string()),
+            None,
+            Some("thread-stagnation-clear".to_string()),
+            Some("daemon".to_string()),
+        )
+        .await;
+    supervision_task.status = TaskStatus::Completed;
+    supervision_task.completed_at = Some(now_millis());
+    supervision_task.goal_step_id = None; // supervisor tasks have no step
+    {
+        let mut tasks = engine.tasks.lock().await;
+        let t = tasks
+            .iter_mut()
+            .find(|entry| entry.id == supervision_task.id)
+            .expect("task should exist");
+        *t = supervision_task.clone();
+    }
+    engine.persist_tasks().await;
+
+    // Call the method — should clear the guard because the supervisor task is terminal
+    engine
+        .clear_goal_stagnation_pending_if_released(goal_run_id)
+        .await
+        .expect("clear should succeed");
+
+    let state = engine
+        .history
+        .get_consolidation_state(&pending_key)
+        .await
+        .expect("get pending key");
+    assert_eq!(state.as_deref(), Some("false"), "guard should be cleared");
+}
+
+#[tokio::test]
+async fn clear_goal_stagnation_pending_does_not_clear_while_supervision_task_is_active() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let config = AgentConfig::default();
+    let engine = AgentEngine::new_test(manager, config, root.path()).await;
+
+    let goal_run_id = "goal-stagnation-active";
+    let goal_run = sample_goal_run_with_kind(
+        goal_run_id,
+        GoalRunStepKind::Command,
+        "test stagnation guard active",
+    );
+    engine.goal_runs.lock().await.push_back(goal_run);
+
+    // Set the stagnation-pending guard to "true"
+    let pending_key = crate::agent::goal_planner::stagnation::goal_stagnation_pending_key(
+        goal_run_id,
+    );
+    engine
+        .history
+        .set_consolidation_state(&pending_key, "true", now_millis())
+        .await
+        .expect("set pending key");
+
+    // Create an active (in-progress) supervision task
+    let mut supervision_task = engine
+        .enqueue_task(
+            "Progress supervision: goal-stagnation-active".to_string(),
+            "supervision work".to_string(),
+            "normal",
+            None,
+            None,
+            Vec::new(),
+            None,
+            crate::agent::goal_planner::GOAL_PROGRESS_SUPERVISION_SOURCE,
+            Some(goal_run_id.to_string()),
+            None,
+            Some("thread-stagnation-active".to_string()),
+            Some("daemon".to_string()),
+        )
+        .await;
+    supervision_task.status = TaskStatus::InProgress;
+    supervision_task.goal_step_id = None;
+    {
+        let mut tasks = engine.tasks.lock().await;
+        let t = tasks
+            .iter_mut()
+            .find(|entry| entry.id == supervision_task.id)
+            .expect("task should exist");
+        *t = supervision_task.clone();
+    }
+    engine.persist_tasks().await;
+
+    // Call the method — should NOT clear because supervisor is still active
+    engine
+        .clear_goal_stagnation_pending_if_released(goal_run_id)
+        .await
+        .expect("clear should succeed");
+
+    let state = engine
+        .history
+        .get_consolidation_state(&pending_key)
+        .await
+        .expect("get pending key");
+    assert_eq!(
+        state.as_deref(),
+        Some("true"),
+        "guard should not clear while supervision task is active"
+    );
+}
