@@ -668,6 +668,11 @@ impl<'a> SendMessageRunner<'a> {
             return Ok(ToolCallDisposition::BreakLoop);
         }
 
+        if !result.is_error && tc.function.name == zorai_protocol::tool_names::ASK_PARENT {
+            self.interrupted_for_approval = true;
+            return Ok(ToolCallDisposition::BreakLoop);
+        }
+
         if self.stream_cancel_token.is_cancelled() {
             self.was_cancelled = true;
             return Ok(ToolCallDisposition::BreakLoop);

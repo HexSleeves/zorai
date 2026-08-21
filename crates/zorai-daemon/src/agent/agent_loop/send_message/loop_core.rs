@@ -401,6 +401,14 @@ impl<'a> SendMessageRunner<'a> {
                                 message,
                             });
                             self.retry_status_visible = true;
+                            self.engine
+                                .note_stream_progress(
+                                    &self.tid,
+                                    self.stream_generation,
+                                    StreamProgressKind::Started,
+                                    &format!("retry {attempt}/{max_retries}"),
+                                )
+                                .await;
                         }
                         CompletionChunk::TransportFallback { .. } => {}
                         chunk @ CompletionChunk::Done { .. } => {

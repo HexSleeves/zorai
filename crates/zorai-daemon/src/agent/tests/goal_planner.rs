@@ -5532,3 +5532,144 @@ async fn clear_goal_stagnation_pending_does_not_clear_while_supervision_task_is_
         "guard should not clear while supervision task is active"
     );
 }
+
+#[tokio::test]
+async fn stagnation_pending_rolls_back_when_supervisor_enqueue_fails() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let snapshot = sample_goal_run_with_kind(
+        "goal-enqueue-fail",
+        GoalRunStepKind::Command,
+        "Fix the parser",
+    );
+    let diagnosis = "tests still fail: missing parser token";
+    let progress = super::stagnation::GoalProgressState {
+        last_failure_fingerprint: Some(super::stagnation::failure_fingerprint_prefix(diagnosis)),
+        consecutive_failures: 2,
+        ..super::stagnation::GoalProgressState::default()
+    };
+    engine
+        .history
+        .set_consolidation_state(
+            &super::stagnation::goal_progress_state_key(&snapshot.id),
+            &serde_json::to_string(&progress).expect("serialize progress"),
+            now_millis(),
+        )
+        .await
+        .expect("seed progress state");
+
+    let record = GoalStepReviewRecord {
+        task_id: "task-verifier-enqueue-fail".to_string(),
+        goal_run_id: snapshot.id.clone(),
+        goal_step_id: "step-1".to_string(),
+        verdict: GoalStepReviewVerdict::Fail,
+        explanation: diagnosis.to_string(),
+        evidence: None,
+        submitted_at: now_millis(),
+    };
+
+    engine
+        .apply_goal_progress_supervision(&snapshot.id, &snapshot, &record)
+        .await
+        .expect_err("supervisor enqueue must fail without the live goal run");
+
+    let pending = engine
+        .history
+        .get_consolidation_state(&super::stagnation::goal_stagnation_pending_key(
+            &snapshot.id,
+        ))
+        .await
+        .expect("load pending guard");
+    assert_ne!(
+        pending.as_deref(),
+        Some("true"),
+        "a failed supervisor enqueue must not leave later Fail retries suppressed"
+    );
+}
+
+#[tokio::test]
+async fn fail_verdict_requeues_when_stagnation_pending_guard_has_no_supervisor() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let goal_run_id = "goal-poisoned-pending";
+    let diagnosis = "tests still fail: missing parser token";
+
+    let mut goal_run =
+        sample_goal_run_with_kind(goal_run_id, GoalRunStepKind::Command, "Fix the parser");
+    goal_run.steps[0].status = GoalRunStepStatus::InProgress;
+    goal_run.steps[0].task_id = Some("task-impl-poisoned".to_string());
+    engine.goal_runs.lock().await.push_back(goal_run);
+
+    let implementation_task =
+        sample_completed_goal_task(goal_run_id, "task-impl-poisoned", "goal_run");
+    engine
+        .handle_goal_run_step_completion(goal_run_id, &implementation_task)
+        .await
+        .expect("implementation completion should queue verification");
+
+    let progress = super::stagnation::GoalProgressState {
+        last_failure_fingerprint: Some(super::stagnation::failure_fingerprint_prefix(diagnosis)),
+        consecutive_failures: 2,
+        ..super::stagnation::GoalProgressState::default()
+    };
+    engine
+        .history
+        .set_consolidation_state(
+            &super::stagnation::goal_progress_state_key(goal_run_id),
+            &serde_json::to_string(&progress).expect("serialize progress"),
+            now_millis(),
+        )
+        .await
+        .expect("seed progress state");
+    engine
+        .history
+        .set_consolidation_state(
+            &super::stagnation::goal_stagnation_pending_key(goal_run_id),
+            "true",
+            now_millis(),
+        )
+        .await
+        .expect("poison pending guard");
+
+    let verifier_task = engine
+        .tasks
+        .lock()
+        .await
+        .iter()
+        .find(|task| task.source == "goal_verification")
+        .cloned()
+        .expect("verification task should exist");
+    let mut failed_verifier = verifier_task.clone();
+    failed_verifier.status = TaskStatus::Completed;
+    failed_verifier.result = Some(diagnosis.to_string());
+    write_goal_step_review_record(
+        &engine,
+        &failed_verifier,
+        GoalStepReviewVerdict::Fail,
+        diagnosis,
+    )
+    .await;
+    write_step_completion_marker(&engine, goal_run_id, 0).await;
+
+    engine
+        .handle_goal_run_step_completion(goal_run_id, &failed_verifier)
+        .await
+        .expect("Fail retry must run even if the pending guard was stuck without a supervisor");
+
+    let updated = engine
+        .get_goal_run(goal_run_id)
+        .await
+        .expect("goal run should still exist");
+    assert_eq!(updated.steps[0].status, GoalRunStepStatus::Pending);
+    assert!(
+        engine
+            .tasks
+            .lock()
+            .await
+            .iter()
+            .any(|task| task.source == GOAL_PROGRESS_SUPERVISION_SOURCE),
+        "a stuck pending guard with no supervisor must not suppress intervention"
+    );
+}

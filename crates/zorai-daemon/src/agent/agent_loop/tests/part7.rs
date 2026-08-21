@@ -814,3 +814,100 @@ async fn neutral_investigative_sequence_does_not_false_positive_confirmation_bia
             && message.tool_status.as_deref() == Some("done")
     }));
 }
+
+#[tokio::test]
+async fn ask_parent_interrupts_child_turn_so_dispatch_cannot_complete_it() {
+    let root = tempdir().unwrap();
+    let manager = SessionManager::new_test(root.path()).await;
+    let mut config = AgentConfig::default();
+    config.provider = PROVIDER_ID_OPENAI.to_string();
+    config.base_url = spawn_scripted_tool_call_server(vec![(
+        "ask_parent".to_string(),
+        serde_json::json!({ "question": "Which schema?" }).to_string(),
+    )])
+    .await;
+    config.model = "gpt-4o-mini".to_string();
+    config.api_key = "test-key".to_string();
+    config.api_transport = ApiTransport::ChatCompletions;
+    config.auto_retry = false;
+    config.max_retries = 0;
+    config.max_tool_loops = 1;
+
+    let engine = AgentEngine::new_test(manager, config, root.path()).await;
+    let parent = engine
+        .enqueue_task(
+            "Parent".to_string(),
+            "coordinate".to_string(),
+            "normal",
+            None,
+            None,
+            Vec::new(),
+            None,
+            "user",
+            None,
+            None,
+            Some("thread-parent-ask".to_string()),
+            None,
+        )
+        .await;
+    let child = engine
+        .enqueue_task(
+            "Child".to_string(),
+            "ask then continue".to_string(),
+            "normal",
+            None,
+            None,
+            Vec::new(),
+            None,
+            "subagent",
+            None,
+            Some(parent.id.clone()),
+            Some("thread-parent-ask".to_string()),
+            Some("daemon".to_string()),
+        )
+        .await;
+    {
+        let mut tasks = engine.tasks.lock().await;
+        let task = tasks
+            .iter_mut()
+            .find(|task| task.id == child.id)
+            .expect("child exists");
+        task.thread_id = Some("thread-child-ask".to_string());
+        task.status = TaskStatus::InProgress;
+    }
+    engine.persist_tasks().await;
+
+    let outcome = engine
+        .send_task_message(
+            &child.id,
+            Some("thread-child-ask"),
+            None,
+            None,
+            "ask the parent which schema to use",
+        )
+        .await
+        .expect("child turn should return after ask_parent");
+
+    assert!(
+        outcome.interrupted_for_approval,
+        "ask_parent must end the child turn so a later parent answer can inject a follow-up"
+    );
+
+    let updated = engine
+        .tasks
+        .lock()
+        .await
+        .iter()
+        .find(|task| task.id == child.id)
+        .cloned()
+        .expect("child exists");
+    assert_ne!(
+        updated.status,
+        TaskStatus::Completed,
+        "dispatch success must not complete the child after ask_parent"
+    );
+    assert!(
+        crate::agent::tool_executor::task_is_awaiting_parent(&updated),
+        "child must stay blocked on the parent until answer_child runs"
+    );
+}

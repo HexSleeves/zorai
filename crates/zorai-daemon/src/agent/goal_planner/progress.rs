@@ -1046,7 +1046,7 @@ impl AgentEngine {
         Ok(())
     }
 
-    async fn apply_goal_progress_supervision(
+    pub(in crate::agent) async fn apply_goal_progress_supervision(
         &self,
         goal_run_id: &str,
         snapshot: &GoalRun,
@@ -1091,12 +1091,33 @@ impl AgentEngine {
                 .await?
                 .as_deref()
                 == Some("true");
-            if !already_pending {
-                self.history
-                    .set_consolidation_state(&pending_key, "true", now)
-                    .await?;
-                self.enqueue_progress_supervision_task(goal_run_id, &reason, snapshot)
-                    .await?;
+            let supervisor_active = self
+                .active_goal_tasks(goal_run_id)
+                .await
+                .iter()
+                .any(|task| task.source == GOAL_PROGRESS_SUPERVISION_SOURCE);
+            if already_pending && supervisor_active {
+                return Ok(());
+            }
+            self.history
+                .set_consolidation_state(&pending_key, "true", now)
+                .await?;
+            if let Err(error) = self
+                .enqueue_progress_supervision_task(goal_run_id, &reason, snapshot)
+                .await
+            {
+                if let Err(clear_error) = self
+                    .history
+                    .set_consolidation_state(&pending_key, "false", now)
+                    .await
+                {
+                    tracing::warn!(
+                        goal_run_id,
+                        error = %clear_error,
+                        "failed to roll back stagnation pending guard after supervisor enqueue failure"
+                    );
+                }
+                return Err(error);
             }
         }
         Ok(())
@@ -1365,14 +1386,24 @@ impl AgentEngine {
             if let Some(record) = self.load_goal_step_review_record(&task.id).await? {
                 Self::validate_goal_step_review_record(task, goal_run_id, &record)?;
                 review_record = Some(record.clone());
-                self.apply_goal_progress_supervision(goal_run_id, &snapshot, &record)
-                    .await?;
+                let supervision_result = self
+                    .apply_goal_progress_supervision(goal_run_id, &snapshot, &record)
+                    .await;
                 if matches!(record.verdict, GoalStepReviewVerdict::Fail) {
+                    if let Err(error) = supervision_result {
+                        tracing::warn!(
+                            goal_run_id,
+                            task_id = task.id.as_str(),
+                            error = %error,
+                            "progress supervision apply failed; still requeuing failed step"
+                        );
+                    }
                     let failure_reason = structured_review_failure_reason(&record);
                     self.requeue_goal_step_to_pending(goal_run_id, &failure_reason, Some(task))
                         .await?;
                     return Ok(());
                 }
+                supervision_result?;
             } else if self
                 .goal_step_review_requires_structured_verdict(&task.id)
                 .await?

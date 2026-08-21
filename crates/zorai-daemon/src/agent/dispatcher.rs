@@ -155,7 +155,9 @@ fn apply_dispatched_task_success_update(
     active_child_ids: &[String],
     now: u64,
 ) {
-    if crate::agent::tool_executor::task_is_awaiting_parent(task) {
+    if outcome.interrupted_for_approval
+        || crate::agent::tool_executor::task_is_awaiting_parent(task)
+    {
         return;
     }
     let waiting_for_subagents = !active_child_ids.is_empty();
@@ -1139,7 +1141,9 @@ impl AgentEngine {
                         (persisted_task, false)
                     }
                 };
-                if crate::agent::tool_executor::task_is_awaiting_parent(&updated) {
+                if outcome.interrupted_for_approval
+                    || crate::agent::tool_executor::task_is_awaiting_parent(&updated)
+                {
                     return Ok(());
                 }
                 if updated_live_task {
@@ -1650,7 +1654,7 @@ impl AgentEngine {
         thread_id: &str,
     ) -> bool {
         let streams = self.stream_cancellations.lock().await;
-        stream_entry_is_idle_for_subagent_wakeup(streams.get(thread_id), now_millis())
+        stream_entry_is_idle_for_subagent_wakeup(streams.get(thread_id))
     }
 
     async fn resume_idle_parent_after_subagent_completion(
@@ -1804,19 +1808,10 @@ impl AgentEngine {
     }
 }
 
-const SUBAGENT_PARENT_STALE_STREAM_MS: u64 = 30_000;
-
-fn stream_entry_is_idle_for_subagent_wakeup(
-    entry: Option<&StreamCancellationEntry>,
-    now_ms: u64,
-) -> bool {
+fn stream_entry_is_idle_for_subagent_wakeup(entry: Option<&StreamCancellationEntry>) -> bool {
     match entry {
         None => true,
-        Some(entry) if entry.token.is_cancelled() => true,
-        Some(entry) => {
-            entry.last_progress_kind == StreamProgressKind::Started
-                && now_ms.saturating_sub(entry.last_progress_at) >= SUBAGENT_PARENT_STALE_STREAM_MS
-        }
+        Some(entry) => entry.token.is_cancelled(),
     }
 }
 
@@ -2421,13 +2416,7 @@ mod tests {
         let parent_thread_id = "thread-parent-stale-stream-wakeup";
         insert_parent_thread(&engine, parent_thread_id, "Investigate the failing parser").await;
         engine.begin_stream_cancellation(parent_thread_id).await;
-        {
-            let mut streams = engine.stream_cancellations.lock().await;
-            let entry = streams
-                .get_mut(parent_thread_id)
-                .expect("parent stream entry should exist");
-            entry.last_progress_at = now_millis().saturating_sub(60_000);
-        }
+        let _ = engine.stop_stream(parent_thread_id).await;
 
         let mut child = engine
             .enqueue_task(
@@ -2473,12 +2462,91 @@ mod tests {
                 message.role == MessageRole::Assistant
                     && message.content.contains("Integrated the child result.")
             }),
-            "a stale leftover parent stream must not block wakeup after the child finishes"
+            "a cancelled leftover parent stream must not block wakeup after the child finishes"
         );
-        assert!(engine
-            .deferred_visible_thread_continuations_for(parent_thread_id)
-            .await
-            .is_empty());
+        assert!(
+            engine
+                .deferred_visible_thread_continuations_for(parent_thread_id)
+                .await
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn live_parent_first_token_wait_is_not_cancelled_when_child_finishes() {
+        let root = tempdir().expect("tempdir");
+        let manager = SessionManager::new_test(root.path()).await;
+        let mut config = AgentConfig::default();
+        config.provider = zorai_shared::providers::PROVIDER_ID_OPENAI.to_string();
+        config.base_url =
+            spawn_dispatcher_stub_assistant_server("Integrated the child result.").await;
+        config.model = "gpt-4o-mini".to_string();
+        config.api_key = "test-key".to_string();
+        config.api_transport = ApiTransport::ChatCompletions;
+        config.auto_retry = false;
+        config.max_retries = 0;
+        config.max_tool_loops = 1;
+        let engine = AgentEngine::new_test(manager, config, root.path()).await;
+        let parent_thread_id = "thread-parent-first-token-wait";
+        insert_parent_thread(&engine, parent_thread_id, "Investigate the failing parser").await;
+        engine.begin_stream_cancellation(parent_thread_id).await;
+        {
+            let mut streams = engine.stream_cancellations.lock().await;
+            let entry = streams
+                .get_mut(parent_thread_id)
+                .expect("parent stream entry should exist");
+            entry.last_progress_at = now_millis().saturating_sub(60_000);
+            entry.last_progress_kind = StreamProgressKind::Started;
+        }
+
+        let mut child = engine
+            .enqueue_task(
+                "Child task".to_string(),
+                "Fix the parser".to_string(),
+                "normal",
+                None,
+                None,
+                Vec::new(),
+                None,
+                "subagent",
+                None,
+                None,
+                Some(parent_thread_id.to_string()),
+                Some("daemon".to_string()),
+            )
+            .await;
+        child.status = TaskStatus::Completed;
+        child.result = Some("parser tests now pass".to_string());
+        child.parent_thread_id = Some(parent_thread_id.to_string());
+
+        timeout(
+            Duration::from_secs(8),
+            engine.record_subagent_outcome_on_parent(
+                &child,
+                TaskLogLevel::Info,
+                "subagent completed",
+                None,
+            ),
+        )
+        .await
+        .expect("live parent deferral should finish without cancelling the stream");
+
+        let streams = engine.stream_cancellations.lock().await;
+        let entry = streams
+            .get(parent_thread_id)
+            .expect("live parent stream entry should remain");
+        assert!(
+            !entry.token.is_cancelled(),
+            "waiting for the first token must not look idle just because last_progress_kind is still Started"
+        );
+        drop(streams);
+        assert!(
+            !engine
+                .deferred_visible_thread_continuations_for(parent_thread_id)
+                .await
+                .is_empty(),
+            "child completion must wait for the live parent turn instead of aborting it"
+        );
     }
 
     #[test]
@@ -2493,7 +2561,7 @@ mod tests {
             last_progress_excerpt: String::new(),
         };
         assert!(
-            !stream_entry_is_idle_for_subagent_wakeup(Some(&live), 1_000),
+            !stream_entry_is_idle_for_subagent_wakeup(Some(&live)),
             "a fresh live stream must keep the parent deferred"
         );
 
@@ -2508,12 +2576,9 @@ mod tests {
             last_progress_kind: StreamProgressKind::Started,
             last_progress_excerpt: String::new(),
         };
-        assert!(stream_entry_is_idle_for_subagent_wakeup(
-            Some(&cancelled),
-            1_000
-        ));
+        assert!(stream_entry_is_idle_for_subagent_wakeup(Some(&cancelled)));
 
-        let stale = StreamCancellationEntry {
+        let waiting_for_first_token = StreamCancellationEntry {
             generation: 1,
             token: CancellationToken::new(),
             retry_now: Arc::new(tokio::sync::Notify::new()),
@@ -2522,11 +2587,11 @@ mod tests {
             last_progress_kind: StreamProgressKind::Started,
             last_progress_excerpt: String::new(),
         };
-        assert!(stream_entry_is_idle_for_subagent_wakeup(
-            Some(&stale),
-            SUBAGENT_PARENT_STALE_STREAM_MS
-        ));
-        assert!(stream_entry_is_idle_for_subagent_wakeup(None, 1_000));
+        assert!(
+            !stream_entry_is_idle_for_subagent_wakeup(Some(&waiting_for_first_token)),
+            "first-token wait and provider retries stay Started; cancelling them aborts a live parent turn"
+        );
+        assert!(stream_entry_is_idle_for_subagent_wakeup(None));
 
         let tool_in_flight = StreamCancellationEntry {
             generation: 1,
@@ -2538,10 +2603,7 @@ mod tests {
             last_progress_excerpt: String::new(),
         };
         assert!(
-            !stream_entry_is_idle_for_subagent_wakeup(
-                Some(&tool_in_flight),
-                SUBAGENT_PARENT_STALE_STREAM_MS
-            ),
+            !stream_entry_is_idle_for_subagent_wakeup(Some(&tool_in_flight)),
             "a live tool call must not be treated as an abandoned leftover stream"
         );
         let content_in_flight = StreamCancellationEntry {
@@ -2553,10 +2615,9 @@ mod tests {
             last_progress_kind: StreamProgressKind::Content,
             last_progress_excerpt: String::new(),
         };
-        assert!(!stream_entry_is_idle_for_subagent_wakeup(
-            Some(&content_in_flight),
-            SUBAGENT_PARENT_STALE_STREAM_MS
-        ));
+        assert!(!stream_entry_is_idle_for_subagent_wakeup(Some(
+            &content_in_flight
+        )));
     }
 
     #[test]
@@ -2592,6 +2653,41 @@ mod tests {
         assert!(
             task.completed_at.is_none(),
             "answer_child only unblocks Blocked tasks; completing here would strand the open ask"
+        );
+    }
+
+    #[test]
+    fn dispatched_success_does_not_complete_child_after_parent_answers_mid_turn() {
+        let mut task = terminal_notification_test_task(
+            "child-answered-mid-turn",
+            "Ask parent",
+            TaskStatus::Queued,
+            Vec::new(),
+        );
+        task.completed_at = None;
+        task.progress = 40;
+        task.source = "subagent".to_string();
+        task.blocked_reason = None;
+        task.parent_task_id = Some("parent".to_string());
+        let outcome = SendMessageOutcome {
+            thread_id: "thread-child".to_string(),
+            interrupted_for_approval: true,
+            terminated_for_budget: false,
+            subagent_report: None,
+            upstream_message: None,
+            provider_final_result: None,
+            fresh_runner_retry: None,
+            handoff_restart: None,
+        };
+        apply_dispatched_task_success_update(&mut task, &outcome, &[], 99);
+        assert_eq!(
+            task.status,
+            TaskStatus::Queued,
+            "answer_child clears blocked_reason while the original turn is still finishing; that turn must not complete the child"
+        );
+        assert!(
+            task.completed_at.is_none(),
+            "the injected parent answer needs a follow-up turn on the still-open child task"
         );
     }
 
