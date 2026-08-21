@@ -102,7 +102,7 @@ fn thread_picker_right_arrow_switches_to_rarog_tab() {
 }
 
 #[test]
-fn thread_picker_agent_tab_switch_debounces_refresh_until_tick_window() {
+fn thread_picker_agent_tab_switch_debounces_refresh_until_deadline() {
     let (mut model, mut daemon_rx) = make_model();
     model
         .modal
@@ -121,20 +121,30 @@ fn thread_picker_agent_tab_switch_debounces_refresh_until_tick_window() {
     );
     assert_eq!(
         model.thread_picker_loading_tab(),
-        Some(modal::ThreadPickerTab::Rarog)
+        None,
+        "the tab must not look busy while the user is still switching"
     );
     assert!(daemon_rx.try_recv().is_err());
 
-    model.on_tick_elapsed(THREAD_PICKER_AGENT_REFRESH_DEBOUNCE_TICKS - 1);
+    let deadline = model
+        .pending_thread_picker_refresh_deadline()
+        .expect("tab switch should queue a refresh deadline");
+    assert!(
+        !model.dispatch_due_thread_picker_refresh(deadline - std::time::Duration::from_millis(1))
+    );
     assert!(daemon_rx.try_recv().is_err());
 
-    model.on_tick();
+    assert!(model.dispatch_due_thread_picker_refresh(deadline));
     assert!(matches!(
         daemon_rx.try_recv(),
         Ok(DaemonCommand::RefreshThreadsForAgent {
             agent_filter: Some(filter),
         }) if filter == "rarog"
     ));
+    assert_eq!(
+        model.thread_picker_loading_tab(),
+        Some(modal::ThreadPickerTab::Rarog)
+    );
 
     model.handle_client_event(ClientEvent::ThreadList(Vec::new()));
     assert_eq!(model.thread_picker_loading_tab(), None);
@@ -152,23 +162,31 @@ fn thread_picker_agent_tab_switch_only_refreshes_latest_selection() {
         KeyModifiers::NONE,
         modal::ModalKind::ThreadPicker,
     ));
+    let first_deadline = model
+        .pending_thread_picker_refresh_deadline()
+        .expect("first switch should queue a refresh");
+    std::thread::sleep(std::time::Duration::from_millis(5));
     assert!(!model.handle_key_modal(
         KeyCode::Right,
         KeyModifiers::NONE,
         modal::ModalKind::ThreadPicker,
     ));
+    let final_deadline = model
+        .pending_thread_picker_refresh_deadline()
+        .expect("second switch should replace the queued refresh");
 
     assert_eq!(
         model.modal.thread_picker_tab(),
         modal::ThreadPickerTab::Weles
     );
-    assert_eq!(
-        model.thread_picker_loading_tab(),
-        Some(modal::ThreadPickerTab::Weles)
-    );
+    assert_eq!(model.thread_picker_loading_tab(), None);
+    assert!(final_deadline > first_deadline);
     assert!(daemon_rx.try_recv().is_err());
 
-    model.on_tick_elapsed(THREAD_PICKER_AGENT_REFRESH_DEBOUNCE_TICKS);
+    assert!(!model.dispatch_due_thread_picker_refresh(first_deadline));
+    assert!(daemon_rx.try_recv().is_err());
+
+    assert!(model.dispatch_due_thread_picker_refresh(final_deadline));
 
     assert!(matches!(
         daemon_rx.try_recv(),
@@ -198,18 +216,41 @@ fn thread_picker_gateway_tab_switch_requests_unfiltered_refresh() {
         model.modal.thread_picker_tab(),
         modal::ThreadPickerTab::Gateway
     );
-    assert_eq!(
-        model.thread_picker_loading_tab(),
-        Some(modal::ThreadPickerTab::Gateway)
-    );
+    assert_eq!(model.thread_picker_loading_tab(), None);
     assert!(daemon_rx.try_recv().is_err());
 
-    model.on_tick_elapsed(THREAD_PICKER_AGENT_REFRESH_DEBOUNCE_TICKS);
+    let deadline = model
+        .pending_thread_picker_refresh_deadline()
+        .expect("gateway switch should queue a refresh");
+    assert!(model.dispatch_due_thread_picker_refresh(deadline));
 
     assert!(matches!(
         daemon_rx.try_recv(),
         Ok(DaemonCommand::RefreshThreadsForAgent { agent_filter: None })
     ));
+    assert!(daemon_rx.try_recv().is_err());
+}
+
+#[test]
+fn closing_thread_picker_cancels_pending_source_refresh() {
+    let (mut model, mut daemon_rx) = make_model();
+    model
+        .modal
+        .reduce(modal::ModalAction::Push(modal::ModalKind::ThreadPicker));
+
+    assert!(!model.handle_key_modal(
+        KeyCode::Right,
+        KeyModifiers::NONE,
+        modal::ModalKind::ThreadPicker,
+    ));
+    let deadline = model
+        .pending_thread_picker_refresh_deadline()
+        .expect("source switch should queue a refresh");
+
+    model.close_top_modal();
+
+    assert_eq!(model.pending_thread_picker_refresh_deadline(), None);
+    assert!(!model.dispatch_due_thread_picker_refresh(deadline));
     assert!(daemon_rx.try_recv().is_err());
 }
 
