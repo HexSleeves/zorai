@@ -53,6 +53,24 @@ describe("Zorai feature surfaces", () => {
     expect(openThreadSource).not.toContain("refreshThreadList");
   });
 
+  it("keeps linked thread and goal round-trips on the destination header instead of the removed topbar", () => {
+    const shellSource = readFeature("../shell/ZoraiShell.tsx");
+    const threadSource = readFeature("./threads/ThreadsView.tsx");
+    const goalsSource = readFeature("./goals/GoalsView.tsx");
+    const workspacesSource = readFeature("./workspaces/WorkspacesView.tsx");
+
+    expect(shellSource).toContain("if (detail.returnTarget !== undefined) setReturnTarget(detail.returnTarget)");
+    expect(shellSource).toContain("setReturnTarget(null)");
+    expect(shellSource).not.toContain("zorai-topbar");
+    expect(threadSource).toContain("className=\"zorai-thread-header\"");
+    expect(threadSource).toContain("returnTarget.label");
+    expect(threadSource).toContain("onReturnTarget");
+    expect(goalsSource).toContain("returnTarget.label");
+    expect(goalsSource).toContain("goalRunId: selectedRunId ?? selectedRun?.id");
+    expect(shellSource).toContain("returnTarget.goalRunId");
+    expect(workspacesSource).toContain('returnTarget: { view: "workspaces", label: "Return to workspace" }');
+  });
+
   it("starts goals through the TUI-compatible Mission Control preflight", () => {
     const source = readFeature("./goals/GoalsView.tsx");
     const launchSource = readFeature("./goals/GoalLaunchPanel.tsx");
@@ -277,6 +295,9 @@ describe("Zorai feature surfaces", () => {
     expect(source).toContain("goalRunId");
     expect(source).toContain("WorkspaceActorPickerControl");
     expect(source).not.toContain("placeholder=\"reviewer: user, svarog\"");
+    expect(source).toContain("New workspace");
+    expect(source).toContain("WorkspaceCreatePanel");
+    expect(source).not.toContain("Main workspace");
   });
 
   it("keeps Threads native to the Zorai shell instead of embedding the old chat view", () => {

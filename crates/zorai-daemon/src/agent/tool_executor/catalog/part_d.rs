@@ -181,6 +181,7 @@ pub(crate) fn add_available_tools_part_d(
             "verifier": { "type": "string", "description": "Required for pass: what concretely ran (command + exit code, test name, review, build)" },
             "coverage": { "type": "string", "description": "Required for pass: the scope the verifier actually exercised" },
             "gaps": { "type": "string", "description": "Optional for pass: scope the verifier did not cover" },
+            "scores": { "type": "object", "description": "Optional named metric scores (e.g. benchmark results); only meaningful for pass verdicts", "additionalProperties": { "type": "number" } },
             "task_id": { "type": "string", "description": "Optional verification task ID when hidden task context is unavailable" },
             "goal_run_id": { "type": "string", "description": "Optional guard; must match the verification task" },
             "goal_step_id": { "type": "string", "description": "Optional guard; must match the verification task" }

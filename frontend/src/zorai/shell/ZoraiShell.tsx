@@ -15,7 +15,7 @@ import { WorkspacesRail, WorkspacesView } from "../features/workspaces/Workspace
 import { getDefaultZoraiView, zoraiNavItems, type ZoraiViewId } from "./navigation";
 import { ZoraiContextPanel } from "./ZoraiContextPanel";
 import { ZoraiBrandMark, ZoraiNavIcon } from "./ZoraiIcons";
-import { ZORAI_NAVIGATE_EVENT, type ZoraiNavigateDetail } from "./zoraiNavigationEvents";
+import { ZORAI_NAVIGATE_EVENT, type ZoraiNavigateDetail, type ZoraiReturnTarget } from "./zoraiNavigationEvents";
 
 type GoalOpenRequest = {
   id: string;
@@ -28,6 +28,7 @@ export function ZoraiShell() {
   const [activeSettingsTab, setActiveSettingsTab] = useState<ZoraiSettingsTabId>(getDefaultZoraiSettingsTab);
   const [activeDatabaseTable, setActiveDatabaseTable] = useState<string | null>(null);
   const [contextOpen, setContextOpen] = useState(false);
+  const [returnTarget, setReturnTarget] = useState<ZoraiReturnTarget | null>(null);
   const [goalOpenRequest, setGoalOpenRequest] = useState<GoalOpenRequest | null>(null);
   const activeItem = useMemo(
     () => zoraiNavItems.find((item) => item.id === activeView) ?? zoraiNavItems[0],
@@ -44,6 +45,7 @@ export function ZoraiShell() {
         if (!detail.view) setActiveView("settings");
       }
       if (detail.toggleContext) setContextOpen((current) => !current);
+      if (detail.returnTarget !== undefined) setReturnTarget(detail.returnTarget);
       if (detail.goalRunId) {
         setGoalOpenRequest((current) => ({ id: detail.goalRunId ?? "", nonce: (current?.nonce ?? 0) + 1 }));
       }
@@ -54,6 +56,15 @@ export function ZoraiShell() {
 
   const selectView = (view: ZoraiViewId) => {
     setActiveView(view);
+    setReturnTarget(null);
+  };
+  const returnToTarget = () => {
+    if (!returnTarget) return;
+    if (returnTarget.goalRunId) {
+      setGoalOpenRequest((current) => ({ id: returnTarget.goalRunId ?? "", nonce: (current?.nonce ?? 0) + 1 }));
+    }
+    setActiveView(returnTarget.view);
+    setReturnTarget(null);
   };
   const selectDatabaseTable = useCallback((tableName: string) => {
     setActiveDatabaseTable(tableName);
@@ -93,34 +104,7 @@ export function ZoraiShell() {
         </aside>
 
         <main className="zorai-main">
-          {/* <header className="zorai-topbar">
-            <div>
-              <div className="zorai-kicker">Zorai</div>
-              <h1>{activeItem.label}</h1>
-            </div>
-            <div className="zorai-card-actions">
-              {returnTarget ? (
-                <button
-                  type="button"
-                  className="zorai-ghost-button"
-                  onClick={() => {
-                    setActiveView(returnTarget.view);
-                    setReturnTarget(null);
-                  }}
-                >
-                  {returnTarget.label}
-                </button>
-              ) : null}
-              <button
-                type="button"
-                className="zorai-ghost-button"
-                onClick={() => setContextOpen((current) => !current)}
-              >
-                {contextOpen ? "Hide Context" : "Show Context"}
-              </button>
-            </div>
-          </header> */}
-          <div className="zorai-main-body">{renderMain(activeView, activeTool, setActiveTool, activeSettingsTab, setActiveSettingsTab, goalOpenRequest, activeDatabaseTable, selectDatabaseTable)}</div>
+          <div className="zorai-main-body">{renderMain(activeView, activeTool, setActiveTool, activeSettingsTab, setActiveSettingsTab, goalOpenRequest, activeDatabaseTable, selectDatabaseTable, returnTarget, returnToTarget)}</div>
           <OperatorQuestionDock />
         </main>
 
@@ -164,9 +148,11 @@ function renderMain(
   goalOpenRequest: GoalOpenRequest | null,
   activeDatabaseTable: string | null,
   setActiveDatabaseTable: (tableName: string) => void,
+  returnTarget: ZoraiReturnTarget | null,
+  onReturnTarget: () => void,
 ) {
-  if (view === "threads") return <ThreadsView />;
-  if (view === "goals") return <GoalsView openGoalRunRequest={goalOpenRequest} />;
+  if (view === "threads") return <ThreadsView returnTarget={returnTarget} onReturnTarget={onReturnTarget} />;
+  if (view === "goals") return <GoalsView openGoalRunRequest={goalOpenRequest} returnTarget={returnTarget} onReturnTarget={onReturnTarget} />;
   if (view === "workspaces") return <WorkspacesView />;
   if (view === "database") return <DatabaseView activeTable={activeDatabaseTable} onSelectTable={setActiveDatabaseTable} />;
   if (view === "tools") return <ToolsView activeTool={activeTool} onSelectTool={setActiveTool} />;

@@ -18,7 +18,7 @@ import { useAgentStore } from "@/lib/agentStore";
 import { GoalWorkspacePanel } from "./GoalWorkspacePanel";
 import { GoalLaunchPanel } from "./GoalLaunchPanel";
 import { openThreadTarget } from "../threads/openThreadTarget";
-import { navigateZorai } from "../../shell/zoraiNavigationEvents";
+import { navigateZorai, type ZoraiReturnTarget } from "../../shell/zoraiNavigationEvents";
 
 const activeStatuses = new Set(["queued", "planning", "running", "awaiting_approval", "paused"]);
 
@@ -67,16 +67,20 @@ export function GoalsContext() {
 
 export function GoalsView({
   openGoalRunRequest,
+  returnTarget = null,
+  onReturnTarget,
 }: {
   openGoalRunRequest?: { id: string; nonce: number } | null;
+  returnTarget?: ZoraiReturnTarget | null;
+  onReturnTarget?: () => void;
 }) {
   const runtime = useAgentChatPanelRuntime();
   const { goalRunsForTrace } = runtime;
   const [goalRuns, setGoalRuns] = useState<GoalRun[]>([]);
   const [starting, setStarting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
-  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(openGoalRunRequest?.id ?? null);
+  const [workspaceOpen, setWorkspaceOpen] = useState(() => Boolean(openGoalRunRequest?.id));
   const [launchOpen, setLaunchOpen] = useState(false);
   const autoRefreshIntervalSecs = useAgentStore((state) => state.agentSettings.auto_refresh_interval_secs);
   const supported = goalRunSupportAvailable();
@@ -161,7 +165,11 @@ export function GoalsView({
     }
     navigateZorai({
       view: "threads",
-      returnTarget: { view: "goals", label: "Return to goal" },
+      returnTarget: {
+        view: "goals",
+        label: "Return to goal",
+        goalRunId: selectedRunId ?? selectedRun?.id,
+      },
     });
   };
 
@@ -181,9 +189,16 @@ export function GoalsView({
             <h1>{selectedRun ? selectedRun.title || selectedRun.goal : "Goal workspace"}</h1>
             <p>{selectedRun ? `${formatGoalRunStatus(selectedRun.status)} / ${summarizeGoalRunStep(selectedRun)}` : "Select a goal run."}</p>
           </div>
-          <button type="button" className="zorai-ghost-button" onClick={() => setWorkspaceOpen(false)}>
-            Back to goals
-          </button>
+          <div className="zorai-card-actions">
+            {returnTarget && onReturnTarget ? (
+              <button type="button" className="zorai-ghost-button" onClick={onReturnTarget}>
+                {returnTarget.label}
+              </button>
+            ) : null}
+            <button type="button" className="zorai-ghost-button" onClick={() => setWorkspaceOpen(false)}>
+              Back to goals
+            </button>
+          </div>
         </div>
         <GoalWorkspacePanel run={selectedRun} onRefresh={refresh} onMessage={setMessage} onOpenThread={openGoalThread} />
         {message ? <div className="zorai-inline-note">{message}</div> : null}
@@ -199,9 +214,16 @@ export function GoalsView({
           <h1>Plan, run, and supervise durable agent goals.</h1>
           <p>Goals turn a thread intent into a monitored run with steps, approvals, child tasks, and result memory.</p>
         </div>
-        <button type="button" className="zorai-primary-button" onClick={() => setLaunchOpen(true)}>
-          Start goal
-        </button>
+        <div className="zorai-card-actions">
+          {returnTarget && onReturnTarget ? (
+            <button type="button" className="zorai-ghost-button" onClick={onReturnTarget}>
+              {returnTarget.label}
+            </button>
+          ) : null}
+          <button type="button" className="zorai-primary-button" onClick={() => setLaunchOpen(true)}>
+            Start goal
+          </button>
+        </div>
       </div>
 
       <div className="zorai-metric-grid">

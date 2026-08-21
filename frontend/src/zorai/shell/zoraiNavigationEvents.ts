@@ -8,6 +8,7 @@ export const ZORAI_FOCUS_SEARCH_EVENT = "zorai-focus-search";
 export type ZoraiReturnTarget = {
   view: ZoraiViewId;
   label: string;
+  goalRunId?: string | null;
 };
 
 export type ZoraiNavigateDetail = {

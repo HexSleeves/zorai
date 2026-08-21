@@ -911,6 +911,47 @@
   font: inherit;
 }
 
+.zorai-workspace-create {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--zorai-border);
+  border-radius: 8px;
+  background: var(--zorai-bg-surface);
+}
+
+.zorai-workspace-create label {
+  display: grid;
+  gap: 4px;
+  color: var(--zorai-muted);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+}
+
+.zorai-workspace-create input,
+.zorai-workspace-create select {
+  min-width: 0;
+  border: 1px solid var(--zorai-border-strong);
+  border-radius: 6px;
+  background: #0b111a;
+  color: var(--zorai-text);
+  padding: 8px 10px;
+  font: inherit;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 500;
+}
+
+.zorai-workspace-create__error {
+  color: #ff8f8c;
+  font-size: var(--text-sm);
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
 .zorai-workspace-board {
   display: grid;
   grid-template-columns: repeat(4, minmax(220px, 1fr));

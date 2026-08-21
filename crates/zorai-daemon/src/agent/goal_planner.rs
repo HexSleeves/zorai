@@ -38,13 +38,24 @@ pub(in crate::agent) fn parse_goal_verdict_evidence(
     let verifier = field("verifier");
     let coverage = field("coverage");
     let gaps = field("gaps");
-    if verifier.is_none() && coverage.is_none() && gaps.is_none() {
+    let scores = args
+        .get("scores")
+        .and_then(|value| value.as_object())
+        .map(|obj| {
+            obj.iter()
+                .filter_map(|(k, v)| v.as_f64().map(|n| (k.clone(), n)))
+                .collect::<std::collections::BTreeMap<String, f64>>()
+        })
+        .filter(|map| !map.is_empty());
+    if verifier.is_none() && coverage.is_none() && gaps.is_none() && scores.is_none() {
         return Ok(None);
     }
     Ok(Some(GoalVerdictEvidence {
         verifier: verifier.unwrap_or_default(),
         coverage: coverage.unwrap_or_default(),
         gaps,
+        scores,
+        is_new_best: None,
     }))
 }
 

@@ -34,6 +34,7 @@ import {
 import { navigateZorai } from "../../shell/zoraiNavigationEvents";
 import { openThreadTarget } from "../threads/openThreadTarget";
 import { WorkspaceActorPickerControl } from "./WorkspaceActorPickerControl";
+import { WorkspaceCreatePanel } from "./WorkspaceCreatePanel";
 
 const WORKSPACE_SELECT_EVENT = "zorai-workspace-select";
 const WORKSPACE_REFRESH_EVENT = "zorai-workspace-refresh";
@@ -67,6 +68,7 @@ const emptyForm: TaskForm = {
 export function WorkspacesRail() {
   const [settings, setSettings] = useState<WorkspaceSettings[]>([]);
   const [selected, setSelected] = useState(DEFAULT_WORKSPACE_ID);
+  const [createOpen, setCreateOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -83,11 +85,34 @@ export function WorkspacesRail() {
     window.dispatchEvent(new CustomEvent(WORKSPACE_SELECT_EVENT, { detail: { workspaceId } }));
   };
 
+  const handleCreated = (workspace: WorkspaceSettings) => {
+    setSettings((current) => {
+      const items = ensureMainWorkspace(current);
+      return items.some((entry) => entry.workspace_id === workspace.workspace_id)
+        ? items.map((entry) => entry.workspace_id === workspace.workspace_id ? workspace : entry)
+        : [...items, workspace];
+    });
+    selectWorkspace(workspace.workspace_id);
+    setCreateOpen(false);
+    void listWorkspaceSettings().then((items) => {
+      setSettings((current) => {
+        const next = ensureMainWorkspace(items);
+        if (next.some((entry) => entry.workspace_id === workspace.workspace_id)) return next;
+        const created = current.find((entry) => entry.workspace_id === workspace.workspace_id);
+        return created ? [...next, created] : next;
+      });
+    });
+  };
+
   return (
     <div className="zorai-rail-stack">
-      <button type="button" className="zorai-primary-button" onClick={() => selectWorkspace(DEFAULT_WORKSPACE_ID)}>
-        Main workspace
-      </button>
+      {createOpen ? (
+        <WorkspaceCreatePanel onCreated={handleCreated} onCancel={() => setCreateOpen(false)} />
+      ) : (
+        <button type="button" className="zorai-primary-button" onClick={() => setCreateOpen(true)}>
+          New workspace
+        </button>
+      )}
       <div className="zorai-section-label">Workspaces</div>
       {ensureMainWorkspace(settings).map((workspace) => (
         <button

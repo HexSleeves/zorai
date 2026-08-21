@@ -25,10 +25,17 @@ import {
   isRetryableErrorMessage,
   NativeThreadMessageBubble,
 } from "./NativeThreadMessageBubble";
+import type { ZoraiReturnTarget } from "../../shell/zoraiNavigationEvents";
 
 export { ThreadsRail } from "./ThreadsRail";
 
-export function ThreadsView() {
+export function ThreadsView({
+  returnTarget = null,
+  onReturnTarget,
+}: {
+  returnTarget?: ZoraiReturnTarget | null;
+  onReturnTarget?: () => void;
+} = {}) {
   const runtime = useAgentChatPanelRuntime();
   const [pinLimitResult, setPinLimitResult] = useState<ZoraiThreadMessagePinResult | null>(null);
   const [participantsOpen, setParticipantsOpen] = useState(false);
@@ -189,6 +196,8 @@ export function ThreadsView() {
         thread={runtime.activeThread}
         messageCount={runtime.messages.length}
         agentOptions={agentOptions}
+        returnTarget={returnTarget}
+        onReturnTarget={onReturnTarget}
         onPushHandoff={runtime.pushHandoff}
         onReturnHandoff={runtime.returnHandoff}
         onOpenParticipants={() => setParticipantsOpen(true)}
@@ -303,6 +312,8 @@ function ThreadHeader({
   thread,
   messageCount,
   agentOptions,
+  returnTarget,
+  onReturnTarget,
   onPushHandoff,
   onReturnHandoff,
   onOpenParticipants,
@@ -312,6 +323,8 @@ function ThreadHeader({
   thread: AgentThread;
   messageCount: number;
   agentOptions: ReturnType<typeof buildThreadAgentOptions>;
+  returnTarget?: ZoraiReturnTarget | null;
+  onReturnTarget?: () => void;
   onPushHandoff: ReturnType<typeof useAgentChatPanelRuntime>["pushHandoff"];
   onReturnHandoff: ReturnType<typeof useAgentChatPanelRuntime>["returnHandoff"];
   onOpenParticipants: () => void;
@@ -331,6 +344,11 @@ function ThreadHeader({
         <span>{messageCount} messages / responder: {activeResponder}</span>
       </div>
       <div className="zorai-thread-header__actions">
+        {returnTarget && onReturnTarget ? (
+          <button type="button" className="zorai-ghost-button" onClick={onReturnTarget}>
+            {returnTarget.label}
+          </button>
+        ) : null}
         <ThreadRuntimeSummary thread={thread} />
         <ThreadHandoffControl
           daemonLinked={Boolean(thread.daemonThreadId)}

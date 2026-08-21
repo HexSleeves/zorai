@@ -178,7 +178,7 @@ pub enum GoalStepReviewVerdict {
     Fail,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct GoalVerdictEvidence {
     #[serde(default)]
     pub verifier: String,
@@ -186,9 +186,16 @@ pub struct GoalVerdictEvidence {
     pub coverage: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gaps: Option<String>,
+    /// Named metric scores from the verifier (e.g. benchmark results).
+    /// Correctness failure ⇒ empty/absent map.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scores: Option<std::collections::BTreeMap<String, f64>>,
+    /// Set by daemon at persist time; not trusted from the tool caller.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_new_best: Option<bool>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct GoalStepReviewRecord {
     pub task_id: String,
     pub goal_run_id: String,
