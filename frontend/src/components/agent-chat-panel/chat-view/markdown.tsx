@@ -30,7 +30,20 @@ const markdownComponents: Components = {
   ),
 };
 
-export const MarkdownContent = memo(function MarkdownContent({ content }: { content: string }) {
+export function markdownRenderMode(streaming: boolean | undefined): "plain" | "markdown" {
+  return streaming ? "plain" : "markdown";
+}
+
+export const MarkdownContent = memo(function MarkdownContent({
+  content,
+  streaming = false,
+}: {
+  content: string;
+  streaming?: boolean;
+}) {
+  if (markdownRenderMode(streaming) === "plain") {
+    return <div className="acp-md acp-md--streaming">{content}</div>;
+  }
   return (
     <div className="acp-md">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>

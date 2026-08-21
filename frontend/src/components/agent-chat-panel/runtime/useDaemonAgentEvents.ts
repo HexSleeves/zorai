@@ -30,6 +30,10 @@ import {
   handleWorkspaceCommand,
 } from "./daemonEventHandlers";
 import { finalizeStreamingAssistantMessages } from "./threadTurnState";
+import {
+  applyDaemonRetryStatusEvent,
+  clearThreadRetryStatus,
+} from "@/zorai/features/threads/threadRetryStatus";
 
 export function resolveDaemonEventLocalThreadId(
   event: any,
@@ -283,7 +287,12 @@ export function useDaemonAgentEvents({
           queueStreamDelta(tid, "", event.content || "");
           break;
         }
+        case "retry_status": {
+          applyDaemonRetryStatusEvent(event);
+          break;
+        }
         case "done": {
+          clearThreadRetryStatus(typeof event.thread_id === "string" ? event.thread_id : null);
           if (!tid) break;
           flushStreamDeltas();
           useAgentMissionStore.getState().setSharedCursorMode("idle");
@@ -316,7 +325,7 @@ export function useDaemonAgentEvents({
           const messages = useAgentStore.getState().getThreadMessages(tid);
           const last = messages[messages.length - 1];
           if (last?.role === "assistant" && last.isStreaming) {
-            updateLastAssistantMessage(tid, last.content || "Calling tools...", false);
+            updateLastAssistantMessage(tid, last.content, false);
           }
           addMessage(tid, {
             role: "tool",
@@ -410,6 +419,7 @@ export function useDaemonAgentEvents({
           break;
         }
         case "error": {
+          clearThreadRetryStatus(typeof event.thread_id === "string" ? event.thread_id : null);
           if (!tid) break;
           flushStreamDeltas();
           useAgentMissionStore.getState().setSharedCursorMode("idle");

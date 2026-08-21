@@ -1628,32 +1628,77 @@ impl AgentEngine {
                     parent_task_id,
                 )
                 .await;
-                if self
-                    .thread_is_idle_for_subagent_wakeup(&parent_thread_id)
-                    .await
-                {
-                    let _ = self.stop_stream(&parent_thread_id).await;
-                }
-                if let Err(error) = self
-                    .flush_deferred_visible_thread_continuations(&parent_thread_id)
-                    .await
-                {
-                    tracing::warn!(
-                        thread_id = %parent_thread_id,
-                        child_task_id = %child_task.id,
-                        error = %error,
-                        "subagent completion continuation flush failed"
-                    );
-                }
+                self.resume_idle_parent_after_subagent_completion(
+                    &parent_thread_id,
+                    &child_task.id,
+                )
+                .await;
             }
         }
     }
 
-    async fn thread_is_idle_for_subagent_wakeup(&self, thread_id: &str) -> bool {
+    pub(in crate::agent) async fn thread_is_idle_for_subagent_wakeup(
+        &self,
+        thread_id: &str,
+    ) -> bool {
         let streams = self.stream_cancellations.lock().await;
-        match streams.get(thread_id) {
-            None => true,
-            Some(entry) => entry.token.is_cancelled(),
+        stream_entry_is_idle_for_subagent_wakeup(streams.get(thread_id), now_millis())
+    }
+
+    async fn resume_idle_parent_after_subagent_completion(
+        &self,
+        parent_thread_id: &str,
+        child_task_id: &str,
+    ) {
+        for attempt in 0..3 {
+            let idle = self
+                .thread_is_idle_for_subagent_wakeup(parent_thread_id)
+                .await;
+            if idle {
+                let _ = self.stop_stream(parent_thread_id).await;
+                if attempt > 0 {
+                    self.active_visible_thread_continuation_flushes
+                        .lock()
+                        .await
+                        .remove(parent_thread_id);
+                }
+            } else {
+                tracing::info!(
+                    thread_id = %parent_thread_id,
+                    child_task_id,
+                    attempt,
+                    "deferring subagent parent wakeup until the live parent stream finishes"
+                );
+                return;
+            }
+
+            if let Err(error) = self
+                .flush_deferred_visible_thread_continuations(parent_thread_id)
+                .await
+            {
+                tracing::warn!(
+                    thread_id = %parent_thread_id,
+                    child_task_id,
+                    attempt,
+                    error = %error,
+                    "subagent completion continuation flush failed"
+                );
+                return;
+            }
+            if self
+                .deferred_visible_thread_continuations_for(parent_thread_id)
+                .await
+                .is_empty()
+            {
+                return;
+            }
+            tracing::info!(
+                thread_id = %parent_thread_id,
+                child_task_id,
+                attempt,
+                "idle parent still has a queued subagent continuation; retrying wakeup"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
     }
 
@@ -1754,6 +1799,21 @@ impl AgentEngine {
         .await?;
 
         Ok(())
+    }
+}
+
+const SUBAGENT_PARENT_STALE_STREAM_MS: u64 = 30_000;
+
+fn stream_entry_is_idle_for_subagent_wakeup(
+    entry: Option<&StreamCancellationEntry>,
+    now_ms: u64,
+) -> bool {
+    match entry {
+        None => true,
+        Some(entry) if entry.token.is_cancelled() => true,
+        Some(entry) => {
+            now_ms.saturating_sub(entry.last_progress_at) >= SUBAGENT_PARENT_STALE_STREAM_MS
+        }
     }
 }
 
@@ -2338,6 +2398,132 @@ mod tests {
             .deferred_visible_thread_continuations_for(parent_thread_id)
             .await
             .is_empty());
+    }
+
+    #[tokio::test]
+    async fn stale_parent_stream_is_forced_awake_when_spawned_subagent_finishes() {
+        let root = tempdir().expect("tempdir");
+        let manager = SessionManager::new_test(root.path()).await;
+        let mut config = AgentConfig::default();
+        config.provider = zorai_shared::providers::PROVIDER_ID_OPENAI.to_string();
+        config.base_url =
+            spawn_dispatcher_stub_assistant_server("Integrated the child result.").await;
+        config.model = "gpt-4o-mini".to_string();
+        config.api_key = "test-key".to_string();
+        config.api_transport = ApiTransport::ChatCompletions;
+        config.auto_retry = false;
+        config.max_retries = 0;
+        config.max_tool_loops = 1;
+        let engine = AgentEngine::new_test(manager, config, root.path()).await;
+        let parent_thread_id = "thread-parent-stale-stream-wakeup";
+        insert_parent_thread(&engine, parent_thread_id, "Investigate the failing parser").await;
+        engine.begin_stream_cancellation(parent_thread_id).await;
+        {
+            let mut streams = engine.stream_cancellations.lock().await;
+            let entry = streams
+                .get_mut(parent_thread_id)
+                .expect("parent stream entry should exist");
+            entry.last_progress_at = now_millis().saturating_sub(60_000);
+        }
+
+        let mut child = engine
+            .enqueue_task(
+                "Child task".to_string(),
+                "Fix the parser".to_string(),
+                "normal",
+                None,
+                None,
+                Vec::new(),
+                None,
+                "subagent",
+                None,
+                None,
+                Some(parent_thread_id.to_string()),
+                Some("daemon".to_string()),
+            )
+            .await;
+        child.status = TaskStatus::Completed;
+        child.result = Some("parser tests now pass".to_string());
+        child.parent_thread_id = Some(parent_thread_id.to_string());
+
+        timeout(
+            Duration::from_secs(8),
+            engine.record_subagent_outcome_on_parent(
+                &child,
+                TaskLogLevel::Info,
+                "subagent completed",
+                None,
+            ),
+        )
+        .await
+        .expect("stale parent wakeup should finish");
+
+        let threads = engine.threads.read().await;
+        let parent_thread = threads
+            .get(parent_thread_id)
+            .expect("parent thread should exist");
+        assert!(parent_thread.messages.iter().any(|message| {
+            message.role == MessageRole::System && message.content.contains("parser tests now pass")
+        }));
+        assert!(
+            parent_thread.messages.iter().any(|message| {
+                message.role == MessageRole::Assistant
+                    && message.content.contains("Integrated the child result.")
+            }),
+            "a stale leftover parent stream must not block wakeup after the child finishes"
+        );
+        assert!(engine
+            .deferred_visible_thread_continuations_for(parent_thread_id)
+            .await
+            .is_empty());
+    }
+
+    #[test]
+    fn idle_wakeup_treats_cancelled_and_stale_streams_as_idle() {
+        let live = StreamCancellationEntry {
+            generation: 1,
+            token: CancellationToken::new(),
+            retry_now: Arc::new(tokio::sync::Notify::new()),
+            started_at: 0,
+            last_progress_at: 1_000,
+            last_progress_kind: StreamProgressKind::Started,
+            last_progress_excerpt: String::new(),
+        };
+        assert!(
+            !stream_entry_is_idle_for_subagent_wakeup(Some(&live), 1_000),
+            "a fresh live stream must keep the parent deferred"
+        );
+
+        let cancelled_token = CancellationToken::new();
+        cancelled_token.cancel();
+        let cancelled = StreamCancellationEntry {
+            generation: 1,
+            token: cancelled_token,
+            retry_now: Arc::new(tokio::sync::Notify::new()),
+            started_at: 0,
+            last_progress_at: 1_000,
+            last_progress_kind: StreamProgressKind::Started,
+            last_progress_excerpt: String::new(),
+        };
+        assert!(stream_entry_is_idle_for_subagent_wakeup(
+            Some(&cancelled),
+            1_000
+        ));
+
+        let stale = StreamCancellationEntry {
+            generation: 1,
+            token: CancellationToken::new(),
+            retry_now: Arc::new(tokio::sync::Notify::new()),
+            started_at: 0,
+            last_progress_at: 0,
+            last_progress_kind: StreamProgressKind::Started,
+            last_progress_excerpt: String::new(),
+        };
+        assert!(stream_entry_is_idle_for_subagent_wakeup(
+            Some(&stale),
+            SUBAGENT_PARENT_STALE_STREAM_MS
+        ));
+        assert!(stream_entry_is_idle_for_subagent_wakeup(None, 1_000));
     }
 
     #[tokio::test]

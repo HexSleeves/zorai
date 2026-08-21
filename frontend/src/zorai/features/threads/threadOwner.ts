@@ -25,27 +25,29 @@ export function resolveThreadOwnerAgentId(
     return RAROG_AGENT_ID;
   }
 
-  const agentName = (thread.agent_name ?? "").trim();
-  const canonical = canonicalThreadAgentId(agentName);
-  if (canonical === "svarog") {
-    return SWAROG_AGENT_ID;
-  }
-  if (canonical === "rarog" || canonical === "concierge") {
-    return RAROG_AGENT_ID;
-  }
-  if (canonical === "weles") {
-    return "weles";
-  }
+  return resolveOwnerFromIdentity(thread.targetAgentId, subAgents)
+    ?? resolveOwnerFromIdentity(thread.agent_name, subAgents)
+    ?? SWAROG_AGENT_ID;
+}
 
-  const wantedName = agentName.toLowerCase();
+function resolveOwnerFromIdentity(
+  value: string | null | undefined,
+  subAgents: SubAgentDefinition[],
+): string | null {
+  const canonical = canonicalThreadAgentId(value);
+  if (!canonical) return null;
+  if (canonical === "svarog") return SWAROG_AGENT_ID;
+  if (canonical === "rarog" || canonical === "concierge") return RAROG_AGENT_ID;
+  if (canonical === "weles") return "weles";
+
+  const wanted = (value ?? "").trim().toLowerCase().replace(/_builtin$/, "");
   const matched = subAgents.find((entry) => {
     const entryId = (entry.id ?? "").trim().toLowerCase().replace(/_builtin$/, "");
     const entryName = (entry.name ?? "").trim().toLowerCase();
-    return entryId === canonical || entryName === wantedName;
+    return entryId === canonical || entryId === wanted || entryName === wanted;
   });
   if (matched) {
     return matched.id.replace(/_builtin$/i, "").toLowerCase();
   }
-
-  return canonical || SWAROG_AGENT_ID;
+  return canonical;
 }

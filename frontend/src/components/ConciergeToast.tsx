@@ -1,3 +1,4 @@
+import { MarkdownContent } from "./agent-chat-panel/chat-view/markdown";
 import { useAgentChatPanelRuntime } from "./agent-chat-panel/runtime/context";
 import { useAgentStore } from "../lib/agentStore";
 import { TOOL_NAMES } from "../lib/agentTools/toolNames";
@@ -42,7 +43,7 @@ export function ConciergeToast() {
             right: 20,
             zIndex: 2147483647,
             maxWidth: 400,
-            background: "rgba(18, 33, 47, 0.95)",
+            background: "var(--bg-void)",
             border: "1px solid var(--accent)",
             borderRadius: 8,
             padding: 16,
@@ -51,8 +52,8 @@ export function ConciergeToast() {
             <div style={{ fontSize: 10, color: "var(--accent)", fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                 Concierge
             </div>
-            <div style={{ fontSize: 12, color: "var(--text-primary)", lineHeight: 1.5, whiteSpace: "pre-wrap", marginBottom: 10 }}>
-                {welcome.content}
+            <div style={{ fontSize: 12, color: "var(--text-primary)", lineHeight: 1.5, marginBottom: 10 }}>
+                <MarkdownContent content={welcome.content} />
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                 {welcome.actions.map((action, i) => (

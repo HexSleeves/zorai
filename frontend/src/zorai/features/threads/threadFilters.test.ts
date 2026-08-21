@@ -33,6 +33,10 @@ describe("thread filters", () => {
       { id: "reviewer", name: "Code Reviewer", builtin: false } as SubAgentDefinition,
     ];
 
+    expect(resolveThreadCreationAgent("svarog", subAgents)).toEqual({
+      id: "swarog",
+      name: "Svarog",
+    });
     expect(resolveThreadCreationAgent("weles", subAgents)).toEqual({
       id: "weles",
       name: "Weles",

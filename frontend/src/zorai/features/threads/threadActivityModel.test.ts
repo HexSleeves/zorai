@@ -367,4 +367,24 @@ Operation results saved to file.
   it("returns null for ordinary system content", () => {
     expect(classifyThreadActivityMessage(message("The daemon is ready."))).toBeNull();
   });
+
+  it("classifies a locked child thread budget message so the operator can see the same TUI signal", () => {
+    const content = "Task budget exceeded for this thread.\n\nThread `thread-child` exhausted its execution budget and is now locked for further operator messages.";
+
+    expect(classifyThreadActivityMessage(message(content))).toEqual({
+      kind: "budget",
+      title: "Thread budget exceeded",
+      rawText: content,
+    });
+  });
+
+  it("classifies a parent report of a child exhausting its subagent budget", () => {
+    const content = "Spawned thread `thread-child` (subagent task `task-child`) exhausted its execution budget and reported back.\n\nIf the work is sufficient, keep it. To continue that same child thread, call `extend_subagent_budget`.";
+
+    expect(classifyThreadActivityMessage(message(content))).toEqual({
+      kind: "budget",
+      title: "Subagent budget exceeded",
+      rawText: content,
+    });
+  });
 });

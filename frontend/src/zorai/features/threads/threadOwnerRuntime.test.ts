@@ -1,0 +1,96 @@
+import { describe, expect, it } from "vitest";
+import { DEFAULT_AGENT_SETTINGS } from "@/lib/agentStore/settings";
+import type { AgentThread, SubAgentDefinition } from "@/lib/agentStore";
+import { resolveThreadOwnerRuntimeProfile } from "./threadOwnerRuntime";
+
+function thread(partial: Partial<AgentThread> = {}): AgentThread {
+  return {
+    id: "t1",
+    daemonThreadId: null,
+    workspaceId: null,
+    surfaceId: null,
+    paneId: null,
+    agent_name: "Svarog",
+    title: "Chat",
+    createdAt: 0,
+    updatedAt: 0,
+    messageCount: 0,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    totalTokens: 0,
+    compactionCount: 0,
+    lastMessagePreview: "",
+    ...partial,
+  };
+}
+
+describe("thread owner runtime profile", () => {
+  it("loads the selected subagent provider instead of Svarog defaults", () => {
+    const settings = {
+      ...DEFAULT_AGENT_SETTINGS,
+      active_provider: "openai" as const,
+      openai: { ...DEFAULT_AGENT_SETTINGS.openai, model: "gpt-5.5" },
+    };
+    const subAgents = [{
+      id: "mokosh",
+      name: "Mokosh",
+      provider: "z.ai-coding-plan",
+      model: "glm-5",
+      reasoning_effort: "medium",
+      context_window_tokens: 202_752,
+      enabled: true,
+      created_at: 1,
+    } as SubAgentDefinition];
+
+    const profile = resolveThreadOwnerRuntimeProfile(
+      thread({ agent_name: "Mokosh", targetAgentId: "mokosh" }),
+      subAgents,
+      settings,
+      {},
+    );
+
+    expect(profile.ownerId).toBe("mokosh");
+    expect(profile.provider).toBe("z.ai-coding-plan");
+    expect(profile.model).toBe("glm-5");
+    expect(profile.effort).toBe("medium");
+    expect(profile.contextWindowTokens).toBe(202_752);
+  });
+
+  it("keeps an explicit thread profile overlay after the owner is selected", () => {
+    const profile = resolveThreadOwnerRuntimeProfile(
+      thread({
+        agent_name: "Mokosh",
+        targetAgentId: "mokosh",
+        profileProvider: "alibaba-coding-plan",
+        profileModel: "qwen3.6-plus",
+      }),
+      [{
+        id: "mokosh",
+        name: "Mokosh",
+        provider: "z.ai-coding-plan",
+        model: "glm-5",
+        enabled: true,
+        created_at: 1,
+      } as SubAgentDefinition],
+      DEFAULT_AGENT_SETTINGS,
+      {},
+    );
+
+    expect(profile.provider).toBe("alibaba-coding-plan");
+    expect(profile.model).toBe("qwen3.6-plus");
+  });
+
+  it("uses Rarog concierge settings when that agent owns the new thread", () => {
+    const profile = resolveThreadOwnerRuntimeProfile(
+      thread({ agent_name: "Rarog", targetAgentId: "rarog" }),
+      [],
+      DEFAULT_AGENT_SETTINGS,
+      { provider: "anthropic", model: "claude-opus-4-7", reasoning_effort: "low" },
+    );
+
+    expect(profile.ownerId).toBe("rarog");
+    expect(profile.provider).toBe("anthropic");
+    expect(profile.model).toBe("claude-opus-4-7");
+    expect(profile.effort).toBe("low");
+  });
+});

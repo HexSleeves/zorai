@@ -737,6 +737,11 @@ impl AgentEngine {
             let streams = self.stream_cancellations.lock().await;
             if let Some(entry) = streams.get(thread_id) {
                 if !entry.token.is_cancelled() {
+                    tracing::debug!(
+                        thread_id = %thread_id,
+                        last_progress_at = entry.last_progress_at,
+                        "skipping deferred continuation flush because a live stream is active"
+                    );
                     return Ok(());
                 }
             }
@@ -747,8 +752,28 @@ impl AgentEngine {
             active.insert(thread_id.to_string())
         };
         if !acquired_flush_slot {
+            tracing::debug!(
+                thread_id = %thread_id,
+                "skipping deferred continuation flush because another flush holds the slot"
+            );
             return Ok(());
         }
+
+        struct FlushSlotGuard<'a> {
+            slots: &'a Mutex<HashSet<String>>,
+            thread_id: String,
+        }
+        impl Drop for FlushSlotGuard<'_> {
+            fn drop(&mut self) {
+                if let Ok(mut active) = self.slots.try_lock() {
+                    active.remove(&self.thread_id);
+                }
+            }
+        }
+        let _slot_guard = FlushSlotGuard {
+            slots: &self.active_visible_thread_continuation_flushes,
+            thread_id: thread_id.to_string(),
+        };
 
         let result = async {
             loop {
@@ -764,6 +789,11 @@ impl AgentEngine {
                     let streams = self.stream_cancellations.lock().await;
                     if let Some(entry) = streams.get(thread_id) {
                         if !entry.token.is_cancelled() {
+                            tracing::debug!(
+                                thread_id = %thread_id,
+                                last_progress_at = entry.last_progress_at,
+                                "stopping deferred continuation drain because a live stream is active"
+                            );
                             break;
                         }
                     }
@@ -792,6 +822,40 @@ impl AgentEngine {
             .await
             .remove(thread_id);
         result
+    }
+
+    pub(in crate::agent) async fn supervise_idle_deferred_thread_continuations(
+        &self,
+    ) -> Result<()> {
+        let queued_thread_ids = {
+            let queued = self.deferred_visible_thread_continuations.lock().await;
+            queued
+                .iter()
+                .filter(|(_, items)| !items.is_empty())
+                .map(|(thread_id, _)| thread_id.clone())
+                .collect::<Vec<_>>()
+        };
+        for thread_id in queued_thread_ids {
+            if !self.thread_is_idle_for_subagent_wakeup(&thread_id).await {
+                continue;
+            }
+            tracing::info!(
+                thread_id = %thread_id,
+                "flushing deferred continuation on idle thread"
+            );
+            let _ = self.stop_stream(&thread_id).await;
+            if let Err(error) = self
+                .flush_deferred_visible_thread_continuations(&thread_id)
+                .await
+            {
+                tracing::warn!(
+                    thread_id = %thread_id,
+                    error = %error,
+                    "idle deferred continuation flush failed"
+                );
+            }
+        }
+        Ok(())
     }
 
     async fn continue_visible_thread_as_agent(

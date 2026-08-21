@@ -1,4 +1,4 @@
-import type { AgentTaskStatus } from "./agentTaskQueue";
+import { isTaskTerminal, type AgentTaskStatus } from "./agentTaskQueue";
 
 export interface SpawnedAgentTreeSource {
     id: string;
@@ -119,7 +119,7 @@ function hasResolvedParent<T extends SpawnedAgentTreeSource>(item: T, identityLo
 }
 
 function isSpawnedAgentTreeTerminal(status: AgentTaskStatus): boolean {
-    return status === "completed" || status === "failed" || status === "cancelled";
+    return isTaskTerminal({ status });
 }
 
 function pickAnchorCandidate<T extends SpawnedAgentTreeSource>(

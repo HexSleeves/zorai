@@ -36,6 +36,11 @@ export type ThreadActivity =
       stackDepthBefore: number | null;
       stackDepthAfter: number | null;
       rawText: string;
+    }
+  | {
+      kind: "budget";
+      title: string;
+      rawText: string;
     };
 
 type JsonRecord = Record<string, unknown>;
@@ -52,12 +57,28 @@ export function classifyThreadActivityMessage(message: AgentMessage): ThreadActi
     return handoff;
   }
 
+  const budget = classifyBudget(rawText);
+  if (budget) {
+    return budget;
+  }
+
   const metacognition = classifyMetacognition(rawText);
   if (metacognition) {
     return metacognition;
   }
 
   return classifyOperation(rawText);
+}
+
+function classifyBudget(rawText: string): ThreadActivity | null {
+  const content = rawText.trimStart();
+  if (content.startsWith("Task budget exceeded for this thread")) {
+    return { kind: "budget", title: "Thread budget exceeded", rawText };
+  }
+  if (/spawned thread/i.test(content) && /exhausted its execution budget/i.test(content)) {
+    return { kind: "budget", title: "Subagent budget exceeded", rawText };
+  }
+  return null;
 }
 
 function classifyHandoff(rawText: string): ThreadActivity | null {

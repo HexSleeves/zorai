@@ -21,10 +21,12 @@ import { buildThreadAgentOptions } from "./threadHandoffModel";
 import { BUILTIN_WORKSPACE_PERSONAS } from "../workspaces/workspaceActorPicker";
 import { useThreadSpeech } from "./useThreadSpeech";
 import {
-  isMessageFromCurrentViewSession,
-  isRetryableErrorMessage,
   NativeThreadMessageBubble,
+  shouldOfferMessageRetry,
 } from "./NativeThreadMessageBubble";
+import { ThreadRetryStatusBanner } from "./ThreadRetryStatusBanner";
+import { useThreadRetryStatus } from "./threadRetryStatus";
+import { resolveThreadOwnerRuntimeProfile } from "./threadOwnerRuntime";
 import type { ZoraiReturnTarget } from "../../shell/zoraiNavigationEvents";
 
 export { ThreadsRail } from "./ThreadsRail";
@@ -55,6 +57,10 @@ export function ThreadsView({
     () => [...runtime.messages].reverse().find((message) => message.role === "user" && message.content.trim()),
     [runtime.messages],
   );
+  const latestAssistantMessageId = useMemo(
+    () => [...runtime.messages].reverse().find((message) => message.role === "assistant")?.id,
+    [runtime.messages],
+  );
   const regenerateAssistantMessage = useCallback((messageId: string) => {
     const index = runtime.messages.findIndex((entry) => entry.id === messageId);
     if (index <= 0) return;
@@ -76,6 +82,10 @@ export function ThreadsView({
     });
   }, [latestUserMessage, runtime.sendMessage]);
   const speech = useThreadSpeech(runtime.messages);
+  const retryStatus = useThreadRetryStatus(
+    runtime.activeThread?.daemonThreadId,
+    runtime.activeThread?.id,
+  );
 
   // Global shortcuts for the thread surface:
   //   Ctrl+L — speak/stop the latest assistant message
@@ -264,9 +274,12 @@ export function ThreadsView({
               onDelete={runtime.activeThread?.id || message.threadId
                 ? () => runtime.deleteMessage(runtime.activeThread?.id ?? message.threadId, message.id)
                 : undefined}
-              onRetry={isRetryableErrorMessage(message)
-                && isMessageFromCurrentViewSession(message, viewMountedAtRef.current)
-                && latestUserMessage
+              onRetry={shouldOfferMessageRetry(
+                message,
+                latestAssistantMessageId,
+                viewMountedAtRef.current,
+                Boolean(latestUserMessage),
+              )
                 ? retryLastMessage
                 : undefined}
               onPin={async () => {
@@ -279,7 +292,12 @@ export function ThreadsView({
             />
           );
         })}
-        {runtime.isStreamingResponse ? (
+        {retryStatus ? (
+          <ThreadRetryStatusBanner
+            status={retryStatus}
+            onStop={() => runtime.stopStreaming(runtime.activeThreadId)}
+          />
+        ) : runtime.isStreamingResponse ? (
           <ThinkingIndicator agentName={runtime.activeThread.agent_name} />
         ) : null}
         <div ref={runtime.messagesEndRef} />
@@ -374,8 +392,12 @@ function ThreadHeader({
 }
 
 function ThreadRuntimeSummary({ thread }: { thread: AgentThread }) {
-  const provider = thread.profileProvider || "default provider";
-  const model = thread.profileModel || "default model";
+  const agentSettings = useAgentStore((state) => state.agentSettings);
+  const conciergeConfig = useAgentStore((state) => state.conciergeConfig);
+  const subAgents = useAgentStore((state) => state.subAgents);
+  const profile = resolveThreadOwnerRuntimeProfile(thread, subAgents, agentSettings, conciergeConfig);
+  const provider = profile.provider || "default provider";
+  const model = profile.model || "default model";
   return (
     <div className="zorai-thread-runtime-summary" title="Provider, model, effort and context settings live in the Show Context panel">
       <span className="zorai-thread-runtime-summary__model" title="Model">{model}</span>

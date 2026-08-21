@@ -75,6 +75,12 @@ impl AgentEngine {
     }
 
     pub(in crate::agent) async fn supervise_operation_completion_wakeups(&self) -> Result<()> {
+        // Piggyback the ask_parent timeout sweep on this periodic pass so an
+        // expired blocking question unblocks the child without a full
+        // scheduler pass. Sweep failures must not block wakeup supervision.
+        if let Err(error) = self.sweep_ask_parent_timeouts().await {
+            tracing::warn!(error = %error, "ask_parent timeout sweep failed");
+        }
         let wakeups = {
             let wakeups = self.operation_wakeups.lock().await;
             wakeups.values().cloned().collect::<Vec<_>>()

@@ -780,7 +780,7 @@
 /* Structured key/value grid */
 .acp-struct {
   border: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--zorai-bg-panel);
   border-radius: 2px;
   padding: 8px;
   display: grid;
@@ -837,7 +837,7 @@
 /* Plain tool result box */
 .acp-tool-result {
   padding: 8px;
-  background: rgba(2, 10, 18, 0.55);
+  background: var(--zorai-bg-panel);
   border: 1px solid var(--border);
   font-size: var(--text-sm);
   line-height: 1.45;
@@ -849,7 +849,7 @@
 /* Diff view */
 .acp-diff {
   border: 1px solid var(--border);
-  background: rgba(7, 12, 18, 0.84);
+  background: var(--zorai-bg-panel);
   border-radius: 2px;
   overflow: hidden;
 }
@@ -899,6 +899,10 @@
   overflow-wrap: anywhere;
   font-size: var(--text-sm-plus);
   line-height: 1.65;
+}
+
+.acp-md--streaming {
+  white-space: pre-wrap;
 }
 
 .acp-md p {

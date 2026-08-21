@@ -6,6 +6,7 @@ export type AgentTaskStatus =
     | "awaiting_approval"
     | "blocked"
     | "failed_analyzing"
+    | "budget_exceeded"
     | "completed"
     | "failed"
     | "cancelled";
@@ -74,11 +75,14 @@ export async function fetchAgentTasks(): Promise<AgentQueueTask[]> {
     }
 }
 
-export function isTaskTerminal(task: AgentQueueTask): boolean {
-    return task.status === "completed" || task.status === "failed" || task.status === "cancelled";
+export function isTaskTerminal(task: { status: AgentTaskStatus }): boolean {
+    return task.status === "completed"
+        || task.status === "failed"
+        || task.status === "cancelled"
+        || task.status === "budget_exceeded";
 }
 
-export function isTaskActive(task: AgentQueueTask): boolean {
+export function isTaskActive(task: { status: AgentTaskStatus }): boolean {
     return !isTaskTerminal(task);
 }
 
@@ -86,7 +90,7 @@ export function isSubagentTask(task: AgentQueueTask): boolean {
     return Boolean(task.parent_task_id || task.parent_thread_id || task.source === "subagent");
 }
 
-export function formatTaskStatus(task: AgentQueueTask): string {
+export function formatTaskStatus(task: { status: AgentTaskStatus }): string {
     switch (task.status) {
         case "in_progress":
             return "In progress";
@@ -94,6 +98,8 @@ export function formatTaskStatus(task: AgentQueueTask): string {
             return "Awaiting approval";
         case "failed_analyzing":
             return "Analyzing failure";
+        case "budget_exceeded":
+            return "Budget exceeded";
         default:
             return task.status.replace(/_/g, " ");
     }
@@ -112,6 +118,7 @@ export function taskStatusColor(status: AgentTaskStatus): string {
         case "completed":
             return "var(--success)";
         case "failed":
+        case "budget_exceeded":
             return "var(--danger)";
         case "cancelled":
             return "var(--text-muted)";

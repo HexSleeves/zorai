@@ -23,7 +23,7 @@
         background:
           radial-gradient(1200px 600px at 50% -10%, rgba(119, 216, 197, 0.09), transparent 60%),
           radial-gradient(900px 500px at 50% 110%, rgba(88, 130, 247, 0.08), transparent 60%),
-          linear-gradient(180deg, #06080d 0%, #04060a 100%);
+          linear-gradient(180deg, var(--bg-void) 0%, var(--bg-void) 100%);
         color: #d9e2ef;
         font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
         user-select: none;
@@ -45,12 +45,12 @@
       }
       #zorai-boot .zorai-boot-orb--a {
         width: 340px; height: 340px;
-        background: rgba(119, 216, 197, 0.16);
+        background: var(--zorai-accent-dim);
         top: 18%; left: 30%;
       }
       #zorai-boot .zorai-boot-orb--b {
         width: 300px; height: 300px;
-        background: rgba(88, 130, 247, 0.14);
+        background: var(--zorai-accent-dim);
         bottom: 16%; right: 28%;
         animation-delay: -4.5s;
       }
@@ -73,7 +73,7 @@
         height: 104px;
         border-radius: 24px;
         animation: zorai-boot-breathe 2.8s ease-in-out infinite;
-        filter: drop-shadow(0 0 26px rgba(119, 216, 197, 0.35));
+        filter: drop-shadow(0 0 26px var(--zorai-accent));
       }
       #zorai-boot .zorai-boot-ring {
         position: absolute;
@@ -106,7 +106,6 @@
         font-size: 12px;
         letter-spacing: 0.22em;
         text-transform: uppercase;
-        color: #8593a7;
       }
 
       /* Loading bar */
@@ -115,14 +114,14 @@
         width: 220px;
         height: 3px;
         border-radius: 999px;
-        background: rgba(255, 255, 255, 0.07);
+        background: var(--border);
         overflow: hidden;
       }
       #zorai-boot .zorai-boot-bar-fill {
         height: 100%;
         width: 40%;
         border-radius: 999px;
-        background: linear-gradient(90deg, #77d8c5, #5882f7);
+        background: linear-gradient(90deg, var(--accent), var(--accent-secondary));
         animation: zorai-boot-slide 1.4s ease-in-out infinite;
       }
       @keyframes zorai-boot-slide {
@@ -134,7 +133,7 @@
         margin-top: 14px;
         min-height: 16px;
         font-size: 12px;
-        color: #8593a7;
+        color: var(--text-secondary);
         transition: opacity 0.2s ease;
       }
 

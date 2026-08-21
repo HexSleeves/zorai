@@ -21,6 +21,7 @@ import { openThreadTarget } from "../threads/openThreadTarget";
 import { navigateZorai, type ZoraiReturnTarget } from "../../shell/zoraiNavigationEvents";
 
 const activeStatuses = new Set(["queued", "planning", "running", "awaiting_approval", "paused"]);
+const GOAL_LAUNCH_EVENT = "zorai-goal-launch";
 
 export function GoalsRail() {
   const { goalRunsForTrace } = useAgentChatPanelRuntime();
@@ -28,6 +29,13 @@ export function GoalsRail() {
 
   return (
     <div className="zorai-rail-stack">
+      <button
+        type="button"
+        className="zorai-primary-button"
+        onClick={() => window.dispatchEvent(new Event(GOAL_LAUNCH_EVENT))}
+      >
+        Start goal
+      </button>
       <div className="zorai-section-label">Active Goals</div>
       {activeGoals.length === 0 ? (
         <div className="zorai-empty">No goal runs are active.</div>
@@ -115,6 +123,12 @@ export function GoalsView({
     setWorkspaceOpen(true);
   }, [openGoalRunRequest?.id, openGoalRunRequest?.nonce]);
 
+  useEffect(() => {
+    const onLaunch = () => setLaunchOpen(true);
+    window.addEventListener(GOAL_LAUNCH_EVENT, onLaunch);
+    return () => window.removeEventListener(GOAL_LAUNCH_EVENT, onLaunch);
+  }, []);
+
   const refresh = useCallback(async () => {
     setGoalRuns(await fetchGoalRuns());
   }, []);
@@ -180,6 +194,19 @@ export function GoalsView({
     await refresh();
   };
 
+  const launchOverlay = launchOpen ? (
+    <div className="zorai-goal-launch-overlay" role="dialog" aria-modal="true" aria-label="Start goal">
+      <GoalLaunchPanel
+        runtime={runtime}
+        supported={supported}
+        starting={starting}
+        message={message}
+        onLaunch={handleStartGoal}
+        onClose={() => setLaunchOpen(false)}
+      />
+    </div>
+  ) : null;
+
   if (workspaceOpen) {
     return (
       <section className="zorai-feature-surface zorai-goals-surface zorai-goal-view-surface">
@@ -202,6 +229,7 @@ export function GoalsView({
         </div>
         <GoalWorkspacePanel run={selectedRun} onRefresh={refresh} onMessage={setMessage} onOpenThread={openGoalThread} />
         {message ? <div className="zorai-inline-note">{message}</div> : null}
+        {launchOverlay}
       </section>
     );
   }
@@ -220,9 +248,6 @@ export function GoalsView({
               {returnTarget.label}
             </button>
           ) : null}
-          <button type="button" className="zorai-primary-button" onClick={() => setLaunchOpen(true)}>
-            Start goal
-          </button>
         </div>
       </div>
 
@@ -255,18 +280,7 @@ export function GoalsView({
           )}
         </div>
       </div>
-      {launchOpen ? (
-        <div className="zorai-goal-launch-overlay" role="dialog" aria-modal="true" aria-label="Start goal">
-          <GoalLaunchPanel
-            runtime={runtime}
-            supported={supported}
-            starting={starting}
-            message={message}
-            onLaunch={handleStartGoal}
-            onClose={() => setLaunchOpen(false)}
-          />
-        </div>
-      ) : null}
+      {launchOverlay}
     </section>
   );
 }
