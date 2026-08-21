@@ -66,7 +66,11 @@ pub(crate) fn ask_timeout_action(record: &AskParentRecord, now: u64) -> AskTimeo
 pub(crate) fn task_is_awaiting_parent(task: &AgentTask) -> bool {
     task.blocked_reason
         .as_deref()
-        .map(|reason| reason.trim_start().starts_with(AWAITING_PARENT_BLOCKED_PREFIX))
+        .map(|reason| {
+            reason
+                .trim_start()
+                .starts_with(AWAITING_PARENT_BLOCKED_PREFIX)
+        })
         .unwrap_or(false)
 }
 
@@ -154,7 +158,10 @@ async fn resolve_caller_task(
 /// or note the given child.
 fn caller_is_parent(child: &AgentTask, caller_task: Option<&AgentTask>, thread_id: &str) -> bool {
     if let Some(parent_task_id) = child.parent_task_id.as_deref() {
-        if caller_task.map(|task| task.id == parent_task_id).unwrap_or(false) {
+        if caller_task
+            .map(|task| task.id == parent_task_id)
+            .unwrap_or(false)
+        {
             return true;
         }
     }
@@ -193,6 +200,149 @@ async fn unblock_child_task(agent: &AgentEngine, child: &mut AgentTask) -> bool 
     child.last_error = None;
     child.next_retry_at = None;
     true
+}
+
+fn notes_cursor_after_eviction(delivered: usize, evicted: usize) -> usize {
+    delivered.saturating_sub(evicted)
+}
+
+fn select_open_ask(
+    open: &[(String, AskParentRecord)],
+    requested_ask_id: Option<&str>,
+) -> Result<(String, AskParentRecord)> {
+    if let Some(ask_id) = requested_ask_id {
+        return open
+            .iter()
+            .find(|(key, _)| split_ask_key(key).is_some_and(|(_, id)| id == ask_id))
+            .cloned()
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "no open ask_parent record with ask_id {ask_id}; it may already be answered or timed out"
+                )
+            });
+    }
+    match open {
+        [] => anyhow::bail!(
+            "no open ask_parent record exists; it may already be answered or timed out"
+        ),
+        [single] => Ok(single.clone()),
+        rest => anyhow::bail!(
+            "{} open ask_parent records exist; pass ask_id to answer a specific question instead of applying one answer to every outstanding ask",
+            rest.len()
+        ),
+    }
+}
+
+fn remaining_open_count(records: &[(String, AskParentRecord)], answered_key: &str) -> usize {
+    records
+        .iter()
+        .filter(|(key, record)| key != answered_key && record.state == "open")
+        .count()
+}
+
+async fn resolve_parent_thread_id(agent: &AgentEngine, child: &AgentTask) -> Option<String> {
+    if let Some(thread_id) = child
+        .parent_thread_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        return Some(thread_id.to_string());
+    }
+    if let Some(parent_task_id) = child.parent_task_id.as_deref() {
+        return task_by_id_for_tool_scope(agent, parent_task_id)
+            .await
+            .and_then(|parent| parent.thread_id);
+    }
+    None
+}
+
+async fn wake_parent_for_ask(
+    agent: &AgentEngine,
+    child: &AgentTask,
+    ask_id: &str,
+    question: &str,
+    options: &[String],
+) {
+    let Some(parent_thread_id) = resolve_parent_thread_id(agent, child).await else {
+        tracing::warn!(
+            child_task_id = %child.id,
+            "ask_parent blocked the child but no parent thread exists to wake"
+        );
+        return;
+    };
+    let options_block = if options.is_empty() {
+        String::new()
+    } else {
+        let listed = options
+            .iter()
+            .map(|option| format!("- {option}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        format!("\nOptions:\n{listed}")
+    };
+    let content = format!(
+        "Child task `{child_id}` asked a blocking question and is paused until you answer.\n\n\
+         ask_id: `{ask_id}`\n\
+         Question: {question}{options_block}\n\n\
+         Call `answer_child` with child_task_id `{child_id}`, ask_id `{ask_id}`, and your answer. \
+         If multiple asks are open, answer each ask_id separately; the child stays blocked until every open ask is resolved.",
+        child_id = child.id
+    );
+    let _ = agent
+        .append_system_thread_message(&parent_thread_id, content.clone())
+        .await;
+    agent.emit_workflow_notice(
+        &parent_thread_id,
+        "child-ask-parent",
+        format!("Child {} is awaiting an answer.", child.id),
+        Some(
+            serde_json::json!({
+                "child_task_id": child.id,
+                "ask_id": ask_id,
+            })
+            .to_string(),
+        ),
+    );
+    let agent_id = agent
+        .agent_scope_id_for_turn(
+            Some(parent_thread_id.as_str()),
+            child.parent_task_id.as_deref(),
+        )
+        .await;
+    agent
+        .enqueue_visible_thread_continuation(
+            &parent_thread_id,
+            DeferredVisibleThreadContinuation {
+                agent_id,
+                task_id: child.parent_task_id.clone(),
+                preferred_session_hint: None,
+                llm_user_content: content,
+                queued_at_ms: 0,
+                force_compaction: false,
+                rerun_participant_observers_after_turn: false,
+                internal_delegate_sender: None,
+                internal_delegate_message: None,
+            },
+        )
+        .await;
+    if agent
+        .thread_is_idle_for_subagent_wakeup(&parent_thread_id)
+        .await
+    {
+        let _ = agent.stop_stream(&parent_thread_id).await;
+    }
+    if let Err(error) = agent
+        .flush_deferred_visible_thread_continuations(&parent_thread_id)
+        .await
+    {
+        tracing::warn!(
+            thread_id = %parent_thread_id,
+            child_task_id = %child.id,
+            %error,
+            "failed to flush parent continuation after ask_parent"
+        );
+    }
 }
 
 async fn wake_child_thread(agent: &AgentEngine, child: &AgentTask, llm_user_content: String) {
@@ -308,7 +458,8 @@ pub(crate) async fn execute_ask_parent(
         answer: None,
         answer_delivered: false,
     };
-    let key = format!("{}{}", ask_state_prefix(&task.id), uuid::Uuid::new_v4());
+    let ask_id = uuid::Uuid::new_v4().to_string();
+    let key = format!("{}{ask_id}", ask_state_prefix(&task.id));
     persist_ask_record(agent, &key, &record).await?;
 
     let mut updated = task.clone();
@@ -327,10 +478,12 @@ pub(crate) async fn execute_ask_parent(
         Some("Child is awaiting a parent answer".into()),
     )
     .await?;
+    wake_parent_for_ask(agent, &updated, &ask_id, &question, &record.options).await;
 
     Ok(serde_json::json!({
         "ok": true,
         "state": "open",
+        "ask_id": ask_id,
         "timeout_minutes": timeout_minutes,
         "message": "Task is now blocked awaiting the parent's answer. Stop working and wait to be unblocked; do not retry ask_parent."
     })
@@ -345,6 +498,11 @@ pub(crate) async fn execute_answer_child(
 ) -> Result<String> {
     let child_task_id = required_string_arg(args, "child_task_id")?;
     let answer = required_string_arg(args, "answer")?;
+    let requested_ask_id = args
+        .get("ask_id")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
 
     let child = task_by_id_for_tool_scope(agent, &child_task_id)
         .await
@@ -360,34 +518,29 @@ pub(crate) async fn execute_answer_child(
         );
     }
 
-    let mut records = list_ask_records(agent, &child_task_id).await?;
-    let open_keys: Vec<String> = records
+    let records = list_ask_records(agent, &child_task_id).await?;
+    let open: Vec<(String, AskParentRecord)> = records
         .iter()
         .filter(|(_, record)| record.state == "open")
-        .map(|(key, _)| key.clone())
+        .cloned()
         .collect();
-    if open_keys.is_empty() {
-        anyhow::bail!(
-            "no open ask_parent record exists for child task {child_task_id}; it may already be answered or timed out"
-        );
-    }
-    for key in &open_keys {
-        if let Some((_, record)) = records.iter_mut().find(|(k, _)| k == key) {
-            record.state = "answered".to_string();
-            record.answer = Some(answer.clone());
-            record.answer_delivered = false;
-            persist_ask_record(agent, key, record).await?;
-        }
-    }
+    let (key, mut record) = select_open_ask(&open, requested_ask_id)?;
+    record.state = "answered".to_string();
+    record.answer = Some(answer.clone());
+    record.answer_delivered = false;
+    persist_ask_record(agent, &key, &record).await?;
+    let still_open = remaining_open_count(&records, &key);
 
     let mut updated = child.clone();
-    let unblocked = unblock_child_task(agent, &mut updated).await;
+    let unblocked = still_open == 0 && unblock_child_task(agent, &mut updated).await;
     updated.logs.push(make_task_log_entry(
         updated.retry_count,
         TaskLogLevel::Info,
         LOG_PHASE,
         if unblocked {
             "parent answered; child unblocked"
+        } else if still_open > 0 {
+            "parent answered one open question; child still blocked on remaining asks"
         } else {
             "parent answered an open question"
         },
@@ -398,6 +551,8 @@ pub(crate) async fn execute_answer_child(
         &updated,
         Some(if unblocked {
             "Parent answered; child unblocked".into()
+        } else if still_open > 0 {
+            "Parent answered one question; child still waiting".into()
         } else {
             "Parent answered an open question".into()
         }),
@@ -407,16 +562,15 @@ pub(crate) async fn execute_answer_child(
         wake_child_thread(
             agent,
             &updated,
-            format!(
-                "Your parent answered your blocking question. The full answer is provided in the [parent answer] context block. Continue the assigned work."
-            ),
+            "Your parent answered your blocking question. The full answer is provided in the [parent answer] context block. Continue the assigned work.".to_string(),
         )
         .await;
     }
 
     Ok(serde_json::json!({
         "ok": true,
-        "answered": open_keys.len(),
+        "answered": 1,
+        "remaining_open": still_open,
         "unblocked": unblocked,
         "child_status": format!("{:?}", updated.status).to_lowercase(),
     })
@@ -463,6 +617,23 @@ pub(crate) async fn execute_note_to_child(
         .history
         .set_consolidation_state(&notes_key, &serde_json::to_string(&notes)?, now_millis())
         .await?;
+    if evicted {
+        let cursor_key = format!("{NOTES_CURSOR_STATE_PREFIX}{child_task_id}");
+        let delivered = agent
+            .history
+            .get_consolidation_state(&cursor_key)
+            .await?
+            .and_then(|value| value.parse::<usize>().ok())
+            .unwrap_or(0);
+        agent
+            .history
+            .set_consolidation_state(
+                &cursor_key,
+                &notes_cursor_after_eviction(delivered, 1).to_string(),
+                now_millis(),
+            )
+            .await?;
+    }
 
     let mut updated = child.clone();
     updated.logs.push(make_task_log_entry(
@@ -499,9 +670,7 @@ impl AgentEngine {
         &self,
         task_id: Option<&str>,
     ) -> Option<String> {
-        let task_id = task_id
-            .map(str::trim)
-            .filter(|value| !value.is_empty())?;
+        let task_id = task_id.map(str::trim).filter(|value| !value.is_empty())?;
         let mut blocks: Vec<String> = Vec::new();
 
         let records = match list_ask_records(self, task_id).await {
@@ -621,7 +790,20 @@ impl AgentEngine {
             let Some(mut child) = task_by_id_for_tool_scope(self, child_task_id).await else {
                 continue;
             };
-            let unblocked = unblock_child_task(self, &mut child).await;
+            let still_open = match list_ask_records(self, child_task_id).await {
+                Ok(records) => records
+                    .iter()
+                    .any(|(_, remaining)| remaining.state == "open"),
+                Err(error) => {
+                    tracing::warn!(
+                        %error,
+                        child_task_id,
+                        "failed to list remaining ask_parent records after timeout; leaving child blocked"
+                    );
+                    true
+                }
+            };
+            let unblocked = !still_open && unblock_child_task(self, &mut child).await;
             child.logs.push(make_task_log_entry(
                 child.retry_count,
                 TaskLogLevel::Warn,

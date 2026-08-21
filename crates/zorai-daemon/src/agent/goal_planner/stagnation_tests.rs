@@ -72,7 +72,9 @@ fn first_scored_pass_sets_new_best() {
     let mut scores = BTreeMap::new();
     scores.insert("accuracy".into(), 0.9);
     let record = review_record(
-        "t1", "g1", "s1",
+        "t1",
+        "g1",
+        "s1",
         GoalStepReviewVerdict::Pass,
         "all good",
         Some(scores),
@@ -97,7 +99,9 @@ fn higher_geomean_is_new_best() {
     let mut scores = BTreeMap::new();
     scores.insert("accuracy".into(), 0.95);
     let record = review_record(
-        "t2", "g1", "s2",
+        "t2",
+        "g1",
+        "s2",
         GoalStepReviewVerdict::Pass,
         "better",
         Some(scores),
@@ -121,7 +125,9 @@ fn lower_geomean_is_not_new_best() {
     let mut scores = BTreeMap::new();
     scores.insert("accuracy".into(), 0.85);
     let record = review_record(
-        "t2", "g1", "s2",
+        "t2",
+        "g1",
+        "s2",
         GoalStepReviewVerdict::Pass,
         "worse",
         Some(scores),
@@ -146,7 +152,9 @@ fn equal_geomean_is_not_new_best() {
     let mut scores = BTreeMap::new();
     scores.insert("accuracy".into(), 0.9);
     let record = review_record(
-        "t2", "g1", "s2",
+        "t2",
+        "g1",
+        "s2",
         GoalStepReviewVerdict::Pass,
         "same",
         Some(scores),
@@ -171,7 +179,9 @@ fn partial_metric_coverage_blocks_new_best() {
     let mut scores = BTreeMap::new();
     scores.insert("accuracy".into(), 0.99);
     let record = review_record(
-        "t2", "g1", "s2",
+        "t2",
+        "g1",
+        "s2",
         GoalStepReviewVerdict::Pass,
         "better accuracy only",
         Some(scores),
@@ -195,7 +205,9 @@ fn metric_key_mismatch_is_not_new_best() {
     let mut scores = BTreeMap::new();
     scores.insert("latency_ms".into(), 50.0);
     let record = review_record(
-        "t2", "g1", "s2",
+        "t2",
+        "g1",
+        "s2",
         GoalStepReviewVerdict::Pass,
         "different metric",
         Some(scores),
@@ -220,7 +232,9 @@ fn superset_metric_coverage_allows_new_best() {
     scores.insert("accuracy".into(), 0.95);
     scores.insert("latency_ms".into(), 50.0);
     let record = review_record(
-        "t2", "g1", "s2",
+        "t2",
+        "g1",
+        "s2",
         GoalStepReviewVerdict::Pass,
         "more metrics",
         Some(scores),
@@ -242,7 +256,9 @@ fn scoreless_pass_verdict_is_noop() {
     };
 
     let record = review_record(
-        "t2", "g1", "s2",
+        "t2",
+        "g1",
+        "s2",
         GoalStepReviewVerdict::Pass,
         "no scores",
         None,
@@ -267,7 +283,9 @@ fn new_best_resets_stagnation_counters() {
     let mut scores = BTreeMap::new();
     scores.insert("a".into(), 0.9);
     let record = review_record(
-        "t2", "g1", "s2",
+        "t2",
+        "g1",
+        "s2",
         GoalStepReviewVerdict::Pass,
         "new best",
         Some(scores),
@@ -282,7 +300,9 @@ fn new_best_resets_stagnation_counters() {
 fn fail_verdict_tracks_fingerprint() {
     let state = GoalProgressState::default();
     let record = review_record(
-        "t1", "g1", "s1",
+        "t1",
+        "g1",
+        "s1",
         GoalStepReviewVerdict::Fail,
         "missing type annotation on line 42",
         None,
@@ -303,7 +323,9 @@ fn same_failure_fingerprint_increments_consecutive() {
         ..Default::default()
     };
     let record = review_record(
-        "t2", "g1", "s2",
+        "t2",
+        "g1",
+        "s2",
         GoalStepReviewVerdict::Fail,
         "missing type annotation on line 42\nmore details here",
         None,
@@ -320,7 +342,9 @@ fn different_failure_fingerprint_resets_consecutive() {
         ..Default::default()
     };
     let record = review_record(
-        "t2", "g1", "s2",
+        "t2",
+        "g1",
+        "s2",
         GoalStepReviewVerdict::Fail,
         "different error entirely",
         None,
@@ -338,6 +362,18 @@ fn failure_fingerprint_truncates_at_100_chars() {
     let long = "a".repeat(200);
     let fingerprint = failure_fingerprint_prefix(&long);
     assert_eq!(fingerprint.len(), 100);
+}
+
+#[test]
+fn failure_fingerprint_truncates_on_a_utf8_char_boundary() {
+    let long = format!("{}{}", "a".repeat(99), "é".repeat(20));
+    assert!(
+        !long.is_char_boundary(100),
+        "byte 100 sits inside é; slicing there would panic"
+    );
+    let fingerprint = failure_fingerprint_prefix(&long);
+    assert_eq!(fingerprint.chars().count(), 100);
+    assert!(fingerprint.ends_with('é'));
 }
 
 #[test]

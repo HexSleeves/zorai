@@ -1258,8 +1258,9 @@ impl AgentEngine {
                     _ => {}
                 }
                 if let Some(goal_run_id) = updated.goal_run_id.as_deref() {
-                    if let Err(error) =
-                        self.clear_goal_stagnation_pending_if_released(goal_run_id).await
+                    if let Err(error) = self
+                        .clear_goal_stagnation_pending_if_released(goal_run_id)
+                        .await
                     {
                         tracing::warn!(
                             goal_run_id,
@@ -1393,8 +1394,9 @@ impl AgentEngine {
                     self.notify_task_terminal_state(&updated).await;
                 }
                 if let Some(goal_run_id) = updated.goal_run_id.as_deref() {
-                    if let Err(error) =
-                        self.clear_goal_stagnation_pending_if_released(goal_run_id).await
+                    if let Err(error) = self
+                        .clear_goal_stagnation_pending_if_released(goal_run_id)
+                        .await
                     {
                         tracing::warn!(
                             goal_run_id,

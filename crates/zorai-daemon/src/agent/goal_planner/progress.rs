@@ -918,9 +918,7 @@ impl AgentEngine {
     ) -> Result<()> {
         let progress_state: super::stagnation::GoalProgressState = self
             .history
-            .get_consolidation_state(&super::stagnation::goal_progress_state_key(
-                goal_run_id,
-            ))
+            .get_consolidation_state(&super::stagnation::goal_progress_state_key(goal_run_id))
             .await?
             .and_then(|raw| serde_json::from_str(&raw).ok())
             .unwrap_or_default();
@@ -961,10 +959,7 @@ impl AgentEngine {
 
         let updated_task = {
             let mut tasks = self.tasks.lock().await;
-            let Some(task) = tasks
-                .iter_mut()
-                .find(|task| task.id == supervision_task.id)
-            else {
+            let Some(task) = tasks.iter_mut().find(|task| task.id == supervision_task.id) else {
                 anyhow::bail!("progress supervision task disappeared after enqueue");
             };
             task.goal_run_title = Some(snapshot.title.clone());
@@ -983,8 +978,7 @@ impl AgentEngine {
 
         let updated_goal = {
             let mut goal_runs = self.goal_runs.lock().await;
-            let Some(goal_run) = goal_runs.iter_mut().find(|item| item.id == snapshot.id)
-            else {
+            let Some(goal_run) = goal_runs.iter_mut().find(|item| item.id == snapshot.id) else {
                 anyhow::bail!("goal run missing while queuing progress supervision");
             };
             goal_run.updated_at = now_millis();
@@ -996,9 +990,11 @@ impl AgentEngine {
                 goal_run.child_task_ids.push(updated_task.id.clone());
             }
             goal_run.child_task_count = goal_run.child_task_ids.len() as u32;
-            goal_run
-                .events
-                .push(make_goal_run_event("progress_supervision", "stagnation detected; supervisor queued to propose alternative directions", Some(reason.to_string())));
+            goal_run.events.push(make_goal_run_event(
+                "progress_supervision",
+                "stagnation detected; supervisor queued to propose alternative directions",
+                Some(reason.to_string()),
+            ));
             goal_run.clone()
         };
 
@@ -1010,9 +1006,7 @@ impl AgentEngine {
         );
         self.emit_goal_run_update(
             &updated_goal,
-            Some(format!(
-                "Stagnation detected ({reason}); supervisor queued"
-            )),
+            Some(format!("Stagnation detected ({reason}); supervisor queued")),
         );
         Ok(())
     }
@@ -1387,11 +1381,8 @@ impl AgentEngine {
                 .await?;
 
             let thresholds = super::stagnation::ProgressSupervisionThresholds::default();
-            if let Some(reason) =
-                super::stagnation::should_intervene(&new_state, &thresholds)
-            {
-                let pending_key =
-                    super::stagnation::goal_stagnation_pending_key(goal_run_id);
+            if let Some(reason) = super::stagnation::should_intervene(&new_state, &thresholds) {
+                let pending_key = super::stagnation::goal_stagnation_pending_key(goal_run_id);
                 let already_pending = self
                     .history
                     .get_consolidation_state(&pending_key)
@@ -1402,12 +1393,8 @@ impl AgentEngine {
                     self.history
                         .set_consolidation_state(&pending_key, "true", now)
                         .await?;
-                    self.enqueue_progress_supervision_task(
-                        goal_run_id,
-                        &reason,
-                        &snapshot,
-                    )
-                    .await?;
+                    self.enqueue_progress_supervision_task(goal_run_id, &reason, &snapshot)
+                        .await?;
                 }
             }
         }

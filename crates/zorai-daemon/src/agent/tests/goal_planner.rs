@@ -5253,9 +5253,8 @@ async fn clear_goal_stagnation_pending_released_after_supervision_task_completes
     engine.goal_runs.lock().await.push_back(goal_run);
 
     // Set the stagnation-pending guard to "true"
-    let pending_key = crate::agent::goal_planner::stagnation::goal_stagnation_pending_key(
-        goal_run_id,
-    );
+    let pending_key =
+        crate::agent::goal_planner::stagnation::goal_stagnation_pending_key(goal_run_id);
     engine
         .history
         .set_consolidation_state(&pending_key, "true", now_millis())
@@ -5322,9 +5321,8 @@ async fn clear_goal_stagnation_pending_does_not_clear_while_supervision_task_is_
     engine.goal_runs.lock().await.push_back(goal_run);
 
     // Set the stagnation-pending guard to "true"
-    let pending_key = crate::agent::goal_planner::stagnation::goal_stagnation_pending_key(
-        goal_run_id,
-    );
+    let pending_key =
+        crate::agent::goal_planner::stagnation::goal_stagnation_pending_key(goal_run_id);
     engine
         .history
         .set_consolidation_state(&pending_key, "true", now_millis())

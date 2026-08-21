@@ -227,8 +227,8 @@ export function ProviderAuthTab() {
                                 : "API Key";
                         return (
                             <div key={state.provider_id} style={{
-                                border: "1px solid rgba(255,255,255,0.06)",
-                                background: "rgba(18, 33, 47, 0.5)",
+                                border: "1px solid var(--border)",
+                                background: "var(--zorai-bg-panel)",
                                 padding: "8px 12px",
                             }}>
                                 <div style={{
@@ -250,7 +250,7 @@ export function ProviderAuthTab() {
                                             <span style={{
                                                 fontSize: 10,
                                                 color: "var(--text-secondary)",
-                                                background: "rgba(255,255,255,0.05)",
+                                                background: "var(--zorai-bg-panel)",
                                                 padding: "1px 6px",
                                                 borderRadius: 3,
                                             }}>

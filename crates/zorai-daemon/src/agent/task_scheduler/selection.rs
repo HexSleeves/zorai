@@ -141,6 +141,10 @@ pub(in crate::agent) fn refresh_task_queue_state(
                 changed.push(task.clone());
             }
 
+            if crate::agent::tool_executor::task_is_awaiting_parent(task) {
+                continue;
+            }
+
             if !unresolved.is_empty() {
                 let reason = format!("waiting for dependencies: {}", unresolved.join(", "));
                 if task.status != TaskStatus::Blocked

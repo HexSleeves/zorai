@@ -921,7 +921,7 @@
   max-width: 100%;
   box-sizing: border-box;
   padding: 10px 12px;
-  background: var(--zorai-bg-surface);
+  background: var(--zorai-bg-panel);
   border-radius: 2px;
   overflow: auto;
   font-size: var(--text-sm-plus);

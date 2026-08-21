@@ -385,9 +385,11 @@
 }
 
 .zorai-thread-item {
+  background: transparent;
   cursor: pointer;
   display: grid;
   gap: 5px;
+  border: 1px solid var(--border);
 }
 
 .zorai-thread-item--active {
@@ -413,6 +415,7 @@
   color: var(--zorai-muted);
   font-size: var(--text-sm);
   line-height: 1.35;
+  word-break: break-all;
 }
 
 .zorai-main {
@@ -1259,7 +1262,7 @@
   margin: 0;
   border: 1px solid var(--zorai-border);
   border-radius: 7px;
-  background: var(--zorai-bg-panel);
+  background: var(--zorai-bg-surface);
   color: var(--zorai-text);
   padding: 12px;
   overflow: auto;
@@ -1747,10 +1750,11 @@
 }
 
 .zorai-thread-composer__footer {
-  margin-top: 6px;
+  margin-top: 8px;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  font-size: var(--text-xs);
   gap: 12px;
 }
 
@@ -2744,5 +2748,5 @@
   padding: 8px;
   white-space: pre-wrap;
   word-break: break-word;
-  background: var(--zorai-bg-panel);
+  background: transparent;
 }

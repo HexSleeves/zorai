@@ -629,10 +629,11 @@ pub(crate) fn add_available_tools_part_d(
         },
         "required": ["question"]
     })));
-    tools.push(tool_def(tool_names::ANSWER_CHILD, "Answer a child task's open ask_parent question. Validates that the caller is the child's parent (parent task or parent thread), unblocks the child, and injects the answer verbatim into the child's next-turn context.", serde_json::json!({
+    tools.push(tool_def(tool_names::ANSWER_CHILD, "Answer one of a child task's open ask_parent questions. Validates that the caller is the child's parent (parent task or parent thread). Pass ask_id when the child has multiple open asks; the child stays blocked until every open ask is answered or times out. The answer is injected verbatim into the child's next-turn context.", serde_json::json!({
         "type": "object",
         "properties": {
             "child_task_id": { "type": "string", "description": "ID of the child task that asked the question" },
+            "ask_id": { "type": "string", "description": "ID of the specific open ask to answer; required when the child has more than one open ask" },
             "answer": { "type": "string", "description": "Verbatim answer delivered to the child" }
         },
         "required": ["child_task_id", "answer"]

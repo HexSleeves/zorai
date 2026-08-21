@@ -171,8 +171,8 @@ export function SubAgentsTab() {
                             const capabilities = getSubAgentCapabilities(sa);
                             return (
                                 <div key={sa.id} style={{
-                                    border: "1px solid rgba(255,255,255,0.06)",
-                                    background: "rgba(18, 33, 47, 0.5)",
+                                    border: "1px solid var(--border)",
+                                    background: "var(--bg-tertiary)",
                                     padding: "8px 12px",
                                 }}>
                                     <div style={{
@@ -192,7 +192,7 @@ export function SubAgentsTab() {
                                                 <span style={{
                                                     fontSize: 10,
                                                     color: "#fbbf24",
-                                                    background: "rgba(251,191,36,0.12)",
+                                                    background: "var(--zorai-accent-dim)",
                                                     padding: "1px 6px",
                                                     borderRadius: 3,
                                                 }}>
@@ -202,7 +202,7 @@ export function SubAgentsTab() {
                                             <span style={{
                                                 fontSize: 10,
                                                 color: "var(--text-secondary)",
-                                                background: "rgba(255,255,255,0.05)",
+                                                background: "var(--zorai-bg-panel)",
                                                 padding: "1px 6px",
                                                 borderRadius: 3,
                                             }}>
@@ -212,7 +212,7 @@ export function SubAgentsTab() {
                                                 <span style={{
                                                     fontSize: 10,
                                                     color: "var(--text-secondary)",
-                                                    background: "rgba(255,255,255,0.05)",
+                                                    background: "var(--zorai-bg-panel)",
                                                     padding: "1px 6px",
                                                     borderRadius: 3,
                                                 }}>
@@ -223,7 +223,7 @@ export function SubAgentsTab() {
                                                 <span style={{
                                                     fontSize: 10,
                                                     color: "var(--accent)",
-                                                    background: "rgba(97, 197, 255, 0.1)",
+                                                    background: "var(--zorai-accent-dim)",
                                                     padding: "1px 6px",
                                                     borderRadius: 3,
                                                 }}>
@@ -261,8 +261,8 @@ export function SubAgentsTab() {
 
                 {showForm ? (
                     <div style={{
-                        border: "1px solid rgba(255,255,255,0.1)",
-                        background: "rgba(18, 33, 47, 0.7)",
+                        border: "1px solid var(--border)",
+                        background: "var(--zorai-bg-panel)",
                         padding: 14,
                     }}>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>

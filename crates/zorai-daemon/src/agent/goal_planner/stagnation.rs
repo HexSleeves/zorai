@@ -104,10 +104,7 @@ pub fn merge_verdict(
 ) -> (GoalProgressState, bool) {
     match record.verdict {
         super::super::types::GoalStepReviewVerdict::Pass => {
-            let scores = record
-                .evidence
-                .as_ref()
-                .and_then(|ev| ev.scores.as_ref());
+            let scores = record.evidence.as_ref().and_then(|ev| ev.scores.as_ref());
             let Some(scores) = scores else {
                 // Scoreless pass — no stagnation tracking.
                 return (state.clone(), false);
@@ -119,10 +116,7 @@ pub fn merge_verdict(
                 let current_geomean = geomean(&state.best_scores);
                 // Strictly better AND covers ≥ the same metric keys.
                 candidate_geomean > current_geomean
-                    && state
-                        .best_scores
-                        .keys()
-                        .all(|k| scores.contains_key(k))
+                    && state.best_scores.keys().all(|k| scores.contains_key(k))
             };
 
             if is_new_best {
@@ -151,7 +145,10 @@ pub fn merge_verdict(
             let fingerprint = failure_fingerprint_prefix(&record.explanation);
             let (consecutive_failures, last_failure_fingerprint) =
                 if state.last_failure_fingerprint.as_deref() == Some(&fingerprint) {
-                    (state.consecutive_failures.saturating_add(1), Some(fingerprint))
+                    (
+                        state.consecutive_failures.saturating_add(1),
+                        Some(fingerprint),
+                    )
                 } else {
                     (1, Some(fingerprint))
                 };
@@ -200,7 +197,10 @@ pub fn goal_stagnation_pending_key(goal_run_id: &str) -> String {
 /// Render a compact lineage digest for the supervisor prompt: current best
 /// scores, time since last improvement, non-improving commit count, and the
 /// dominant failure fingerprint.
-pub fn lineage_digest(state: &GoalProgressState, snapshot: &super::super::types::GoalRun) -> String {
+pub fn lineage_digest(
+    state: &GoalProgressState,
+    snapshot: &super::super::types::GoalRun,
+) -> String {
     let mut lines = Vec::new();
     lines.push(format!("Goal run: {} ({})", snapshot.title, snapshot.id));
     lines.push(format!(
@@ -264,17 +264,14 @@ pub(in crate::agent) fn geomean(scores: &BTreeMap<String, f64>) -> f64 {
 }
 
 /// Derive a stable fingerprint prefix from a failure explanation.
-/// Uses the first line (up to 100 chars) to bucket similar failures.
+/// Uses the first line (up to 100 Unicode scalar values) to bucket similar failures.
 pub(in crate::agent) fn failure_fingerprint_prefix(explanation: &str) -> String {
-    let first_line = explanation
+    explanation
         .lines()
         .next()
         .unwrap_or("")
         .trim()
-        .to_string();
-    if first_line.len() > 100 {
-        first_line[..100].to_string()
-    } else {
-        first_line
-    }
+        .chars()
+        .take(100)
+        .collect()
 }

@@ -1,6 +1,8 @@
 use super::*;
+use crate::agent::task_scheduler::refresh_task_queue_state;
 use crate::agent::types::AgentConfig;
 use crate::session_manager::SessionManager;
+use std::collections::VecDeque;
 use std::sync::Arc;
 use tempfile::tempdir;
 
@@ -95,7 +97,9 @@ async fn ask_parent_rejects_task_without_parent_and_leaves_task_unchanged() {
         .await
         .expect("orphan still exists");
     assert_eq!(stored.status, TaskStatus::Queued, "task must be unchanged");
-    let records = list_ask_records(&engine, &orphan.id).await.expect("no records read failure");
+    let records = list_ask_records(&engine, &orphan.id)
+        .await
+        .expect("no records read failure");
     assert!(records.is_empty(), "no ask record may be written");
 }
 
@@ -181,7 +185,9 @@ async fn ask_parent_blocks_and_answers_unblock_with_verbatim_context_injection()
         injected.contains("[parent answer] Use plan B."),
         "verbatim answer expected, got: {injected}"
     );
-    let replayed = engine.build_parent_child_prompt_context(Some(&child.id)).await;
+    let replayed = engine
+        .build_parent_child_prompt_context(Some(&child.id))
+        .await;
     assert!(replayed.is_none(), "answer must be delivered exactly once");
 }
 
@@ -343,8 +349,10 @@ async fn timeout_sweep_defaults_and_unanswers_without_failing_the_child() {
             .await
             .expect("child exists");
         blocked.status = TaskStatus::Blocked;
-        blocked.blocked_reason =
-            Some(format!("{} Which endpoint?", AWAITING_PARENT_BLOCKED_PREFIX));
+        blocked.blocked_reason = Some(format!(
+            "{} Which endpoint?",
+            AWAITING_PARENT_BLOCKED_PREFIX
+        ));
         persist_task_update(&engine, &blocked, None)
             .await
             .expect("persist blocked child");
@@ -394,7 +402,286 @@ async fn timeout_sweep_defaults_and_unanswers_without_failing_the_child() {
         .build_parent_child_prompt_context(Some(&without_default.id))
         .await
         .expect("proceed-with-judgment note injected");
-    assert!(unanswered_context.contains("[ask timeout] no answer available; proceed with best judgment and state assumptions"));
+    assert!(unanswered_context.contains(
+        "[ask timeout] no answer available; proceed with best judgment and state assumptions"
+    ));
+}
+
+#[tokio::test]
+async fn ask_parent_enqueues_a_parent_wakeup_so_the_parent_can_answer() {
+    let (_root, engine) = setup().await;
+    let child = spawn_child(&engine).await;
+    engine.begin_stream_cancellation("thread-parent").await;
+
+    let result = execute_ask_parent(
+        &serde_json::json!({
+            "question": "Should I use plan A or plan B?",
+            "options": ["plan A", "plan B"],
+        }),
+        &engine,
+        "thread-child",
+        Some(&child.id),
+    )
+    .await
+    .expect("ask_parent succeeds");
+    let parsed: serde_json::Value = serde_json::from_str(&result).expect("json result");
+    let ask_id = parsed["ask_id"].as_str().expect("ask_id returned");
+    assert!(!ask_id.is_empty());
+
+    let queued = engine
+        .deferred_visible_thread_continuations_for("thread-parent")
+        .await;
+    assert_eq!(
+        queued.len(),
+        1,
+        "parent must get a continuation so it can call answer_child instead of waiting for timeout"
+    );
+    assert!(queued[0].llm_user_content.contains("answer_child"));
+    assert!(queued[0].llm_user_content.contains(ask_id));
+    assert!(queued[0]
+        .llm_user_content
+        .contains("Should I use plan A or plan B?"));
+    assert_eq!(
+        queued[0].task_id.as_deref(),
+        child.parent_task_id.as_deref()
+    );
+}
+
+#[tokio::test]
+async fn answer_child_targets_one_open_ask_and_keeps_the_child_blocked_until_all_are_resolved() {
+    let (_root, engine) = setup().await;
+    let child = spawn_child(&engine).await;
+
+    let first = execute_ask_parent(
+        &ask_args("First?"),
+        &engine,
+        "thread-child",
+        Some(&child.id),
+    )
+    .await
+    .expect("first ask");
+    let second = execute_ask_parent(
+        &ask_args("Second?"),
+        &engine,
+        "thread-child",
+        Some(&child.id),
+    )
+    .await
+    .expect("second ask");
+    let first_id = serde_json::from_str::<serde_json::Value>(&first).expect("json")["ask_id"]
+        .as_str()
+        .expect("ask_id")
+        .to_string();
+    let second_id = serde_json::from_str::<serde_json::Value>(&second).expect("json")["ask_id"]
+        .as_str()
+        .expect("ask_id")
+        .to_string();
+
+    let ambiguous = execute_answer_child(
+        &serde_json::json!({ "child_task_id": child.id, "answer": "one answer for both" }),
+        &engine,
+        "thread-parent",
+        None,
+    )
+    .await
+    .expect_err("multiple open asks require ask_id");
+    assert!(
+        ambiguous.to_string().contains("ask_id"),
+        "actionable ask_id guidance expected, got: {ambiguous}"
+    );
+
+    execute_answer_child(
+        &serde_json::json!({
+            "child_task_id": child.id,
+            "ask_id": first_id,
+            "answer": "answer first",
+        }),
+        &engine,
+        "thread-parent",
+        None,
+    )
+    .await
+    .expect("first ask answered");
+
+    let still_blocked = task_by_id_for_tool_scope(&engine, &child.id)
+        .await
+        .expect("child exists");
+    assert_eq!(still_blocked.status, TaskStatus::Blocked);
+    let open: Vec<_> = list_ask_records(&engine, &child.id)
+        .await
+        .expect("records")
+        .into_iter()
+        .filter(|(_, record)| record.state == "open")
+        .collect();
+    assert_eq!(open.len(), 1);
+    assert_eq!(
+        split_ask_key(&open[0].0).map(|(_, id)| id),
+        Some(second_id.as_str())
+    );
+
+    execute_answer_child(
+        &serde_json::json!({
+            "child_task_id": child.id,
+            "ask_id": second_id,
+            "answer": "answer second",
+        }),
+        &engine,
+        "thread-parent",
+        None,
+    )
+    .await
+    .expect("second ask answered");
+    let unblocked = task_by_id_for_tool_scope(&engine, &child.id)
+        .await
+        .expect("child exists");
+    assert_ne!(unblocked.status, TaskStatus::Blocked);
+}
+
+#[tokio::test]
+async fn timeout_sweep_leaves_child_blocked_while_other_asks_are_still_open() {
+    let (_root, engine) = setup().await;
+    let child = spawn_child(&engine).await;
+    let now = now_millis();
+    let expired = AskParentRecord {
+        question: "Expired?".to_string(),
+        options: Vec::new(),
+        asked_at: now.saturating_sub(10 * 60_000),
+        timeout_minutes: 1,
+        default: None,
+        state: "open".to_string(),
+        answer: None,
+        answer_delivered: false,
+    };
+    let live = AskParentRecord {
+        question: "Still waiting?".to_string(),
+        options: Vec::new(),
+        asked_at: now,
+        timeout_minutes: 240,
+        default: None,
+        state: "open".to_string(),
+        answer: None,
+        answer_delivered: false,
+    };
+    engine
+        .history
+        .set_consolidation_state(
+            &format!("ask_parent:{}:expired", child.id),
+            &serde_json::to_string(&expired).unwrap(),
+            now,
+        )
+        .await
+        .expect("seed expired");
+    engine
+        .history
+        .set_consolidation_state(
+            &format!("ask_parent:{}:live", child.id),
+            &serde_json::to_string(&live).unwrap(),
+            now,
+        )
+        .await
+        .expect("seed live");
+    let mut blocked = task_by_id_for_tool_scope(&engine, &child.id)
+        .await
+        .expect("child exists");
+    blocked.status = TaskStatus::Blocked;
+    blocked.blocked_reason = Some(format!("{} Still waiting?", AWAITING_PARENT_BLOCKED_PREFIX));
+    persist_task_update(&engine, &blocked, None)
+        .await
+        .expect("persist blocked");
+
+    engine
+        .sweep_ask_parent_timeouts()
+        .await
+        .expect("sweep succeeds");
+
+    let records = list_ask_records(&engine, &child.id).await.expect("records");
+    let expired_state = records
+        .iter()
+        .find(|(key, _)| key.ends_with(":expired"))
+        .map(|(_, record)| record.state.as_str());
+    let live_state = records
+        .iter()
+        .find(|(key, _)| key.ends_with(":live"))
+        .map(|(_, record)| record.state.as_str());
+    assert_eq!(expired_state, Some("timeout_unanswered"));
+    assert_eq!(live_state, Some("open"));
+    let still_blocked = task_by_id_for_tool_scope(&engine, &child.id)
+        .await
+        .expect("child exists");
+    assert_eq!(still_blocked.status, TaskStatus::Blocked);
+}
+
+#[tokio::test]
+async fn notes_added_after_the_cap_are_still_injected() {
+    let (_root, engine) = setup().await;
+    let child = spawn_child(&engine).await;
+
+    for index in 0..20 {
+        execute_note_to_child(
+            &serde_json::json!({
+                "child_task_id": child.id,
+                "note": format!("note-{index:02}"),
+            }),
+            &engine,
+            "thread-parent",
+            None,
+        )
+        .await
+        .expect("note accepted");
+    }
+    engine
+        .build_parent_child_prompt_context(Some(&child.id))
+        .await
+        .expect("initial notes injected");
+
+    execute_note_to_child(
+        &serde_json::json!({
+            "child_task_id": child.id,
+            "note": "note-after-cap",
+        }),
+        &engine,
+        "thread-parent",
+        None,
+    )
+    .await
+    .expect("post-cap note accepted");
+
+    let injected = engine
+        .build_parent_child_prompt_context(Some(&child.id))
+        .await
+        .expect("evicted-cap note must still be injectable");
+    assert!(
+        injected.contains("[parent note] note-after-cap"),
+        "new guidance after the cap was dropped, got: {injected}"
+    );
+}
+
+#[test]
+fn select_open_ask_requires_ask_id_when_several_are_outstanding() {
+    let record = |question: &str| AskParentRecord {
+        question: question.to_string(),
+        options: Vec::new(),
+        asked_at: 1,
+        timeout_minutes: 1,
+        default: None,
+        state: "open".to_string(),
+        answer: None,
+        answer_delivered: false,
+    };
+    let open = vec![
+        ("ask_parent:child:one".to_string(), record("First?")),
+        ("ask_parent:child:two".to_string(), record("Second?")),
+    ];
+    let error = select_open_ask(&open, None).expect_err("ambiguous answer");
+    assert!(error.to_string().contains("ask_id"));
+    let selected = select_open_ask(&open, Some("two")).expect("specific ask");
+    assert_eq!(selected.0, "ask_parent:child:two");
+}
+
+#[test]
+fn notes_cursor_rewinds_when_the_oldest_note_is_evicted() {
+    assert_eq!(notes_cursor_after_eviction(20, 1), 19);
+    assert_eq!(notes_cursor_after_eviction(0, 1), 0);
 }
 
 #[test]
@@ -498,9 +785,23 @@ fn awaiting_parent_prefix_exempts_only_awaiting_parent_children_from_stalled_rec
     assert!(task_is_awaiting_parent(&base(Some(
         "awaiting parent: Which schema?"
     ))));
-    assert!(!task_is_awaiting_parent(&base(Some("stuck_needs_recovery"))));
+    assert!(!task_is_awaiting_parent(&base(Some(
+        "stuck_needs_recovery"
+    ))));
     assert!(!task_is_awaiting_parent(&base(Some(
         "waiting for operator approval: cargo"
     ))));
     assert!(!task_is_awaiting_parent(&base(None)));
+
+    let mut queued = VecDeque::from(vec![base(Some("awaiting parent: Which schema?"))]);
+    let changed = refresh_task_queue_state(&mut queued, 100, &[], &AgentConfig::default());
+    assert!(
+        changed.is_empty(),
+        "queue refresh must not treat an open ask_parent as a cleared gate"
+    );
+    assert_eq!(queued[0].status, TaskStatus::Blocked);
+    assert_eq!(
+        queued[0].blocked_reason.as_deref(),
+        Some("awaiting parent: Which schema?")
+    );
 }
