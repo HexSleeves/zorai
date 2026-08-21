@@ -100,6 +100,12 @@ pub(crate) fn single_line_edit_layout(
             "honcho_editor_workspace_id" => Some((11, 19)),
             _ => None,
         },
+        SettingsTab::Mlflow => match field {
+            "mlflow_tracking_uri" => Some((12, 20)),
+            "mlflow_experiment_name" => Some((13, 20)),
+            "mlflow_experiment_id" => Some((14, 20)),
+            _ => None,
+        },
         SettingsTab::Gateway => match field {
             "gateway_default_agent" => Some((5, 19)),
             "gateway_prefix" => Some((6, 19)),
@@ -301,6 +307,10 @@ pub(crate) fn settings_row_hit(
         SettingsTab::Chat => row
             .checked_sub(4)
             .filter(|idx| *idx < 23)
+            .map(|idx| (idx, None)),
+        SettingsTab::Mlflow => row
+            .checked_sub(4)
+            .filter(|idx| *idx < 13)
             .map(|idx| (idx, None)),
         SettingsTab::Advanced => advanced_settings_row_hit(config, row),
         SettingsTab::Gateway => match row {

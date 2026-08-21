@@ -701,6 +701,27 @@ fn start_daemon_bridge(
                                     client.get_config(),
                                 );
                             }
+                            DaemonCommand::GetMlflowTracingStatus => {
+                                forward_bridge_command_result(
+                                    &daemon_event_tx,
+                                    "get MLflow tracing status",
+                                    client.get_mlflow_tracing_status(),
+                                );
+                            }
+                            DaemonCommand::TestMlflowTracingConnection => {
+                                forward_bridge_command_result(
+                                    &daemon_event_tx,
+                                    "test MLflow tracing connection",
+                                    client.test_mlflow_tracing_connection(),
+                                );
+                            }
+                            DaemonCommand::SendMlflowTracingTestTrace => {
+                                forward_bridge_command_result(
+                                    &daemon_event_tx,
+                                    "send MLflow tracing test trace",
+                                    client.send_mlflow_tracing_test_trace(),
+                                );
+                            }
                             DaemonCommand::RefreshServices => {
                                 forward_bridge_command_result(
                                     &daemon_event_tx,

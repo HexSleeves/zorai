@@ -142,6 +142,56 @@ impl TuiModel {
                 ws
             }
         };
+        let mlflow = json.get("mlflow_tracing");
+        self.config.mlflow_enabled = mlflow
+            .and_then(|value| value.get("enabled"))
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
+        self.config.mlflow_tracking_uri = mlflow
+            .and_then(|value| value.get("tracking_uri"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("http://127.0.0.1:5000")
+            .to_string();
+        self.config.mlflow_experiment_name = mlflow
+            .and_then(|value| value.get("experiment_name"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("zorai-conversations")
+            .to_string();
+        self.config.mlflow_experiment_id = mlflow
+            .and_then(|value| value.get("experiment_id"))
+            .and_then(|value| value.as_str())
+            .unwrap_or_default()
+            .to_string();
+        self.config.mlflow_capture_mode = mlflow
+            .and_then(|value| value.get("capture_mode"))
+            .and_then(|value| value.as_str())
+            .unwrap_or("guarded")
+            .to_string();
+        let mlflow_scopes = mlflow.and_then(|value| value.get("scopes"));
+        self.config.mlflow_visible_operator = mlflow_scopes
+            .and_then(|value| value.get("visible_operator"))
+            .and_then(|value| value.as_bool())
+            .unwrap_or(true);
+        self.config.mlflow_gateway = mlflow_scopes
+            .and_then(|value| value.get("gateway"))
+            .and_then(|value| value.as_bool())
+            .unwrap_or(true);
+        self.config.mlflow_goal_task = mlflow_scopes
+            .and_then(|value| value.get("goal_task"))
+            .and_then(|value| value.as_bool())
+            .unwrap_or(true);
+        self.config.mlflow_subagent = mlflow_scopes
+            .and_then(|value| value.get("subagent"))
+            .and_then(|value| value.as_bool())
+            .unwrap_or(true);
+        self.config.mlflow_concierge = mlflow_scopes
+            .and_then(|value| value.get("concierge"))
+            .and_then(|value| value.as_bool())
+            .unwrap_or(true);
+        self.config.mlflow_heartbeat_autonomous = mlflow_scopes
+            .and_then(|value| value.get("heartbeat_autonomous"))
+            .and_then(|value| value.as_bool())
+            .unwrap_or(false);
         self.config.anticipatory_enabled = json
             .get("anticipatory")
             .and_then(|value| value.get("enabled"))

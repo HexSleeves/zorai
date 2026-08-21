@@ -7,6 +7,7 @@ impl SettingsTab {
         SettingsTab::Tools,
         SettingsTab::WebSearch,
         SettingsTab::Chat,
+        SettingsTab::Mlflow,
         SettingsTab::Gateway,
         SettingsTab::SubAgents,
         SettingsTab::Features,

@@ -148,6 +148,8 @@ pub enum ClientEvent {
     },
     AgentConfig(AgentConfigSnapshot),
     AgentConfigRaw(Value),
+    MlflowTracingStatus(Value),
+    MlflowTracingTestResult(Value),
     ExternalRuntimeMigrationResult(Value),
     ModelsFetched(Vec<FetchedModel>),
     HeartbeatItems(Vec<HeartbeatItem>),

@@ -40,6 +40,9 @@ pub enum DaemonCommand {
         agent_filter: Option<String>,
     },
     GetConfig,
+    GetMlflowTracingStatus,
+    TestMlflowTracingConnection,
+    SendMlflowTracingTestTrace,
     RefreshServices,
     ListTasks,
     RequestThread {

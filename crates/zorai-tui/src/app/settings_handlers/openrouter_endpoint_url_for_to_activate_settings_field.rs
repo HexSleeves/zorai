@@ -130,7 +130,8 @@ impl TuiModel {
     pub(crate) fn activate_settings_field(&mut self) {
         let field = self.current_settings_field_name().to_string();
         let field = field.as_str();
-        if self.activate_provider_settings_field(field)
+        if self.activate_mlflow_settings_field(field)
+            || self.activate_provider_settings_field(field)
             || self.activate_gateway_settings_field(field)
             || self.activate_features_settings_field(field)
             || self.activate_advanced_settings_field(field)
@@ -141,5 +142,16 @@ impl TuiModel {
             return;
         }
         let _ = self.activate_feature_settings_field(field);
+    }
+
+    fn activate_mlflow_settings_field(&mut self, field: &str) -> bool {
+        let current = match field {
+            "mlflow_tracking_uri" => self.config.mlflow_tracking_uri.clone(),
+            "mlflow_experiment_name" => self.config.mlflow_experiment_name.clone(),
+            "mlflow_experiment_id" => self.config.mlflow_experiment_id.clone(),
+            _ => return false,
+        };
+        self.settings.start_editing(field, &current);
+        true
     }
 }

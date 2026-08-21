@@ -10,6 +10,7 @@ pub enum SettingsTab {
     Tools,
     WebSearch,
     Chat,
+    Mlflow,
     Gateway,
     Agent,
     SubAgents,

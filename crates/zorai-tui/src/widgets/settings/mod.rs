@@ -20,6 +20,8 @@ mod render_edit_buffer_with_cursor_to_editing_cursor_hit_test_to_content;
 mod render_features_tab;
 #[path = "render_gateway_text_field.rs"]
 mod render_gateway_text_field;
+#[path = "render_mlflow_tab.rs"]
+mod render_mlflow_tab;
 #[path = "render_plugins_tab_to_connector_readiness_style.rs"]
 mod render_plugins_tab_to_connector_readiness_style;
 #[path = "render_provider_tab_to_render_tools_tab.rs"]
@@ -38,6 +40,8 @@ mod tests {
 
     #[path = "advanced_tab_shows_repo_monitor_checkbox.rs"]
     mod advanced_tab_shows_repo_monitor_checkbox;
+    #[path = "mlflow_tab.rs"]
+    mod mlflow_tab;
     #[path = "settings_handles_empty_state_to_auth_tab_shows_chatgpt_logout.rs"]
     mod settings_handles_empty_state_to_auth_tab_shows_chatgpt_logout;
 }
@@ -55,6 +59,7 @@ pub(crate) use render_concierge_tab_to_render_feature_toggle_line::*;
 pub(crate) use render_features_tab::*;
 #[cfg(test)]
 pub(crate) use render_gateway_text_field::*;
+pub(crate) use render_mlflow_tab::*;
 #[cfg(test)]
 pub(crate) use render_plugins_tab_to_connector_readiness_style::*;
 #[cfg(test)]

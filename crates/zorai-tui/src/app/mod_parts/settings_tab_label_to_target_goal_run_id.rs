@@ -5,6 +5,7 @@ pub(crate) fn settings_tab_label(tab: SettingsTab) -> &'static str {
         SettingsTab::Tools => "tools",
         SettingsTab::WebSearch => zorai_protocol::tool_names::WEB_SEARCH,
         SettingsTab::Chat => "chat",
+        SettingsTab::Mlflow => "mlflow",
         SettingsTab::Gateway => "gateway",
         SettingsTab::Auth => "auth",
         SettingsTab::Agent => "agent",

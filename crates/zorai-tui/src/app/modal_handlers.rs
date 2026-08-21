@@ -465,6 +465,15 @@ impl TuiModel {
                                 self.status_line =
                                     format!("{} model: {}", pending.target_agent_name, model_id);
                             }
+                            "mlflow_tracking_uri" => {
+                                self.config.mlflow_tracking_uri = value.trim().to_string()
+                            }
+                            "mlflow_experiment_name" => {
+                                self.config.mlflow_experiment_name = value.trim().to_string()
+                            }
+                            "mlflow_experiment_id" => {
+                                self.config.mlflow_experiment_id = value.trim().to_string()
+                            }
                             "gateway_prefix" => self.config.gateway_prefix = value,
                             "slack_token" => self.config.slack_token = value,
                             "slack_channel_filter" => self.config.slack_channel_filter = value,
