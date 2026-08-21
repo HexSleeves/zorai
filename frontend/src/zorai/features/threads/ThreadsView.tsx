@@ -6,6 +6,7 @@ import {
   beginProgrammaticThreadHistoryScroll,
   endProgrammaticThreadHistoryScroll,
   resolveThreadHistoryScrollAction,
+  setFollowThreadHistoryBottom,
   shouldFollowThreadHistoryBottom,
   shouldIgnoreThreadHistoryScroll,
 } from "@/components/agent-chat-panel/runtime/threadHistoryScroll";
@@ -31,6 +32,7 @@ export function ThreadsView() {
   const runtime = useAgentChatPanelRuntime();
   const [pinLimitResult, setPinLimitResult] = useState<ZoraiThreadMessagePinResult | null>(null);
   const [participantsOpen, setParticipantsOpen] = useState(false);
+  const [pinnedToBottom, setPinnedToBottom] = useState(true);
   const subAgents = useAgentStore((state) => state.subAgents);
   const viewMountedAtRef = useRef(Date.now());
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -89,6 +91,11 @@ export function ThreadsView() {
   const activeThreadId = runtime.activeThread?.id ?? null;
 
   useEffect(() => {
+    setFollowThreadHistoryBottom(true);
+    setPinnedToBottom(true);
+  }, [activeThreadId]);
+
+  useEffect(() => {
     const previousCount = previousMessageCountRef.current;
     previousMessageCountRef.current = runtime.messages.length;
     const scroller = scrollerRef.current;
@@ -144,6 +151,7 @@ export function ThreadsView() {
       scrollHeight: scroller.scrollHeight,
       clientHeight: scroller.clientHeight,
     });
+    setPinnedToBottom(shouldFollowThreadHistoryBottom());
     if (action === "load-older") {
       const previousHeight = scroller.scrollHeight;
       const previousTop = scroller.scrollTop;
@@ -156,6 +164,20 @@ export function ThreadsView() {
       return;
     }
     if (action === "trim-latest" && runtime.trimThreadMessagesToLatestWindow(activeThread.id)) {
+      requestAnimationFrame(() => {
+        runtime.messagesEndRef.current?.scrollIntoView({ block: "end" });
+      });
+    }
+  };
+  const scrollThreadToLatest = () => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    setFollowThreadHistoryBottom(true);
+    setPinnedToBottom(true);
+    beginProgrammaticThreadHistoryScroll();
+    scroller.scrollTop = scroller.scrollHeight;
+    endProgrammaticThreadHistoryScroll();
+    if (runtime.trimThreadMessagesToLatestWindow(activeThread.id)) {
       requestAnimationFrame(() => {
         runtime.messagesEndRef.current?.scrollIntoView({ block: "end" });
       });
@@ -180,7 +202,8 @@ export function ThreadsView() {
       />
       <ParticipantStrip thread={runtime.activeThread} onOpen={() => setParticipantsOpen(true)} />
 
-      <div ref={scrollerRef} className="zorai-thread-chat-scroll" onScroll={(event) => void handleThreadScroll(event)}>
+      <div className="zorai-thread-chat">
+        <div ref={scrollerRef} className="zorai-thread-chat-scroll" onScroll={(event) => void handleThreadScroll(event)}>
         {runtime.messages.length === 0 ? (
           <div className="zorai-thread-empty-state">
             {activeThread.messageCount > 0 || activeThread.lastMessagePreview ? (
@@ -251,6 +274,8 @@ export function ThreadsView() {
           <ThinkingIndicator agentName={runtime.activeThread.agent_name} />
         ) : null}
         <div ref={runtime.messagesEndRef} />
+        </div>
+        <ThreadScrollToBottomButton hidden={pinnedToBottom} onClick={scrollThreadToLatest} />
       </div>
 
       <ThreadComposer />
@@ -355,6 +380,23 @@ function ThinkingIndicator({ agentName }: { agentName: string }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function ThreadScrollToBottomButton({ hidden, onClick }: { hidden: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className={["zorai-thread-scroll-bottom", hidden ? "is-hidden" : ""].filter(Boolean).join(" ")}
+      aria-hidden={hidden}
+      aria-label="Scroll to latest messages"
+      tabIndex={hidden ? -1 : 0}
+      onClick={onClick}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M6 10l6 6 6-6" />
+      </svg>
+    </button>
   );
 }
 

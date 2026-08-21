@@ -1,5 +1,5 @@
 .zorai-shell {
-  --zorai-bg: #070a11;
+  --zorai-bg: #05070bd9;
   --zorai-bg-panel: #0a0e17;
   --zorai-bg-elevated: #101725;
   --zorai-bg-active: #16243a;
@@ -310,8 +310,8 @@
 .zorai-rail-card,
 .zorai-metric-card {
   border: 1px solid transparent;
-  background: #0d131d;
-  border-radius: 9px;
+  background: var(--zorai-bg-surface);
+  border-radius: 8px;
   color: var(--zorai-text);
   padding: 10px;
   text-align: left;
@@ -336,7 +336,6 @@
 
 .zorai-rail-card--active {
   background: var(--zorai-bg-active);
-  border-color: var(--zorai-accent);
 }
 
 .zorai-thread-item {
@@ -347,8 +346,6 @@
 
 .zorai-thread-item--active {
   background: var(--zorai-bg-active);
-  border-left: 3px solid var(--zorai-accent);
-  box-shadow: inset 0 0 24px rgba(125, 219, 200, 0.06);
 }
 
 .zorai-thread-title {
@@ -377,7 +374,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  background: var(--zorai-bg);
+  background: var(--zorai-bg-surface);
   overflow: hidden;
 }
 
@@ -544,8 +541,17 @@
   gap: 8px;
 }
 
-.zorai-thread-chat-scroll {
+.zorai-thread-chat {
   grid-area: messages;
+  position: relative;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.zorai-thread-chat-scroll {
+  flex: 1;
   min-height: 0;
   overflow: auto;
   padding: 24px;
@@ -557,6 +563,71 @@
 .zorai-thread-chat-scroll > * {
   min-width: 0;
   max-width: 100%;
+}
+
+.zorai-thread-scroll-bottom {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  z-index: 3;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--zorai-border-strong);
+  border-radius: 999px;
+  background: rgba(16, 23, 37, 0.92);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  color: var(--zorai-accent);
+  box-shadow:
+    0 10px 28px rgba(0, 0, 0, 0.38),
+    0 0 0 1px rgba(125, 219, 200, 0.14);
+  cursor: pointer;
+  transform: translateX(-50%) translateY(0) scale(1);
+  opacity: 1;
+  pointer-events: auto;
+  transition:
+    opacity var(--zorai-transition),
+    transform var(--zorai-transition),
+    background var(--zorai-transition),
+    border-color var(--zorai-transition),
+    box-shadow var(--zorai-transition);
+}
+
+.zorai-thread-scroll-bottom.is-hidden {
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(-50%) translateY(12px) scale(0.92);
+}
+
+.zorai-thread-scroll-bottom:not(.is-hidden):hover {
+  border-color: var(--zorai-accent);
+  background: var(--zorai-bg-active);
+  box-shadow:
+    0 10px 28px rgba(125, 219, 200, 0.22),
+    0 0 0 1px rgba(125, 219, 200, 0.28);
+  transform: translateX(-50%) translateY(-1px) scale(1);
+}
+
+.zorai-thread-scroll-bottom:not(.is-hidden):active {
+  transform: translateX(-50%) translateY(0) scale(0.96);
+}
+
+.zorai-thread-scroll-bottom:focus-visible {
+  outline: 2px solid var(--zorai-accent);
+  outline-offset: 2px;
+}
+
+.zorai-thread-scroll-bottom svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 .zorai-thread-empty-state {
@@ -593,7 +664,12 @@
   align-self: flex-end;
   background: var(--zorai-bg-active);
   border-color: var(--zorai-border-strong);
-  padding: 13px 14px;
+  justify-content: flex-end;
+  width: auto;
+  min-width: auto;
+  padding: 12px 18px;
+  border-radius: 20px;
+  max-width: 50%;
 }
 
 .zorai-message--pinned {
@@ -606,6 +682,7 @@
   gap: 12px;
   min-width: 0;
   flex-wrap: wrap;
+  color: var(--zorai-accent);
 }
 
 .zorai-message__content {
@@ -2006,11 +2083,15 @@
   cursor: pointer;
 }
 
+.zorai-thread-filter-tab:hover {
+  color: var(--zorai-accent);
+}
+
 .zorai-thread-filter-tab--active {
-  border-color: var(--zorai-accent);
   color: var(--zorai-accent);
   background: rgba(113, 220, 202, 0.08);
 }
+
 
 .zorai-thread-filter-tab--loading {
   position: relative;

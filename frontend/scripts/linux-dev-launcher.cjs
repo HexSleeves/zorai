@@ -42,7 +42,7 @@ function resolveLinuxDevLauncherPaths(options = {}) {
 }
 
 function createLinuxDesktopEntry(options) {
-    const exec = formatDesktopExec([options.electronBinary, options.frontendDir]);
+    const exec = formatDesktopExec([options.electronBinary, "--no-sandbox", options.frontendDir]);
     const icon = escapeDesktopEntryValue(options.icon);
     return [
         "[Desktop Entry]",

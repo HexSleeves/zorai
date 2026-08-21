@@ -12,7 +12,7 @@ try {
     process.exit(1);
 }
 
-const child = spawn(electronBinary, ["."], {
+const child = spawn(electronBinary, ["--no-sandbox", "."], {
     cwd: frontendDir,
     stdio: "inherit",
     env: {

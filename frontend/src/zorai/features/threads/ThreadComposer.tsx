@@ -12,6 +12,7 @@ import {
 } from "@/components/agent-chat-panel/chat-view/composerMedia";
 import type { ComposerAttachment } from "@/components/agent-chat-panel/chat-view/types";
 import { useAgentStore } from "@/lib/agentStore";
+import { useComposerInputHistory } from "./composerInputHistory";
 import {
   createQueuedComposerMessage,
   queuedComposerLabel,
@@ -36,6 +37,7 @@ export function ThreadComposer() {
   const recordedChunksRef = useRef<Blob[]>([]);
   const discardCaptureRef = useRef(false);
   const awaitingStreamStartRef = useRef(false);
+  const history = useComposerInputHistory(runtime.input, runtime.setInput, runtime.inputRef);
   const canSend = Boolean(runtime.input.trim() || attachments.length > 0);
   const ttsAvailable = agentSettings.audio_tts_enabled && Boolean(getBridge()?.agentTextToSpeech);
   const updateAgentSetting = useAgentStore((state) => state.updateAgentSetting);
@@ -68,6 +70,7 @@ export function ThreadComposer() {
     if (runtime.isStreamingResponse) return;
     const payload = buildAttachmentSendPayload(runtime.input, attachments);
     if (!payload.text && !payload.contentBlocksJson) return;
+    history.remember(payload.text);
     runtime.sendMessage(payload);
     runtime.setInput("");
     setAttachments([]);
@@ -76,6 +79,7 @@ export function ThreadComposer() {
   const queueCurrentInput = () => {
     const payload = buildAttachmentSendPayload(runtime.input, attachments);
     if (!payload.text && !payload.contentBlocksJson) return;
+    history.remember(payload.text);
     setQueuedMessages((current) => [...current, createQueuedComposerMessage(payload)]);
     runtime.setInput("");
     setAttachments([]);
@@ -143,6 +147,7 @@ export function ThreadComposer() {
   }, [voiceCaptureAvailable]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (history.handleKeyDown(event)) return;
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       if (runtime.isStreamingResponse) {
@@ -302,7 +307,11 @@ export function ThreadComposer() {
         <textarea
           ref={runtime.inputRef}
           value={runtime.input}
-          onChange={(event) => runtime.setInput(event.target.value)}
+          onChange={(event) => {
+            history.commit();
+            runtime.setInput(event.target.value);
+          }}
+          onClick={() => history.commit()}
           onKeyDown={handleKeyDown}
           placeholder={isTranscribing ? "Transcribing..." : isRecording ? "Recording..." : runtime.isStreamingResponse ? "Queue a follow-up…" : "Message Zorai..."}
           rows={3}
@@ -408,7 +417,7 @@ export function ThreadComposer() {
 
       <div className="zorai-thread-composer__footer">
         <span>
-          Enter sends. Shift+Enter adds a new line. Ctrl+M records. Ctrl+L reads.
+          Enter sends. Shift+Enter adds a new line. Up/Down recalls sent messages when empty. Ctrl+M records. Ctrl+L reads.
         </span>
       </div>
     </div>

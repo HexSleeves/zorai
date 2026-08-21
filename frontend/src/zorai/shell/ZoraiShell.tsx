@@ -15,7 +15,7 @@ import { WorkspacesRail, WorkspacesView } from "../features/workspaces/Workspace
 import { getDefaultZoraiView, zoraiNavItems, type ZoraiViewId } from "./navigation";
 import { ZoraiContextPanel } from "./ZoraiContextPanel";
 import { ZoraiBrandMark, ZoraiNavIcon } from "./ZoraiIcons";
-import { ZORAI_NAVIGATE_EVENT, type ZoraiNavigateDetail, type ZoraiReturnTarget } from "./zoraiNavigationEvents";
+import { ZORAI_NAVIGATE_EVENT, type ZoraiNavigateDetail } from "./zoraiNavigationEvents";
 
 type GoalOpenRequest = {
   id: string;
@@ -28,7 +28,6 @@ export function ZoraiShell() {
   const [activeSettingsTab, setActiveSettingsTab] = useState<ZoraiSettingsTabId>(getDefaultZoraiSettingsTab);
   const [activeDatabaseTable, setActiveDatabaseTable] = useState<string | null>(null);
   const [contextOpen, setContextOpen] = useState(false);
-  const [returnTarget, setReturnTarget] = useState<ZoraiReturnTarget | null>(null);
   const [goalOpenRequest, setGoalOpenRequest] = useState<GoalOpenRequest | null>(null);
   const activeItem = useMemo(
     () => zoraiNavItems.find((item) => item.id === activeView) ?? zoraiNavItems[0],
@@ -45,7 +44,6 @@ export function ZoraiShell() {
         if (!detail.view) setActiveView("settings");
       }
       if (detail.toggleContext) setContextOpen((current) => !current);
-      if (detail.returnTarget !== undefined) setReturnTarget(detail.returnTarget);
       if (detail.goalRunId) {
         setGoalOpenRequest((current) => ({ id: detail.goalRunId ?? "", nonce: (current?.nonce ?? 0) + 1 }));
       }
@@ -56,7 +54,6 @@ export function ZoraiShell() {
 
   const selectView = (view: ZoraiViewId) => {
     setActiveView(view);
-    setReturnTarget(null);
   };
   const selectDatabaseTable = useCallback((tableName: string) => {
     setActiveDatabaseTable(tableName);
@@ -91,14 +88,12 @@ export function ZoraiShell() {
         <aside className="zorai-contextual-rail" aria-label={activeItem.railLabel}>
           <div className="zorai-rail-heading">
             <div className="zorai-kicker">{activeItem.label}</div>
-            <h2>{activeItem.railLabel}</h2>
-            <p>{activeItem.description}</p>
           </div>
           {renderRail(activeView, activeTool, setActiveTool, activeSettingsTab, setActiveSettingsTab, activeDatabaseTable, selectDatabaseTable)}
         </aside>
 
         <main className="zorai-main">
-          <header className="zorai-topbar">
+          {/* <header className="zorai-topbar">
             <div>
               <div className="zorai-kicker">Zorai</div>
               <h1>{activeItem.label}</h1>
@@ -124,7 +119,7 @@ export function ZoraiShell() {
                 {contextOpen ? "Hide Context" : "Show Context"}
               </button>
             </div>
-          </header>
+          </header> */}
           <div className="zorai-main-body">{renderMain(activeView, activeTool, setActiveTool, activeSettingsTab, setActiveSettingsTab, goalOpenRequest, activeDatabaseTable, selectDatabaseTable)}</div>
           <OperatorQuestionDock />
         </main>

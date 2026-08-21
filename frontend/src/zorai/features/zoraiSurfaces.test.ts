@@ -449,11 +449,24 @@ describe("Zorai feature surfaces", () => {
     const css = readFeature("../styles/zorai.css");
 
     expect(css).toMatch(/\.zorai-native-thread-surface\s*{[^}]*grid-template-areas:/s);
-    expect(css).toMatch(/\.zorai-thread-chat-scroll\s*{[^}]*grid-area:\s*messages/s);
+    expect(css).toMatch(/\.zorai-thread-chat\s*{[^}]*grid-area:\s*messages/s);
     expect(css).toMatch(/\.zorai-thread-composer\s*{[^}]*grid-area:\s*composer/s);
     expect(css).toMatch(/\.zorai-thread-chat-scroll\s*>\s*\*\s*{[^}]*min-width:\s*0/s);
     expect(css).toMatch(/\.zorai-message\s*{[^}]*box-sizing:\s*border-box/s);
     expect(css).toMatch(/\.zorai-message__content\s*{[^}]*overflow-wrap:\s*anywhere/s);
+  });
+
+  it("shows a centered jump-to-latest control when thread history is not pinned to the bottom", () => {
+    const source = readFeature("./threads/ThreadsView.tsx");
+    const css = readFeature("../styles/zorai.css");
+
+    expect(source).toContain("ThreadScrollToBottomButton");
+    expect(source).toContain("Scroll to latest messages");
+    expect(source).toContain("setPinnedToBottom(shouldFollowThreadHistoryBottom())");
+    expect(source).toContain("setFollowThreadHistoryBottom(true)");
+    expect(css).toMatch(/\.zorai-thread-scroll-bottom\s*{[^}]*position:\s*absolute/s);
+    expect(css).toMatch(/\.zorai-thread-scroll-bottom\s*{[^}]*left:\s*50%/s);
+    expect(css).toMatch(/\.zorai-thread-scroll-bottom\s*{[^}]*bottom:\s*18px/s);
   });
 
   it("keeps assistant reasoning separate from visible message content", () => {
