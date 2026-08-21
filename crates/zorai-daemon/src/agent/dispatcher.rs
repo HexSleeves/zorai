@@ -155,6 +155,9 @@ fn apply_dispatched_task_success_update(
     active_child_ids: &[String],
     now: u64,
 ) {
+    if crate::agent::tool_executor::task_is_awaiting_parent(task) {
+        return;
+    }
     let waiting_for_subagents = !active_child_ids.is_empty();
     let budget_exceeded_reason = "execution budget exceeded for this thread".to_string();
     if let Some(report) = outcome.subagent_report.as_ref() {
@@ -1136,6 +1139,9 @@ impl AgentEngine {
                         (persisted_task, false)
                     }
                 };
+                if crate::agent::tool_executor::task_is_awaiting_parent(&updated) {
+                    return Ok(());
+                }
                 if updated_live_task {
                     self.persist_tasks().await;
                 }
@@ -2551,6 +2557,42 @@ mod tests {
             Some(&content_in_flight),
             SUBAGENT_PARENT_STALE_STREAM_MS
         ));
+    }
+
+    #[test]
+    fn dispatched_success_preserves_open_ask_parent_block() {
+        let mut task = terminal_notification_test_task(
+            "child-awaiting",
+            "Ask parent",
+            TaskStatus::Blocked,
+            Vec::new(),
+        );
+        task.completed_at = None;
+        task.progress = 40;
+        task.source = "subagent".to_string();
+        task.blocked_reason = Some("awaiting parent: Which schema?".to_string());
+        task.parent_task_id = Some("parent".to_string());
+        let outcome = SendMessageOutcome {
+            thread_id: "thread-child".to_string(),
+            interrupted_for_approval: false,
+            terminated_for_budget: false,
+            subagent_report: None,
+            upstream_message: None,
+            provider_final_result: None,
+            fresh_runner_retry: None,
+            handoff_restart: None,
+        };
+        apply_dispatched_task_success_update(&mut task, &outcome, &["nested-1".to_string()], 99);
+        assert_eq!(task.status, TaskStatus::Blocked);
+        assert_eq!(
+            task.blocked_reason.as_deref(),
+            Some("awaiting parent: Which schema?"),
+            "dispatch success must not complete a child that is still waiting on ask_parent"
+        );
+        assert!(
+            task.completed_at.is_none(),
+            "answer_child only unblocks Blocked tasks; completing here would strand the open ask"
+        );
     }
 
     #[tokio::test]

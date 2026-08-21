@@ -759,21 +759,10 @@ impl AgentEngine {
             return Ok(());
         }
 
-        struct FlushSlotGuard<'a> {
-            slots: &'a Mutex<HashSet<String>>,
-            thread_id: String,
-        }
-        impl Drop for FlushSlotGuard<'_> {
-            fn drop(&mut self) {
-                if let Ok(mut active) = self.slots.try_lock() {
-                    active.remove(&self.thread_id);
-                }
-            }
-        }
-        let _slot_guard = FlushSlotGuard {
-            slots: &self.active_visible_thread_continuation_flushes,
-            thread_id: thread_id.to_string(),
-        };
+        let mut slot_guard = FlushSlotGuard::new(
+            &self.active_visible_thread_continuation_flushes,
+            thread_id.to_string(),
+        );
 
         let result = async {
             loop {
@@ -817,10 +806,7 @@ impl AgentEngine {
         }
         .await;
 
-        self.active_visible_thread_continuation_flushes
-            .lock()
-            .await
-            .remove(thread_id);
+        slot_guard.release().await;
         result
     }
 
@@ -2223,6 +2209,42 @@ impl AgentEngine {
     }
 }
 
+struct FlushSlotGuard<'a> {
+    slots: &'a Mutex<HashSet<String>>,
+    thread_id: String,
+    released: bool,
+}
+
+impl<'a> FlushSlotGuard<'a> {
+    fn new(slots: &'a Mutex<HashSet<String>>, thread_id: String) -> Self {
+        Self {
+            slots,
+            thread_id,
+            released: false,
+        }
+    }
+
+    async fn release(&mut self) {
+        if self.released {
+            return;
+        }
+        self.slots.lock().await.remove(&self.thread_id);
+        self.released = true;
+    }
+}
+
+impl Drop for FlushSlotGuard<'_> {
+    fn drop(&mut self) {
+        if self.released {
+            return;
+        }
+        if let Ok(mut active) = self.slots.try_lock() {
+            active.remove(&self.thread_id);
+            self.released = true;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2303,6 +2325,24 @@ mod tests {
         assert_eq!(
             engine.task_provider_override_for_compaction(&task.id).await,
             Some(("openai".to_string(), Some("gpt-5.4-mini".to_string())))
+        );
+    }
+
+    #[tokio::test]
+    async fn flush_slot_guard_does_not_steal_slot_acquired_after_release() {
+        let slots = Mutex::new(HashSet::new());
+        slots.lock().await.insert("thread-a".to_string());
+        {
+            let mut guard = FlushSlotGuard::new(&slots, "thread-a".to_string());
+            guard.release().await;
+            assert!(
+                slots.lock().await.insert("thread-a".to_string()),
+                "after release another flush must be able to acquire the slot"
+            );
+        }
+        assert!(
+            slots.lock().await.contains("thread-a"),
+            "drop after release must not steal the next flush's slot"
         );
     }
 }
