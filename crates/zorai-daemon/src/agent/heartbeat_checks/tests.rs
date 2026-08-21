@@ -85,6 +85,10 @@ async fn make_test_engine(
     use crate::agent::concierge::ConciergeEngine;
 
     let config = AgentConfig::default();
+    let mlflow_tracing = crate::agent::mlflow_tracing::MlflowTracingRuntime::new(
+        &std::env::temp_dir(),
+        &config.mlflow_tracing,
+    );
     let (event_tx, _) = broadcast::channel(16);
     let (watcher_refresh_tx, watcher_refresh_rx) = mpsc::unbounded_channel();
     let http_client = reqwest::Client::new();
@@ -124,6 +128,7 @@ async fn make_test_engine(
         concierge,
         session_manager: sm,
         history,
+        mlflow_tracing,
         threads: RwLock::new(HashMap::new()),
         thread_message_hydration_pending: RwLock::new(HashSet::new()),
         thread_message_hydration_lock: Mutex::new(()),

@@ -107,6 +107,10 @@ pub struct MlflowTracingStatus {
     pub queue_capacity: usize,
     pub traces_exported: u64,
     pub traces_dropped: u64,
+    pub consecutive_failures: u64,
+    pub active_partial_turns: usize,
+    #[serde(default)]
+    pub overrides: std::collections::BTreeMap<String, String>,
     pub last_success_at_ms: Option<u64>,
     pub last_error: Option<String>,
 }
