@@ -547,6 +547,8 @@ pub(super) fn diagnostic_trace() -> CompletedTurnTrace {
         output: None,
         reasoning: None,
         spans: Vec::new(),
+        events: Vec::new(),
+        dropped_events: 0,
         input_tokens: 0,
         output_tokens: 0,
         cache_read_input_tokens: 0,

@@ -349,3 +349,159 @@ fn interrupt_then_follow_up_starts_a_new_turn() {
     assert_eq!(trace.input.as_ref().unwrap().value, "follow up");
     assert_eq!(trace.output.as_ref().unwrap().value, "A2");
 }
+
+fn error_event(thread: &str, message: &str) -> AgentEvent {
+    AgentEvent::Error {
+        thread_id: thread.into(),
+        message: message.into(),
+    }
+}
+
+fn retry_event(thread: &str, attempt: u32) -> AgentEvent {
+    AgentEvent::RetryStatus {
+        thread_id: thread.into(),
+        phase: "provider".into(),
+        attempt,
+        max_retries: 3,
+        delay_ms: 25,
+        failure_class: "timeout".into(),
+        message: "retry".into(),
+    }
+}
+
+fn approval_event(thread: &str) -> AgentEvent {
+    AgentEvent::ApprovalRequired {
+        thread_id: thread.into(),
+        approval_id: "ap1".into(),
+        command: "ls".into(),
+        rationale: None,
+        reasons: Vec::new(),
+        risk_level: "low".into(),
+        blast_radius: "low".into(),
+    }
+}
+
+#[test]
+fn error_then_done_does_not_open_a_second_trace() {
+    let mut assembler = TurnTraceAssembler::new(MlflowTracingConfig::default());
+    assembler.observe(
+        1_000,
+        AgentEvent::Delta {
+            thread_id: "t1".into(),
+            content: "Hello".into(),
+        },
+        context("t1"),
+    );
+    assembler.observe(
+        1_050,
+        error_event("t1", "Tool execution limit reached"),
+        context("t1"),
+    );
+    assembler.observe(1_060, done("t1", "a1"), context("t1"));
+    let traces = assembler.drain_completed();
+    assert_eq!(
+        traces.len(),
+        1,
+        "deferred Done after Error must not finish a second empty turn that would steal the next FIFO anchor"
+    );
+    assert_eq!(traces[0].outcome, MlflowTraceOutcome::Error);
+    assert_eq!(assembler.active_len(), 0);
+}
+
+#[test]
+fn late_retry_and_approval_do_not_open_empty_turns() {
+    let mut assembler = TurnTraceAssembler::new(MlflowTracingConfig::default());
+    assembler.observe(
+        1_000,
+        AgentEvent::Delta {
+            thread_id: "t1".into(),
+            content: "Hello".into(),
+        },
+        context("t1"),
+    );
+    assembler.observe(1_100, done("t1", "a1"), context("t1"));
+    assembler.drain_completed();
+    assembler.observe(1_200, retry_event("t1", 1), context("t1"));
+    assembler.observe(1_250, approval_event("t1"), context("t1"));
+    assert_eq!(assembler.active_len(), 0);
+    assert!(
+        assembler.drain_completed().is_empty(),
+        "late approval/retry after the real turn finished must not export a stale empty trace"
+    );
+}
+
+#[test]
+fn retry_and_approval_during_a_live_turn_are_recorded_as_events() {
+    let mut assembler = TurnTraceAssembler::new(MlflowTracingConfig::default());
+    assembler.observe(
+        1_000,
+        AgentEvent::Delta {
+            thread_id: "t1".into(),
+            content: "Hello".into(),
+        },
+        context("t1"),
+    );
+    assembler.observe(1_020, retry_event("t1", 1), context("t1"));
+    assembler.observe(1_040, approval_event("t1"), context("t1"));
+    assembler.observe(1_100, done("t1", "a1"), context("t1"));
+    let trace = assembler.drain_completed().pop().unwrap();
+    assert_eq!(
+        trace
+            .events
+            .iter()
+            .map(|event| event.name.as_str())
+            .collect::<Vec<_>>(),
+        vec!["retry_status", "approval_required"]
+    );
+    assert_eq!(trace.dropped_events, 0);
+}
+
+#[test]
+fn max_events_per_span_drops_extra_retry_events() {
+    let mut config = MlflowTracingConfig::default();
+    config.max_events_per_span = 2;
+    let mut assembler = TurnTraceAssembler::new(config);
+    assembler.observe(
+        1_000,
+        AgentEvent::Delta {
+            thread_id: "t1".into(),
+            content: "Hello".into(),
+        },
+        context("t1"),
+    );
+    assembler.observe(1_010, retry_event("t1", 1), context("t1"));
+    assembler.observe(1_020, retry_event("t1", 2), context("t1"));
+    assembler.observe(1_030, retry_event("t1", 3), context("t1"));
+    assembler.observe(1_100, done("t1", "a1"), context("t1"));
+    let trace = assembler.drain_completed().pop().unwrap();
+    assert_eq!(trace.events.len(), 2);
+    assert_eq!(trace.dropped_events, 1);
+}
+
+#[test]
+fn max_trace_bytes_shrinks_exported_payloads() {
+    let mut config = MlflowTracingConfig::default();
+    config.max_trace_bytes = 16 * 1024;
+    let mut assembler = TurnTraceAssembler::new(config);
+    assembler.observe(
+        1_000,
+        AgentEvent::Delta {
+            thread_id: "t1".into(),
+            content: "assistant reply with spaces. ".repeat(2_000),
+        },
+        context("t1"),
+    );
+    assembler.observe(1_100, done("t1", "a1"), context("t1"));
+    let trace = assembler.drain_completed().pop().unwrap();
+    let encoded = encode_otlp_batch(std::slice::from_ref(&trace)).unwrap();
+    assert!(
+        encoded.len() <= 16 * 1024,
+        "encoded OTLP must honor max_trace_bytes, got {}",
+        encoded.len()
+    );
+    assert_eq!(trace.partial_reason.as_deref(), Some("trace_bytes"));
+    assert!(
+        trace.output.as_ref().is_some_and(|output| output.truncated),
+        "byte-budget enforcement must mark captured output as truncated"
+    );
+}

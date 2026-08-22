@@ -71,6 +71,8 @@ fn fixture_trace() -> CompletedTurnTrace {
                 call_id: Some("c1".into()),
             },
         ],
+        events: Vec::new(),
+        dropped_events: 0,
         input_tokens: 10,
         output_tokens: 4,
         cache_read_input_tokens: 0,
@@ -117,6 +119,16 @@ fn otlp_batch_preserves_hierarchy_and_mlflow_genai_attributes() {
         string_attr(root, "gen_ai.operation.name"),
         Some("invoke_agent")
     );
+    assert_eq!(
+        string_attr(root, "session.id"),
+        Some("thread-1"),
+        "MLflow maps session.id to mlflow.trace.session so Group by session can join turns in one thread"
+    );
+    assert_eq!(
+        string_attr(root, "gen_ai.conversation.id"),
+        Some("thread-1")
+    );
+    assert_eq!(string_attr(root, "zorai.thread.id"), Some("thread-1"));
     assert_eq!(string_attr(root, "gen_ai.provider.name"), Some("openai"));
     assert_eq!(string_attr(root, "gen_ai.response.model"), Some("gpt-test"));
     assert!(string_attr(root, "gen_ai.input.messages")
@@ -221,4 +233,62 @@ fn otlp_batch_uses_standard_resource_identity() {
     assert!(attributes
         .iter()
         .any(|entry| entry.key == "service.version"));
+}
+
+#[test]
+fn otlp_root_span_exports_recorded_events_and_dropped_count() {
+    let mut trace = fixture_trace();
+    trace.events = vec![CompletedSpanEvent {
+        name: "retry_status".into(),
+        at_ms: 1_500,
+        attributes: vec![("attempt".into(), "1".into())],
+    }];
+    trace.dropped_events = 2;
+    let request =
+        ExportTraceServiceRequest::decode(encode_otlp_batch(&[trace]).unwrap().as_slice()).unwrap();
+    let root = request.resource_spans[0].scope_spans[0]
+        .spans
+        .iter()
+        .find(|span| span.parent_span_id.is_empty())
+        .unwrap();
+    assert_eq!(root.events.len(), 1);
+    assert_eq!(root.events[0].name, "retry_status");
+    assert_eq!(root.dropped_events_count, 2);
+    assert_eq!(
+        root.events[0]
+            .attributes
+            .iter()
+            .find(|entry| entry.key == "attempt")
+            .and_then(|entry| match entry.value.as_ref()?.value.as_ref()? {
+                any_value::Value::StringValue(value) => Some(value.as_str()),
+                _ => None,
+            }),
+        Some("1")
+    );
+}
+
+#[test]
+fn cap_completed_trace_keeps_encoded_batch_under_max_trace_bytes() {
+    let mut trace = fixture_trace();
+    trace.output = Some(CapturedValue {
+        value: "assistant reply with spaces. ".repeat(2_000),
+        redacted: false,
+        truncated: false,
+        original_chars: 58_000,
+    });
+    let uncapped = encode_otlp_batch(std::slice::from_ref(&trace)).unwrap();
+    assert!(
+        uncapped.len() > 16 * 1024,
+        "fixture must start over the budget, got {}",
+        uncapped.len()
+    );
+    cap_completed_trace(&mut trace, 16 * 1024);
+    let encoded = encode_otlp_batch(std::slice::from_ref(&trace)).unwrap();
+    assert!(
+        encoded.len() <= 16 * 1024,
+        "encoded OTLP must honor max_trace_bytes, got {}",
+        encoded.len()
+    );
+    assert_eq!(trace.partial_reason.as_deref(), Some("trace_bytes"));
+    assert!(trace.output.as_ref().unwrap().truncated);
 }

@@ -1,4 +1,6 @@
 mod assembler;
+mod assembler_support;
+mod bounds;
 mod config;
 mod enrichment;
 mod mlflow_client;
@@ -12,6 +14,7 @@ mod types;
 mod worker;
 
 pub(crate) use assembler::*;
+pub(crate) use bounds::*;
 pub(crate) use config::*;
 pub(crate) use enrichment::*;
 pub(crate) use mlflow_client::*;
