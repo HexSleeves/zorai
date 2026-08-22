@@ -183,7 +183,13 @@ describe("Zorai feature surfaces", () => {
     expect(tabSource).toContain('title: "Svarog"');
     expect(tabSource).toContain('title: "Rarog"');
     expect(tabSource).toContain('title: "Chat"');
+    expect(tabSource).toContain('title: "MLflow"');
     expect(tabSource).toContain('id: "search"');
+    expect(panelSource).toContain("MlflowPanel");
+    expect(readFeature("./settings/MlflowPanel.tsx")).toContain("Test connection");
+    expect(readFeature("./settings/MlflowPanel.tsx")).toContain("Send test trace");
+    expect(readFeature("./settings/MlflowPanel.tsx")).toContain("zorai-switch");
+    expect(readFeature("./settings/MlflowPanel.tsx")).not.toContain("settings-panel/MlflowTracingTab");
     expect(tabSource).toContain('title: "Terminal interface"');
     expect(panelSource).toContain("API Key");
     expect(panelSource).toContain("Logout");
