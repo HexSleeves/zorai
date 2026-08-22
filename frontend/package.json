@@ -158,8 +158,6 @@
         "deb"
       ],
       "icon": "assets/icon.png",
-      "afterInstall": "build/linux/after-install.sh",
-      "afterRemove": "build/linux/after-remove.sh",
       "extraResources": [
         {
           "from": "dist/zorai-daemon",
@@ -186,6 +184,10 @@
           "to": "bin/zorai-gateway"
         }
       ]
+    },
+    "deb": {
+      "afterInstall": "build/linux/after-install.sh",
+      "afterRemove": "build/linux/after-remove.sh"
     },
     "portable": {
       "artifactName": "zorai-portable.exe"

@@ -135,7 +135,7 @@ pub struct AgentEngine {
     pub thread_participant_suggestions: RwLock<HashMap<String, Vec<ThreadParticipantSuggestion>>>,
     pub(super) deferred_visible_thread_continuations:
         Mutex<HashMap<String, Vec<DeferredVisibleThreadContinuation>>>,
-    pub(super) active_visible_thread_continuation_flushes: Mutex<HashSet<String>>,
+    pub(super) active_visible_thread_continuation_flushes: std::sync::Mutex<HashSet<String>>,
     pub(super) active_thread_participant_suggestion_drains: Mutex<HashSet<String>>,
     pub thread_client_surfaces: RwLock<HashMap<String, zorai_protocol::ClientSurface>>,
     pub thread_execution_profiles: RwLock<HashMap<String, ThreadExecutionProfile>>,
@@ -399,7 +399,7 @@ impl AgentEngine {
             thread_participants: RwLock::new(HashMap::new()),
             thread_participant_suggestions: RwLock::new(HashMap::new()),
             deferred_visible_thread_continuations: Mutex::new(HashMap::new()),
-            active_visible_thread_continuation_flushes: Mutex::new(HashSet::new()),
+            active_visible_thread_continuation_flushes: std::sync::Mutex::new(HashSet::new()),
             active_thread_participant_suggestion_drains: Mutex::new(HashSet::new()),
             thread_client_surfaces: RwLock::new(HashMap::new()),
             thread_execution_profiles: RwLock::new(HashMap::new()),

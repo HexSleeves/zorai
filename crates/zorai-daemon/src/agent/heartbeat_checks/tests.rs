@@ -134,7 +134,7 @@ async fn make_test_engine(
         thread_participants: RwLock::new(HashMap::new()),
         thread_participant_suggestions: RwLock::new(HashMap::new()),
         deferred_visible_thread_continuations: Mutex::new(HashMap::new()),
-        active_visible_thread_continuation_flushes: Mutex::new(HashSet::new()),
+        active_visible_thread_continuation_flushes: std::sync::Mutex::new(HashSet::new()),
         active_thread_participant_suggestion_drains: Mutex::new(HashSet::new()),
         thread_client_surfaces: RwLock::new(HashMap::new()),
         thread_execution_profiles: RwLock::new(HashMap::new()),

@@ -945,6 +945,13 @@ impl AgentEngine {
             lineage_digest,
         );
 
+        {
+            let goal_runs = self.goal_runs.lock().await;
+            if !goal_runs.iter().any(|item| item.id == snapshot.id) {
+                anyhow::bail!("goal run missing while queuing progress supervision");
+            }
+        }
+
         let supervision_task = self
             .enqueue_task(
                 format!("Progress supervision: {}", snapshot.title),
@@ -983,24 +990,41 @@ impl AgentEngine {
 
         let updated_goal = {
             let mut goal_runs = self.goal_runs.lock().await;
-            let Some(goal_run) = goal_runs.iter_mut().find(|item| item.id == snapshot.id) else {
-                anyhow::bail!("goal run missing while queuing progress supervision");
-            };
-            goal_run.updated_at = now_millis();
-            if !goal_run
-                .child_task_ids
-                .iter()
-                .any(|id| id == &updated_task.id)
+            goal_runs
+                .iter_mut()
+                .find(|item| item.id == snapshot.id)
+                .map(|goal_run| {
+                    goal_run.updated_at = now_millis();
+                    if !goal_run
+                        .child_task_ids
+                        .iter()
+                        .any(|id| id == &updated_task.id)
+                    {
+                        goal_run.child_task_ids.push(updated_task.id.clone());
+                    }
+                    goal_run.child_task_count = goal_run.child_task_ids.len() as u32;
+                    goal_run.events.push(make_goal_run_event(
+                        "progress_supervision",
+                        "stagnation detected; supervisor queued to propose alternative directions",
+                        Some(reason.to_string()),
+                    ));
+                    goal_run.clone()
+                })
+        };
+        let Some(updated_goal) = updated_goal else {
             {
-                goal_run.child_task_ids.push(updated_task.id.clone());
+                let mut tasks = self.tasks.lock().await;
+                tasks.retain(|task| task.id != updated_task.id);
             }
-            goal_run.child_task_count = goal_run.child_task_ids.len() as u32;
-            goal_run.events.push(make_goal_run_event(
-                "progress_supervision",
-                "stagnation detected; supervisor queued to propose alternative directions",
-                Some(reason.to_string()),
-            ));
-            goal_run.clone()
+            if let Err(error) = self.history.delete_agent_task(&updated_task.id).await {
+                tracing::warn!(
+                    task_id = %updated_task.id,
+                    error = %error,
+                    "failed to delete orphaned progress supervisor task"
+                );
+            }
+            self.persist_tasks().await;
+            anyhow::bail!("goal run missing while queuing progress supervision");
         };
 
         self.persist_tasks().await;
