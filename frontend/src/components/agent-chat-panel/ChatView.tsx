@@ -1,8 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type UIEvent } from "react";
-import {
-  resolveThreadHistoryScrollAction,
-  shouldIgnoreThreadHistoryScroll,
-} from "./runtime/threadHistoryScroll";
+import { consumeThreadHistoryScroll } from "./runtime/threadHistoryScroll";
 import { buildWelesHealthPresentation } from "./welesHealthPresentation";
 import { ChatComposer } from "./chat-view/Composer";
 import {
@@ -82,30 +79,17 @@ export function ChatView({
     }
   };
 
-  const handleMessageScroll = async (event: UIEvent<HTMLDivElement>) => {
-    if (shouldIgnoreThreadHistoryScroll()) return;
-    const scroller = event.currentTarget;
-    const action = resolveThreadHistoryScrollAction({
-      scrollTop: scroller.scrollTop,
-      scrollHeight: scroller.scrollHeight,
-      clientHeight: scroller.clientHeight,
-    });
-    if (action === "load-older" && onLoadOlderMessages) {
-      const previousHeight = scroller.scrollHeight;
-      const previousTop = scroller.scrollTop;
-      const loaded = await onLoadOlderMessages();
-      if (loaded) {
+  const handleMessageScroll = (event: UIEvent<HTMLDivElement>) => {
+    consumeThreadHistoryScroll({
+      scroller: event.currentTarget,
+      loadOlder: onLoadOlderMessages,
+      trimLatest: onTrimMessagesToLatestWindow,
+      onTrimmed: () => {
         requestAnimationFrame(() => {
-          scroller.scrollTop = scroller.scrollHeight - previousHeight + previousTop;
+          messagesEndRef.current?.scrollIntoView({ block: "end" });
         });
-      }
-      return;
-    }
-    if (action === "trim-latest" && onTrimMessagesToLatestWindow?.()) {
-      requestAnimationFrame(() => {
-        messagesEndRef.current?.scrollIntoView({ block: "end" });
-      });
-    }
+      },
+    });
   };
 
   const stopAudioPlayback = () => {

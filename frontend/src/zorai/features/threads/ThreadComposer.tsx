@@ -23,6 +23,7 @@ import {
 import { getBridge } from "@/lib/bridge";
 import { pushToast } from "@/lib/toastStore";
 import { activeThreadBudgetExceededNotice } from "./threadBudgetNotice";
+import { applyManagedSecurityLevel, managedSecurityLevels } from "./threadRuntimeActions";
 
 export function ThreadComposer() {
   const runtime = useAgentChatPanelRuntime();
@@ -371,6 +372,22 @@ export function ThreadComposer() {
                 {isRecording ? <span className="zorai-composer-rec-dot" aria-hidden="true" /> : null}
               </button>
             ) : null}
+            <label className="zorai-composer-mode">
+              <span>Mode</span>
+              <select
+                className="zorai-input"
+                value={agentSettings.managed_security_level}
+                title="Managed security mode"
+                aria-label="Managed security mode"
+                onChange={(event) => {
+                  void applyManagedSecurityLevel(event.target.value as typeof agentSettings.managed_security_level);
+                }}
+              >
+                {managedSecurityLevels().map((level) => (
+                  <option key={level} value={level}>{level}</option>
+                ))}
+              </select>
+            </label>
             {ttsAvailable ? (
               <button
                 type="button"

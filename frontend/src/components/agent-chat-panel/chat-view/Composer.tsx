@@ -2,6 +2,8 @@ import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import type { ComposerAttachment } from "./types";
 import { blobToBase64, collectMediaRecorderBlob, mediaRecorderOptions, readComposerAttachment, readSpeechToTextContent, readSpeechToTextError, stopMediaTracks } from "./composerMedia";
+import { useAgentStore } from "@/lib/agentStore";
+import { applyManagedSecurityLevel, managedSecurityLevels } from "@/zorai/features/threads/threadRuntimeActions";
 
 function deriveImageComposerState(input: string): { isImageMode: boolean; displayValue: string } {
   const trimmed = input.trimStart();
@@ -62,6 +64,7 @@ export function ChatComposer({
   onUpdateReasoningEffort: (value: string) => void;
 }) {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const managedSecurityLevel = useAgentStore((state) => state.agentSettings.managed_security_level);
   const [dropActive, setDropActive] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
@@ -248,22 +251,40 @@ export function ChatComposer({
       )}
 
       <div className="acp-composer__footer">
-        <div className="acp-composer__effort">
-          <span className="acp-composer__effort-label">Reasoning effort</span>
-          <select
-            value={agentSettings.reasoning_effort}
-            onChange={(event) => onUpdateReasoningEffort(event.target.value)}
-            title="Reasoning effort"
-            className="acp-composer__effort-select"
-          >
-            <option value="none">off</option>
-            <option value="minimal">minimal</option>
-            <option value="low">low</option>
-            <option value="medium">medium</option>
-            <option value="high">high</option>
-            <option value="xhigh">xhigh</option>
-            <option value="max">max</option>
-          </select>
+        <div className="acp-composer__controls">
+          <div className="acp-composer__effort">
+            <span className="acp-composer__effort-label">Reasoning effort</span>
+            <select
+              value={agentSettings.reasoning_effort}
+              onChange={(event) => onUpdateReasoningEffort(event.target.value)}
+              title="Reasoning effort"
+              className="acp-composer__effort-select"
+            >
+              <option value="none">off</option>
+              <option value="minimal">minimal</option>
+              <option value="low">low</option>
+              <option value="medium">medium</option>
+              <option value="high">high</option>
+              <option value="xhigh">xhigh</option>
+              <option value="max">max</option>
+            </select>
+          </div>
+          <div className="acp-composer__effort">
+            <span className="acp-composer__effort-label">Mode</span>
+            <select
+              value={managedSecurityLevel}
+              onChange={(event) => {
+                void applyManagedSecurityLevel(event.target.value as typeof managedSecurityLevel);
+              }}
+              title="Managed security mode"
+              aria-label="Managed security mode"
+              className="acp-composer__effort-select"
+            >
+              {managedSecurityLevels().map((level) => (
+                <option key={level} value={level}>{level}</option>
+              ))}
+            </select>
+          </div>
         </div>
         <div className="acp-composer__actions">
           {voiceCaptureAvailable && (

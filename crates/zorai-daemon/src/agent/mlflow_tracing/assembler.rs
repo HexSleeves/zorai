@@ -256,6 +256,18 @@ impl TurnTraceAssembler {
         self.active.len()
     }
 
+    pub fn has_active_turn(&self, thread_id: &str) -> bool {
+        self.active.contains_key(thread_id)
+    }
+
+    pub fn active_thread_ids(&self) -> Vec<String> {
+        self.active.keys().cloned().collect()
+    }
+
+    pub fn abandon_turn(&mut self, thread_id: &str) -> bool {
+        self.active.remove(thread_id).is_some()
+    }
+
     pub fn interrupt_turn(&mut self, thread_id: &str, now_ms: u64) -> bool {
         if !self.active.contains_key(thread_id) {
             return false;

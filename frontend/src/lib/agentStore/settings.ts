@@ -403,7 +403,7 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   agent_backend: "daemon",
 };
 
-const VALID_MANAGED_SECURITY_LEVELS = ["highest", "moderate", "lowest", "yolo"] as const;
+export const MANAGED_SECURITY_LEVELS = ["highest", "moderate", "lowest", "yolo"] as const;
 
 export function normalizeAgentBackend(value: unknown): AgentBackend {
   void value;
@@ -411,7 +411,7 @@ export function normalizeAgentBackend(value: unknown): AgentBackend {
 }
 
 function normalizeManagedSecurityLevel(value: unknown): AgentSettings["managed_security_level"] {
-  if (typeof value === "string" && (VALID_MANAGED_SECURITY_LEVELS as readonly string[]).includes(value)) {
+  if (typeof value === "string" && (MANAGED_SECURITY_LEVELS as readonly string[]).includes(value)) {
     return value as AgentSettings["managed_security_level"];
   }
   return DEFAULT_AGENT_SETTINGS.managed_security_level;

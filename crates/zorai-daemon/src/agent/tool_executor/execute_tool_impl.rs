@@ -1404,6 +1404,11 @@ async fn prepare_tool_execution(
             &effective_args,
         )
     };
+    crate::agent::weles_governance::stamp_shell_tool_security_level(
+        effective_tool_name.as_str(),
+        &mut effective_args,
+        security_level,
+    );
     let active_scope_id = crate::agent::agent_identity::current_agent_scope_id();
     let governance_classification = crate::agent::weles_governance::classify_tool_call(
         effective_tool_name.as_str(),

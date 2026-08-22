@@ -423,6 +423,9 @@ describe("Zorai feature surfaces", () => {
     expect(speechSource).toContain("loadingMessageId");
     expect(viewSource).toContain("onSpeak");
     expect(readFeature("./threads/NativeThreadMessageBubble.tsx")).toContain("Read aloud");
+    expect(source).toContain("applyManagedSecurityLevel");
+    expect(source).toContain("Managed security mode");
+    expect(readFeature("./threads/threadRuntimeActions.ts")).toContain("/managed_execution/security_level");
   });
 
   it("keeps TUI-style pinned message controls in native Threads", () => {
@@ -519,7 +522,7 @@ describe("Zorai feature surfaces", () => {
 
     expect(source).toContain("ThreadScrollToBottomButton");
     expect(source).toContain("Scroll to latest messages");
-    expect(source).toContain("setPinnedToBottom(shouldFollowThreadHistoryBottom())");
+    expect(source).toContain("onFollowBottomChange: setPinnedToBottom");
     expect(source).toContain("setFollowThreadHistoryBottom(true)");
     expect(css).toMatch(/\.zorai-thread-scroll-bottom\s*{[^}]*position:\s*absolute/s);
     expect(css).toMatch(/\.zorai-thread-scroll-bottom\s*{[^}]*left:\s*50%/s);
@@ -574,6 +577,7 @@ describe("Zorai feature surfaces", () => {
     expect(railSource).toContain("refreshSubAgents");
     expect(source).toContain("onScroll");
     expect(source).toContain("loadOlderThreadMessages");
+    expect(source).toContain("consumeThreadHistoryScroll");
     expect(railSource).toContain("threadHistoryLabel");
     expect(railSource).toContain("threadTabs");
     expect(railSource).toContain("fixedThreadTabs");
@@ -588,7 +592,6 @@ describe("Zorai feature surfaces", () => {
     expect(railSource).toContain("fetchKey");
     expect(railSource).toContain("[daemonAgentFilter, fetchKey, fetchThreadList, tab]");
     expect(railSource).not.toContain("[daemonAgentFilter, runtime, tab]");
-    expect(source).toContain("resolveThreadHistoryScrollAction");
     expect(runtimeSource).toContain("loadThreadPage");
     expect(runtimeSource).toContain("latestLoadedThreadIdRef");
     expect(runtimeSource).toContain("loadThreadPage(activeThreadId, \"latest\")");

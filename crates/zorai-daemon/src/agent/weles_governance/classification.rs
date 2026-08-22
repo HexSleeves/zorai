@@ -90,6 +90,28 @@ pub(crate) fn security_level_for_tool_call(
     }
 }
 
+pub(crate) fn stamp_shell_tool_security_level(
+    tool_name: &str,
+    tool_args: &mut serde_json::Value,
+    security_level: SecurityLevel,
+) {
+    let is_shell = matches!(
+        tool_name,
+        zorai_protocol::tool_names::BASH_COMMAND
+            | zorai_protocol::tool_names::RUN_TERMINAL_COMMAND
+            | zorai_protocol::tool_names::EXECUTE_MANAGED_COMMAND
+    );
+    if !is_shell {
+        return;
+    }
+    if let Some(map) = tool_args.as_object_mut() {
+        map.insert(
+            "security_level".to_string(),
+            serde_json::Value::String(security_level_label(security_level).to_string()),
+        );
+    }
+}
+
 fn shell_suspicion_reasons(command: &str, tool_args: &serde_json::Value) -> Vec<String> {
     let normalized = command.trim().to_ascii_lowercase();
     let mut reasons = Vec::new();
@@ -412,7 +434,7 @@ mod tests {
     #[test]
     fn operator_yolo_overrides_llm_supplied_stricter_security_level_for_shell_tools() {
         let config = config_with(SecurityLevel::Yolo);
-        let args = serde_json::json!({
+        let mut args = serde_json::json!({
             "command": "pkill -f stale",
             "security_level": "moderate",
         });
@@ -425,9 +447,14 @@ mod tests {
             security_level_for_tool_call(&config, tool_names::RUN_TERMINAL_COMMAND, &args),
             SecurityLevel::Yolo
         );
+        let resolved =
+            security_level_for_tool_call(&config, tool_names::EXECUTE_MANAGED_COMMAND, &args);
+        assert_eq!(resolved, SecurityLevel::Yolo);
+        stamp_shell_tool_security_level(tool_names::EXECUTE_MANAGED_COMMAND, &mut args, resolved);
         assert_eq!(
-            security_level_for_tool_call(&config, tool_names::EXECUTE_MANAGED_COMMAND, &args),
-            SecurityLevel::Yolo
+            args.get("security_level").and_then(|value| value.as_str()),
+            Some("yolo"),
+            "downstream managed dispatch must see operator yolo, not the LLM override"
         );
     }
 

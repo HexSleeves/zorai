@@ -205,6 +205,51 @@ describe("loadDaemonThreadPageIntoLocalState", () => {
     expect(thread?.loadedMessageStart).toBe(20);
     expect(thread?.loadedMessageEnd).toBe(120);
   });
+
+  it("does not treat a duplicate older page as a successful prepend", async () => {
+    useAgentStore.setState({
+      threads: [
+        {
+          ...makeThread("local-active", "daemon-1"),
+          messageCount: 120,
+          loadedMessageStart: 70,
+          loadedMessageEnd: 120,
+        },
+      ],
+      messages: {
+        "local-active": Array.from({ length: 50 }, (_, index) => makeMessage(index + 70)),
+      },
+      activeThreadId: "local-active",
+    } as any);
+    agentGetThread.mockResolvedValue({
+      id: "daemon-1",
+      title: "Loaded thread",
+      agent_name: "Svarog",
+      messages: Array.from({ length: 50 }, (_, index) => ({
+        id: `message-${index + 70}`,
+        role: (index + 70) % 2 === 0 ? "user" : "assistant",
+        content: `message ${index + 70}`,
+        timestamp: index + 70,
+      })),
+      total_message_count: 120,
+      loaded_message_start: 70,
+      loaded_message_end: 120,
+    });
+
+    const loaded = await loadDaemonThreadPageIntoLocalState({
+      daemonThreadId: "daemon-1",
+      localThreadId: "local-active",
+      messageLimit: 50,
+      messageOffset: 50,
+      mergeMode: "prepend",
+      setThreadTodos: vi.fn(),
+      setDaemonTodosByThread: vi.fn(),
+    });
+
+    expect(loaded).toBe(false);
+    expect(useAgentStore.getState().messages["local-active"]).toHaveLength(50);
+    expect(useAgentStore.getState().threads.find((thread) => thread.id === "local-active")?.loadedMessageStart).toBe(70);
+  });
 });
 
 describe("trimDaemonThreadMessagesToLatestWindow", () => {

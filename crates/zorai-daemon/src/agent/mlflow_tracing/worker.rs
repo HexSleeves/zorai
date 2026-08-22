@@ -162,6 +162,10 @@ async fn run_worker(
             Some(command) = command_rx.recv() => {
                 match command {
                     MlflowRuntimeCommand::Reconfigure(next) => {
+                        enqueue_completed(&runtime, &config, &mut assembler, &mut pending);
+                        for thread_id in assembler.active_thread_ids() {
+                            runtime.pop_turn_anchor(&thread_id);
+                        }
                         let _ = flush_pending(&runtime, client.as_ref(), experiment.as_ref(), &mut pending).await;
                         config = next;
                         effective = MlflowTracingEffectiveConfig::resolve(&config).ok();
@@ -237,10 +241,13 @@ async fn run_worker(
             }
             event = event_rx.recv() => {
                 let enabled = effective.as_ref().is_some_and(|value| value.enabled);
-                if !enabled { continue; }
                 match event {
                     Ok(event) => {
                         if let Some(engine) = engine.upgrade() {
+                            if !enabled {
+                                release_anchor_if_tracing_disabled(&runtime, &mut assembler, &event);
+                                continue;
+                            }
                             if let AgentEvent::TurnInterrupted { thread_id } = &event {
                                 let had_active = assembler.interrupt_turn(thread_id, now_millis());
                                 if !had_active {
@@ -252,6 +259,8 @@ async fn run_worker(
                             if let Some(context) = enrich_event(&engine, &event, &observation).await {
                                 assembler.observe(now_millis(), event, context);
                                 enqueue_completed(&runtime, &config, &mut assembler, &mut pending);
+                            } else {
+                                release_anchor_for_closed_untraced_turn(&runtime, &assembler, &event);
                             }
                         } else { break; }
                     }
@@ -298,6 +307,41 @@ async fn send_diagnostic(client: Option<&MlflowClient>) -> Result<MlflowConnecti
         .await
         .map_err(|error| error.to_string())?;
     Ok(info)
+}
+
+pub(super) fn turn_closing_thread_id(event: &AgentEvent) -> Option<&str> {
+    match event {
+        AgentEvent::Done { thread_id, .. }
+        | AgentEvent::Error { thread_id, .. }
+        | AgentEvent::TurnInterrupted { thread_id } => Some(thread_id.as_str()),
+        _ => None,
+    }
+}
+
+pub(super) fn release_anchor_if_tracing_disabled(
+    runtime: &MlflowTracingRuntime,
+    assembler: &mut TurnTraceAssembler,
+    event: &AgentEvent,
+) {
+    let Some(thread_id) = turn_closing_thread_id(event) else {
+        return;
+    };
+    let _ = assembler.abandon_turn(thread_id);
+    runtime.pop_turn_anchor(thread_id);
+}
+
+pub(super) fn release_anchor_for_closed_untraced_turn(
+    runtime: &MlflowTracingRuntime,
+    assembler: &TurnTraceAssembler,
+    event: &AgentEvent,
+) {
+    let Some(thread_id) = turn_closing_thread_id(event) else {
+        return;
+    };
+    if assembler.has_active_turn(thread_id) {
+        return;
+    }
+    runtime.pop_turn_anchor(thread_id);
 }
 
 fn enqueue_completed(
