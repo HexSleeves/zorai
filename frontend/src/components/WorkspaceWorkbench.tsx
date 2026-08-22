@@ -71,6 +71,10 @@ export function WorkspaceWorkbench() {
   const [rootEntries, setRootEntries] = useState<ZoraiWorkspaceEntry[]>([]);
   const [gitStatus, setGitStatus] = useState<ZoraiWorkspaceGitStatus[]>([]);
   const [gitOverview, setGitOverview] = useState<ZoraiWorkspaceGitOverview | null>(null);
+  const [gitWorktrees, setGitWorktrees] = useState<ZoraiGitWorktree[]>([]);
+  const [worktreeName, setWorktreeName] = useState("");
+  const [worktreeBranch, setWorktreeBranch] = useState("");
+  const [worktreeBaseRef, setWorktreeBaseRef] = useState("HEAD");
   const [commitMessage, setCommitMessage] = useState("");
   const [committing, setCommitting] = useState(false);
   const [reviewedChange, setReviewedChange] = useState<{ path: string; staged: boolean; hunks: ZoraiWorkspaceGitHunk[] } | null>(null);
@@ -101,14 +105,16 @@ export function WorkspaceWorkbench() {
 
   const refreshRoot = useCallback(async (root = context?.root) => {
     if (!root || !bridge?.workspaceListDirectory) return;
-    const [entries, statuses, overview] = await Promise.all([
+    const [entries, statuses, overview, worktrees] = await Promise.all([
       bridge.workspaceListDirectory(root, ""),
       bridge.workspaceGitStatus?.(root) ?? Promise.resolve([]),
       bridge.workspaceGitOverview?.(root) ?? Promise.resolve(null),
+      bridge.workspaceGitListWorktrees?.(root) ?? Promise.resolve([]),
     ]);
     setRootEntries(entries);
     setGitStatus(statuses);
     setGitOverview(overview);
+    setGitWorktrees(worktrees);
   }, [bridge, context?.root]);
 
   useEffect(() => { void useWorkspaceContextStore.getState().hydrate(); }, []);
@@ -305,6 +311,37 @@ export function WorkspaceWorkbench() {
     setMode("diff");
   };
 
+  const createManagedWorktree = async () => {
+    if (!activeThreadId || !context?.root || !bridge?.workspaceGitCreateWorktree) return;
+    try {
+      const created = await bridge.workspaceGitCreateWorktree(context.root, { name: worktreeName, branch: worktreeBranch, baseRef: worktreeBaseRef });
+      setGitWorktrees(created.worktrees);
+      setWorktreeName("");
+      setWorktreeBranch("");
+      if (window.confirm(`Worktree created at ${created.root}. Switch this thread to it now?`)) {
+        bindRoot(activeThreadId, created.root);
+        setDocuments({});
+      }
+      setError(null);
+    } catch (reason: any) { setError(reason?.message ?? String(reason)); }
+  };
+
+  const removeManagedWorktree = async (worktreePath: string) => {
+    if (!context?.root || !bridge?.workspaceGitRemoveWorktree) return;
+    if (!window.confirm(`Remove clean worktree ${worktreePath}? The branch will be kept.`)) return;
+    try {
+      setGitWorktrees(await bridge.workspaceGitRemoveWorktree(context.root, worktreePath));
+      setError(null);
+    } catch (reason: any) { setError(reason?.message ?? String(reason)); }
+  };
+
+  const switchThreadWorktree = (worktreePath: string) => {
+    if (!activeThreadId || worktreePath === context?.root) return;
+    bindRoot(activeThreadId, worktreePath);
+    setDocuments({});
+    setReviewedChange(null);
+  };
+
   const commitStagedChanges = async () => {
     if (!context?.root || !bridge?.workspaceGitCommit || !commitMessage.trim()) return;
     setCommitting(true);
@@ -459,6 +496,23 @@ export function WorkspaceWorkbench() {
               <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search workspace" onKeyDown={(event) => { if (event.key === "Enter") void runSearch(); }} />
               <button type="button" onClick={() => void runSearch()}>⌕</button>
             </div>
+            {gitOverview?.isRepository ? (
+              <details className="zorai-workspace-worktrees">
+                <summary>Worktrees ({gitWorktrees.length})</summary>
+                <div className="zorai-workspace-worktree-create">
+                  <input value={worktreeName} onChange={(event) => setWorktreeName(event.target.value)} placeholder="folder-name" />
+                  <input value={worktreeBranch} onChange={(event) => setWorktreeBranch(event.target.value)} placeholder="feature/branch" />
+                  <input value={worktreeBaseRef} onChange={(event) => setWorktreeBaseRef(event.target.value)} placeholder="base ref" />
+                  <button type="button" disabled={!worktreeName.trim() || !worktreeBranch.trim()} onClick={() => void createManagedWorktree()}>Create</button>
+                </div>
+                {gitWorktrees.map((worktree) => (
+                  <div key={worktree.path} className={worktree.path === context.root ? "active" : ""}>
+                    <button type="button" className="zorai-workspace-worktree-path" onClick={() => switchThreadWorktree(worktree.path)}><strong>{worktree.branch || "detached"}</strong><span>{worktree.path}</span></button>
+                    {worktree.path !== context.root && worktree.path.includes("-worktrees") ? <button type="button" onClick={() => void removeManagedWorktree(worktree.path)}>Remove</button> : null}
+                  </div>
+                ))}
+              </details>
+            ) : null}
             {gitOverview?.isRepository ? (
               <div className="zorai-workspace-git-overview">
                 <span><strong>{gitOverview.branch || "detached HEAD"}</strong>{gitOverview.upstream ? ` · ${gitOverview.upstream}` : " · no upstream"}</span>

@@ -282,6 +282,81 @@ async function workspaceGitStatus(rootPath) {
     return result;
 }
 
+function parseGitWorktreeList(output) {
+    const worktrees = [];
+    let current = null;
+    for (const line of String(output || '').split(/\r?\n/)) {
+        if (line.startsWith('worktree ')) {
+            if (current) worktrees.push(current);
+            current = { path: line.slice('worktree '.length), head: null, branch: null, detached: false, bare: false, locked: false, prunable: false };
+        } else if (current && line.startsWith('HEAD ')) current.head = line.slice(5);
+        else if (current && line.startsWith('branch ')) current.branch = line.slice(7).replace(/^refs\/heads\//, '');
+        else if (current && line === 'detached') current.detached = true;
+        else if (current && line === 'bare') current.bare = true;
+        else if (current && line.startsWith('locked')) current.locked = true;
+        else if (current && line.startsWith('prunable')) current.prunable = true;
+    }
+    if (current) worktrees.push(current);
+    return worktrees;
+}
+
+async function workspaceGitListWorktrees(rootPath) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) return [];
+    const { stdout } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], { cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER });
+    return parseGitWorktreeList(stdout);
+}
+
+async function workspaceGitCreateWorktree(rootPath, options = {}) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) throw workspaceError('WORKSPACE_NOT_GIT_REPOSITORY', 'Workspace is not inside a Git repository.');
+    const name = typeof options.name === 'string' ? options.name.trim() : '';
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(name)) {
+        throw workspaceError('WORKSPACE_WORKTREE_NAME_INVALID', 'Worktree name must use letters, numbers, dots, underscores, or dashes.');
+    }
+    const branch = typeof options.branch === 'string' ? options.branch.trim() : '';
+    if (!branch) throw workspaceError('WORKSPACE_WORKTREE_BRANCH_REQUIRED', 'A branch name is required.');
+    await execFileAsync('git', ['check-ref-format', '--branch', branch], { cwd: gitRoot, encoding: 'utf8', timeout: 5000 })
+        .catch(() => { throw workspaceError('WORKSPACE_WORKTREE_BRANCH_INVALID', `Invalid branch name: ${branch}`); });
+    const baseRef = typeof options.baseRef === 'string' && options.baseRef.trim() ? options.baseRef.trim() : 'HEAD';
+    await execFileAsync('git', ['rev-parse', '--verify', `${baseRef}^{commit}`], { cwd: gitRoot, encoding: 'utf8', timeout: 5000 })
+        .catch(() => { throw workspaceError('WORKSPACE_WORKTREE_BASE_INVALID', `Base revision does not resolve to a commit: ${baseRef}`); });
+    const container = path.join(path.dirname(gitRoot), `${path.basename(gitRoot)}-worktrees`);
+    await fs.promises.mkdir(container, { recursive: true });
+    const destination = path.join(container, name);
+    if (fs.existsSync(destination)) throw workspaceError('WORKSPACE_WORKTREE_EXISTS', `Worktree destination already exists: ${destination}`);
+    const branchExists = await execFileAsync('git', ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: gitRoot, timeout: 5000 })
+        .then(() => true).catch(() => false);
+    const args = branchExists
+        ? ['worktree', 'add', destination, branch]
+        : ['worktree', 'add', '-b', branch, destination, baseRef];
+    await execFileAsync('git', args, { cwd: gitRoot, encoding: 'utf8', timeout: 60000, maxBuffer: GIT_MAX_BUFFER })
+        .catch((error) => { throw workspaceError('WORKSPACE_WORKTREE_CREATE_FAILED', error?.stderr?.trim() || error?.message || 'Git worktree creation failed.'); });
+    return { root: fs.realpathSync.native(destination), branch, baseRef, worktrees: await workspaceGitListWorktrees(gitRoot) };
+}
+
+async function workspaceGitRemoveWorktree(rootPath, worktreePath) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) throw workspaceError('WORKSPACE_NOT_GIT_REPOSITORY', 'Workspace is not inside a Git repository.');
+    const candidate = canonicalWorkspaceRoot(worktreePath);
+    const container = fs.realpathSync.native(path.join(path.dirname(gitRoot), `${path.basename(gitRoot)}-worktrees`));
+    if (!isWithinRoot(container, candidate) || candidate === container || candidate === gitRoot) {
+        throw workspaceError('WORKSPACE_WORKTREE_REMOVE_SCOPE', 'Only sibling worktrees created in the managed worktree container can be removed.');
+    }
+    const worktrees = await workspaceGitListWorktrees(gitRoot);
+    if (!worktrees.some((entry) => path.resolve(entry.path) === candidate)) {
+        throw workspaceError('WORKSPACE_WORKTREE_NOT_REGISTERED', 'The selected directory is not a registered worktree for this repository.');
+    }
+    const { stdout: status } = await execFileAsync('git', ['status', '--porcelain'], { cwd: candidate, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER });
+    if (status.trim()) throw workspaceError('WORKSPACE_WORKTREE_DIRTY', 'The worktree has uncommitted changes and cannot be removed.');
+    await execFileAsync('git', ['worktree', 'remove', candidate], { cwd: gitRoot, encoding: 'utf8', timeout: 60000, maxBuffer: GIT_MAX_BUFFER })
+        .catch((error) => { throw workspaceError('WORKSPACE_WORKTREE_REMOVE_FAILED', error?.stderr?.trim() || error?.message || 'Git worktree removal failed.'); });
+    return workspaceGitListWorktrees(gitRoot);
+}
+
 async function workspaceGitOverview(rootPath) {
     const root = canonicalWorkspaceRoot(rootPath);
     const gitRoot = await resolveGitRoot(root);
@@ -502,13 +577,17 @@ module.exports = {
     resolveWorkspacePath,
     searchWorkspace,
     sha256,
+    parseGitWorktreeList,
     parseUnifiedDiffHunks,
     workspaceGitApplyHunk,
     workspaceGitCommit,
+    workspaceGitCreateWorktree,
     workspaceGitDiff,
     workspaceGitDiscard,
     workspaceGitHunks,
+    workspaceGitListWorktrees,
     workspaceGitOverview,
+    workspaceGitRemoveWorktree,
     workspaceGitStage,
     workspaceGitStatus,
     workspaceGitUnstage,

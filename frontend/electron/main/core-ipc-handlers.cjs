@@ -102,6 +102,9 @@ function registerCoreIpcHandlers(ipcMain, options) {
     ipcMain.handle('workspace-git-status', (_event, rootPath) => workspaceService.workspaceGitStatus(rootPath));
     ipcMain.handle('workspace-git-overview', (_event, rootPath) => workspaceService.workspaceGitOverview(rootPath));
     ipcMain.handle('workspace-git-commit', (_event, rootPath, message) => workspaceService.workspaceGitCommit(rootPath, message));
+    ipcMain.handle('workspace-git-list-worktrees', (_event, rootPath) => workspaceService.workspaceGitListWorktrees(rootPath));
+    ipcMain.handle('workspace-git-create-worktree', (_event, rootPath, runtimeOptions) => workspaceService.workspaceGitCreateWorktree(rootPath, runtimeOptions));
+    ipcMain.handle('workspace-git-remove-worktree', (_event, rootPath, worktreePath) => workspaceService.workspaceGitRemoveWorktree(rootPath, worktreePath));
     ipcMain.handle('workspace-git-stage', (_event, rootPath, relativePath) => workspaceService.workspaceGitStage(rootPath, relativePath));
     ipcMain.handle('workspace-git-unstage', (_event, rootPath, relativePath) => workspaceService.workspaceGitUnstage(rootPath, relativePath));
     ipcMain.handle('workspace-git-discard', (_event, rootPath, relativePath) => workspaceService.workspaceGitDiscard(rootPath, relativePath));

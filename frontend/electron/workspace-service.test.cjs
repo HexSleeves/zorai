@@ -5,13 +5,16 @@ const os = require('node:os');
 const path = require('node:path');
 const {
     listWorkspaceDirectory,
+    parseGitWorktreeList,
     parseUnifiedDiffHunks,
     readWorkspaceFile,
     resolveWorkspacePath,
     searchWorkspace,
     workspaceGitApplyHunk,
     workspaceGitCommit,
+    workspaceGitCreateWorktree,
     workspaceGitDiscard,
+    workspaceGitRemoveWorktree,
     workspaceGitStage,
     workspaceGitUnstage,
     writeWorkspaceFile,
@@ -204,6 +207,53 @@ test('workspace commit validates the message before invoking git', async () => {
     require('node:child_process').execFileSync('git', ['init', '-b', 'main'], { cwd: root });
     await assert.rejects(workspaceGitCommit(root, '   '), { code: 'WORKSPACE_COMMIT_MESSAGE_REQUIRED' });
     fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('git worktree porcelain parser returns branch and state metadata', () => {
+    const parsed = parseGitWorktreeList('worktree /repo\nHEAD abc123\nbranch refs/heads/main\n\nworktree /repo-worktrees/feature\nHEAD def456\ndetached\nlocked reason\n');
+    assert.deepEqual(parsed, [
+        { path: '/repo', head: 'abc123', branch: 'main', detached: false, bare: false, locked: false, prunable: false },
+        { path: '/repo-worktrees/feature', head: 'def456', branch: null, detached: true, bare: false, locked: true, prunable: false },
+    ]);
+});
+
+test('managed worktree creation and clean removal stay inside sibling container', async () => {
+    const parent = tempWorkspace();
+    const root = path.join(parent, 'repo');
+    fs.mkdirSync(root);
+    const runGit = (...args) => require('node:child_process').execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+    runGit('init', '-b', 'main');
+    runGit('config', 'user.email', 'workspace-test@zorai.local');
+    runGit('config', 'user.name', 'Workspace Test');
+    fs.writeFileSync(path.join(root, 'file.txt'), 'base\n');
+    runGit('add', 'file.txt');
+    runGit('commit', '-m', 'base');
+    const created = await workspaceGitCreateWorktree(root, { name: 'safe-feature', branch: 'feature/safe', baseRef: 'HEAD' });
+    assert.equal(created.root, path.join(parent, 'repo-worktrees', 'safe-feature'));
+    assert.equal(fs.existsSync(created.root), true);
+    const remaining = await workspaceGitRemoveWorktree(root, created.root);
+    assert.equal(remaining.some((entry) => entry.path === created.root), false);
+    assert.equal(fs.existsSync(created.root), false);
+    fs.rmSync(parent, { recursive: true, force: true });
+});
+
+test('managed worktree removal refuses dirty worktrees', async () => {
+    const parent = tempWorkspace();
+    const root = path.join(parent, 'repo');
+    fs.mkdirSync(root);
+    const runGit = (...args) => require('node:child_process').execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+    runGit('init', '-b', 'main');
+    runGit('config', 'user.email', 'workspace-test@zorai.local');
+    runGit('config', 'user.name', 'Workspace Test');
+    fs.writeFileSync(path.join(root, 'file.txt'), 'base\n');
+    runGit('add', 'file.txt');
+    runGit('commit', '-m', 'base');
+    const created = await workspaceGitCreateWorktree(root, { name: 'dirty-feature', branch: 'feature/dirty' });
+    fs.writeFileSync(path.join(created.root, 'file.txt'), 'dirty\n');
+    await assert.rejects(workspaceGitRemoveWorktree(root, created.root), { code: 'WORKSPACE_WORKTREE_DIRTY' });
+    assert.equal(fs.existsSync(created.root), true);
+    runGit('worktree', 'remove', '--force', created.root);
+    fs.rmSync(parent, { recursive: true, force: true });
 });
 
 test('binary and oversized files are rejected from text context', async () => {
