@@ -261,6 +261,21 @@ export function WorkspaceWorkbench() {
     setMode("diff");
   };
 
+  const runGitAction = async (action: "stage" | "unstage" | "discard", filePath: string) => {
+    if (!context?.root) return;
+    if (action === "discard" && !window.confirm(`Discard all unstaged changes in ${filePath}? This cannot be undone.`)) return;
+    try {
+      const nextStatus = action === "stage"
+        ? await bridge?.workspaceGitStage?.(context.root, filePath)
+        : action === "unstage"
+          ? await bridge?.workspaceGitUnstage?.(context.root, filePath)
+          : await bridge?.workspaceGitDiscard?.(context.root, filePath);
+      if (nextStatus) setGitStatus(nextStatus);
+      if (action === "discard" && activeDocument?.path === filePath) await reloadActiveFile();
+      setError(null);
+    } catch (reason: any) { setError(reason?.message ?? String(reason)); }
+  };
+
   const runSearch = async () => {
     if (!context?.root || !searchQuery.trim() || !bridge?.workspaceSearch) {
       setSearchResults([]);
@@ -366,6 +381,23 @@ export function WorkspaceWorkbench() {
               <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search workspace" onKeyDown={(event) => { if (event.key === "Enter") void runSearch(); }} />
               <button type="button" onClick={() => void runSearch()}>⌕</button>
             </div>
+            {gitStatus.length > 0 ? (
+              <details className="zorai-workspace-source-control">
+                <summary>Source Control ({gitStatus.length})</summary>
+                {gitStatus.map((entry) => (
+                  <div key={`${entry.path}:${entry.indexStatus}:${entry.worktreeStatus}`}>
+                    <button type="button" className="zorai-workspace-change-path" onClick={() => void openFile(entry.path)}>
+                      <strong>{entry.path}</strong><span>{entry.indexStatus}{entry.worktreeStatus}</span>
+                    </button>
+                    <span className="zorai-workspace-change-actions">
+                      {entry.worktreeStatus.trim() || entry.indexStatus === "?" ? <button type="button" onClick={() => void runGitAction("stage", entry.path)}>Stage</button> : null}
+                      {entry.indexStatus.trim() && entry.indexStatus !== "?" ? <button type="button" onClick={() => void runGitAction("unstage", entry.path)}>Unstage</button> : null}
+                      {entry.worktreeStatus.trim() && entry.worktreeStatus !== "?" ? <button type="button" onClick={() => void runGitAction("discard", entry.path)}>Discard</button> : null}
+                    </span>
+                  </div>
+                ))}
+              </details>
+            ) : null}
             {searchResults.length > 0 ? <div className="zorai-workspace-search-results">{searchResults.map((result) => <button type="button" key={`${result.path}:${result.line}:${result.column}`} onClick={() => void openFile(result.path)}><strong>{result.path}:{result.line}</strong><span>{result.preview}</span></button>)}</div> : null}
             {agentChanges.length > 0 ? (
               <details className="zorai-workspace-agent-changes" open>

@@ -100,6 +100,9 @@ function registerCoreIpcHandlers(ipcMain, options) {
     ipcMain.handle('workspace-rename-path', (_event, rootPath, fromPath, toPath) => workspaceService.renameWorkspacePath(rootPath, fromPath, toPath));
     ipcMain.handle('workspace-delete-path', (_event, rootPath, relativePath, runtimeOptions) => workspaceService.deleteWorkspacePath(rootPath, relativePath, runtimeOptions));
     ipcMain.handle('workspace-git-status', (_event, rootPath) => workspaceService.workspaceGitStatus(rootPath));
+    ipcMain.handle('workspace-git-stage', (_event, rootPath, relativePath) => workspaceService.workspaceGitStage(rootPath, relativePath));
+    ipcMain.handle('workspace-git-unstage', (_event, rootPath, relativePath) => workspaceService.workspaceGitUnstage(rootPath, relativePath));
+    ipcMain.handle('workspace-git-discard', (_event, rootPath, relativePath) => workspaceService.workspaceGitDiscard(rootPath, relativePath));
     ipcMain.handle('workspace-search', (_event, rootPath, query, runtimeOptions) => workspaceService.searchWorkspace(rootPath, query, runtimeOptions));
     ipcMain.handle('workspace-git-diff', (_event, rootPath, relativePath, runtimeOptions) => workspaceService.workspaceGitDiff(rootPath, relativePath, runtimeOptions));
     ipcMain.handle('workspace-watch-start', (event, rootPath, runtimeOptions) => startWorkspaceWatch(event.sender, rootPath, runtimeOptions));

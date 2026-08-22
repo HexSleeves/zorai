@@ -3066,3 +3066,12 @@
 .zorai-workspace-agent-changes button { width: 100%; display: flex; flex-direction: column; gap: 2px; border: 0; border-bottom: 1px solid var(--zorai-border); padding: 6px 9px; background: transparent; color: var(--zorai-text); text-align: left; font: 10px var(--font-mono); }
 .zorai-workspace-agent-changes button:hover { background: var(--zorai-bg-active); }
 .zorai-workspace-agent-changes span { color: var(--zorai-muted); }
+
+.zorai-workspace-source-control { max-height: 34%; overflow: auto; border-block: 1px solid var(--zorai-border); }
+.zorai-workspace-source-control summary { position: sticky; top: 0; z-index: 1; padding: 7px 9px; background: var(--zorai-bg-elevated); color: var(--zorai-muted); font-size: 10px; text-transform: uppercase; cursor: pointer; }
+.zorai-workspace-source-control > div { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 4px; padding: 4px 7px; border-bottom: 1px solid var(--zorai-border); }
+.zorai-workspace-change-path { min-width: 0; display: flex; justify-content: space-between; gap: 5px; border: 0; background: transparent; color: var(--zorai-text); font: 10px var(--font-mono); text-align: left; }
+.zorai-workspace-change-path strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zorai-workspace-change-path span { color: var(--zorai-accent-secondary); }
+.zorai-workspace-change-actions { display: flex; gap: 3px; }
+.zorai-workspace-change-actions button { padding: 2px 4px; border: 1px solid var(--zorai-border); border-radius: 3px; background: var(--zorai-bg-elevated); color: var(--zorai-muted); font-size: 9px; cursor: pointer; }

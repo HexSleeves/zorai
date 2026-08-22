@@ -282,6 +282,51 @@ async function workspaceGitStatus(rootPath) {
     return result;
 }
 
+async function workspaceGitStage(rootPath, relativePath) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) throw workspaceError('WORKSPACE_NOT_GIT_REPOSITORY', 'Workspace is not inside a Git repository.');
+    const resolved = resolveWorkspacePath(root, relativePath, { allowMissing: true });
+    await execFileAsync('git', ['add', '--', path.relative(gitRoot, resolved.absolutePath)], {
+        cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER,
+    });
+    return workspaceGitStatus(root);
+}
+
+async function workspaceGitUnstage(rootPath, relativePath) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) throw workspaceError('WORKSPACE_NOT_GIT_REPOSITORY', 'Workspace is not inside a Git repository.');
+    const resolved = resolveWorkspacePath(root, relativePath, { allowMissing: true });
+    const gitPath = path.relative(gitRoot, resolved.absolutePath);
+    await execFileAsync('git', ['restore', '--staged', '--', gitPath], {
+        cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER,
+    }).catch(async () => {
+        await execFileAsync('git', ['reset', 'HEAD', '--', gitPath], {
+            cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER,
+        });
+    });
+    return workspaceGitStatus(root);
+}
+
+async function workspaceGitDiscard(rootPath, relativePath) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) throw workspaceError('WORKSPACE_NOT_GIT_REPOSITORY', 'Workspace is not inside a Git repository.');
+    const resolved = resolveWorkspacePath(root, relativePath, { allowMissing: true });
+    const gitPath = path.relative(gitRoot, resolved.absolutePath);
+    const tracked = await execFileAsync('git', ['ls-files', '--error-unmatch', '--', gitPath], {
+        cwd: gitRoot, encoding: 'utf8', timeout: 5000,
+    }).then(() => true).catch(() => false);
+    if (!tracked) {
+        throw workspaceError('WORKSPACE_DISCARD_UNTRACKED', 'Untracked files must be deleted explicitly; discard only restores tracked files.');
+    }
+    await execFileAsync('git', ['restore', '--worktree', '--', gitPath], {
+        cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER,
+    });
+    return workspaceGitStatus(root);
+}
+
 async function workspaceGitDiff(rootPath, relativePath = null, options = {}) {
     const root = canonicalWorkspaceRoot(rootPath);
     const gitRoot = await resolveGitRoot(root);
@@ -311,6 +356,9 @@ module.exports = {
     searchWorkspace,
     sha256,
     workspaceGitDiff,
+    workspaceGitDiscard,
+    workspaceGitStage,
     workspaceGitStatus,
+    workspaceGitUnstage,
     writeWorkspaceFile,
 };

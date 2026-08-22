@@ -8,6 +8,9 @@ const {
     readWorkspaceFile,
     resolveWorkspacePath,
     searchWorkspace,
+    workspaceGitDiscard,
+    workspaceGitStage,
+    workspaceGitUnstage,
     writeWorkspaceFile,
 } = require('./main/workspace-service.cjs');
 
@@ -69,6 +72,36 @@ test('workspace search is bounded, ignores heavy directories, and reports locati
         column: 7,
         preview: 'const workspaceNeedle = true;',
     }]);
+    fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('workspace git operations stage, unstage, and discard tracked changes', async () => {
+    const root = tempWorkspace();
+    const runGit = (...args) => require('node:child_process').execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+    runGit('init');
+    runGit('config', 'user.email', 'workspace-test@zorai.local');
+    runGit('config', 'user.name', 'Workspace Test');
+    fs.writeFileSync(path.join(root, 'tracked.txt'), 'base\n');
+    runGit('add', 'tracked.txt');
+    runGit('commit', '-m', 'base');
+    fs.writeFileSync(path.join(root, 'tracked.txt'), 'modified\n');
+
+    let status = await workspaceGitStage(root, 'tracked.txt');
+    assert.equal(status[0].indexStatus, 'M');
+    status = await workspaceGitUnstage(root, 'tracked.txt');
+    assert.equal(status[0].worktreeStatus, 'M');
+    status = await workspaceGitDiscard(root, 'tracked.txt');
+    assert.deepEqual(status, []);
+    assert.equal(fs.readFileSync(path.join(root, 'tracked.txt'), 'utf8'), 'base\n');
+    fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('workspace git discard refuses untracked deletion', async () => {
+    const root = tempWorkspace();
+    require('node:child_process').execFileSync('git', ['init'], { cwd: root });
+    fs.writeFileSync(path.join(root, 'untracked.txt'), 'keep');
+    await assert.rejects(workspaceGitDiscard(root, 'untracked.txt'), { code: 'WORKSPACE_DISCARD_UNTRACKED' });
+    assert.equal(fs.readFileSync(path.join(root, 'untracked.txt'), 'utf8'), 'keep');
     fs.rmSync(root, { recursive: true, force: true });
 });
 
