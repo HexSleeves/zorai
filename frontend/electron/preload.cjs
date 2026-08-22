@@ -160,6 +160,13 @@ const bridgeApi = {
     workspaceGitStatus: (rootPath) => ipcRenderer.invoke('workspace-git-status', rootPath),
     workspaceSearch: (rootPath, query, options) => ipcRenderer.invoke('workspace-search', rootPath, query, options),
     workspaceGitDiff: (rootPath, relativePath, options) => ipcRenderer.invoke('workspace-git-diff', rootPath, relativePath, options),
+    workspaceWatchStart: (rootPath, options) => ipcRenderer.invoke('workspace-watch-start', rootPath, options),
+    workspaceWatchStop: (subscriptionId) => ipcRenderer.invoke('workspace-watch-stop', subscriptionId),
+    onWorkspaceFilesChanged: (cb) => {
+        const listener = (_event, batch) => cb(batch);
+        ipcRenderer.on('workspace-files-changed', listener);
+        return () => ipcRenderer.removeListener('workspace-files-changed', listener);
+    },
     readClipboardText: () => ipcRenderer.invoke('clipboard-read-text'),
     writeClipboardText: (text) => ipcRenderer.invoke('clipboard-write-text', text),
     startTerminalSession: (options) => ipcRenderer.invoke('terminal-start', options),

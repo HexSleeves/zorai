@@ -42,6 +42,8 @@ function registerCoreIpcHandlers(ipcMain, options) {
         writeTextFile,
         windowState,
         workspaceService,
+        startWorkspaceWatch,
+        stopWorkspaceWatch,
     } = options;
 
     ipcMain.handle('getSocketPath', getSocketPath);
@@ -100,6 +102,8 @@ function registerCoreIpcHandlers(ipcMain, options) {
     ipcMain.handle('workspace-git-status', (_event, rootPath) => workspaceService.workspaceGitStatus(rootPath));
     ipcMain.handle('workspace-search', (_event, rootPath, query, runtimeOptions) => workspaceService.searchWorkspace(rootPath, query, runtimeOptions));
     ipcMain.handle('workspace-git-diff', (_event, rootPath, relativePath, runtimeOptions) => workspaceService.workspaceGitDiff(rootPath, relativePath, runtimeOptions));
+    ipcMain.handle('workspace-watch-start', (event, rootPath, runtimeOptions) => startWorkspaceWatch(event.sender, rootPath, runtimeOptions));
+    ipcMain.handle('workspace-watch-stop', (_event, subscriptionId) => stopWorkspaceWatch(subscriptionId));
     ipcMain.handle('clipboard-read-text', () => options.clipboard.readText());
     ipcMain.handle('clipboard-write-text', (_event, text) => { options.clipboard.writeText(typeof text === 'string' ? text : ''); return true; });
     ipcMain.handle('terminal-start', terminalBridgeRuntime.startTerminalBridge);

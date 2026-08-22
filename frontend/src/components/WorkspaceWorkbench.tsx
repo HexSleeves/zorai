@@ -165,7 +165,39 @@ export function WorkspaceWorkbench() {
     return () => window.clearInterval(timer);
   }, [activeDaemonThreadId, bridge]);
   useEffect(() => {
-    if (!context?.root || !activeDocument || !bridge?.workspaceReadFile) return;
+    if (!context?.root || !bridge?.workspaceWatchStart || !bridge?.onWorkspaceFilesChanged) return;
+    let subscriptionId: string | null = null;
+    let disposed = false;
+    const unsubscribe = bridge.onWorkspaceFilesChanged((batch) => {
+      if (batch.root !== context.root || (subscriptionId && batch.subscriptionId !== subscriptionId)) return;
+      void refreshRoot().catch(() => {});
+      const activeChange = activeDocument && batch.changes.some((change) => change.path === activeDocument.path);
+      if (!activeChange || !activeDocument || !bridge.workspaceReadFile) return;
+      void bridge.workspaceReadFile(context.root, activeDocument.path).then((diskFile) => {
+        if (diskFile.hash === activeDocument.hash) return;
+        if (activeDocument.dirty) {
+          setDocuments((current) => ({ ...current, [activeDocument.path]: { ...activeDocument, externalContent: diskFile.content, externalHash: diskFile.hash } }));
+          setError(`External change detected in ${activeDocument.path}. Compare or reload before saving.`);
+        } else {
+          setDocuments((current) => ({ ...current, [diskFile.path]: { ...diskFile, original: diskFile.content, dirty: false } }));
+        }
+      }).catch(() => {});
+    });
+    void bridge.workspaceWatchStart(context.root, { debounceMs: 120 }).then((subscription) => {
+      if (disposed) {
+        void bridge.workspaceWatchStop?.(subscription.subscriptionId);
+        return;
+      }
+      subscriptionId = subscription.subscriptionId;
+    }).catch(() => {});
+    return () => {
+      disposed = true;
+      if (typeof unsubscribe === "function") unsubscribe();
+      if (subscriptionId) void bridge.workspaceWatchStop?.(subscriptionId);
+    };
+  }, [activeDocument, bridge, context?.root, refreshRoot]);
+  useEffect(() => {
+    if (!context?.root || !activeDocument || !bridge?.workspaceReadFile || bridge.workspaceWatchStart) return;
     const timer = window.setInterval(() => {
       void bridge.workspaceReadFile!(context.root, activeDocument.path).then((diskFile) => {
         if (diskFile.hash === activeDocument.hash || diskFile.hash === activeDocument.externalHash) return;

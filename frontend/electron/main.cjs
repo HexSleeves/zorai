@@ -57,6 +57,7 @@ const { createWhatsAppRuntime } = require('./main/whatsapp-runtime.cjs');
 const { createWindowRuntime } = require('./main/window-runtime.cjs');
 const { createChildLogEnv } = require('./main/log-env.cjs');
 const workspaceService = require('./main/workspace-service.cjs');
+const { createWorkspaceWatcher } = require('./main/workspace-watch-service.cjs');
 
 const DAEMON_NAME = 'zorai-daemon';
 const CLI_NAME = 'zorai';
@@ -67,6 +68,7 @@ const MAX_TERMINAL_HISTORY_BYTES = 1024 * 1024;
 const MAX_REATTACH_HISTORY_BYTES = 64 * 1024;
 const VISION_SCREENSHOT_TTL_MS = 10 * 60 * 1000;
 let mainWindow = null;
+const workspaceWatchers = new Map();
 // Module-level reference to sendAgentCommand (set during registerIpcHandlers)
 let sendAgentCommandFn = null;
 
@@ -551,6 +553,20 @@ function registerIpcHandlers() {
         terminalBridgeRuntime,
         windowState: () => mainWindow,
         workspaceService,
+        startWorkspaceWatch: (webContents, rootPath, runtimeOptions) => {
+            const watcher = createWorkspaceWatcher(rootPath, (batch) => {
+                if (!webContents.isDestroyed()) webContents.send('workspace-files-changed', batch);
+            }, runtimeOptions);
+            workspaceWatchers.set(watcher.subscriptionId, watcher);
+            return { subscriptionId: watcher.subscriptionId, root: watcher.root, watchedDirectoryCount: watcher.watchedDirectoryCount };
+        },
+        stopWorkspaceWatch: (subscriptionId) => {
+            const watcher = workspaceWatchers.get(subscriptionId);
+            if (!watcher) return false;
+            watcher.close();
+            workspaceWatchers.delete(subscriptionId);
+            return true;
+        },
         writeFsText,
         writeJsonFile,
         writeTextFile,
@@ -609,6 +625,8 @@ app.whenReady().then(async () => {
 app.on('before-quit', () => {
     logToFile('info', 'electron before-quit');
     terminalBridgeRuntime.stopAllTerminalBridges(true, true);
+    for (const watcher of workspaceWatchers.values()) watcher.close();
+    workspaceWatchers.clear();
     if (whatsAppRuntime.isDaemonSubscribed() && sendAgentCommandFn) {
         try {
             sendAgentCommandFn({ type: 'whats-app-link-unsubscribe' });

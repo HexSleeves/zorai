@@ -455,6 +455,9 @@ declare global {
         workspaceGitStatus?: (rootPath: string) => Promise<ZoraiWorkspaceGitStatus[]>;
         workspaceSearch?: (rootPath: string, query: string, options?: { caseSensitive?: boolean; maxResults?: number; maxFiles?: number }) => Promise<Array<{ path: string; line: number; column: number; preview: string }>>;
         workspaceGitDiff?: (rootPath: string, relativePath?: string | null, options?: { staged?: boolean }) => Promise<string>;
+        workspaceWatchStart?: (rootPath: string, options?: { debounceMs?: number; maxDirectories?: number }) => Promise<{ subscriptionId: string; root: string; watchedDirectoryCount: number }>;
+        workspaceWatchStop?: (subscriptionId: string) => Promise<boolean>;
+        onWorkspaceFilesChanged?: (cb: (batch: { subscriptionId: string; root: string; changes: Array<{ path: string; eventType: "change" | "rename"; observedAt: number }>; emittedAt: number }) => void) => (() => void) | void;
         dbAppendCommandLog?: (entry: unknown) => Promise<boolean>;
         dbCompleteCommandLog?: (id: string, exitCode?: number | null, durationMs?: number | null) => Promise<boolean>;
         dbQueryCommandLog?: (opts?: { workspaceId?: string | null; paneId?: string | null; limit?: number | null }) => Promise<unknown[]>;
