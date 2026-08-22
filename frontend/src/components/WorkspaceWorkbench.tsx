@@ -58,6 +58,7 @@ function WorkspaceTreeNode({ root, entry, depth, status, onOpen }: TreeNodeProps
 export function WorkspaceWorkbench() {
   const bridge = getBridge();
   const activeThreadId = useAgentStore((state) => state.activeThreadId);
+  const activeDaemonThreadId = useAgentStore((state) => state.threads.find((thread) => thread.id === state.activeThreadId)?.daemonThreadId ?? state.activeThreadId);
   const activeWorkspace = useWorkspaceStore((state) => state.activeWorkspace());
   const context = useWorkspaceContextStore((state) => activeThreadId ? state.byThreadId[activeThreadId] : undefined);
   const bindRoot = useWorkspaceContextStore((state) => state.bindRoot);
@@ -73,6 +74,7 @@ export function WorkspaceWorkbench() {
   const [mode, setMode] = useState<"edit" | "diff">("edit");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [daemonContextLoadedFor, setDaemonContextLoadedFor] = useState<string | null>(null);
   const [newPath, setNewPath] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Array<{ path: string; line: number; column: number; preview: string }>>([]);
@@ -91,6 +93,32 @@ export function WorkspaceWorkbench() {
   }, [bridge, context?.root]);
 
   useEffect(() => { void useWorkspaceContextStore.getState().hydrate(); }, []);
+  useEffect(() => {
+    if (!activeThreadId || !activeDaemonThreadId || daemonContextLoadedFor === activeDaemonThreadId || !bridge?.agentGetThreadWorkspaceContext) return;
+    setDaemonContextLoadedFor(activeDaemonThreadId);
+    void bridge.agentGetThreadWorkspaceContext(activeDaemonThreadId).then((response: any) => {
+      const daemonContext = response?.context;
+      if (!daemonContext || typeof daemonContext.root !== "string" || !daemonContext.root.trim()) return;
+      const current = useWorkspaceContextStore.getState().byThreadId[activeThreadId];
+      if (!current || (daemonContext.updated_at ?? 0) > current.updatedAt) {
+        useWorkspaceContextStore.setState((state) => ({
+          byThreadId: { ...state.byThreadId, [activeThreadId]: {
+            root: daemonContext.root,
+            activeFile: daemonContext.active_file ?? null,
+            selection: daemonContext.selection ? {
+              startLine: daemonContext.selection.start_line,
+              startColumn: daemonContext.selection.start_column,
+              endLine: daemonContext.selection.end_line,
+              endColumn: daemonContext.selection.end_column,
+            } : null,
+            attachedFiles: daemonContext.attached_files ?? [],
+            openFiles: daemonContext.open_files ?? [],
+            updatedAt: daemonContext.updated_at ?? Date.now(),
+          } },
+        }));
+      }
+    }).catch(() => {});
+  }, [activeDaemonThreadId, activeThreadId, bridge, daemonContextLoadedFor]);
   useEffect(() => {
     if (context?.root) {
       setRootInput(context.root);

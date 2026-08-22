@@ -1077,6 +1077,12 @@ impl<'a> SendMessageRunner<'a> {
             engine.history.data_root(),
             &tid,
         ));
+        if let Some(workspace_context) = engine.get_thread_workspace_context(&tid).await {
+            if let Some(workspace_prompt) = workspace_context.prompt_block() {
+                system_prompt.push_str("\n\n");
+                system_prompt.push_str(&workspace_prompt);
+            }
+        }
         if let Some(goal_run_id) = current_task_snapshot
             .as_ref()
             .and_then(|task| task.goal_run_id.as_deref())

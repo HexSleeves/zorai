@@ -99,6 +99,8 @@ pub enum ClientMessage {
     AgentListTodos,
     AgentGetTodos { thread_id: String },
     AgentGetWorkContext { thread_id: String },
+    AgentGetThreadWorkspaceContext { thread_id: String },
+    AgentSetThreadWorkspaceContext { thread_id: String, context_json: String },
     AgentGetConfig,
     AgentGetEffectiveConfigState,
     AgentExternalRuntimeMigrationStatus,

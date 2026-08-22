@@ -761,6 +761,7 @@ impl AgentEngine {
             identity: meta_identity,
             client_surface: meta_client_surface,
             execution_profile: meta_execution_profile,
+            workspace_context: _,
             thread_participants: meta_thread_participants,
             thread_participant_suggestions: meta_thread_participant_suggestions,
             latest_skill_discovery_state: meta_skill_discovery,

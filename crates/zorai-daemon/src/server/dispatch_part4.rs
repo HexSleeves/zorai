@@ -38,6 +38,8 @@ pub(crate) async fn dispatch_part4(
             | ClientMessage::AgentListTodos
             | ClientMessage::AgentGetTodos { .. }
             | ClientMessage::AgentGetWorkContext { .. }
+            | ClientMessage::AgentGetThreadWorkspaceContext { .. }
+            | ClientMessage::AgentSetThreadWorkspaceContext { .. }
             | ClientMessage::AgentListTools { .. }
             | ClientMessage::AgentSearchTools { .. }
             | ClientMessage::AgentGetConfig
@@ -541,6 +543,50 @@ pub(crate) async fn dispatch_part4(
                     context_json: json,
                 })
                 .await?;
+        }
+
+        ClientMessage::AgentGetThreadWorkspaceContext { thread_id } => {
+            client_agent_threads.insert(thread_id.clone());
+            let context = agent.get_thread_workspace_context(&thread_id).await;
+            framed
+                .send(DaemonMessage::AgentThreadWorkspaceContext {
+                    thread_id,
+                    context_json: serde_json::to_string(&context)
+                        .unwrap_or_else(|_| "null".to_string()),
+                    updated: false,
+                })
+                .await?;
+        }
+
+        ClientMessage::AgentSetThreadWorkspaceContext {
+            thread_id,
+            context_json,
+        } => {
+            client_agent_threads.insert(thread_id.clone());
+            let parsed =
+                serde_json::from_str::<crate::agent::types::ThreadWorkspaceContext>(&context_json);
+            match parsed {
+                Ok(context) => {
+                    let updated = agent
+                        .set_thread_workspace_context(&thread_id, Some(context.clone()))
+                        .await;
+                    framed
+                        .send(DaemonMessage::AgentThreadWorkspaceContext {
+                            thread_id,
+                            context_json: serde_json::to_string(&Some(context))
+                                .unwrap_or_else(|_| "null".to_string()),
+                            updated,
+                        })
+                        .await?;
+                }
+                Err(error) => {
+                    framed
+                        .send(DaemonMessage::Error {
+                            message: format!("invalid thread workspace context: {error}"),
+                        })
+                        .await?;
+                }
+            }
         }
 
         ClientMessage::AgentListTools { limit, offset } => {

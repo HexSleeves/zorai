@@ -317,6 +317,14 @@ where
             let msg = serde_json::json!({"type":"work-context-detail","data":{"thread_id":thread_id,"context":serde_json::from_str::<serde_json::Value>(&context_json).unwrap_or_default()}});
             emit_agent_event(&msg.to_string())?;
         }
+        Some(Ok(DaemonMessage::AgentThreadWorkspaceContext {
+            thread_id,
+            context_json,
+            updated,
+        })) => {
+            let msg = serde_json::json!({"type":"thread-workspace-context","data":{"thread_id":thread_id,"context":serde_json::from_str::<serde_json::Value>(&context_json).unwrap_or(serde_json::Value::Null),"updated":updated}});
+            emit_agent_event(&msg.to_string())?;
+        }
         Some(Ok(DaemonMessage::GitDiff {
             repo_path,
             file_path,

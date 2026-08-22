@@ -27,6 +27,7 @@ enum ThreadMetadataPatch {
     ClientSurface(Option<zorai_protocol::ClientSurface>),
     LatestSkillDiscoveryState(Option<LatestSkillDiscoveryState>),
     PromptMemoryInjectionState(Option<PromptMemoryInjectionState>),
+    WorkspaceContext(Option<ThreadWorkspaceContext>),
 }
 
 impl ThreadMetadataPatch {
@@ -61,6 +62,16 @@ impl ThreadMetadataPatch {
             ThreadMetadataPatch::PromptMemoryInjectionState(None) => {
                 metadata.remove("prompt_memory_injection_state");
                 metadata.remove("promptMemoryInjectionState");
+            }
+            ThreadMetadataPatch::WorkspaceContext(Some(context)) => {
+                if let Ok(value) = serde_json::to_value(context) {
+                    metadata.insert("workspace_context".to_string(), value);
+                    metadata.remove("workspaceContext");
+                }
+            }
+            ThreadMetadataPatch::WorkspaceContext(None) => {
+                metadata.remove("workspace_context");
+                metadata.remove("workspaceContext");
             }
         }
     }
@@ -286,6 +297,33 @@ impl AgentEngine {
                 "failed to update persisted thread metadata"
             );
         }
+    }
+
+    pub async fn get_thread_workspace_context(
+        &self,
+        thread_id: &str,
+    ) -> Option<ThreadWorkspaceContext> {
+        self.persisted_thread_metadata(thread_id)
+            .await
+            .and_then(|metadata| metadata.workspace_context)
+    }
+
+    pub async fn set_thread_workspace_context(
+        &self,
+        thread_id: &str,
+        context: Option<ThreadWorkspaceContext>,
+    ) -> bool {
+        let exists = self.threads.read().await.contains_key(thread_id)
+            || self.history.has_thread_id(thread_id).await.unwrap_or(false);
+        if !exists {
+            return false;
+        }
+        self.persist_thread_metadata_patch(
+            thread_id,
+            ThreadMetadataPatch::WorkspaceContext(context),
+        )
+        .await;
+        true
     }
 
     pub(super) async fn append_system_thread_message(

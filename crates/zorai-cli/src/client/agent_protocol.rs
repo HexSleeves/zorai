@@ -206,6 +206,13 @@ pub(super) enum AgentBridgeCommand {
     GetWorkContext {
         thread_id: String,
     },
+    GetThreadWorkspaceContext {
+        thread_id: String,
+    },
+    SetThreadWorkspaceContext {
+        thread_id: String,
+        context: serde_json::Value,
+    },
     GetGitDiff {
         repo_path: String,
         file_path: Option<String>,

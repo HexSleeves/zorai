@@ -29,6 +29,7 @@ pub(super) struct ParsedThreadMetadata {
     pub identity: Option<ThreadIdentityMetadata>,
     pub client_surface: Option<zorai_protocol::ClientSurface>,
     pub execution_profile: Option<ThreadExecutionProfile>,
+    pub workspace_context: Option<ThreadWorkspaceContext>,
     pub pinned: bool,
     pub upstream_thread_id: Option<String>,
     pub upstream_transport: Option<ApiTransport>,
@@ -302,6 +303,15 @@ pub(super) fn parse_thread_metadata(metadata_json: Option<&str>) -> ParsedThread
                 .and_then(|value| value.get("thread_profile"))
         })
         .and_then(|value| serde_json::from_value::<ThreadExecutionProfile>(value.clone()).ok());
+    let workspace_context = metadata
+        .as_ref()
+        .and_then(|value| value.get("workspace_context"))
+        .or_else(|| {
+            metadata
+                .as_ref()
+                .and_then(|value| value.get("workspaceContext"))
+        })
+        .and_then(|value| serde_json::from_value::<ThreadWorkspaceContext>(value.clone()).ok());
     let identity = metadata
         .as_ref()
         .and_then(|value| value.get("identity"))
@@ -328,6 +338,7 @@ pub(super) fn parse_thread_metadata(metadata_json: Option<&str>) -> ParsedThread
         identity,
         client_surface,
         execution_profile,
+        workspace_context,
         pinned: metadata
             .as_ref()
             .and_then(|value| value.get("pinned"))
@@ -622,5 +633,49 @@ mod tests {
             meta.is_spawned_subagent(),
             "identity must match AgentTask: parent_task_id still means spawned"
         );
+    }
+}
+
+#[cfg(test)]
+mod workspace_context_tests {
+    use super::*;
+
+    #[test]
+    fn parses_snake_case_workspace_context_from_thread_metadata() {
+        let metadata = serde_json::json!({
+            "workspace_context": {
+                "root": "/repo",
+                "active_file": "src/lib.rs",
+                "selection": {
+                    "start_line": 3,
+                    "start_column": 1,
+                    "end_line": 5,
+                    "end_column": 2
+                },
+                "attached_files": ["src/lib.rs"],
+                "open_files": ["src/lib.rs", "Cargo.toml"],
+                "updated_at": 99
+            }
+        });
+        let parsed = parse_thread_metadata(Some(&metadata.to_string()));
+        let context = parsed.workspace_context.expect("workspace context");
+        assert_eq!(context.root, "/repo");
+        assert_eq!(context.active_file.as_deref(), Some("src/lib.rs"));
+        assert_eq!(context.selection.expect("selection").start_line, 3);
+        assert_eq!(context.attached_files, vec!["src/lib.rs"]);
+    }
+
+    #[test]
+    fn parses_camel_case_workspace_context_key_for_compatibility() {
+        let metadata = serde_json::json!({
+            "workspaceContext": {
+                "root": "/legacy",
+                "attached_files": [],
+                "open_files": [],
+                "updated_at": 1
+            }
+        });
+        let parsed = parse_thread_metadata(Some(&metadata.to_string()));
+        assert_eq!(parsed.workspace_context.expect("workspace context").root, "/legacy");
     }
 }

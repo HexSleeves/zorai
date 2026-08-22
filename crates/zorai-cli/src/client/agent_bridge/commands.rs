@@ -392,6 +392,19 @@ where
                 .send(ClientMessage::AgentGetWorkContext { thread_id })
                 .await?;
         }
+        AgentBridgeCommand::GetThreadWorkspaceContext { thread_id } => {
+            framed
+                .send(ClientMessage::AgentGetThreadWorkspaceContext { thread_id })
+                .await?;
+        }
+        AgentBridgeCommand::SetThreadWorkspaceContext { thread_id, context } => {
+            framed
+                .send(ClientMessage::AgentSetThreadWorkspaceContext {
+                    thread_id,
+                    context_json: serde_json::to_string(&context)?,
+                })
+                .await?;
+        }
         AgentBridgeCommand::GetGitDiff {
             repo_path,
             file_path,

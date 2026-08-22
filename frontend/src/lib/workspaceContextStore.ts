@@ -101,18 +101,3 @@ export const useWorkspaceContextStore = create<WorkspaceContextState>((set, get)
     };
   })),
 }));
-
-export function buildWorkspaceContextBlock(threadId: string | null): string | null {
-  if (!threadId) return null;
-  const context = useWorkspaceContextStore.getState().byThreadId[threadId];
-  if (!context) return null;
-  const lines = [`Workspace: ${context.root}`];
-  if (context.activeFile) lines.push(`Active file: ${context.activeFile}`);
-  if (context.selection && context.activeFile) {
-    lines.push(`Selection: ${context.activeFile}:${context.selection.startLine}-${context.selection.endLine}`);
-  }
-  if (context.attachedFiles.length > 0) lines.push(`Explicitly attached files: ${context.attachedFiles.join(", ")}`);
-  if (context.openFiles.length > 0) lines.push(`Open files: ${context.openFiles.join(", ")}`);
-  lines.push("Use filesystem tools to read contents on demand; editor metadata is not a substitute for current disk state.");
-  return `<workspace_context>\n${lines.join("\n")}\n</workspace_context>`;
-}
