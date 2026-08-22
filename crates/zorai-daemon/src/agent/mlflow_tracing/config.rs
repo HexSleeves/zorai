@@ -163,6 +163,16 @@ impl MlflowTracingEffectiveConfig {
             overrides,
         })
     }
+
+    pub fn observation_config(&self) -> MlflowTracingConfig {
+        let mut config = self.configured.clone();
+        config.enabled = self.enabled;
+        config.tracking_uri = self.tracking_uri.clone();
+        config.experiment_name = self.experiment_name.clone();
+        config.experiment_id = self.experiment_id.clone();
+        config.capture_mode = self.capture_mode;
+        config
+    }
 }
 
 fn normalize_tracking_uri(value: &str) -> Result<String> {

@@ -270,6 +270,7 @@ pub struct ConfigState {
     pub mlflow_concierge: bool,
     pub mlflow_heartbeat_autonomous: bool,
     pub mlflow_runtime_status: Option<serde_json::Value>,
+    pub mlflow_test_result: Option<serde_json::Value>,
     pub anticipatory_enabled: bool,
     pub anticipatory_morning_brief: bool,
     pub anticipatory_predictive_hydration: bool,

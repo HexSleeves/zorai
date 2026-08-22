@@ -138,7 +138,11 @@ async fn run_worker(
 ) {
     let mut config = initial_config;
     let mut effective = MlflowTracingEffectiveConfig::resolve(&config).ok();
-    let mut assembler = TurnTraceAssembler::new(config.clone());
+    let mut observation = effective
+        .as_ref()
+        .map(MlflowTracingEffectiveConfig::observation_config)
+        .unwrap_or_else(|| config.clone());
+    let mut assembler = TurnTraceAssembler::new(observation.clone());
     let mut pending = Vec::new();
     let mut client = build_client(&runtime, effective.as_ref()).ok();
     let mut experiment: Option<MlflowExperiment> = None;
@@ -156,7 +160,11 @@ async fn run_worker(
                         let _ = flush_pending(&runtime, client.as_ref(), experiment.as_ref(), &mut pending).await;
                         config = next;
                         effective = MlflowTracingEffectiveConfig::resolve(&config).ok();
-                        assembler = TurnTraceAssembler::new(config.clone());
+                        observation = effective
+                            .as_ref()
+                            .map(MlflowTracingEffectiveConfig::observation_config)
+                            .unwrap_or_else(|| config.clone());
+                        assembler = TurnTraceAssembler::new(observation.clone());
                         client = build_client(&runtime, effective.as_ref()).ok();
                         experiment = None;
                         server_version = None;
@@ -202,7 +210,7 @@ async fn run_worker(
                 match event {
                     Ok(event) => {
                         if let Some(engine) = engine.upgrade() {
-                            if let Some(context) = enrich_event(&engine, &event, &config).await {
+                            if let Some(context) = enrich_event(&engine, &event, &observation).await {
                                 assembler.observe(now_millis(), event, context);
                                 enqueue_completed(&runtime, &config, &mut assembler, &mut pending);
                             }

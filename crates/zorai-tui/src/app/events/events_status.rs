@@ -127,6 +127,7 @@ impl TuiModel {
             self.send_daemon_command(DaemonCommand::ListTaskApprovalRules);
             self.send_daemon_command(DaemonCommand::PluginList);
             self.send_daemon_command(DaemonCommand::PluginListCommands);
+            self.send_daemon_command(DaemonCommand::GetMlflowTracingStatus);
             tracing::info!("app: startup cascade dispatched");
         } else {
             tracing::info!(

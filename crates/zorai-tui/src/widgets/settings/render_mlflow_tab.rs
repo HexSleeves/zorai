@@ -88,6 +88,26 @@ pub(crate) fn render_mlflow_tab<'a>(
             theme.accent_danger,
         )));
     }
+    if let Some(result) = config.mlflow_test_result.as_ref() {
+        let ok = result.get("ok").and_then(|value| value.as_bool()) == Some(true);
+        if ok {
+            let version = result
+                .pointer("/connection/server_version")
+                .and_then(|value| value.as_str())
+                .unwrap_or("");
+            let label = if version.is_empty() {
+                "  Test: connected".to_string()
+            } else {
+                format!("  Test: connected to MLflow {version}")
+            };
+            lines.push(Line::from(Span::styled(label, theme.accent_success)));
+        } else if let Some(error) = result.get("error").and_then(|value| value.as_str()) {
+            lines.push(Line::from(Span::styled(
+                format!("  Test: {error}"),
+                theme.accent_danger,
+            )));
+        }
+    }
     lines
 }
 

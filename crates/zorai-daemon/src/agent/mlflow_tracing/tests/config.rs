@@ -29,6 +29,38 @@ fn environment_overrides_report_provenance() {
 }
 
 #[test]
+fn environment_capture_mode_controls_exported_payloads() {
+    let _guard = crate::test_support::env_test_lock();
+    std::env::set_var("ZORAI_MLFLOW_CAPTURE_MODE", "metadata");
+    let persisted = MlflowTracingConfig {
+        capture_mode: MlflowCaptureMode::Full,
+        ..Default::default()
+    };
+    let observation = MlflowTracingEffectiveConfig::resolve(&persisted)
+        .unwrap()
+        .observation_config();
+    assert_eq!(observation.capture_mode, MlflowCaptureMode::Metadata);
+    assert!(
+        capture_text(
+            "operator dialogue",
+            observation.capture_mode,
+            MlflowContentKind::User,
+            64,
+        )
+        .is_none(),
+        "env metadata must suppress payloads even when the file config is full"
+    );
+    assert!(capture_tool_value(
+        "{\"path\":\"/secret\"}",
+        observation.capture_mode,
+        MlflowContentKind::ToolArguments,
+        64,
+    )
+    .is_none());
+    std::env::remove_var("ZORAI_MLFLOW_CAPTURE_MODE");
+}
+
+#[test]
 fn invalid_tracking_uri_is_rejected() {
     let _guard = crate::test_support::env_test_lock();
     std::env::remove_var("ZORAI_MLFLOW_TRACKING_URI");

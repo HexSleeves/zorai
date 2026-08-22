@@ -1088,6 +1088,8 @@ impl TuiModel {
                     } else if matches!(next_tab, SettingsTab::Plugins) {
                         self.plugin_settings.list_mode = true;
                         self.send_daemon_command(DaemonCommand::PluginList);
+                    } else if matches!(next_tab, SettingsTab::Mlflow) {
+                        self.send_daemon_command(DaemonCommand::GetMlflowTracingStatus);
                     }
                     return false;
                 }
@@ -1111,6 +1113,8 @@ impl TuiModel {
                     } else if matches!(prev_tab, SettingsTab::Plugins) {
                         self.plugin_settings.list_mode = true;
                         self.send_daemon_command(DaemonCommand::PluginList);
+                    } else if matches!(prev_tab, SettingsTab::Mlflow) {
+                        self.send_daemon_command(DaemonCommand::GetMlflowTracingStatus);
                     }
                     return false;
                 }

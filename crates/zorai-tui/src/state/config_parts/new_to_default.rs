@@ -84,6 +84,7 @@ impl ConfigState {
             mlflow_concierge: true,
             mlflow_heartbeat_autonomous: false,
             mlflow_runtime_status: None,
+            mlflow_test_result: None,
             anticipatory_enabled: true,
             anticipatory_morning_brief: true,
             anticipatory_predictive_hydration: true,

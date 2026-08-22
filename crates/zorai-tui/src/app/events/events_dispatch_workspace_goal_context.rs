@@ -206,7 +206,8 @@ impl TuiModel {
                 None
             }
             ClientEvent::MlflowTracingTestResult(result) => {
-                self.config.mlflow_runtime_status = Some(result);
+                self.config.mlflow_test_result = Some(result);
+                self.send_daemon_command(DaemonCommand::GetMlflowTracingStatus);
                 None
             }
             ClientEvent::ExternalRuntimeMigrationResult(raw) => {

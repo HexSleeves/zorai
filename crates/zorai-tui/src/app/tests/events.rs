@@ -28,6 +28,8 @@ mod image_generation_result_refreshes_thread_and_work_context_to_thread;
 mod internal_dm_thread_created_refreshes_open_thread_picker_to_auto;
 #[path = "events_parts/leading_internal_delegate_prompt_is_blocked_for_budget_exceeded_thread.rs"]
 mod leading_internal_delegate_prompt_is_blocked_for_budget_exceeded_thread;
+#[path = "events_parts/mlflow_tracing_status.rs"]
+mod mlflow_tracing_status;
 #[path = "events_parts/new_subagent_conversation_keeps_header_after_thread_created_without.rs"]
 mod new_subagent_conversation_keeps_header_after_thread_created_without;
 #[path = "events_parts/on_tick_auto_refreshes_active_goal_until_terminal_to_prepending_older.rs"]
