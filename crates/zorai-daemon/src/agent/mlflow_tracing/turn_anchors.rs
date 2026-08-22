@@ -17,6 +17,12 @@ impl MlflowTracingRuntime {
             .lock()
             .expect("MLflow turn anchor mutex poisoned");
         let queue = anchors.entry(thread_id.to_string()).or_default();
+        if queue
+            .iter()
+            .any(|queued| queued.user_message_id == anchor.user_message_id)
+        {
+            return;
+        }
         while queue.len() >= MAX_ANCHORS_PER_THREAD {
             queue.pop_front();
         }

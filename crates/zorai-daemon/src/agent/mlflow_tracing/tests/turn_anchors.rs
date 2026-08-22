@@ -175,6 +175,32 @@ fn select_turn_user_follows_released_queue_front() {
 }
 
 #[test]
+fn retry_of_the_same_user_message_does_not_leave_a_duplicate_anchor() {
+    let (_dir, runtime) = runtime();
+    push(&runtime, "t1", "first", 1);
+    push(&runtime, "t1", "first", 1);
+    push(&runtime, "t1", "second", 2);
+
+    assert_eq!(runtime.pop_turn_anchor("t1").unwrap().content, "first");
+    assert_eq!(
+        runtime.pop_turn_anchor("t1").unwrap().content,
+        "second",
+        "a fresh_runner_retry re-init must not keep an extra copy of the first prompt in front of the next turn"
+    );
+    assert!(runtime.front_turn_anchor("t1").is_none());
+}
+
+#[test]
+fn completed_turn_can_requeue_the_same_user_message_id_on_a_later_resend() {
+    let (_dir, runtime) = runtime();
+    push(&runtime, "t1", "first", 1);
+    runtime.pop_turn_anchor("t1");
+    push(&runtime, "t1", "first", 2);
+
+    assert_eq!(runtime.front_turn_anchor("t1").unwrap().content, "first");
+}
+
+#[test]
 fn unrelated_reconfigure_keeps_in_flight_turn_and_its_queued_prompt() {
     let (_dir, runtime) = runtime();
     let mut assembler = TurnTraceAssembler::new(MlflowTracingConfig::default());
