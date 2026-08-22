@@ -104,6 +104,7 @@ mod system_prompt;
 mod task_crud;
 mod task_prompt;
 mod task_scheduler;
+mod task_worktree;
 mod temporal_foresight_runtime;
 pub(crate) mod thread_crud;
 mod thread_handoffs;

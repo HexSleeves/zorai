@@ -24,6 +24,8 @@ pub struct ThreadWorkspaceContext {
     pub open_files: Vec<String>,
     #[serde(default)]
     pub updated_at: u64,
+    #[serde(default)]
+    pub isolate_agent_tasks: bool,
 }
 
 impl ThreadWorkspaceContext {
@@ -179,6 +181,7 @@ mod workspace_context_tests {
             attached_files: vec!["src/main.rs".to_string()],
             open_files: vec!["src/main.rs".to_string(), "Cargo.toml".to_string()],
             updated_at: 42,
+            isolate_agent_tasks: false,
         };
 
         let prompt = context.prompt_block().expect("workspace prompt");

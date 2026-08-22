@@ -71,6 +71,7 @@ export function WorkspaceWorkbench() {
   const setSelection = useWorkspaceContextStore((state) => state.setSelection);
   const toggleAttachedFile = useWorkspaceContextStore((state) => state.toggleAttachedFile);
   const closeFile = useWorkspaceContextStore((state) => state.closeFile);
+  const setIsolateAgentTasks = useWorkspaceContextStore((state) => state.setIsolateAgentTasks);
   const [rootInput, setRootInput] = useState(context?.root ?? activeWorkspace?.cwd ?? "");
   const [rootEntries, setRootEntries] = useState<ZoraiWorkspaceEntry[]>([]);
   const [gitStatus, setGitStatus] = useState<ZoraiWorkspaceGitStatus[]>([]);
@@ -149,6 +150,7 @@ export function WorkspaceWorkbench() {
             attachedFiles: daemonContext.attached_files ?? [],
             openFiles: daemonContext.open_files ?? [],
             updatedAt: daemonContext.updated_at ?? Date.now(),
+            isolateAgentTasks: daemonContext.isolate_agent_tasks ?? false,
           } },
         }));
       }
@@ -170,6 +172,7 @@ export function WorkspaceWorkbench() {
         attached_files: context.attachedFiles,
         open_files: context.openFiles,
         updated_at: context.updatedAt,
+        isolate_agent_tasks: context.isolateAgentTasks,
       }).catch(() => {});
     }, 350);
     return () => {
@@ -542,6 +545,7 @@ export function WorkspaceWorkbench() {
         {context?.root ? (
           <>
             <div className="zorai-workspace-explorer-heading"><strong>{context.root.split(/[\\/]/).slice(-1)[0]}</strong><button type="button" onClick={() => void refreshRoot()}>↻</button></div>
+            <label className="zorai-workspace-isolation-toggle"><input type="checkbox" checked={context.isolateAgentTasks} onChange={(event) => setIsolateAgentTasks(activeThreadId, event.target.checked)} /><span>Isolate agent tasks in worktrees</span></label>
             <div className="zorai-workspace-create-row">
               <input value={newPath} onChange={(event) => setNewPath(event.target.value)} placeholder="relative/path" />
               <button type="button" title="New file" onClick={() => void createPath("file")}>+F</button>

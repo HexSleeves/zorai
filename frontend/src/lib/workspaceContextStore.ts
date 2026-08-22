@@ -17,6 +17,7 @@ export type ThreadWorkspaceContext = {
   attachedFiles: string[];
   openFiles: string[];
   updatedAt: number;
+  isolateAgentTasks: boolean;
 };
 
 type WorkspaceContextState = {
@@ -28,6 +29,7 @@ type WorkspaceContextState = {
   setSelection: (threadId: string, selection: WorkspaceSelection | null) => void;
   toggleAttachedFile: (threadId: string, filePath: string) => void;
   closeFile: (threadId: string, filePath: string) => void;
+  setIsolateAgentTasks: (threadId: string, enabled: boolean) => void;
 };
 
 function persist(byThreadId: Record<string, ThreadWorkspaceContext>) {
@@ -67,6 +69,7 @@ export const useWorkspaceContextStore = create<WorkspaceContextState>((set, get)
           attachedFiles: [],
           openFiles: [],
           updatedAt: Date.now(),
+          isolateAgentTasks: true,
         },
     };
     persist(byThreadId);
@@ -88,6 +91,11 @@ export const useWorkspaceContextStore = create<WorkspaceContextState>((set, get)
     attachedFiles: current.attachedFiles.includes(filePath)
       ? current.attachedFiles.filter((entry) => entry !== filePath)
       : [...current.attachedFiles, filePath],
+    updatedAt: Date.now(),
+  }))),
+  setIsolateAgentTasks: (threadId, enabled) => set((state) => updateContext(state, threadId, (current) => ({
+    ...current,
+    isolateAgentTasks: enabled,
     updatedAt: Date.now(),
   }))),
   closeFile: (threadId, filePath) => set((state) => updateContext(state, threadId, (current) => {

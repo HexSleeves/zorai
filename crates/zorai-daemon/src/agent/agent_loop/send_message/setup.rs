@@ -755,8 +755,72 @@ impl<'a> SendMessageRunner<'a> {
         } else {
             None
         };
-        let preferred_session_id =
+        let mut preferred_session_id =
             resolve_preferred_session_id(&engine.session_manager, preferred_session_hint).await;
+        if let (Some(task), Some(source_session_id)) =
+            (current_task_for_setup.as_ref(), preferred_session_id)
+        {
+            match engine.ensure_isolated_task_workspace(&tid, task).await {
+                Ok(Some(isolated)) => {
+                    let source_session = engine
+                        .session_manager
+                        .list()
+                        .await
+                        .into_iter()
+                        .find(|session| session.id == source_session_id);
+                    if source_session
+                        .as_ref()
+                        .and_then(|session| session.cwd.as_deref())
+                        == Some(isolated.root.as_str())
+                    {
+                        preferred_session_id = Some(source_session_id);
+                    } else {
+                        let workspace_id = source_session.and_then(|session| session.workspace_id);
+                        match engine
+                            .session_manager
+                            .clone_session(
+                                source_session_id,
+                                workspace_id,
+                                None,
+                                None,
+                                false,
+                                Some(isolated.root.clone()),
+                            )
+                            .await
+                        {
+                            Ok((isolated_session_id, _, _)) => {
+                                preferred_session_id = Some(isolated_session_id);
+                                let _ = engine.event_tx.send(AgentEvent::WorkspaceCommand {
+                                    command: "attach_agent_terminal".to_string(),
+                                    args: serde_json::json!({
+                                        "session_id": isolated_session_id.to_string(),
+                                        "pane_name": format!("Isolated {}", task.title),
+                                        "cwd": isolated.root,
+                                        "task_id": task.id,
+                                        "goal_run_id": task.goal_run_id,
+                                        "branch": isolated.branch,
+                                        "worktree_created": isolated.created,
+                                    }),
+                                });
+                            }
+                            Err(error) => tracing::warn!(
+                                thread_id = %tid,
+                                task_id = %task.id,
+                                %error,
+                                "failed to clone isolated task terminal"
+                            ),
+                        }
+                    }
+                }
+                Ok(None) => {}
+                Err(error) => tracing::warn!(
+                    thread_id = %tid,
+                    task_id = %task.id,
+                    %error,
+                    "failed to provision isolated task worktree"
+                ),
+            }
+        }
         let skill_preflight = if super::skill_preflight::should_run_skill_preflight_for_turn(
             record_operator,
             task_id.is_some(),

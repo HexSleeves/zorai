@@ -3142,3 +3142,6 @@ button.zorai-composer-context-chip { cursor: pointer; }
 .zorai-workspace-problems .severity-3, .zorai-workspace-problems .severity-4 { color: var(--zorai-accent-secondary); }
 .zorai-workspace-problems button strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .zorai-workspace-problems button code { color: var(--zorai-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.zorai-workspace-isolation-toggle { display: flex; align-items: center; gap: 6px; padding: 0 9px 8px; color: var(--zorai-muted); font-size: 10px; cursor: pointer; }
+.zorai-workspace-isolation-toggle input { accent-color: var(--zorai-accent); }
