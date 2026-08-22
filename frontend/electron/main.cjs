@@ -56,6 +56,7 @@ const { createTerminalBridgeRuntime } = require('./main/terminal-bridge-runtime.
 const { createWhatsAppRuntime } = require('./main/whatsapp-runtime.cjs');
 const { createWindowRuntime } = require('./main/window-runtime.cjs');
 const { createChildLogEnv } = require('./main/log-env.cjs');
+const workspaceService = require('./main/workspace-service.cjs');
 
 const DAEMON_NAME = 'zorai-daemon';
 const CLI_NAME = 'zorai';
@@ -549,6 +550,7 @@ function registerIpcHandlers() {
         spawnDaemon,
         terminalBridgeRuntime,
         windowState: () => mainWindow,
+        workspaceService,
         writeFsText,
         writeJsonFile,
         writeTextFile,

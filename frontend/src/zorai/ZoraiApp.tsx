@@ -13,6 +13,7 @@ import { useAgentStore } from "@/lib/agentStore";
 import { useAuditStore } from "@/lib/auditStore";
 import { useNotificationStore } from "@/lib/notificationStore";
 import { useWorkspaceStore } from "@/lib/workspaceStore";
+import { useWorkspaceContextStore } from "@/lib/workspaceContextStore";
 import { shouldAutoStartOperatorProfileFromConcierge } from "./conciergeEvents";
 import { useZoraiAppCommands } from "./shell/zoraiAppCommands";
 import { ZoraiShell } from "./shell/ZoraiShell";
@@ -22,6 +23,7 @@ export function ZoraiApp() {
   useZoraiAppCommands();
 
   useEffect(() => {
+    void useWorkspaceContextStore.getState().hydrate();
     useWorkspaceStore.setState({ agentPanelOpen: true });
   }, []);
 

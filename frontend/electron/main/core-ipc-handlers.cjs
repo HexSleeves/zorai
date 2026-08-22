@@ -41,6 +41,7 @@ function registerCoreIpcHandlers(ipcMain, options) {
         writeJsonFile,
         writeTextFile,
         windowState,
+        workspaceService,
     } = options;
 
     ipcMain.handle('getSocketPath', getSocketPath);
@@ -89,6 +90,15 @@ function registerCoreIpcHandlers(ipcMain, options) {
     ipcMain.handle('fs-path-info', (_event, targetPath) => getFsPathInfo(targetPath));
     ipcMain.handle('git-status', (_event, targetPath) => gitStatus(targetPath));
     ipcMain.handle('git-diff', (_event, targetPath, filePath) => gitDiff(targetPath, filePath));
+    ipcMain.handle('workspace-open', (_event, rootPath) => workspaceService.openWorkspace(rootPath));
+    ipcMain.handle('workspace-list-directory', (_event, rootPath, relativePath, runtimeOptions) => workspaceService.listWorkspaceDirectory(rootPath, relativePath, runtimeOptions));
+    ipcMain.handle('workspace-read-file', (_event, rootPath, relativePath, runtimeOptions) => workspaceService.readWorkspaceFile(rootPath, relativePath, runtimeOptions));
+    ipcMain.handle('workspace-write-file', (_event, rootPath, relativePath, content, expectedHash) => workspaceService.writeWorkspaceFile(rootPath, relativePath, content, expectedHash));
+    ipcMain.handle('workspace-create-directory', (_event, rootPath, relativePath) => workspaceService.createWorkspaceDirectory(rootPath, relativePath));
+    ipcMain.handle('workspace-rename-path', (_event, rootPath, fromPath, toPath) => workspaceService.renameWorkspacePath(rootPath, fromPath, toPath));
+    ipcMain.handle('workspace-delete-path', (_event, rootPath, relativePath, runtimeOptions) => workspaceService.deleteWorkspacePath(rootPath, relativePath, runtimeOptions));
+    ipcMain.handle('workspace-git-status', (_event, rootPath) => workspaceService.workspaceGitStatus(rootPath));
+    ipcMain.handle('workspace-git-diff', (_event, rootPath, relativePath, runtimeOptions) => workspaceService.workspaceGitDiff(rootPath, relativePath, runtimeOptions));
     ipcMain.handle('clipboard-read-text', () => options.clipboard.readText());
     ipcMain.handle('clipboard-write-text', (_event, text) => { options.clipboard.writeText(typeof text === 'string' ? text : ''); return true; });
     ipcMain.handle('terminal-start', terminalBridgeRuntime.startTerminalBridge);

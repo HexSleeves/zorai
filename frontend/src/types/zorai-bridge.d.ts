@@ -395,6 +395,31 @@ declare global {
         sort_order?: number | null;
     };
 
+    type ZoraiWorkspaceFile = {
+        path: string;
+        content: string;
+        hash: string;
+        sizeBytes: number;
+        modifiedAt: number;
+        language: string;
+    };
+
+    type ZoraiWorkspaceEntry = {
+        name: string;
+        path: string;
+        isDirectory: boolean;
+        isSymbolicLink: boolean;
+        sizeBytes: number | null;
+        modifiedAt: number | null;
+    };
+
+    type ZoraiWorkspaceGitStatus = {
+        path: string;
+        previousPath: string | null;
+        indexStatus: string;
+        worktreeStatus: string;
+    };
+
     type ZoraiBridge = {
         checkSetupPrereqs?: (profile?: "source" | "desktop") => Promise<ZoraiSetupPrereqReport>;
         discoverCodingAgents?: () => Promise<ZoraiCodingAgentDiscoveryResult[]>;
@@ -420,6 +445,15 @@ declare global {
         getFsPathInfo?: (targetPath: string) => Promise<{ path: string; isDirectory: boolean; sizeBytes: number; modifiedAt: number; createdAt: number } | null>;
         gitStatus?: (targetPath: string) => Promise<string>;
         gitDiff?: (targetPath: string, filePath?: string | null) => Promise<string>;
+        workspaceOpen?: (rootPath: string) => Promise<{ root: string; name: string; gitRoot: string | null; isGitRepository: boolean }>;
+        workspaceListDirectory?: (rootPath: string, relativePath?: string, options?: { includeIgnored?: boolean }) => Promise<ZoraiWorkspaceEntry[]>;
+        workspaceReadFile?: (rootPath: string, relativePath: string, options?: { maxBytes?: number }) => Promise<ZoraiWorkspaceFile>;
+        workspaceWriteFile?: (rootPath: string, relativePath: string, content: string, expectedHash?: string | null) => Promise<ZoraiWorkspaceFile>;
+        workspaceCreateDirectory?: (rootPath: string, relativePath: string) => Promise<{ path: string }>;
+        workspaceRenamePath?: (rootPath: string, fromPath: string, toPath: string) => Promise<{ from: string; to: string }>;
+        workspaceDeletePath?: (rootPath: string, relativePath: string, options?: { recursive?: boolean }) => Promise<boolean>;
+        workspaceGitStatus?: (rootPath: string) => Promise<ZoraiWorkspaceGitStatus[]>;
+        workspaceGitDiff?: (rootPath: string, relativePath?: string | null, options?: { staged?: boolean }) => Promise<string>;
         dbAppendCommandLog?: (entry: unknown) => Promise<boolean>;
         dbCompleteCommandLog?: (id: string, exitCode?: number | null, durationMs?: number | null) => Promise<boolean>;
         dbQueryCommandLog?: (opts?: { workspaceId?: string | null; paneId?: string | null; limit?: number | null }) => Promise<unknown[]>;

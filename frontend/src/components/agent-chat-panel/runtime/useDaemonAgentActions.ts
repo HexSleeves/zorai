@@ -6,6 +6,7 @@ import { getAgentBridge, shouldUseDaemonRuntime } from "@/lib/agentDaemonConfig"
 import { provisionAgentWorkspaceTerminals, provisionTerminalPaneInWorkspace, resolvePaneSessionId } from "@/lib/agentWorkspace";
 import { startGoalRun, goalRunSupportAvailable, type GoalRun } from "@/lib/goalRuns";
 import { useWorkspaceStore } from "@/lib/workspaceStore";
+import { buildWorkspaceContextBlock } from "@/lib/workspaceContextStore";
 import { appendDaemonSystemMessage, normalizeBridgePayload, reloadDaemonThreadIntoLocalState } from "./daemonHelpers";
 import { parseLeadingAgentDirective, type AgentDirective } from "./agentDirective";
 import { builtinAgentSetupCandidate, isBuiltinPersonaSetupError } from "./builtinAgentSetupPreflight";
@@ -529,9 +530,11 @@ export function useDaemonAgentActions({
       }
 
       const targetAgentId = resolveNewThreadTargetAgent(thread, daemonThreadId);
+      const workspaceContext = buildWorkspaceContextBlock(threadId);
+      const agentText = workspaceContext ? `${workspaceContext}\n\n${text}` : text;
       await sendAgentMessage(
         daemonThreadId || threadId,
-        text,
+        agentText,
         preferredSessionId,
         contextMessages,
         contentBlocksJson,
