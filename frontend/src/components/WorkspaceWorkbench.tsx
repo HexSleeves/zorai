@@ -98,7 +98,7 @@ export function WorkspaceWorkbench() {
   const [lspStatus, setLspStatus] = useState<{ available: boolean; command?: string | null; reason?: string } | null>(null);
   const [diagnosticsByPath, setDiagnosticsByPath] = useState<Record<string, ZoraiLspDiagnostic[]>>({});
   const [workspaceTests, setWorkspaceTests] = useState<ZoraiWorkspaceTest[]>([]);
-  const [testRun, setTestRun] = useState<{ runId: string; status: "running" | "passed" | "failed" | "cancelled" | "error"; output: string; durationMs?: number } | null>(null);
+  const [testRun, setTestRun] = useState<{ runId: string; status: "running" | "passed" | "failed" | "cancelled" | "error"; output: string; durationMs?: number; evidence?: ZoraiWorkspaceTestEvidence } | null>(null);
   const lspVersionRef = useRef<Record<string, number>>({});
   const lspChangeTimer = useRef<number | null>(null);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
@@ -115,6 +115,7 @@ export function WorkspaceWorkbench() {
     return [...groups.entries()].sort((left, right) => Math.max(...right[1].map((entry) => entry.updated_at)) - Math.max(...left[1].map((entry) => entry.updated_at)));
   }, [agentChanges]);
   const symbols = useMemo(() => activeDocument ? extractWorkspaceSymbols(activeDocument.content) : [], [activeDocument]);
+  const testProblems = useMemo(() => testRun?.evidence?.results.filter((result) => result.status === "failed" && result.location) ?? [], [testRun?.evidence]);
   const workspaceDiagnostics = useMemo(() => Object.entries(diagnosticsByPath).flatMap(([path, diagnostics]) => diagnostics.map((diagnostic) => ({ path, ...diagnostic }))), [diagnosticsByPath]);
   const statusMap = useMemo(() => new Map(gitStatus.map((entry) => [entry.path, statusLabel(entry)])), [gitStatus]);
 
@@ -327,7 +328,7 @@ export function WorkspaceWorkbench() {
       setTestRun((current) => {
         if (!current || current.runId !== event.runId) return current;
         if (event.type === "output") return { ...current, output: `${current.output}${event.text ?? ""}`.slice(-500000) };
-        return { ...current, status: event.status ?? "error", output: event.output ?? current.output, durationMs: event.durationMs };
+        return { ...current, status: event.status ?? "error", output: event.output ?? current.output, durationMs: event.durationMs, evidence: event.evidence };
       });
     });
     return () => { if (typeof unsubscribe === "function") unsubscribe(); };
@@ -625,7 +626,13 @@ export function WorkspaceWorkbench() {
                 <div className="zorai-workspace-test-actions">
                   <button type="button" disabled={testRun?.status === "running"} onClick={() => void runWorkspaceTest()}>Run all</button>
                   {testRun?.status === "running" ? <button type="button" onClick={() => bridge?.workspaceTestsCancel?.(testRun.runId)}>Stop</button> : null}
-                  {testRun ? <span className={`status-${testRun.status}`}>{testRun.status}{testRun.durationMs ? ` · ${testRun.durationMs}ms` : ""}</span> : null}
+                  {testRun ? <span className={`status-${testRun.status}`}>{testRun.status}{testRun.evidence ? ` · ✓${testRun.evidence.passed} ✗${testRun.evidence.failed} ↷${testRun.evidence.skipped}` : ""}{testRun.durationMs ? ` · ${testRun.durationMs}ms` : ""}</span> : null}
+                  {testRun?.evidence?.failed ? <button type="button" disabled={testRun.status === "running"} onClick={() => {
+                    const failed = testRun.evidence?.results.find((result) => result.status === "failed");
+                    const known = workspaceTests.find((test) => test.name === failed?.name || failed?.name.endsWith(test.name));
+                    if (known) void runWorkspaceTest(known);
+                    else void runWorkspaceTest();
+                  }}>Rerun failed</button> : null}
                 </div>
                 {workspaceTests.slice(0, 500).map((test) => (
                   <div key={test.id}>
@@ -650,6 +657,16 @@ export function WorkspaceWorkbench() {
                     </div>
                   );
                 })}
+              </details>
+            ) : null}
+            {testProblems.length > 0 ? (
+              <details className="zorai-workspace-problems" open>
+                <summary>Test failures ({testProblems.length})</summary>
+                {testProblems.map((result, index) => (
+                  <button type="button" key={`${result.name}:${index}`} onClick={() => result.location && void openFile(result.location.path, { line: result.location.line, column: result.location.column })}>
+                    <span className="severity-1">T</span><strong>{result.name}: {result.message ?? "Test failed"}</strong><code>{result.location?.path}:{result.location?.line}</code>
+                  </button>
+                ))}
               </details>
             ) : null}
             {workspaceDiagnostics.length > 0 ? (

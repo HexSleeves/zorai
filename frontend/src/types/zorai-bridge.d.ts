@@ -433,6 +433,28 @@ declare global {
         selector: string;
     };
 
+    type ZoraiWorkspaceTestResult = {
+        name: string;
+        status: "passed" | "failed" | "skipped";
+        message: string | null;
+        location: { path: string; line: number; column: number } | null;
+    };
+
+    type ZoraiWorkspaceTestEvidence = {
+        framework: string;
+        request: { framework: string; path?: string; selector?: string };
+        command: string;
+        args: string[];
+        status: string;
+        exitCode: number | null;
+        durationMs: number;
+        results: ZoraiWorkspaceTestResult[];
+        passed: number;
+        failed: number;
+        skipped: number;
+        output: string;
+    };
+
     type ZoraiWorkspaceTestEvent = {
         runId: string;
         type: "output" | "finished";
@@ -443,6 +465,7 @@ declare global {
         durationMs?: number;
         output?: string;
         error?: string;
+        evidence?: ZoraiWorkspaceTestEvidence;
     };
 
     type ZoraiLspDiagnostic = {

@@ -98,6 +98,73 @@ function testCommand(root, request) {
     throw new Error(`Unsupported test framework: ${framework}`);
 }
 
+function firstLocation(output, root) {
+    const patterns = [
+        /(?:^|\n)\s*-->\s+([^:\n]+):(\d+):(\d+)/,
+        /(?:^|\n)\s*([^\s:\n]+\.(?:rs|py|go|[cm]?[jt]sx?)):(\d+):(\d+)/,
+        /(?:^|\n)\s*([^\s:\n]+\.(?:rs|py|go|[cm]?[jt]sx?)):(\d+)/,
+    ];
+    for (const pattern of patterns) {
+        const match = output.match(pattern);
+        if (!match) continue;
+        const absolute = path.resolve(root, match[1]);
+        if (!isWithinRoot(root, absolute)) continue;
+        return { path: path.relative(root, absolute).replace(/\\/g, '/'), line: Number(match[2]) || 1, column: Number(match[3]) || 1 };
+    }
+    return null;
+}
+
+function parseTestResults(framework, output, root, request = {}) {
+    const results = [];
+    const seen = new Set();
+    const push = (name, status, message = null, location = null) => {
+        const key = `${status}:${name}`;
+        if (seen.has(key)) return;
+        seen.add(key);
+        results.push({ name, status, message, location });
+    };
+    if (framework === 'rust') {
+        for (const match of output.matchAll(/^test\s+(.+?)\s+\.\.\.\s+(ok|FAILED|ignored)$/gm)) {
+            push(match[1], match[2] === 'ok' ? 'passed' : match[2] === 'FAILED' ? 'failed' : 'skipped');
+        }
+    } else if (framework === 'javascript') {
+        for (const match of output.matchAll(/^\s*([✓×✗])\s+(.+?)(?:\s+\d+ms)?$/gm)) push(match[2].trim(), match[1] === '✓' ? 'passed' : 'failed');
+        for (const match of output.matchAll(/^\s*[✓×✗]?\s*(.+?)\s+>\s+(.+)$/gm)) push(`${match[1]} > ${match[2]}`, match[0].includes('✓') ? 'passed' : 'failed');
+    } else if (framework === 'python') {
+        for (const match of output.matchAll(/^(.+?::test_[^\s]+)\s+(PASSED|FAILED|SKIPPED)/gm)) push(match[1], match[2].toLowerCase());
+    } else if (framework === 'go') {
+        for (const match of output.matchAll(/^---\s+(PASS|FAIL|SKIP):\s+([^\s(]+)/gm)) push(match[2], match[1] === 'PASS' ? 'passed' : match[1] === 'FAIL' ? 'failed' : 'skipped');
+    }
+    const location = firstLocation(output, root);
+    const failureMessage = output.match(/(?:panicked at|AssertionError:|E\s+assert|--- FAIL:)[^\n]*|error(?:\[[^\]]+\])?:[^\n]*/i)?.[0]?.trim() ?? null;
+    for (const result of results.filter((entry) => entry.status === 'failed')) {
+        if (!result.location) result.location = location;
+        if (!result.message) result.message = failureMessage;
+    }
+    if (results.length === 0 && request.selector) {
+        push(request.selector, /(?:FAILED|FAIL|panicked|AssertionError|error:)/i.test(output) ? 'failed' : 'passed', failureMessage, location);
+    }
+    return results;
+}
+
+function testEvidence(framework, request, spec, status, exitCode, durationMs, output, root) {
+    const results = parseTestResults(framework, output, root, request);
+    return {
+        framework,
+        request,
+        command: spec.command,
+        args: spec.args,
+        status,
+        exitCode,
+        durationMs,
+        results,
+        passed: results.filter((entry) => entry.status === 'passed').length,
+        failed: results.filter((entry) => entry.status === 'failed').length,
+        skipped: results.filter((entry) => entry.status === 'skipped').length,
+        output,
+    };
+}
+
 function createTestRuntime(emitEvent) {
     const runs = new Map();
     return {
@@ -127,7 +194,10 @@ function createTestRuntime(emitEvent) {
             });
             child.once('exit', (code, signal) => {
                 const cancelled = runs.get(runId)?.cancelled === true;
-                const event = { runId, type: 'finished', status: cancelled ? 'cancelled' : code === 0 ? 'passed' : 'failed', exitCode: code, signal, durationMs: Date.now() - startedAt, output: output.join('') };
+                const completeOutput = output.join('');
+                const status = cancelled ? 'cancelled' : code === 0 ? 'passed' : 'failed';
+                const evidence = testEvidence(request.framework, request, spec, status, code, Date.now() - startedAt, completeOutput, root);
+                const event = { runId, type: 'finished', status, exitCode: code, signal, durationMs: evidence.durationMs, output: completeOutput, evidence };
                 if (!webContents.isDestroyed()) emitEvent(webContents, event);
                 runs.delete(runId);
             });
@@ -149,4 +219,4 @@ function createTestRuntime(emitEvent) {
     };
 }
 
-module.exports = { createTestRuntime, discoverWorkspaceTests, extractTests, frameworkForRoot, testCommand };
+module.exports = { createTestRuntime, discoverWorkspaceTests, extractTests, firstLocation, frameworkForRoot, parseTestResults, testCommand, testEvidence };
