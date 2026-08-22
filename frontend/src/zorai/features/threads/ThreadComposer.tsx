@@ -13,6 +13,7 @@ import {
 } from "@/components/agent-chat-panel/chat-view/composerMedia";
 import type { ComposerAttachment } from "@/components/agent-chat-panel/chat-view/types";
 import { useAgentStore } from "@/lib/agentStore";
+import { useWorkspaceContextStore } from "@/lib/workspaceContextStore";
 import { useComposerInputHistory } from "./composerInputHistory";
 import { applyComposerTextareaSize } from "./composerTextareaSize";
 import {
@@ -30,6 +31,10 @@ import { AttachmentTiles, composerAttachmentToTile } from "./attachmentTiles";
 export function ThreadComposer() {
   const runtime = useAgentChatPanelRuntime();
   const agentSettings = useAgentStore((state) => state.agentSettings);
+  const activeThreadId = useAgentStore((state) => state.activeThreadId);
+  const workspaceContext = useWorkspaceContextStore((state) => activeThreadId ? state.byThreadId[activeThreadId] : undefined);
+  const toggleAttachedFile = useWorkspaceContextStore((state) => state.toggleAttachedFile);
+  const [contextPreviewOpen, setContextPreviewOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [dropActive, setDropActive] = useState(false);
@@ -285,6 +290,32 @@ export function ThreadComposer() {
       onDrop={onDrop}
       onPaste={onPaste}
     >
+      {workspaceContext ? (
+        <div className="zorai-composer-workspace-context">
+          <button type="button" className="zorai-composer-context-chip" onClick={() => setContextPreviewOpen((open) => !open)} title={workspaceContext.root}>
+            Workspace · {workspaceContext.root.split(/[\\/]/).slice(-1)[0]}
+          </button>
+          {workspaceContext.activeFile ? <span className="zorai-composer-context-chip">Active · {workspaceContext.activeFile}</span> : null}
+          {workspaceContext.selection && workspaceContext.activeFile ? <span className="zorai-composer-context-chip">Lines {workspaceContext.selection.startLine}-{workspaceContext.selection.endLine}</span> : null}
+          {workspaceContext.attachedFiles.map((filePath) => (
+            <span key={filePath} className="zorai-composer-context-chip zorai-composer-context-chip--attached">
+              {filePath}
+              <button type="button" aria-label={`Detach ${filePath}`} onClick={() => activeThreadId && toggleAttachedFile(activeThreadId, filePath)}>×</button>
+            </span>
+          ))}
+          {contextPreviewOpen ? (
+            <div className="zorai-composer-context-preview">
+              <strong>Effective daemon workspace context</strong>
+              <code>Workspace: {workspaceContext.root}</code>
+              {workspaceContext.activeFile ? <code>Active file: {workspaceContext.activeFile}</code> : null}
+              {workspaceContext.selection && workspaceContext.activeFile ? <code>Selection: {workspaceContext.activeFile}:{workspaceContext.selection.startLine}-{workspaceContext.selection.endLine}</code> : null}
+              {workspaceContext.attachedFiles.length > 0 ? <code>Explicit attachments: {workspaceContext.attachedFiles.join(", ")}</code> : null}
+              <span>File contents are read from disk by tools on demand; they are not injected automatically.</span>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {attachments.length > 0 ? (
         <AttachmentTiles
           items={attachments.map(composerAttachmentToTile)}

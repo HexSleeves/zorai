@@ -3075,3 +3075,12 @@
 .zorai-workspace-change-path span { color: var(--zorai-accent-secondary); }
 .zorai-workspace-change-actions { display: flex; gap: 3px; }
 .zorai-workspace-change-actions button { padding: 2px 4px; border: 1px solid var(--zorai-border); border-radius: 3px; background: var(--zorai-bg-elevated); color: var(--zorai-muted); font-size: 9px; cursor: pointer; }
+
+.zorai-composer-workspace-context { position: relative; display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 7px; }
+.zorai-composer-context-chip { display: inline-flex; align-items: center; gap: 5px; max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 7px; border: 1px solid var(--zorai-border); border-radius: 999px; background: var(--zorai-bg-elevated); color: var(--zorai-muted); font: 10px var(--font-mono); }
+button.zorai-composer-context-chip { cursor: pointer; }
+.zorai-composer-context-chip--attached { border-color: color-mix(in srgb, var(--zorai-accent-secondary) 50%, var(--zorai-border)); color: var(--zorai-text); }
+.zorai-composer-context-chip--attached button { border: 0; padding: 0; background: transparent; color: var(--zorai-muted); cursor: pointer; }
+.zorai-composer-context-preview { position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 20; width: min(520px, 92vw); display: flex; flex-direction: column; gap: 5px; padding: 10px 12px; border: 1px solid var(--zorai-border-strong); border-radius: 7px; background: var(--zorai-bg-panel); box-shadow: 0 14px 34px var(--zorai-shadow); color: var(--zorai-text); font-size: 11px; }
+.zorai-composer-context-preview code { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 10px var(--font-mono); color: var(--zorai-accent-secondary); }
+.zorai-composer-context-preview span { color: var(--zorai-muted); }
