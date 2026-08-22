@@ -32,13 +32,19 @@ impl<'a> SendMessageRunner<'a> {
                 upstream_role: _,
                 upstream_message_type: _,
                 upstream_container: _,
-                upstream_message,
-                provider_final_result,
+                mut upstream_message,
+                mut provider_final_result,
                 upstream_thread_id,
-                cache_creation_input_tokens: _,
-                cache_read_input_tokens: _,
+                cache_creation_input_tokens,
+                cache_read_input_tokens,
                 server_tool_use: _,
             }) => {
+                crate::agent::types::apply_completion_cache_usage(
+                    &mut upstream_message,
+                    &mut provider_final_result,
+                    cache_creation_input_tokens,
+                    cache_read_input_tokens,
+                );
                 self.handle_done_chunk(
                     llm_started_at,
                     first_token_at,
@@ -71,13 +77,19 @@ impl<'a> SendMessageRunner<'a> {
                 upstream_role: _,
                 upstream_message_type: _,
                 upstream_container: _,
-                upstream_message,
-                provider_final_result,
+                mut upstream_message,
+                mut provider_final_result,
                 upstream_thread_id,
-                cache_creation_input_tokens: _,
-                cache_read_input_tokens: _,
+                cache_creation_input_tokens,
+                cache_read_input_tokens,
                 server_tool_use: _,
             }) => {
+                crate::agent::types::apply_completion_cache_usage(
+                    &mut upstream_message,
+                    &mut provider_final_result,
+                    cache_creation_input_tokens,
+                    cache_read_input_tokens,
+                );
                 Box::pin(self.handle_tool_calls_chunk(
                     llm_started_at,
                     first_token_at,
@@ -142,6 +154,7 @@ impl<'a> SendMessageRunner<'a> {
                     provider_final_result: None,
                     message_id: persisted_message_id,
                 });
+                self.turn_done_emitted = true;
                 Ok(LoopDisposition::Break)
             }
         }
@@ -314,7 +327,13 @@ impl<'a> SendMessageRunner<'a> {
                 message: "Tool execution limit reached".into(),
             });
         }
-        if super::report_back::should_emit_deferred_turn_done(
+        if self.was_cancelled {
+            if !self.turn_done_emitted {
+                let _ = self.engine.event_tx.send(AgentEvent::TurnInterrupted {
+                    thread_id: self.tid.clone(),
+                });
+            }
+        } else if super::report_back::should_emit_deferred_turn_done(
             self.needs_turn_done,
             self.interrupted_for_approval,
         ) {

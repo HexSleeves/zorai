@@ -1016,6 +1016,8 @@ impl TuiModel {
                             } else if matches!(tab, SettingsTab::Plugins) {
                                 self.plugin_settings.list_mode = true;
                                 self.send_daemon_command(DaemonCommand::PluginList);
+                            } else if matches!(tab, SettingsTab::Mlflow) {
+                                self.send_daemon_command(DaemonCommand::GetMlflowTracingStatus);
                             }
                         }
                         Some(widgets::settings::SettingsHitTarget::AuthProviderItem(index)) => {

@@ -24,7 +24,7 @@ export async function readComposerAttachment(file: File): Promise<ComposerAttach
 
   if (kind === "text") {
     return {
-      id: `${file.name}:${file.size}:${file.lastModified}`,
+      id: composerAttachmentId(file),
       name: file.name,
       size: file.size,
       kind,
@@ -40,13 +40,60 @@ export async function readComposerAttachment(file: File): Promise<ComposerAttach
     reader.readAsDataURL(file);
   });
   return {
-    id: `${file.name}:${file.size}:${file.lastModified}`,
+    id: composerAttachmentId(file),
     name: file.name,
     size: file.size,
     kind,
     mimeType: file.type || (kind === "image" ? "image/png" : "audio/wav"),
     dataUrl,
   };
+}
+
+function composerAttachmentId(file: File): string {
+  return `${file.name}:${file.size}:${file.lastModified}:${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function clipboardFileName(file: File, index: number): string {
+  if (file.name.trim() && file.name !== "blob") {
+    return file.name;
+  }
+  const subtype = (file.type.split("/")[1] || "bin").split(";")[0] || "bin";
+  const kind = file.type.startsWith("image/")
+    ? "image"
+    : file.type.startsWith("audio/")
+      ? "audio"
+      : "file";
+  return `pasted-${kind}-${index + 1}.${subtype}`;
+}
+
+export function collectClipboardFiles(clipboardData: DataTransfer | null | undefined): File[] {
+  if (!clipboardData) {
+    return [];
+  }
+  const fromList = Array.from(clipboardData.files ?? []);
+  const raw = fromList.length > 0 ? fromList : filesFromClipboardItems(clipboardData.items);
+  return raw.map((file, index) => {
+    const name = clipboardFileName(file, index);
+    return name === file.name ? file : new File([file], name, { type: file.type, lastModified: file.lastModified });
+  });
+}
+
+function filesFromClipboardItems(items: DataTransferItemList | undefined): File[] {
+  if (!items || items.length === 0) {
+    return [];
+  }
+  const files: File[] = [];
+  for (let index = 0; index < items.length; index += 1) {
+    const item = items[index];
+    if (!item || item.kind !== "file") {
+      continue;
+    }
+    const file = item.getAsFile();
+    if (file) {
+      files.push(file);
+    }
+  }
+  return files;
 }
 
 export async function blobToBase64(blob: Blob): Promise<string> {

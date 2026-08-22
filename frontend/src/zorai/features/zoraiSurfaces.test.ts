@@ -183,7 +183,13 @@ describe("Zorai feature surfaces", () => {
     expect(tabSource).toContain('title: "Svarog"');
     expect(tabSource).toContain('title: "Rarog"');
     expect(tabSource).toContain('title: "Chat"');
+    expect(tabSource).toContain('title: "MLflow"');
     expect(tabSource).toContain('id: "search"');
+    expect(panelSource).toContain("MlflowPanel");
+    expect(readFeature("./settings/MlflowPanel.tsx")).toContain("Test connection");
+    expect(readFeature("./settings/MlflowPanel.tsx")).toContain("Send test trace");
+    expect(readFeature("./settings/MlflowPanel.tsx")).toContain("zorai-switch");
+    expect(readFeature("./settings/MlflowPanel.tsx")).not.toContain("settings-panel/MlflowTracingTab");
     expect(tabSource).toContain('title: "Terminal interface"');
     expect(panelSource).toContain("API Key");
     expect(panelSource).toContain("Logout");
@@ -335,6 +341,20 @@ describe("Zorai feature surfaces", () => {
     expect(css).not.toContain(".zorai-thread-surface > div");
   });
 
+  it("pastes clipboard media into native composer tiles and shows them on user messages", () => {
+    const composerSource = readFeature("./threads/ThreadComposer.tsx");
+    const messageSource = readFeature("./threads/NativeThreadMessageBubble.tsx");
+    const css = readFeature("../styles/zorai.css");
+
+    expect(composerSource).toContain("onPaste");
+    expect(composerSource).toContain("collectClipboardFiles");
+    expect(composerSource).toContain("AttachmentTiles");
+    expect(messageSource).toContain("splitMessageAttachments");
+    expect(messageSource).toContain("AttachmentTiles");
+    expect(css).toContain(".zorai-attachment-tile__remove");
+    expect(css).toContain("border-radius: 999px");
+  });
+
   it("opens listed threads through the daemon detail loader", () => {
     const source = readFeature("../../components/agent-chat-panel/runtime/layout.tsx");
     const browserStart = source.indexOf("function AgentChatPanelThreadBrowserSurface");
@@ -417,6 +437,9 @@ describe("Zorai feature surfaces", () => {
     expect(speechSource).toContain("loadingMessageId");
     expect(viewSource).toContain("onSpeak");
     expect(readFeature("./threads/NativeThreadMessageBubble.tsx")).toContain("Read aloud");
+    expect(source).toContain("applyManagedSecurityLevel");
+    expect(source).toContain("Managed security mode");
+    expect(readFeature("./threads/threadRuntimeActions.ts")).toContain("/managed_execution/security_level");
   });
 
   it("keeps TUI-style pinned message controls in native Threads", () => {
@@ -513,7 +536,7 @@ describe("Zorai feature surfaces", () => {
 
     expect(source).toContain("ThreadScrollToBottomButton");
     expect(source).toContain("Scroll to latest messages");
-    expect(source).toContain("setPinnedToBottom(shouldFollowThreadHistoryBottom())");
+    expect(source).toContain("onFollowBottomChange: setPinnedToBottom");
     expect(source).toContain("setFollowThreadHistoryBottom(true)");
     expect(css).toMatch(/\.zorai-thread-scroll-bottom\s*{[^}]*position:\s*absolute/s);
     expect(css).toMatch(/\.zorai-thread-scroll-bottom\s*{[^}]*left:\s*50%/s);
@@ -568,6 +591,7 @@ describe("Zorai feature surfaces", () => {
     expect(railSource).toContain("refreshSubAgents");
     expect(source).toContain("onScroll");
     expect(source).toContain("loadOlderThreadMessages");
+    expect(source).toContain("consumeThreadHistoryScroll");
     expect(railSource).toContain("threadHistoryLabel");
     expect(railSource).toContain("threadTabs");
     expect(railSource).toContain("fixedThreadTabs");
@@ -582,7 +606,6 @@ describe("Zorai feature surfaces", () => {
     expect(railSource).toContain("fetchKey");
     expect(railSource).toContain("[daemonAgentFilter, fetchKey, fetchThreadList, tab]");
     expect(railSource).not.toContain("[daemonAgentFilter, runtime, tab]");
-    expect(source).toContain("resolveThreadHistoryScrollAction");
     expect(runtimeSource).toContain("loadThreadPage");
     expect(runtimeSource).toContain("latestLoadedThreadIdRef");
     expect(runtimeSource).toContain("loadThreadPage(activeThreadId, \"latest\")");
@@ -636,5 +659,6 @@ describe("Zorai feature surfaces", () => {
     expect(composerSource).toContain("activeThreadBudgetExceededNotice");
     expect(composerSource).toContain("zorai-composer-budget-notice");
     expect(composerSource).toContain("if (budgetNotice || runtime.isStreamingResponse) return");
+    expect(composerSource).not.toContain("{budgetNotice ??");
   });
 });

@@ -37,6 +37,7 @@ import { canonicalThreadAgentId } from "../threads/threadFilterModel";
 import { embeddingSettingsPatchForModelSelection } from "./embeddingSettings";
 import { duckDuckGoSafeSearchOptions, searchProviderOptions } from "./searchProviders";
 import { buildTerminalFontOptions } from "./terminalFontOptions";
+import { MlflowPanel } from "./MlflowPanel";
 import type { ZoraiSettingsTabId } from "./settingsTabs";
 import {
   formatProviderValidationError,
@@ -63,7 +64,7 @@ export const conciergeReasoningEffortOptions: Array<{ value: AgentSettings["reas
   { value: "xhigh", label: "xhigh" },
   { value: "max", label: "max" },
 ];
-const APP_VERSION = "0.9.45";
+const APP_VERSION = "0.9.46";
 const APP_AUTHOR = "Mariusz Kurman";
 const APP_GITHUB = "mkurman/zorai";
 const APP_HOMEPAGE = "zorai.app";
@@ -99,6 +100,7 @@ export function SettingsTabPanel({ activeTab }: { activeTab: ZoraiSettingsTabId 
   if (activeTab === "interface") return <InterfacePanel />;
   if (activeTab === "tools") return <ToolsPanel />;
   if (activeTab === "search") return <SearchPanel />;
+  if (activeTab === "mlflow") return <MlflowPanel />;
   if (activeTab === "concierge") return <ConciergePanel />;
   if (activeTab === "subagents") return <SubAgentsPanel />;
   if (activeTab === "gateway") return <GatewayPanel />;

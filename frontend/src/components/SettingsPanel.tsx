@@ -17,6 +17,7 @@ import { BehaviorTab } from "./settings-panel/BehaviorTab";
 import { GatewayTab } from "./settings-panel/GatewayTab";
 import { KeyboardTab } from "./settings-panel/KeyboardTab";
 import { TerminalTab } from "./settings-panel/TerminalTab";
+import { MlflowTracingTab } from "./settings-panel/MlflowTracingTab";
 import { ProviderAuthTab } from "./settings-panel/ProviderAuthTab";
 import { SubAgentsTab } from "./settings-panel/SubAgentsTab";
 import { ConciergeSection } from "./settings-panel/ConciergeSection";
@@ -29,7 +30,7 @@ import {
 import { useTierStore, type CapabilityTier } from "../lib/tierStore";
 import { CONCIERGE_AGENT_NAME, PRIMARY_AGENT_NAME } from "../lib/agentNames";
 
-type SettingsTab = "appearance" | "terminal" | "behavior" | "auth" | "agent" | "concierge" | "subagents" | "gateway" | "keyboard" | "about" | "plugins" | "database";
+type SettingsTab = "appearance" | "terminal" | "behavior" | "auth" | "agent" | "mlflow" | "concierge" | "subagents" | "gateway" | "keyboard" | "about" | "plugins" | "database";
 
 type SettingsPanelProps = {
   style?: CSSProperties;
@@ -178,6 +179,7 @@ export function SettingsPanel({ style, className }: SettingsPanelProps = {}) {
     { id: "behavior", label: "Operator" },
     { id: "auth", label: "Auth" },
     { id: "agent", label: PRIMARY_AGENT_NAME },
+    { id: "mlflow", label: "MLflow" },
     { id: "concierge", label: CONCIERGE_AGENT_NAME },
     { id: "subagents", label: "Sub-Agents" },
     { id: "gateway", label: "Gateway" },
@@ -328,6 +330,9 @@ export function SettingsPanel({ style, className }: SettingsPanelProps = {}) {
               updateSetting={updateAgentSetting}
               resetSettings={resetAgentSettings}
             />
+          )}
+          {tab === "mlflow" && (
+            <MlflowTracingTab settings={agentSettings} updateSetting={updateAgentSetting} />
           )}
           {tab === "concierge" && <ConciergeSection />}
           {tab === "subagents" && (

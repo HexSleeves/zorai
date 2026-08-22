@@ -1003,6 +1003,10 @@ impl AgentEngine {
             .map(|result| result.thread)
     }
 
+    pub(crate) async fn live_thread(&self, thread_id: &str) -> Option<AgentThread> {
+        self.threads.read().await.get(thread_id).cloned()
+    }
+
     pub(crate) async fn get_thread_filtered(
         &self,
         thread_id: &str,
@@ -1148,7 +1152,6 @@ impl AgentEngine {
             .into_iter()
             .filter_map(super::messaging::agent_message_from_db)
             .collect();
-        self.clear_thread_message_hydration_pending(thread_id).await;
 
         let (active_context_window_start, active_context_window_end, active_context_window_tokens) =
             match context_window_result {
@@ -1167,12 +1170,26 @@ impl AgentEngine {
                 Err(_) => thread_context_window_summary(&thread_shell.messages),
             };
 
+        let mut adopted_db = true;
         let mut thread = thread_shell;
-        let total_messages = thread.messages.len();
         {
             let mut threads = self.threads.write().await;
-            threads.insert(thread_id.to_string(), thread.clone());
+            if let Some(existing) = threads.get(thread_id) {
+                if super::messaging::thread_in_memory_is_ahead_of_db(existing, &thread.messages) {
+                    thread = existing.clone();
+                    adopted_db = false;
+                } else {
+                    threads.insert(thread_id.to_string(), thread.clone());
+                }
+            } else {
+                threads.insert(thread_id.to_string(), thread.clone());
+            }
         }
+        if adopted_db || !thread.messages.is_empty() {
+            self.clear_thread_message_hydration_pending(thread_id).await;
+        }
+
+        let total_messages = thread.messages.len();
 
         let end = total_messages.saturating_sub(message_offset);
         let start = message_limit

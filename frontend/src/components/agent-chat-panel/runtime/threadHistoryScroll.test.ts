@@ -1,9 +1,11 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  consumeThreadHistoryScroll,
   resetThreadHistoryScrollStateForTest,
   resolveThreadHistoryScrollAction,
   setFollowThreadHistoryBottom,
   shouldFollowThreadHistoryBottom,
+  THREAD_HISTORY_OLDER_LOAD_DEBOUNCE_MS,
 } from "./threadHistoryScroll";
 
 describe("resolveThreadHistoryScrollAction", () => {
@@ -46,3 +48,58 @@ describe("resolveThreadHistoryScrollAction", () => {
     expect(shouldFollowThreadHistoryBottom()).toBe(true);
   });
 });
+
+describe("consumeThreadHistoryScroll", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    resetThreadHistoryScrollStateForTest();
+  });
+
+  it("debounces older loads and ignores extra top events while a fetch is in flight", async () => {
+    vi.useFakeTimers();
+    const scroller = makeScroller(8);
+    let resolveLoad: (value: boolean) => void = () => {};
+    const loadOlder = vi.fn(() => new Promise<boolean>((resolve) => {
+      resolveLoad = resolve;
+    }));
+
+    consumeThreadHistoryScroll({ scroller, loadOlder });
+    consumeThreadHistoryScroll({ scroller, loadOlder });
+    expect(loadOlder).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(THREAD_HISTORY_OLDER_LOAD_DEBOUNCE_MS);
+    expect(loadOlder).toHaveBeenCalledTimes(1);
+
+    consumeThreadHistoryScroll({ scroller, loadOlder });
+    await vi.advanceTimersByTimeAsync(THREAD_HISTORY_OLDER_LOAD_DEBOUNCE_MS);
+    expect(loadOlder).toHaveBeenCalledTimes(1);
+
+    resolveLoad(true);
+    await Promise.resolve();
+  });
+
+  it("stops paging once an older fetch finds no new messages until the operator leaves the top", async () => {
+    vi.useFakeTimers();
+    const scroller = makeScroller(8);
+    const loadOlder = vi.fn(async () => false);
+
+    consumeThreadHistoryScroll({ scroller, loadOlder });
+    await vi.advanceTimersByTimeAsync(THREAD_HISTORY_OLDER_LOAD_DEBOUNCE_MS);
+    expect(loadOlder).toHaveBeenCalledTimes(1);
+    await Promise.resolve();
+    await vi.advanceTimersByTimeAsync(0);
+
+    consumeThreadHistoryScroll({ scroller, loadOlder });
+    await vi.advanceTimersByTimeAsync(THREAD_HISTORY_OLDER_LOAD_DEBOUNCE_MS);
+    expect(loadOlder).toHaveBeenCalledTimes(1);
+
+    consumeThreadHistoryScroll({ scroller: makeScroller(200), loadOlder });
+    consumeThreadHistoryScroll({ scroller, loadOlder });
+    await vi.advanceTimersByTimeAsync(THREAD_HISTORY_OLDER_LOAD_DEBOUNCE_MS);
+    expect(loadOlder).toHaveBeenCalledTimes(2);
+  });
+});
+
+function makeScroller(scrollTop: number, scrollHeight = 2000, clientHeight = 400): HTMLElement {
+  return { scrollTop, scrollHeight, clientHeight } as HTMLElement;
+}

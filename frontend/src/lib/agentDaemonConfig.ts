@@ -234,6 +234,7 @@ export function buildDaemonAgentConfig(
       suggest_global_enable_after_approvals:
         agentSettings.skill_recommendation.suggest_global_enable_after_approvals,
     },
+    mlflow_tracing: agentSettings.mlflow_tracing,
     enable_honcho_memory: agentSettings.enable_honcho_memory,
     honcho_api_key: agentSettings.honcho_api_key,
     honcho_base_url: agentSettings.honcho_base_url,

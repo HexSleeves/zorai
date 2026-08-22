@@ -524,6 +524,8 @@ impl TuiModel {
             self.send_daemon_command(DaemonCommand::PluginList);
         } else if matches!(tab, SettingsTab::Database) {
             self.send_daemon_command(DaemonCommand::DatabaseGetBackend);
+        } else if matches!(tab, SettingsTab::Mlflow) {
+            self.send_daemon_command(DaemonCommand::GetMlflowTracingStatus);
         }
     }
 

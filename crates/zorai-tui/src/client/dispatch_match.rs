@@ -180,13 +180,27 @@ impl DaemonClient {
                     })
                     .await;
             }
-            "done" => {
+            "done" | "turn_interrupted" => {
                 let thread_id = get_string(&event, "thread_id").unwrap_or_default();
                 if Self::is_hidden_agent_thread(Some(thread_id.as_str()), None) {
                     return;
                 }
-                let _ = event_tx
-                    .send(ClientEvent::Done {
+                let done = if kind == "turn_interrupted" {
+                    ClientEvent::Done {
+                        thread_id,
+                        input_tokens: 0,
+                        output_tokens: 0,
+                        cost: None,
+                        provider: None,
+                        model: None,
+                        tps: None,
+                        generation_ms: None,
+                        reasoning: None,
+                        provider_final_result_json: None,
+                        message_id: None,
+                    }
+                } else {
+                    ClientEvent::Done {
                         thread_id,
                         input_tokens: event
                             .get("input_tokens")
@@ -206,8 +220,9 @@ impl DaemonClient {
                             .get("provider_final_result")
                             .and_then(|value| serde_json::to_string(value).ok()),
                         message_id: get_string(&event, "message_id"),
-                    })
-                    .await;
+                    }
+                };
+                let _ = event_tx.send(done).await;
             }
             "error" => {
                 let _ = event_tx

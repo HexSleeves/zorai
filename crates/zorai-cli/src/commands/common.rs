@@ -133,11 +133,38 @@ pub(crate) enum ChromeSandboxStatus {
 }
 
 #[cfg(target_os = "linux")]
-pub(crate) fn linux_electron_needs_no_sandbox(status: ChromeSandboxStatus) -> bool {
+pub(crate) fn linux_electron_needs_no_sandbox(
+    gui_binary: &Path,
+    status: ChromeSandboxStatus,
+) -> bool {
+    if is_linux_appimage(gui_binary) {
+        return true;
+    }
+
     match status {
         ChromeSandboxStatus::Missing => false,
         ChromeSandboxStatus::Present { uid, mode } => uid != 0 || (mode & 0o4000) == 0,
     }
+}
+
+#[cfg(target_os = "linux")]
+fn is_linux_appimage(gui_binary: &Path) -> bool {
+    use std::io::Read;
+
+    if gui_binary
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("AppImage"))
+    {
+        return true;
+    }
+
+    let mut header = [0_u8; 11];
+    std::fs::File::open(gui_binary)
+        .and_then(|mut file| file.read_exact(&mut header))
+        .is_ok()
+        && header.starts_with(b"\x7fELF")
+        && header[8..11] == *b"AI\x02"
 }
 
 #[cfg(target_os = "linux")]
@@ -158,7 +185,7 @@ fn chrome_sandbox_status(gui_binary: &Path) -> ChromeSandboxStatus {
 
 #[cfg(target_os = "linux")]
 fn linux_gui_sandbox_args(gui_binary: &Path) -> &'static [&'static str] {
-    if linux_electron_needs_no_sandbox(chrome_sandbox_status(gui_binary)) {
+    if linux_electron_needs_no_sandbox(gui_binary, chrome_sandbox_status(gui_binary)) {
         &["--no-sandbox"]
     } else {
         &[]

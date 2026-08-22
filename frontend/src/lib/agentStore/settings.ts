@@ -57,6 +57,34 @@ export interface AgentSkillRecommendationSettings {
   suggest_global_enable_after_approvals: number;
 }
 
+export type MlflowCaptureMode = "metadata" | "guarded" | "full";
+
+export interface AgentMlflowTracingSettings {
+  enabled: boolean;
+  tracking_uri: string;
+  experiment_name: string;
+  experiment_id: string | null;
+  capture_mode: MlflowCaptureMode;
+  scopes: {
+    visible_operator: boolean;
+    gateway: boolean;
+    goal_task: boolean;
+    subagent: boolean;
+    concierge: boolean;
+    heartbeat_autonomous: boolean;
+  };
+  max_user_chars: number;
+  max_assistant_chars: number;
+  max_reasoning_chars: number;
+  max_tool_argument_chars: number;
+  max_tool_result_chars: number;
+  batch_size: number;
+  flush_interval_ms: number;
+  queue_capacity: number;
+  request_timeout_ms: number;
+  max_retries: number;
+}
+
 export interface AgentSettings {
   [providerId: string]: any;
   enabled: boolean;
@@ -189,6 +217,7 @@ export interface AgentSettings {
   weles_max_concurrent_reviews: number;
   compaction: AgentCompactionSettings;
   skill_recommendation: AgentSkillRecommendationSettings;
+  mlflow_tracing: AgentMlflowTracingSettings;
   agent_backend: AgentBackend;
 }
 
@@ -346,10 +375,35 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
     community_preapprove_timeout_secs: 30,
     suggest_global_enable_after_approvals: 3,
   },
+  mlflow_tracing: {
+    enabled: false,
+    tracking_uri: "http://127.0.0.1:5000",
+    experiment_name: "zorai-conversations",
+    experiment_id: null,
+    capture_mode: "guarded",
+    scopes: {
+      visible_operator: true,
+      gateway: true,
+      goal_task: true,
+      subagent: true,
+      concierge: true,
+      heartbeat_autonomous: false,
+    },
+    max_user_chars: 32768,
+    max_assistant_chars: 32768,
+    max_reasoning_chars: 8192,
+    max_tool_argument_chars: 16384,
+    max_tool_result_chars: 65536,
+    batch_size: 16,
+    flush_interval_ms: 1000,
+    queue_capacity: 256,
+    request_timeout_ms: 5000,
+    max_retries: 3,
+  },
   agent_backend: "daemon",
 };
 
-const VALID_MANAGED_SECURITY_LEVELS = ["highest", "moderate", "lowest", "yolo"] as const;
+export const MANAGED_SECURITY_LEVELS = ["highest", "moderate", "lowest", "yolo"] as const;
 
 export function normalizeAgentBackend(value: unknown): AgentBackend {
   void value;
@@ -357,7 +411,7 @@ export function normalizeAgentBackend(value: unknown): AgentBackend {
 }
 
 function normalizeManagedSecurityLevel(value: unknown): AgentSettings["managed_security_level"] {
-  if (typeof value === "string" && (VALID_MANAGED_SECURITY_LEVELS as readonly string[]).includes(value)) {
+  if (typeof value === "string" && (MANAGED_SECURITY_LEVELS as readonly string[]).includes(value)) {
     return value as AgentSettings["managed_security_level"];
   }
   return DEFAULT_AGENT_SETTINGS.managed_security_level;
@@ -369,6 +423,39 @@ function normalizeParticipantObserverRestoreWindowHours(value: unknown): number 
     return DEFAULT_AGENT_SETTINGS.participant_observer_restore_window_hours;
   }
   return Math.max(0, Math.min(24 * 30, Math.trunc(numericValue)));
+}
+
+function normalizeMlflowTracingSettings(
+  value: DiskAgentSettings["mlflow_tracing"],
+): AgentMlflowTracingSettings {
+  const fallback = DEFAULT_AGENT_SETTINGS.mlflow_tracing;
+  const captureMode = value?.capture_mode;
+  const clamp = (candidate: unknown, minimum: number, maximum: number, defaultValue: number) => {
+    const numeric = Number(candidate);
+    return Number.isFinite(numeric)
+      ? Math.max(minimum, Math.min(maximum, Math.trunc(numeric)))
+      : defaultValue;
+  };
+  return {
+    ...fallback,
+    ...value,
+    enabled: value?.enabled === true,
+    tracking_uri: value?.tracking_uri?.trim() || fallback.tracking_uri,
+    experiment_name: value?.experiment_name?.trim() || fallback.experiment_name,
+    experiment_id: value?.experiment_id?.trim() || null,
+    capture_mode: captureMode === "metadata" || captureMode === "full" ? captureMode : "guarded",
+    scopes: { ...fallback.scopes, ...(value?.scopes ?? {}) },
+    max_user_chars: clamp(value?.max_user_chars, 256, 1_000_000, fallback.max_user_chars),
+    max_assistant_chars: clamp(value?.max_assistant_chars, 256, 1_000_000, fallback.max_assistant_chars),
+    max_reasoning_chars: clamp(value?.max_reasoning_chars, 0, 1_000_000, fallback.max_reasoning_chars),
+    max_tool_argument_chars: clamp(value?.max_tool_argument_chars, 256, 1_000_000, fallback.max_tool_argument_chars),
+    max_tool_result_chars: clamp(value?.max_tool_result_chars, 256, 4_000_000, fallback.max_tool_result_chars),
+    batch_size: clamp(value?.batch_size, 1, 256, fallback.batch_size),
+    flush_interval_ms: clamp(value?.flush_interval_ms, 100, 60_000, fallback.flush_interval_ms),
+    queue_capacity: clamp(value?.queue_capacity, 1, 10_000, fallback.queue_capacity),
+    request_timeout_ms: clamp(value?.request_timeout_ms, 500, 120_000, fallback.request_timeout_ms),
+    max_retries: clamp(value?.max_retries, 0, 10, fallback.max_retries),
+  };
 }
 
 export function normalizeAutoThreadTitleMode(value: unknown): AutoThreadTitleMode {
@@ -468,6 +555,9 @@ export type DiskAgentSettings = Partial<AgentSettings> & {
     custom_model?: Partial<AgentCompactionCustomModelSettings>;
   };
   skill_recommendation?: Partial<AgentSkillRecommendationSettings>;
+  mlflow_tracing?: Partial<AgentMlflowTracingSettings> & {
+    scopes?: Partial<AgentMlflowTracingSettings["scopes"]>;
+  };
   agent_backend?: AgentBackend | string;
   enable_honcho_memory?: boolean;
   honcho_api_key?: string;
@@ -778,6 +868,7 @@ export function normalizeAgentSettingsFromSource(source: DiskAgentSettings): Age
         source.skill_recommendation?.suggest_global_enable_after_approvals
         ?? DEFAULT_AGENT_SETTINGS.skill_recommendation.suggest_global_enable_after_approvals,
     },
+    mlflow_tracing: normalizeMlflowTracingSettings(source.mlflow_tracing),
     enable_honcho_memory: source.enable_honcho_memory ?? DEFAULT_AGENT_SETTINGS.enable_honcho_memory,
     honcho_api_key: source.honcho_api_key ?? DEFAULT_AGENT_SETTINGS.honcho_api_key,
     honcho_base_url: source.honcho_base_url ?? DEFAULT_AGENT_SETTINGS.honcho_base_url,

@@ -5,6 +5,7 @@ export const zoraiSettingsTabs = [
   { id: "tools", title: "Tools", description: "Agent capability toggles and tool loop limits." },
   { id: "search", title: "Search", description: "Web search and browsing provider settings." },
   { id: "runtime", title: "Chat", description: "Streaming, memory, collaboration, and chat behavior." },
+  { id: "mlflow", title: "MLflow", description: "Conversation tracing export to an MLflow tracking server." },
   { id: "gateway", title: "Gateway", description: "Slack, Discord, Telegram, and WhatsApp bridge." },
   { id: "subagents", title: "Sub-agents", description: "Delegated roles attached to the orchestration runtime." },
   { id: "features", title: "Features", description: "Feature tier, heartbeat, skills, audio, and media settings." },

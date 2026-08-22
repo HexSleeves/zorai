@@ -2252,3 +2252,48 @@ fn approval_payload_round_trips_governance_metadata() {
     );
     assert_eq!(decoded.scope_summary.as_deref(), Some("managed transition"));
 }
+
+#[test]
+fn mlflow_tracing_protocol_variants_round_trip_at_append_only_tail() {
+    let requests = vec![
+        ClientMessage::AgentGetMlflowTracingStatus,
+        ClientMessage::AgentTestMlflowTracingConnection,
+        ClientMessage::AgentSendMlflowTracingTestTrace,
+        ClientMessage::AgentListMlflowTracingHeaders,
+        ClientMessage::AgentSetMlflowTracingHeader {
+            name: "X-Test".to_string(),
+            value: "secret".to_string(),
+        },
+        ClientMessage::AgentDeleteMlflowTracingHeader {
+            name: "X-Test".to_string(),
+        },
+    ];
+    for request in requests {
+        let bytes = bincode::serialize(&request).unwrap();
+        let decoded: ClientMessage = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(
+            bincode_variant_index(&request),
+            bincode_variant_index(&decoded)
+        );
+    }
+
+    let responses = vec![
+        DaemonMessage::AgentMlflowTracingStatus {
+            status_json: "{}".to_string(),
+        },
+        DaemonMessage::AgentMlflowTracingTestResult {
+            result_json: "{\"ok\":true}".to_string(),
+        },
+        DaemonMessage::AgentMlflowTracingHeaders {
+            names: vec!["X-Test".to_string()],
+        },
+    ];
+    for response in responses {
+        let bytes = bincode::serialize(&response).unwrap();
+        let decoded: DaemonMessage = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(
+            bincode_variant_index(&response),
+            bincode_variant_index(&decoded)
+        );
+    }
+}

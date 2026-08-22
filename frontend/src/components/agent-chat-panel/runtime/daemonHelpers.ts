@@ -193,6 +193,16 @@ export async function loadDaemonThreadPageIntoLocalState({
     threadId: localThreadId,
   })) as AgentMessage[];
 
+  if (mergeMode === "prepend") {
+    const existingIds = new Set(
+      (useAgentStore.getState().messages[localThreadId] ?? [])
+        .map((message) => message.id)
+        .filter((id) => id.length > 0),
+    );
+    const prependedNew = reloadedMessages.some((message) => message.id.length > 0 && !existingIds.has(message.id));
+    if (!prependedNew) return false;
+  }
+
   useAgentStore.setState((state) => ({
     threads: state.threads.map((thread) => thread.id === localThreadId ? {
       ...thread,

@@ -82,20 +82,14 @@ pub(crate) async fn execute_managed_command(
             session_id.unwrap_or(sessions[0].id)
         };
 
-    let default_managed_execution = agent.config.read().await.managed_execution.clone();
-    let security_level = match args
-        .get("security_level")
-        .and_then(|value| value.as_str())
-        .unwrap_or(match default_managed_execution.security_level {
-            SecurityLevel::Highest => "highest",
-            SecurityLevel::Moderate => "moderate",
-            SecurityLevel::Lowest => "lowest",
-            SecurityLevel::Yolo => "yolo",
-        }) {
-        "highest" => SecurityLevel::Highest,
-        "lowest" => SecurityLevel::Lowest,
-        "yolo" => SecurityLevel::Yolo,
-        _ => SecurityLevel::Moderate,
+    let (default_managed_execution, security_level) = {
+        let config = agent.config.read().await;
+        let security_level = crate::agent::weles_governance::security_level_for_tool_call(
+            &config,
+            tool_names::EXECUTE_MANAGED_COMMAND,
+            args,
+        );
+        (config.managed_execution.clone(), security_level)
     };
     let requested_timeout = args
         .get("timeout_seconds")

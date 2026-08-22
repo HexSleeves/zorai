@@ -1445,25 +1445,37 @@ async fn openai_responses_parser_uses_total_tokens_when_output_details_are_hidde
         if let CompletionChunk::Done {
             input_tokens,
             output_tokens,
+            cache_read_input_tokens,
             provider_final_result,
             ..
         } = chunk.expect("chunk")
         {
-            let final_usage = match provider_final_result.expect("provider result") {
-                crate::agent::types::CompletionProviderFinalResult::OpenAiResponses(response) => {
-                    response.response.expect("terminal response").usage
-                }
+            let (final_usage, persisted_cache_read) = match provider_final_result
+                .expect("provider result")
+            {
+                crate::agent::types::CompletionProviderFinalResult::OpenAiResponses(response) => (
+                    response.response.expect("terminal response").usage,
+                    response.cache_read_input_tokens,
+                ),
                 other => panic!("expected responses provider result, got {other:?}"),
             };
-            done_tokens = Some((input_tokens, output_tokens, final_usage));
+            done_tokens = Some((
+                input_tokens,
+                output_tokens,
+                cache_read_input_tokens,
+                persisted_cache_read,
+                final_usage,
+            ));
             break;
         }
     }
 
-    let (input_tokens, output_tokens, final_usage) =
+    let (input_tokens, output_tokens, cache_read_input_tokens, persisted_cache_read, final_usage) =
         done_tokens.expect("expected terminal done chunk");
     assert_eq!(input_tokens, 75);
     assert_eq!(output_tokens, 1186);
+    assert_eq!(cache_read_input_tokens, Some(12));
+    assert_eq!(persisted_cache_read, Some(12));
     assert_eq!(final_usage.total_tokens, Some(1261));
     assert_eq!(
         final_usage
@@ -1965,7 +1977,7 @@ async fn chat_completions_parser_accepts_data_lines_without_space_after_colon() 
 async fn chat_completions_parser_uses_total_tokens_when_completion_details_are_hidden() {
     let body = concat!(
             "data: {\"id\":\"chatcmpl_usage_total\",\"model\":\"gpt-5.4\",\"choices\":[{\"delta\":{\"content\":\"hello\"}}]}\n",
-            "data: {\"id\":\"chatcmpl_usage_total\",\"model\":\"gpt-5.4\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":75,\"completion_tokens\":100,\"completion_tokens_details\":{\"reasoning_tokens\":1024},\"total_tokens\":1261}}\n",
+            "data: {\"id\":\"chatcmpl_usage_total\",\"model\":\"gpt-5.4\",\"choices\":[{\"delta\":{},\"finish_reason\":\"stop\"}],\"usage\":{\"prompt_tokens\":75,\"prompt_tokens_details\":{\"cached_tokens\":12},\"completion_tokens\":100,\"completion_tokens_details\":{\"reasoning_tokens\":1024},\"total_tokens\":1261}}\n",
             "data: [DONE]\n"
         );
     let (response, server) = responses_sse_test_response(body).await;
@@ -1981,6 +1993,7 @@ async fn chat_completions_parser_uses_total_tokens_when_completion_details_are_h
         if let CompletionChunk::Done {
             input_tokens,
             output_tokens,
+            cache_read_input_tokens,
             provider_final_result,
             ..
         } = chunk.expect("chunk")
@@ -1991,19 +2004,26 @@ async fn chat_completions_parser_uses_total_tokens_when_completion_details_are_h
                 ) => (
                     response.input_tokens.expect("input tokens"),
                     response.output_tokens.expect("output tokens"),
+                    response.cache_read_input_tokens,
                 ),
                 other => panic!("expected chat completions provider result, got {other:?}"),
             };
-            done_tokens = Some((input_tokens, output_tokens, final_result_tokens));
+            done_tokens = Some((
+                input_tokens,
+                output_tokens,
+                cache_read_input_tokens,
+                final_result_tokens,
+            ));
             break;
         }
     }
 
-    let (input_tokens, output_tokens, final_result_tokens) =
+    let (input_tokens, output_tokens, cache_read_input_tokens, final_result_tokens) =
         done_tokens.expect("expected terminal done chunk");
     assert_eq!(input_tokens, 75);
     assert_eq!(output_tokens, 1186);
-    assert_eq!(final_result_tokens, (75, 1186));
+    assert_eq!(cache_read_input_tokens, Some(12));
+    assert_eq!(final_result_tokens, (75, 1186, Some(12)));
     server.await.expect("server task");
 }
 

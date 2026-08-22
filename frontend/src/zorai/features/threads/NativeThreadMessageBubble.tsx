@@ -2,6 +2,8 @@ import { memo, useState } from "react";
 import { assistantMessageHasVisibleContent } from "@/components/agent-chat-panel/chat-view/helpers";
 import { MarkdownContent } from "@/components/agent-chat-panel/chat-view/markdown";
 import type { AgentMessage } from "@/lib/agentStore";
+import { AttachmentTiles } from "./attachmentTiles";
+import { splitMessageAttachments } from "./messageAttachments";
 
 export function isMessageFromCurrentViewSession(message: AgentMessage, mountedAt: number): boolean {
   const createdAt = message.createdAt < 10_000_000_000
@@ -62,7 +64,8 @@ export const NativeThreadMessageBubble = memo(function NativeThreadMessageBubble
   const isAssistant = message.role === "assistant";
   const author = message.authorAgentName ?? (fromUser ? "You" : message.role === "assistant" ? (threadAgentName ?? "Zorai") : message.role);
   const tokenText = message.totalTokens > 0 ? `${message.totalTokens.toLocaleString()} tokens` : null;
-  const hasVisibleContent = assistantMessageHasVisibleContent(message.content);
+  const { displayText, tiles } = splitMessageAttachments(message.content, message.contentBlocks);
+  const hasVisibleContent = assistantMessageHasVisibleContent(displayText);
   const shouldRenderContent = hasVisibleContent || !message.reasoning;
 
   return (
@@ -74,10 +77,11 @@ export const NativeThreadMessageBubble = memo(function NativeThreadMessageBubble
       {message.reasoning ? (
         <ThreadReasoningBlock content={message.reasoning} streaming={Boolean(message.isStreaming)} />
       ) : null}
+      {tiles.length > 0 ? <AttachmentTiles items={tiles} /> : null}
       {shouldRenderContent ? (
         <div className="zorai-message__content">
           {hasVisibleContent ? (
-            <MarkdownContent content={message.content} streaming={Boolean(message.isStreaming)} />
+            <MarkdownContent content={displayText} streaming={Boolean(message.isStreaming)} />
           ) : null}
         </div>
       ) : null}
@@ -114,7 +118,7 @@ export const NativeThreadMessageBubble = memo(function NativeThreadMessageBubble
             aria-label={copied ? "Copied" : "Copy message"}
             onClick={() => {
               try {
-                navigator.clipboard.writeText(message.content);
+                navigator.clipboard.writeText(displayText || message.content);
               } catch {
                 // Ignore clipboard failures.
               }

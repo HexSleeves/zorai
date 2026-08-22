@@ -536,6 +536,26 @@ impl<'a> SendMessageRunner<'a> {
                 }
             }
         }
+        if config.mlflow_tracing.effectively_enabled() {
+            let threads = engine.threads.read().await;
+            if let Some(thread) = threads.get(&tid) {
+                if let Some(message) = thread
+                    .messages
+                    .iter()
+                    .rev()
+                    .find(|message| message.role == MessageRole::User)
+                {
+                    engine.mlflow_tracing.push_turn_anchor(
+                        &tid,
+                        crate::agent::mlflow_tracing::MlflowTurnAnchor {
+                            user_message_id: message.id.clone(),
+                            content: message.content.clone(),
+                            timestamp_ms: message.timestamp,
+                        },
+                    );
+                }
+            }
+        }
         let agent_scope_id = current_agent_scope_id();
         let sub_agents = engine.list_sub_agents().await;
         let current_task_for_setup = load_current_task_for_send_message(engine, task_id).await;
@@ -1342,6 +1362,7 @@ impl<'a> SendMessageRunner<'a> {
             provider_final_result: None,
             fresh_runner_retry: None,
             handoff_restart: None,
+            turn_done_emitted: false,
         })
     }
 }

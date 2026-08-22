@@ -1,6 +1,7 @@
 import { getDefaultModelForProvider } from "@/lib/agentStore/providers";
 import { useAgentStore } from "@/lib/agentStore";
 import type { AgentProviderId, AgentThread } from "@/lib/agentStore";
+import { MANAGED_SECURITY_LEVELS } from "@/lib/agentStore/settings";
 import { getBridge } from "@/lib/bridge";
 import { isSvarogOwner, RAROG_AGENT_ID, resolveThreadOwnerAgentId } from "./threadOwner";
 
@@ -9,6 +10,7 @@ export const MAX_CONTEXT_WINDOW_TOKENS = 2_000_000;
 const REASONING_EFFORTS = ["none", "minimal", "low", "medium", "high", "xhigh", "max"] as const;
 
 export type ThreadReasoningEffort = (typeof REASONING_EFFORTS)[number];
+export type ThreadManagedSecurityLevel = (typeof MANAGED_SECURITY_LEVELS)[number];
 
 export function clampContextWindowTokens(tokens: number): number {
   if (!Number.isFinite(tokens)) return MIN_CONTEXT_WINDOW_TOKENS;
@@ -27,6 +29,10 @@ export function threadProviderIds(): string[] {
 
 export function threadReasoningEfforts(): readonly ThreadReasoningEffort[] {
   return REASONING_EFFORTS;
+}
+
+export function managedSecurityLevels(): readonly ThreadManagedSecurityLevel[] {
+  return MANAGED_SECURITY_LEVELS;
 }
 
 function ownerAgentId(thread: AgentThread): string {
@@ -114,6 +120,13 @@ export async function applyThreadContextWindow(thread: AgentThread, tokens: numb
     }
   }
   patchThreadProfile(thread.id, { profileContextWindowTokens: clamped });
+}
+
+export async function applyManagedSecurityLevel(level: ThreadManagedSecurityLevel): Promise<void> {
+  useAgentStore.getState().updateAgentSetting("managed_security_level", level);
+  const bridge = getBridge();
+  await bridge?.agentSetConfigItem?.("/managed_execution/security_level", level);
+  await bridge?.agentSetConfigItem?.("/managed_security_level", level);
 }
 
 export async function applyRarogContextWindow(tokens: number): Promise<void> {

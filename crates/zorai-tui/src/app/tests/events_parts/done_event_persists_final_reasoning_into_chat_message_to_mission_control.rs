@@ -462,3 +462,65 @@ fn mission_control_header_prefers_active_execution_thread_runtime_and_usage() {
     assert_eq!(usage.total_cost_usd, Some(1.0));
     assert_eq!(usage.context_window_tokens, 1_000_000);
 }
+
+#[test]
+fn zero_token_done_finalizes_streaming_when_the_thread_was_not_locally_cancelled() {
+    let mut model = make_model();
+    model.chat.reduce(chat::ChatAction::ThreadCreated {
+        thread_id: "thread-1".to_string(),
+        title: "Thread".to_string(),
+    });
+    model
+        .chat
+        .reduce(chat::ChatAction::SelectThread("thread-1".to_string()));
+    model.chat.reduce(chat::ChatAction::Delta {
+        thread_id: "thread-1".to_string(),
+        content: "Partial".to_string(),
+    });
+    assert!(model.chat.is_streaming());
+
+    model.handle_client_event(ClientEvent::Done {
+        thread_id: "thread-1".to_string(),
+        input_tokens: 0,
+        output_tokens: 0,
+        cost: None,
+        provider: None,
+        model: None,
+        tps: None,
+        generation_ms: None,
+        reasoning: None,
+        provider_final_result_json: None,
+        message_id: None,
+    });
+
+    assert!(!model.chat.is_streaming());
+}
+
+#[test]
+fn cancelled_thread_done_clears_skip_guard() {
+    let mut model = make_model();
+    model.chat.reduce(chat::ChatAction::ThreadCreated {
+        thread_id: "thread-1".to_string(),
+        title: "Thread".to_string(),
+    });
+    model
+        .chat
+        .reduce(chat::ChatAction::SelectThread("thread-1".to_string()));
+    model.cancelled_thread_id = Some("thread-1".to_string());
+
+    model.handle_client_event(ClientEvent::Done {
+        thread_id: "thread-1".to_string(),
+        input_tokens: 0,
+        output_tokens: 0,
+        cost: None,
+        provider: None,
+        model: None,
+        tps: None,
+        generation_ms: None,
+        reasoning: None,
+        provider_final_result_json: None,
+        message_id: None,
+    });
+
+    assert!(model.cancelled_thread_id.is_none());
+}

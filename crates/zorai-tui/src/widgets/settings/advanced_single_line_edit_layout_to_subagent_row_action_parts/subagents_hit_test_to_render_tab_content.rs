@@ -7,6 +7,7 @@ use crate::state::modal::ModalState;
 use crate::state::settings::{PluginSettingsState, SettingsState, SettingsTab};
 use crate::state::subagents::SubAgentsState;
 use crate::theme::ThemeTokens;
+use crate::widgets::settings::render_mlflow_tab;
 use ratatui::prelude::*;
 use ratatui::text::Line;
 pub(crate) fn subagents_hit_test(
@@ -66,6 +67,7 @@ pub(crate) fn render_tab_content<'a>(
         SettingsTab::Tools => render_tools_tab(settings, config, theme),
         SettingsTab::WebSearch => render_websearch_tab(settings, config, theme),
         SettingsTab::Chat => render_chat_tab(settings, config, theme),
+        SettingsTab::Mlflow => render_mlflow_tab(settings, config, theme),
         SettingsTab::Gateway => render_gateway_tab(settings, config, modal, theme),
         SettingsTab::Auth => render_auth_tab(content_width, auth, config, theme),
         SettingsTab::Agent => render_agent_tab(settings, config, theme),

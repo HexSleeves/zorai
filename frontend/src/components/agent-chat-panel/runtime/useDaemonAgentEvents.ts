@@ -61,6 +61,7 @@ const THREADLESS_STREAM_EVENT_TYPES = new Set([
   "delta",
   "reasoning",
   "done",
+  "turn_interrupted",
   "tool_call",
   "tool_result",
   "error",
@@ -315,6 +316,14 @@ export function useDaemonAgentEvents({
           if (typeof event.message_id === "string" && event.message_id.length > 0) {
             replaceMessageIdAtTail(tid, event.message_id, (m) => m.role === "assistant");
           }
+          finalizeStreamingAssistantMessages(tid);
+          break;
+        }
+        case "turn_interrupted": {
+          clearThreadRetryStatus(typeof event.thread_id === "string" ? event.thread_id : null);
+          if (!tid) break;
+          flushStreamDeltas();
+          useAgentMissionStore.getState().setSharedCursorMode("idle");
           finalizeStreamingAssistantMessages(tid);
           break;
         }

@@ -4,11 +4,10 @@ import { buildDisplayItems } from "@/components/agent-chat-panel/chat-view/helpe
 import { useAgentChatPanelRuntime } from "@/components/agent-chat-panel/runtime/context";
 import {
   beginProgrammaticThreadHistoryScroll,
+  consumeThreadHistoryScroll,
   endProgrammaticThreadHistoryScroll,
-  resolveThreadHistoryScrollAction,
   setFollowThreadHistoryBottom,
   shouldFollowThreadHistoryBottom,
-  shouldIgnoreThreadHistoryScroll,
 } from "@/components/agent-chat-panel/runtime/threadHistoryScroll";
 import { useAgentStore, type AgentThread } from "@/lib/agentStore";
 import { ThreadFilePreviewOverlay } from "./ThreadFilePreviewOverlay";
@@ -160,31 +159,18 @@ export function ThreadsView({
     activeHandoffAgentId,
   );
 
-  const handleThreadScroll = async (event: UIEvent<HTMLDivElement>) => {
-    if (shouldIgnoreThreadHistoryScroll()) return;
-    const scroller = event.currentTarget;
-    const action = resolveThreadHistoryScrollAction({
-      scrollTop: scroller.scrollTop,
-      scrollHeight: scroller.scrollHeight,
-      clientHeight: scroller.clientHeight,
-    });
-    setPinnedToBottom(shouldFollowThreadHistoryBottom());
-    if (action === "load-older") {
-      const previousHeight = scroller.scrollHeight;
-      const previousTop = scroller.scrollTop;
-      const loaded = await runtime.loadOlderThreadMessages();
-      if (loaded) {
+  const handleThreadScroll = (event: UIEvent<HTMLDivElement>) => {
+    consumeThreadHistoryScroll({
+      scroller: event.currentTarget,
+      loadOlder: runtime.loadOlderThreadMessages,
+      trimLatest: () => runtime.trimThreadMessagesToLatestWindow(activeThread.id),
+      onFollowBottomChange: setPinnedToBottom,
+      onTrimmed: () => {
         requestAnimationFrame(() => {
-          scroller.scrollTop = scroller.scrollHeight - previousHeight + previousTop;
+          runtime.messagesEndRef.current?.scrollIntoView({ block: "end" });
         });
-      }
-      return;
-    }
-    if (action === "trim-latest" && runtime.trimThreadMessagesToLatestWindow(activeThread.id)) {
-      requestAnimationFrame(() => {
-        runtime.messagesEndRef.current?.scrollIntoView({ block: "end" });
-      });
-    }
+      },
+    });
   };
   const scrollThreadToLatest = () => {
     const scroller = scrollerRef.current;

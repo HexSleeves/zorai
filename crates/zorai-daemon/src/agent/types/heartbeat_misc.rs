@@ -325,6 +325,10 @@ pub struct CompletionUpstreamMessage {
     pub stop_reason: Option<String>,
     pub stop_sequence: Option<String>,
     pub content_blocks: Vec<CompletionUpstreamContentBlock>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_creation_input_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read_input_tokens: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -343,6 +347,10 @@ pub struct CompletionOpenAiResponsesFinalResult {
     pub input_tokens: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_creation_input_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read_input_tokens: Option<u64>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -360,6 +368,10 @@ pub struct CompletionOpenAiChatCompletionsFinalResult {
     pub input_tokens: Option<u64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub output_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_creation_input_tokens: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cache_read_input_tokens: Option<u64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -368,6 +380,95 @@ pub enum CompletionProviderFinalResult {
     AnthropicMessage(CompletionUpstreamMessage),
     OpenAiChatCompletions(CompletionOpenAiChatCompletionsFinalResult),
     OpenAiResponses(CompletionOpenAiResponsesFinalResult),
+}
+
+pub fn apply_completion_cache_usage(
+    upstream_message: &mut Option<CompletionUpstreamMessage>,
+    provider_final_result: &mut Option<CompletionProviderFinalResult>,
+    cache_creation_input_tokens: Option<u64>,
+    cache_read_input_tokens: Option<u64>,
+) {
+    if let Some(message) = upstream_message.as_mut() {
+        message.apply_cache_usage(cache_creation_input_tokens, cache_read_input_tokens);
+    }
+    if let Some(result) = provider_final_result.as_mut() {
+        result.apply_cache_usage(cache_creation_input_tokens, cache_read_input_tokens);
+    }
+}
+
+impl CompletionUpstreamMessage {
+    fn apply_cache_usage(
+        &mut self,
+        cache_creation_input_tokens: Option<u64>,
+        cache_read_input_tokens: Option<u64>,
+    ) {
+        if cache_creation_input_tokens.is_some() {
+            self.cache_creation_input_tokens = cache_creation_input_tokens;
+        }
+        if cache_read_input_tokens.is_some() {
+            self.cache_read_input_tokens = cache_read_input_tokens;
+        }
+    }
+
+    pub(crate) fn cache_usage_tokens(&self) -> (u64, u64) {
+        (
+            self.cache_read_input_tokens.unwrap_or(0),
+            self.cache_creation_input_tokens.unwrap_or(0),
+        )
+    }
+}
+
+impl CompletionProviderFinalResult {
+    fn apply_cache_usage(
+        &mut self,
+        cache_creation_input_tokens: Option<u64>,
+        cache_read_input_tokens: Option<u64>,
+    ) {
+        match self {
+            Self::AnthropicMessage(message) => {
+                message.apply_cache_usage(cache_creation_input_tokens, cache_read_input_tokens);
+            }
+            Self::OpenAiChatCompletions(result) => {
+                if cache_creation_input_tokens.is_some() {
+                    result.cache_creation_input_tokens = cache_creation_input_tokens;
+                }
+                if cache_read_input_tokens.is_some() {
+                    result.cache_read_input_tokens = cache_read_input_tokens;
+                }
+            }
+            Self::OpenAiResponses(result) => {
+                if cache_creation_input_tokens.is_some() {
+                    result.cache_creation_input_tokens = cache_creation_input_tokens;
+                }
+                if cache_read_input_tokens.is_some() {
+                    result.cache_read_input_tokens = cache_read_input_tokens;
+                }
+            }
+        }
+    }
+
+    pub(crate) fn cache_usage_tokens(&self) -> (u64, u64) {
+        match self {
+            Self::AnthropicMessage(message) => message.cache_usage_tokens(),
+            Self::OpenAiChatCompletions(result) => (
+                result.cache_read_input_tokens.unwrap_or(0),
+                result.cache_creation_input_tokens.unwrap_or(0),
+            ),
+            Self::OpenAiResponses(result) => {
+                let cache_read = result.cache_read_input_tokens.or_else(|| {
+                    result
+                        .response
+                        .as_ref()
+                        .and_then(|response| response.usage.input_tokens_details.as_ref())
+                        .and_then(|details| details.cached_tokens)
+                });
+                (
+                    cache_read.unwrap_or(0),
+                    result.cache_creation_input_tokens.unwrap_or(0),
+                )
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

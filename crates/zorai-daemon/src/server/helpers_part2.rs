@@ -723,6 +723,7 @@ pub(crate) fn agent_event_thread_id(event: &crate::agent::types::AgentEvent) -> 
         | AgentEvent::ToolResult { thread_id, .. }
         | AgentEvent::Done { thread_id, .. }
         | AgentEvent::Error { thread_id, .. }
+        | AgentEvent::TurnInterrupted { thread_id, .. }
         | AgentEvent::ThreadCreated { thread_id, .. }
         | AgentEvent::ThreadTitleUpdated { thread_id, .. }
         | AgentEvent::ThreadReloadRequired { thread_id, .. }

@@ -51,6 +51,14 @@ test("deb maintainer scripts are configured on deb, not linux", () => {
     );
 });
 
+test("AppImage desktop launches explicitly disable Chromium sandbox", () => {
+    assert.deepEqual(
+        PACKAGE_CONFIG.build?.appImage?.executableArgs,
+        ["--no-sandbox"],
+    );
+    assert.equal(PACKAGE_CONFIG.build?.linux?.executableArgs, undefined);
+});
+
 test("electron-builder 25 schema accepts the current build field on every platform", () => {
     const validateSchema = require("@develar/schema-utils");
     const scheme = require("app-builder-lib/scheme.json");

@@ -76,6 +76,7 @@ pub(super) struct SendMessageRunner<'a> {
     pub(super) provider_final_result: Option<CompletionProviderFinalResult>,
     pub(super) fresh_runner_retry: Option<FreshRunnerRetryRequest>,
     pub(super) handoff_restart: Option<HandoffRestartRequest>,
+    pub(super) turn_done_emitted: bool,
 }
 
 pub(super) struct StreamIteration {

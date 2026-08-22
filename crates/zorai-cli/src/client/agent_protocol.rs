@@ -215,6 +215,17 @@ pub(super) enum AgentBridgeCommand {
         max_bytes: Option<usize>,
     },
     GetConfig,
+    GetMlflowTracingStatus,
+    TestMlflowTracingConnection,
+    SendMlflowTracingTestTrace,
+    ListMlflowTracingHeaders,
+    SetMlflowTracingHeader {
+        name: String,
+        value: String,
+    },
+    DeleteMlflowTracingHeader {
+        name: String,
+    },
     GetGatewayConfig,
     ExternalRuntimeMigrationStatus,
     ExternalRuntimeMigrationPreview {

@@ -123,6 +123,7 @@ pub struct AgentEngine {
     pub concierge: Arc<ConciergeEngine>,
     pub session_manager: Arc<SessionManager>,
     pub history: HistoryStore,
+    pub(crate) mlflow_tracing: Arc<super::mlflow_tracing::MlflowTracingRuntime>,
     pub threads: RwLock<HashMap<String, AgentThread>>,
     pub(super) thread_message_hydration_pending: RwLock<HashSet<String>>,
     pub(super) thread_message_hydration_lock: Mutex<()>,
@@ -373,7 +374,10 @@ impl AgentEngine {
         let initial_config_runtime_projection =
             super::config::derive_startup_config_runtime_projection(&config);
 
+        let initial_mlflow_config = config.mlflow_tracing.clone();
         let config = Arc::new(RwLock::new(config));
+        let mlflow_tracing =
+            super::mlflow_tracing::MlflowTracingRuntime::new(&data_dir, &initial_mlflow_config);
         let concierge = Arc::new(ConciergeEngine::new(
             config.clone(),
             event_tx.clone(),
@@ -388,6 +392,7 @@ impl AgentEngine {
             concierge,
             session_manager,
             history,
+            mlflow_tracing: mlflow_tracing.clone(),
             threads: RwLock::new(HashMap::new()),
             thread_message_hydration_pending: RwLock::new(HashSet::new()),
             thread_message_hydration_lock: Mutex::new(()),
@@ -415,7 +420,7 @@ impl AgentEngine {
             goal_run_client_surfaces: RwLock::new(HashMap::new()),
             inflight_goal_runs: Mutex::new(HashSet::new()),
             heartbeat_items: RwLock::new(Vec::new()),
-            event_tx,
+            event_tx: event_tx.clone(),
             internal_event_tx,
             memory: RwLock::new(HashMap::new()),
             recent_policy_decisions: RwLock::new(HashMap::new()),
@@ -517,6 +522,11 @@ impl AgentEngine {
             skill_discovery_result_rx,
         );
         super::thread_title::spawn_auto_thread_title_worker(engine.clone(), auto_thread_title_rx);
+        mlflow_tracing.start(
+            Arc::downgrade(&engine),
+            event_tx.subscribe(),
+            initial_mlflow_config,
+        );
         Self::spawn_svarog_workspace_reconciliation(engine.clone());
 
         engine

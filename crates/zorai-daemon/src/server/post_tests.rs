@@ -213,6 +213,7 @@ pub async fn run() -> Result<()> {
     };
 
     let _ = shutdown_tx.send(true);
+    agent.mlflow_tracing.shutdown().await;
 
     result
 }

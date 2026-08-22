@@ -74,6 +74,9 @@ pub enum AgentEvent {
         thread_id: String,
         message: String,
     },
+    TurnInterrupted {
+        thread_id: String,
+    },
     ThreadCreated {
         thread_id: String,
         title: String,

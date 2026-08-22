@@ -190,4 +190,8 @@ pub enum DaemonMessage {
     DatabaseBackendUpdated,
     DatabaseSyncResult { ok: bool, message: String },
     AgentThreadHandoffResult { result: ThreadHandoffResult },
+    // Append-only protocol extension: keep new variants after all legacy wire discriminants.
+    AgentMlflowTracingStatus { status_json: String },
+    AgentMlflowTracingTestResult { result_json: String },
+    AgentMlflowTracingHeaders { names: Vec<String> },
 }
