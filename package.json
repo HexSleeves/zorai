@@ -1,8 +1,0 @@
-{
-  "dependencies": {
-    "zor-ai": "^0.9.42"
-  },
-  "allowScripts": {
-    "zor-ai@0.9.42": true
-  }
-}

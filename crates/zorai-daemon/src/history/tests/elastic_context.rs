@@ -1044,6 +1044,62 @@ async fn delegation_edge_links_parent_to_subagent_without_clobbering_labels() ->
 }
 
 #[tokio::test]
+async fn memory_graph_delete_node_removes_incident_edges_and_keeps_neighbors() -> Result<()> {
+    let (store, root) = make_test_store().await?;
+
+    store
+        .upsert_memory_node(
+            "node:file:src/lib.rs",
+            "src/lib.rs",
+            "file",
+            Some("observed file"),
+            1_717_180_001,
+        )
+        .await?;
+    store
+        .upsert_memory_node(
+            "node:task:task-123",
+            "Investigate parser",
+            "task",
+            Some("task status: queued"),
+            1_717_180_002,
+        )
+        .await?;
+    store
+        .upsert_memory_edge(
+            "node:task:task-123",
+            "node:file:src/lib.rs",
+            "task_touches_file",
+            1.0,
+            1_717_180_003,
+        )
+        .await?;
+
+    store.delete_memory_node("node:task:task-123").await?;
+
+    assert!(
+        store.get_memory_node("node:task:task-123").await?.is_none(),
+        "rolling back a queued task must drop its graph node, not leave a dangling task record"
+    );
+    assert!(
+        store
+            .list_memory_edges_for_node("node:task:task-123")
+            .await?
+            .is_empty(),
+        "incident edges must go with the task node or neighbor lookups keep seeing a rolled-back task"
+    );
+    let file_node = store
+        .get_memory_node("node:file:src/lib.rs")
+        .await?
+        .expect("shared file nodes must survive task rollback");
+    assert_eq!(file_node.label, "src/lib.rs");
+
+    drop(store);
+    fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn memory_graph_neighbor_lookup_returns_ranked_adjacent_nodes() -> Result<()> {
     let (store, root) = make_test_store().await?;
 

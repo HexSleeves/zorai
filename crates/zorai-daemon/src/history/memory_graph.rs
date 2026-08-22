@@ -112,6 +112,22 @@ impl HistoryStore {
         Ok(())
     }
 
+    pub async fn delete_memory_node(&self, id: &str) -> Result<()> {
+        let mut txn = self.conn_db.transaction().await?;
+        txn.execute(
+            "DELETE FROM memory_edges WHERE source_node_id = ?1 OR target_node_id = ?1",
+            db::db_params![id],
+        )
+        .await?;
+        txn.execute(
+            "DELETE FROM memory_nodes WHERE id = ?1",
+            db::db_params![id],
+        )
+        .await?;
+        txn.commit().await?;
+        Ok(())
+    }
+
     pub async fn get_memory_node(&self, id: &str) -> Result<Option<MemoryNodeRow>> {
         let row = self
             .read_db
