@@ -1,7 +1,7 @@
 import type React from "react";
 import { useEffect, useRef, useState } from "react";
 import type { ComposerAttachment } from "./types";
-import { blobToBase64, collectMediaRecorderBlob, mediaRecorderOptions, readComposerAttachment, readSpeechToTextContent, readSpeechToTextError, stopMediaTracks } from "./composerMedia";
+import { blobToBase64, collectClipboardFiles, collectMediaRecorderBlob, mediaRecorderOptions, readComposerAttachment, readSpeechToTextContent, readSpeechToTextError, stopMediaTracks } from "./composerMedia";
 import { useAgentStore } from "@/lib/agentStore";
 import { applyManagedSecurityLevel, managedSecurityLevels } from "@/zorai/features/threads/threadRuntimeActions";
 
@@ -218,7 +218,7 @@ export function ChatComposer({
             setInput(event.target.value);
           }}
           onPaste={(event) => {
-            const files = Array.from(event.clipboardData?.files ?? []);
+            const files = collectClipboardFiles(event.clipboardData);
             if (files.length > 0) {
               event.preventDefault();
               void appendFiles(files);

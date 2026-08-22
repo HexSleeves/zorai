@@ -341,6 +341,20 @@ describe("Zorai feature surfaces", () => {
     expect(css).not.toContain(".zorai-thread-surface > div");
   });
 
+  it("pastes clipboard media into native composer tiles and shows them on user messages", () => {
+    const composerSource = readFeature("./threads/ThreadComposer.tsx");
+    const messageSource = readFeature("./threads/NativeThreadMessageBubble.tsx");
+    const css = readFeature("../styles/zorai.css");
+
+    expect(composerSource).toContain("onPaste");
+    expect(composerSource).toContain("collectClipboardFiles");
+    expect(composerSource).toContain("AttachmentTiles");
+    expect(messageSource).toContain("splitMessageAttachments");
+    expect(messageSource).toContain("AttachmentTiles");
+    expect(css).toContain(".zorai-attachment-tile__remove");
+    expect(css).toContain("border-radius: 999px");
+  });
+
   it("opens listed threads through the daemon detail loader", () => {
     const source = readFeature("../../components/agent-chat-panel/runtime/layout.tsx");
     const browserStart = source.indexOf("function AgentChatPanelThreadBrowserSurface");

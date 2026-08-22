@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
+import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from "react";
 import { useAgentChatPanelRuntime } from "@/components/agent-chat-panel/runtime/context";
 import {
   blobToBase64,
   buildAttachmentSendPayload,
+  collectClipboardFiles,
   collectMediaRecorderBlob,
   mediaRecorderOptions,
   readComposerAttachment,
@@ -24,6 +25,7 @@ import { getBridge } from "@/lib/bridge";
 import { pushToast } from "@/lib/toastStore";
 import { activeThreadBudgetExceededNotice } from "./threadBudgetNotice";
 import { applyManagedSecurityLevel, managedSecurityLevels } from "./threadRuntimeActions";
+import { AttachmentTiles, composerAttachmentToTile } from "./attachmentTiles";
 
 export function ThreadComposer() {
   const runtime = useAgentChatPanelRuntime();
@@ -263,6 +265,13 @@ export function ThreadComposer() {
     void appendFiles(Array.from(event.dataTransfer.files ?? []));
   };
 
+  const onPaste = (event: ClipboardEvent<HTMLDivElement>) => {
+    const files = collectClipboardFiles(event.clipboardData);
+    if (files.length === 0) return;
+    event.preventDefault();
+    void appendFiles(files);
+  };
+
   toggleRecordingRef.current = toggleRecording;
 
   return (
@@ -274,22 +283,13 @@ export function ThreadComposer() {
       }}
       onDragLeave={() => setDropActive(false)}
       onDrop={onDrop}
+      onPaste={onPaste}
     >
       {attachments.length > 0 ? (
-        <div className="zorai-thread-attachments">
-          {attachments.map((attachment) => (
-            <span key={attachment.id} className="zorai-status-pill">
-              {attachment.name}
-              <button
-                type="button"
-                className="zorai-ghost-button"
-                onClick={() => setAttachments((current) => current.filter((item) => item.id !== attachment.id))}
-              >
-                Remove
-              </button>
-            </span>
-          ))}
-        </div>
+        <AttachmentTiles
+          items={attachments.map(composerAttachmentToTile)}
+          onRemove={(id) => setAttachments((current) => current.filter((item) => item.id !== id))}
+        />
       ) : null}
 
       {budgetNotice ? (
@@ -340,6 +340,21 @@ export function ThreadComposer() {
 
         <div className="zorai-composer-actions">
           <div className="zorai-composer-actions__left">
+            <label className="zorai-composer-mode">
+              <select
+                className="zorai-input"
+                value={agentSettings.managed_security_level}
+                title="Managed security mode"
+                aria-label="Managed security mode"
+                onChange={(event) => {
+                  void applyManagedSecurityLevel(event.target.value as typeof agentSettings.managed_security_level);
+                }}
+              >
+                {managedSecurityLevels().map((level) => (
+                  <option key={level} value={level}>{level}</option>
+                ))}
+              </select>
+            </label>
             <input
               ref={fileInputRef}
               type="file"
@@ -372,22 +387,6 @@ export function ThreadComposer() {
                 {isRecording ? <span className="zorai-composer-rec-dot" aria-hidden="true" /> : null}
               </button>
             ) : null}
-            <label className="zorai-composer-mode">
-              <span>Mode</span>
-              <select
-                className="zorai-input"
-                value={agentSettings.managed_security_level}
-                title="Managed security mode"
-                aria-label="Managed security mode"
-                onChange={(event) => {
-                  void applyManagedSecurityLevel(event.target.value as typeof agentSettings.managed_security_level);
-                }}
-              >
-                {managedSecurityLevels().map((level) => (
-                  <option key={level} value={level}>{level}</option>
-                ))}
-              </select>
-            </label>
             {ttsAvailable ? (
               <button
                 type="button"
