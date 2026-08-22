@@ -1,3 +1,6 @@
+#[cfg(target_os = "linux")]
+use std::path::Path;
+
 use zorai_protocol::{AGENT_ID_RAROG, AGENT_ID_SWAROG};
 
 use crate::commands::common::{
@@ -103,30 +106,72 @@ fn resolve_gui_binary_finds_development_linux_unpacked_app_from_repo_root() {
 
 #[cfg(target_os = "linux")]
 #[test]
+fn linux_electron_needs_no_sandbox_for_extensionless_installed_appimage() {
+    let temp_dir = std::env::temp_dir().join(format!(
+        "zorai-cli-appimage-{}-{}",
+        std::process::id(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("system time")
+            .as_nanos()
+    ));
+    std::fs::create_dir_all(&temp_dir).expect("create temp dir");
+    let gui_binary = temp_dir.join("zorai-desktop");
+    std::fs::write(&gui_binary, b"\x7fELF\x02\x01\x01\x00AI\x02").expect("write AppImage header");
+
+    assert!(
+        linux_electron_needs_no_sandbox(&gui_binary, ChromeSandboxStatus::Missing),
+        "npm and shell releases rename the AppImage to extensionless zorai-desktop"
+    );
+
+    std::fs::remove_dir_all(temp_dir).expect("remove temp dir");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
 fn linux_electron_needs_no_sandbox_when_helper_exists_without_root_setuid() {
     assert!(
-        !linux_electron_needs_no_sandbox(ChromeSandboxStatus::Missing),
+        linux_electron_needs_no_sandbox(
+            Path::new("/tmp/.mount_zorai-QmzCNx/zorai-0.9.45.AppImage"),
+            ChromeSandboxStatus::Missing,
+        ),
+        "AppImages cannot preserve a root-owned setuid helper after their temporary mount"
+    );
+    assert!(
+        !linux_electron_needs_no_sandbox(
+            Path::new("/opt/zorai/zorai"),
+            ChromeSandboxStatus::Missing,
+        ),
         "missing chrome-sandbox should keep Chromium user-namespace sandbox"
     );
     assert!(
-        !linux_electron_needs_no_sandbox(ChromeSandboxStatus::Present {
-            uid: 0,
-            mode: 0o4755,
-        }),
+        !linux_electron_needs_no_sandbox(
+            Path::new("/opt/zorai/zorai"),
+            ChromeSandboxStatus::Present {
+                uid: 0,
+                mode: 0o4755,
+            },
+        ),
         "a root-owned 4755 helper is the configuration Chromium requires"
     );
     assert!(
-        linux_electron_needs_no_sandbox(ChromeSandboxStatus::Present {
-            uid: 0,
-            mode: 0o0755,
-        }),
+        linux_electron_needs_no_sandbox(
+            Path::new("/opt/zorai/zorai"),
+            ChromeSandboxStatus::Present {
+                uid: 0,
+                mode: 0o0755,
+            },
+        ),
         "Chromium aborts if chrome-sandbox exists without the setuid bit"
     );
     assert!(
-        linux_electron_needs_no_sandbox(ChromeSandboxStatus::Present {
-            uid: 1000,
-            mode: 0o4755,
-        }),
+        linux_electron_needs_no_sandbox(
+            Path::new("/opt/zorai/zorai"),
+            ChromeSandboxStatus::Present {
+                uid: 1000,
+                mode: 0o4755,
+            },
+        ),
         "Chromium aborts if chrome-sandbox is setuid but not owned by root"
     );
 }

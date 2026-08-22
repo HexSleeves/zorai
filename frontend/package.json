@@ -185,6 +185,11 @@
         }
       ]
     },
+    "appImage": {
+      "executableArgs": [
+        "--no-sandbox"
+      ]
+    },
     "deb": {
       "afterInstall": "build/linux/after-install.sh",
       "afterRemove": "build/linux/after-remove.sh"
