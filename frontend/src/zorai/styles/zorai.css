@@ -3095,3 +3095,9 @@ button.zorai-composer-context-chip { cursor: pointer; }
 .zorai-workspace-hunk-review pre { max-height: 150px; overflow: auto; margin: 5px 0; padding: 6px; background: #0d1117; color: #d8dee9; font: 9px/1.45 var(--font-mono); white-space: pre; }
 .zorai-workspace-hunk-review footer { display: flex; gap: 4px; }
 .zorai-workspace-hunk-review footer button { padding: 3px 6px; border: 1px solid var(--zorai-border); border-radius: 3px; background: var(--zorai-bg-elevated); color: var(--zorai-muted); font-size: 9px; cursor: pointer; }
+
+.zorai-workspace-git-overview { display: grid; gap: 5px; padding: 8px; border-block: 1px solid var(--zorai-border); background: var(--zorai-bg-panel); color: var(--zorai-muted); font-size: 10px; }
+.zorai-workspace-git-overview > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zorai-workspace-git-overview textarea { width: 100%; resize: vertical; box-sizing: border-box; border: 1px solid var(--zorai-border); border-radius: 4px; padding: 6px; background: var(--zorai-bg-surface); color: var(--zorai-text); font: 10px/1.4 var(--font-mono); }
+.zorai-workspace-git-overview button { padding: 5px 7px; border: 1px solid var(--zorai-accent); border-radius: 4px; background: var(--accent-soft); color: var(--zorai-accent); font-size: 10px; cursor: pointer; }
+.zorai-workspace-git-overview button:disabled { opacity: .45; cursor: default; }

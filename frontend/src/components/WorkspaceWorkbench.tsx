@@ -69,6 +69,9 @@ export function WorkspaceWorkbench() {
   const [rootInput, setRootInput] = useState(context?.root ?? activeWorkspace?.cwd ?? "");
   const [rootEntries, setRootEntries] = useState<ZoraiWorkspaceEntry[]>([]);
   const [gitStatus, setGitStatus] = useState<ZoraiWorkspaceGitStatus[]>([]);
+  const [gitOverview, setGitOverview] = useState<ZoraiWorkspaceGitOverview | null>(null);
+  const [commitMessage, setCommitMessage] = useState("");
+  const [committing, setCommitting] = useState(false);
   const [reviewedChange, setReviewedChange] = useState<{ path: string; staged: boolean; hunks: ZoraiWorkspaceGitHunk[] } | null>(null);
   const [documents, setDocuments] = useState<Record<string, OpenDocument>>({});
   const [diff, setDiff] = useState<string | null>(null);
@@ -87,12 +90,14 @@ export function WorkspaceWorkbench() {
 
   const refreshRoot = useCallback(async (root = context?.root) => {
     if (!root || !bridge?.workspaceListDirectory) return;
-    const [entries, statuses] = await Promise.all([
+    const [entries, statuses, overview] = await Promise.all([
       bridge.workspaceListDirectory(root, ""),
       bridge.workspaceGitStatus?.(root) ?? Promise.resolve([]),
+      bridge.workspaceGitOverview?.(root) ?? Promise.resolve(null),
     ]);
     setRootEntries(entries);
     setGitStatus(statuses);
+    setGitOverview(overview);
   }, [bridge, context?.root]);
 
   useEffect(() => { void useWorkspaceContextStore.getState().hydrate(); }, []);
@@ -262,6 +267,20 @@ export function WorkspaceWorkbench() {
     setMode("diff");
   };
 
+  const commitStagedChanges = async () => {
+    if (!context?.root || !bridge?.workspaceGitCommit || !commitMessage.trim()) return;
+    setCommitting(true);
+    try {
+      const result = await bridge.workspaceGitCommit(context.root, commitMessage);
+      setGitStatus(result.status);
+      setGitOverview(result.overview);
+      setCommitMessage("");
+      setReviewedChange(null);
+      setError(null);
+    } catch (reason: any) { setError(reason?.message ?? String(reason)); }
+    finally { setCommitting(false); }
+  };
+
   const reviewHunks = async (filePath: string, staged: boolean) => {
     if (!context?.root || !bridge?.workspaceGitHunks) return;
     try {
@@ -402,6 +421,14 @@ export function WorkspaceWorkbench() {
               <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search workspace" onKeyDown={(event) => { if (event.key === "Enter") void runSearch(); }} />
               <button type="button" onClick={() => void runSearch()}>⌕</button>
             </div>
+            {gitOverview?.isRepository ? (
+              <div className="zorai-workspace-git-overview">
+                <span><strong>{gitOverview.branch || "detached HEAD"}</strong>{gitOverview.upstream ? ` · ${gitOverview.upstream}` : " · no upstream"}</span>
+                <span>↑{gitOverview.ahead} ↓{gitOverview.behind} · {gitOverview.stagedFiles} staged · {gitOverview.unstagedFiles} unstaged</span>
+                <textarea value={commitMessage} onChange={(event) => setCommitMessage(event.target.value)} placeholder="Commit message" rows={2} maxLength={4096} />
+                <button type="button" disabled={committing || !commitMessage.trim() || gitOverview.stagedFiles === 0} onClick={() => void commitStagedChanges()}>{committing ? "Committing…" : "Commit staged"}</button>
+              </div>
+            ) : null}
             {gitStatus.length > 0 ? (
               <details className="zorai-workspace-source-control">
                 <summary>Source Control ({gitStatus.length})</summary>

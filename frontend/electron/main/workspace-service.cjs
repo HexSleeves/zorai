@@ -282,6 +282,57 @@ async function workspaceGitStatus(rootPath) {
     return result;
 }
 
+async function workspaceGitOverview(rootPath) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) return { isRepository: false, root, gitRoot: null, branch: null, upstream: null, ahead: 0, behind: 0, stagedFiles: 0, unstagedFiles: 0 };
+    const branch = await execFileAsync('git', ['branch', '--show-current'], { cwd: gitRoot, encoding: 'utf8', timeout: 5000 })
+        .then(({ stdout }) => stdout.trim() || null).catch(() => null);
+    const upstream = await execFileAsync('git', ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], { cwd: gitRoot, encoding: 'utf8', timeout: 5000 })
+        .then(({ stdout }) => stdout.trim() || null).catch(() => null);
+    let ahead = 0;
+    let behind = 0;
+    if (upstream) {
+        const counts = await execFileAsync('git', ['rev-list', '--left-right', '--count', `HEAD...${upstream}`], { cwd: gitRoot, encoding: 'utf8', timeout: 5000 })
+            .then(({ stdout }) => stdout.trim().split(/\s+/).map(Number)).catch(() => [0, 0]);
+        ahead = Number.isFinite(counts[0]) ? counts[0] : 0;
+        behind = Number.isFinite(counts[1]) ? counts[1] : 0;
+    }
+    const status = await workspaceGitStatus(root);
+    return {
+        isRepository: true,
+        root,
+        gitRoot,
+        branch,
+        upstream,
+        ahead,
+        behind,
+        stagedFiles: status.filter((entry) => entry.indexStatus.trim() && entry.indexStatus !== '?').length,
+        unstagedFiles: status.filter((entry) => entry.worktreeStatus.trim() || entry.indexStatus === '?').length,
+    };
+}
+
+async function workspaceGitCommit(rootPath, message) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) throw workspaceError('WORKSPACE_NOT_GIT_REPOSITORY', 'Workspace is not inside a Git repository.');
+    const normalizedMessage = typeof message === 'string' ? message.trim() : '';
+    if (!normalizedMessage) throw workspaceError('WORKSPACE_COMMIT_MESSAGE_REQUIRED', 'A commit message is required.');
+    if (normalizedMessage.length > 4096) throw workspaceError('WORKSPACE_COMMIT_MESSAGE_TOO_LONG', 'Commit message exceeds 4096 characters.');
+    const status = await workspaceGitStatus(root);
+    if (!status.some((entry) => entry.indexStatus.trim() && entry.indexStatus !== '?')) {
+        throw workspaceError('WORKSPACE_NOTHING_STAGED', 'There are no staged changes to commit.');
+    }
+    await execFileAsync('git', ['commit', '-m', normalizedMessage], {
+        cwd: gitRoot, encoding: 'utf8', timeout: 30000, maxBuffer: GIT_MAX_BUFFER,
+    }).catch((error) => {
+        throw workspaceError('WORKSPACE_GIT_COMMIT_FAILED', error?.stderr?.trim() || error?.message || 'Git commit failed.');
+    });
+    const { stdout: commit } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: gitRoot, encoding: 'utf8', timeout: 5000 });
+    const { stdout: subject } = await execFileAsync('git', ['log', '-1', '--pretty=%s'], { cwd: gitRoot, encoding: 'utf8', timeout: 5000 });
+    return { commit: commit.trim(), subject: subject.trim(), overview: await workspaceGitOverview(root), status: await workspaceGitStatus(root) };
+}
+
 async function workspaceGitStage(rootPath, relativePath) {
     const root = canonicalWorkspaceRoot(rootPath);
     const gitRoot = await resolveGitRoot(root);
@@ -453,9 +504,11 @@ module.exports = {
     sha256,
     parseUnifiedDiffHunks,
     workspaceGitApplyHunk,
+    workspaceGitCommit,
     workspaceGitDiff,
     workspaceGitDiscard,
     workspaceGitHunks,
+    workspaceGitOverview,
     workspaceGitStage,
     workspaceGitStatus,
     workspaceGitUnstage,

@@ -420,6 +420,18 @@ declare global {
         worktreeStatus: string;
     };
 
+    type ZoraiWorkspaceGitOverview = {
+        isRepository: boolean;
+        root: string;
+        gitRoot: string | null;
+        branch: string | null;
+        upstream: string | null;
+        ahead: number;
+        behind: number;
+        stagedFiles: number;
+        unstagedFiles: number;
+    };
+
     type ZoraiWorkspaceGitHunk = {
         id: string;
         index: number;
@@ -470,6 +482,8 @@ declare global {
         workspaceRenamePath?: (rootPath: string, fromPath: string, toPath: string) => Promise<{ from: string; to: string }>;
         workspaceDeletePath?: (rootPath: string, relativePath: string, options?: { recursive?: boolean }) => Promise<boolean>;
         workspaceGitStatus?: (rootPath: string) => Promise<ZoraiWorkspaceGitStatus[]>;
+        workspaceGitOverview?: (rootPath: string) => Promise<ZoraiWorkspaceGitOverview>;
+        workspaceGitCommit?: (rootPath: string, message: string) => Promise<{ commit: string; subject: string; overview: ZoraiWorkspaceGitOverview; status: ZoraiWorkspaceGitStatus[] }>;
         workspaceGitStage?: (rootPath: string, relativePath: string) => Promise<ZoraiWorkspaceGitStatus[]>;
         workspaceGitUnstage?: (rootPath: string, relativePath: string) => Promise<ZoraiWorkspaceGitStatus[]>;
         workspaceGitDiscard?: (rootPath: string, relativePath: string) => Promise<ZoraiWorkspaceGitStatus[]>;

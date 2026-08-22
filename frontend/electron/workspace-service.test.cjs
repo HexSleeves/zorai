@@ -10,6 +10,7 @@ const {
     resolveWorkspacePath,
     searchWorkspace,
     workspaceGitApplyHunk,
+    workspaceGitCommit,
     workspaceGitDiscard,
     workspaceGitStage,
     workspaceGitUnstage,
@@ -175,6 +176,33 @@ test('stale hunk IDs are rejected instead of applying an arbitrary patch', async
     runGit('commit', '-m', 'base');
     fs.writeFileSync(path.join(root, 'file.txt'), 'changed\n');
     await assert.rejects(workspaceGitApplyHunk(root, 'file.txt', 'stale-id', 'stage'), { code: 'WORKSPACE_HUNK_STALE' });
+    fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('workspace commit requires staged changes and creates only a local commit', async () => {
+    const root = tempWorkspace();
+    const runGit = (...args) => require('node:child_process').execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+    runGit('init', '-b', 'main');
+    runGit('config', 'user.email', 'workspace-test@zorai.local');
+    runGit('config', 'user.name', 'Workspace Test');
+    fs.writeFileSync(path.join(root, 'file.txt'), 'base\n');
+    runGit('add', 'file.txt');
+    runGit('commit', '-m', 'base');
+    fs.writeFileSync(path.join(root, 'file.txt'), 'next\n');
+    await assert.rejects(workspaceGitCommit(root, 'not staged'), { code: 'WORKSPACE_NOTHING_STAGED' });
+    await require('./main/workspace-service.cjs').workspaceGitStage(root, 'file.txt');
+    const committed = await workspaceGitCommit(root, 'workspace commit');
+    assert.equal(committed.subject, 'workspace commit');
+    assert.equal(committed.commit.length, 40);
+    assert.deepEqual(committed.status, []);
+    assert.equal(runGit('remote').trim(), '');
+    fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('workspace commit validates the message before invoking git', async () => {
+    const root = tempWorkspace();
+    require('node:child_process').execFileSync('git', ['init', '-b', 'main'], { cwd: root });
+    await assert.rejects(workspaceGitCommit(root, '   '), { code: 'WORKSPACE_COMMIT_MESSAGE_REQUIRED' });
     fs.rmSync(root, { recursive: true, force: true });
 });
 
