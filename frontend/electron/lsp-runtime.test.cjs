@@ -1,6 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { LspMessageReader, encodeLspMessage, languageServerSpec, normalizeDiagnostic } = require('./main/lsp-runtime.cjs');
+const { LspMessageReader, encodeLspMessage, languageServerSpec, normalizeDiagnostic, resolveLanguageServer } = require('./main/lsp-runtime.cjs');
 
 test('LSP message reader handles split and concatenated JSON-RPC frames', () => {
     const messages = [];
@@ -32,6 +32,15 @@ test('LSP diagnostic normalization converts zero-based ranges for Monaco', () =>
         endLine: 10,
         endColumn: 13,
     });
+});
+
+test('broken Snap rust-analyzer shim is not advertised as available', () => {
+    const resolved = resolveLanguageServer('rust');
+    if (resolved?.command) {
+        assert.notEqual(resolved.command.replace(/\\/g, '/'), '/snap/bin/rust-analyzer');
+    } else {
+        assert.equal(resolved?.id, 'rust');
+    }
 });
 
 test('language server specifications cover Rust, Python, Go, and C++', () => {

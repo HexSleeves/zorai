@@ -37,9 +37,26 @@ function encodeLspMessage(message) {
     return Buffer.concat([Buffer.from(`Content-Length: ${body.length}\r\n\r\n`, 'ascii'), body]);
 }
 
-function commandExists(command) {
+function resolveCommandPath(command) {
     const checker = process.platform === 'win32' ? 'where' : 'which';
-    return spawnSync(checker, [command], { stdio: 'ignore' }).status === 0;
+    const result = spawnSync(checker, [command], { encoding: 'utf8' });
+    if (result.status !== 0) return null;
+    return String(result.stdout || '').split(/\r?\n/).map((value) => value.trim()).find(Boolean) ?? null;
+}
+
+function usableLanguageServerCommand(command) {
+    const resolved = resolveCommandPath(command);
+    if (!resolved) return null;
+    // The Ubuntu/Snap rust-analyzer shim recursively invokes itself when the
+    // active rustup toolchain does not contain the component.
+    if (command === 'rust-analyzer' && resolved.replace(/\\/g, '/') === '/snap/bin/rust-analyzer') {
+        const rustup = resolveCommandPath('rustup');
+        if (!rustup) return null;
+        const toolchainBinary = spawnSync(rustup, ['which', 'rust-analyzer'], { encoding: 'utf8', timeout: 5000 });
+        if (toolchainBinary.status !== 0) return null;
+        return String(toolchainBinary.stdout || '').trim() || null;
+    }
+    return resolved;
 }
 
 function languageServerSpec(language) {
@@ -59,8 +76,12 @@ function languageServerSpec(language) {
 function resolveLanguageServer(language) {
     const spec = languageServerSpec(language);
     if (!spec) return null;
-    const candidate = spec.candidates.find(({ command }) => commandExists(command));
-    return candidate ? { ...spec, ...candidate } : { ...spec, command: null, args: [] };
+    const candidate = spec.candidates
+        .map((entry) => ({ ...entry, resolvedCommand: usableLanguageServerCommand(entry.command) }))
+        .find((entry) => entry.resolvedCommand);
+    return candidate
+        ? { ...spec, command: candidate.resolvedCommand, displayCommand: candidate.command, args: candidate.args }
+        : { ...spec, command: null, displayCommand: null, args: [] };
 }
 
 function normalizeDiagnostic(diagnostic) {
@@ -104,13 +125,17 @@ class LspSession {
                 stdio: ['pipe', 'pipe', 'pipe'],
             });
             this.process = child;
+            this.stderrBuffer = '';
             child.stdout.on('data', (chunk) => {
                 try { this.reader.push(chunk); } catch (error) { this.fail(error); }
             });
-            child.stderr.on('data', () => {});
+            child.stderr.on('data', (chunk) => {
+                this.stderrBuffer = `${this.stderrBuffer}${chunk.toString('utf8')}`.slice(-8000);
+            });
             child.once('error', (error) => { reject(error); this.fail(error); });
             child.once('exit', (code, signal) => {
-                if (!this.closed) this.fail(new Error(`${this.server.command} exited (${code ?? signal ?? 'unknown'})`));
+                const details = this.stderrBuffer?.trim();
+                if (!this.closed) this.fail(new Error(`${this.server.command} exited (${code ?? signal ?? 'unknown'})${details ? `: ${details}` : ''}`));
                 this.removeSession();
             });
             this.request('initialize', {
@@ -321,4 +346,4 @@ function createLspRuntime() {
     };
 }
 
-module.exports = { LspMessageReader, createLspRuntime, encodeLspMessage, languageServerSpec, normalizeDiagnostic, resolveLanguageServer };
+module.exports = { LspMessageReader, createLspRuntime, encodeLspMessage, languageServerSpec, normalizeDiagnostic, resolveLanguageServer, usableLanguageServerCommand };
