@@ -58,7 +58,7 @@ mod modal_body_to_step;
 mod pending_workspace_actor_picker;
 
 const MESSAGE_DELETE_BACKFILL_THRESHOLD: usize = 5;
-pub(crate) const THREAD_PICKER_REFRESH_DEBOUNCE: Duration = Duration::from_millis(300);
+pub(crate) const THREAD_PICKER_REFRESH_DEBOUNCE: Duration = Duration::from_millis(750);
 
 #[derive(Clone, Copy, Debug)]
 struct PendingDeleteBackfillFetch {

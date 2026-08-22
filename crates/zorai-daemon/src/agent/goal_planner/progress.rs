@@ -1096,29 +1096,34 @@ impl AgentEngine {
                 .await
                 .iter()
                 .any(|task| task.source == GOAL_PROGRESS_SUPERVISION_SOURCE);
-            if already_pending && supervisor_active {
-                return Ok(());
-            }
-            self.history
-                .set_consolidation_state(&pending_key, "true", now)
-                .await?;
-            if let Err(error) = self
-                .enqueue_progress_supervision_task(goal_run_id, &reason, snapshot)
-                .await
-            {
-                if let Err(clear_error) = self
-                    .history
-                    .set_consolidation_state(&pending_key, "false", now)
+            if !(already_pending && supervisor_active) {
+                self.history
+                    .set_consolidation_state(&pending_key, "true", now)
+                    .await?;
+                if let Err(error) = self
+                    .enqueue_progress_supervision_task(goal_run_id, &reason, snapshot)
                     .await
                 {
-                    tracing::warn!(
-                        goal_run_id,
-                        error = %clear_error,
-                        "failed to roll back stagnation pending guard after supervisor enqueue failure"
-                    );
+                    if let Err(clear_error) = self
+                        .history
+                        .set_consolidation_state(&pending_key, "false", now)
+                        .await
+                    {
+                        tracing::warn!(
+                            goal_run_id,
+                            error = %clear_error,
+                            "failed to roll back stagnation pending guard after supervisor enqueue failure"
+                        );
+                    }
+                    return Err(error);
                 }
-                return Err(error);
             }
+            let reset_json = serde_json::to_string(
+                &super::stagnation::reset_intervention_streaks(&new_state),
+            )?;
+            self.history
+                .set_consolidation_state(&progress_key, &reset_json, now)
+                .await?;
         }
         Ok(())
     }

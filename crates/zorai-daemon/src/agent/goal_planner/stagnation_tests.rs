@@ -448,3 +448,52 @@ fn goal_stagnation_pending_key_format() {
         "goal_stagnation_pending:gr-123"
     );
 }
+
+#[test]
+fn reset_intervention_streaks_clears_counters_and_keeps_trajectory() {
+    let mut best = BTreeMap::new();
+    best.insert("accuracy".into(), 0.9);
+    let state = GoalProgressState {
+        best_scores: best.clone(),
+        best_task_id: Some("t1".into()),
+        commits_since_best: 3,
+        last_failure_fingerprint: Some("err".into()),
+        consecutive_failures: 3,
+        last_new_best_at: now(),
+    };
+    let reset = reset_intervention_streaks(&state);
+    assert_eq!(reset.commits_since_best, 0);
+    assert_eq!(reset.consecutive_failures, 0);
+    assert_eq!(reset.best_scores, best);
+    assert_eq!(reset.best_task_id.as_deref(), Some("t1"));
+    assert_eq!(reset.last_failure_fingerprint.as_deref(), Some("err"));
+    assert_eq!(
+        should_intervene(&reset, &ProgressSupervisionThresholds::default()),
+        None,
+        "reset streaks must not still sit at the intervention threshold"
+    );
+}
+
+#[test]
+fn matching_fail_after_reset_does_not_immediately_retrigger() {
+    let reset = reset_intervention_streaks(&GoalProgressState {
+        last_failure_fingerprint: Some("missing type annotation on line 42".into()),
+        consecutive_failures: 3,
+        ..Default::default()
+    });
+    let record = review_record(
+        "t2",
+        "g1",
+        "s2",
+        GoalStepReviewVerdict::Fail,
+        "missing type annotation on line 42",
+        None,
+    );
+    let (new_state, _) = merge_verdict(&reset, &record, now());
+    assert_eq!(new_state.consecutive_failures, 1);
+    assert_eq!(
+        should_intervene(&new_state, &ProgressSupervisionThresholds::default()),
+        None,
+        "one more matching fail after a supervisor must start a new streak, not spawn another"
+    );
+}

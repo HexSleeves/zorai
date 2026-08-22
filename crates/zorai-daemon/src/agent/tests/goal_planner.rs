@@ -2710,7 +2710,14 @@ async fn repeated_structured_fail_fingerprint_enqueues_progress_supervisor() {
         .expect("repeated Fail verdicts must persist progress state");
     let progress: super::stagnation::GoalProgressState =
         serde_json::from_str(&progress_raw).expect("parse progress state");
-    assert_eq!(progress.consecutive_failures, 3);
+    assert_eq!(
+        progress.consecutive_failures, 0,
+        "queuing a supervisor must consume the failure streak so the next review is not an automatic re-enqueue"
+    );
+    assert_eq!(
+        progress.last_failure_fingerprint.as_deref(),
+        Some(diagnosis)
+    );
     assert!(
         engine
             .tasks
@@ -5586,6 +5593,20 @@ async fn stagnation_pending_rolls_back_when_supervisor_enqueue_fails() {
         Some("true"),
         "a failed supervisor enqueue must not leave later Fail retries suppressed"
     );
+    let progress_raw = engine
+        .history
+        .get_consolidation_state(&super::stagnation::goal_progress_state_key(
+            &snapshot.id,
+        ))
+        .await
+        .expect("load progress state")
+        .expect("merge must persist even when enqueue fails");
+    let progress: super::stagnation::GoalProgressState =
+        serde_json::from_str(&progress_raw).expect("parse progress state");
+    assert_eq!(
+        progress.consecutive_failures, 3,
+        "a failed enqueue must keep the streak so the next review can still intervene"
+    );
 }
 
 #[tokio::test]
@@ -5671,5 +5692,98 @@ async fn fail_verdict_requeues_when_stagnation_pending_guard_has_no_supervisor()
             .iter()
             .any(|task| task.source == GOAL_PROGRESS_SUPERVISION_SOURCE),
         "a stuck pending guard with no supervisor must not suppress intervention"
+    );
+}
+
+#[tokio::test]
+async fn progress_supervisor_requires_a_fresh_streak_after_it_finishes() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let snapshot = sample_goal_run_with_kind(
+        "goal-fresh-streak",
+        GoalRunStepKind::Command,
+        "Fix the parser",
+    );
+    engine.goal_runs.lock().await.push_back(snapshot.clone());
+
+    let diagnosis = "tests still fail: missing parser token";
+    let progress = super::stagnation::GoalProgressState {
+        last_failure_fingerprint: Some(super::stagnation::failure_fingerprint_prefix(diagnosis)),
+        consecutive_failures: 2,
+        ..super::stagnation::GoalProgressState::default()
+    };
+    engine
+        .history
+        .set_consolidation_state(
+            &super::stagnation::goal_progress_state_key(&snapshot.id),
+            &serde_json::to_string(&progress).expect("serialize progress"),
+            now_millis(),
+        )
+        .await
+        .expect("seed progress state");
+
+    let fail = |task_id: &str| GoalStepReviewRecord {
+        task_id: task_id.to_string(),
+        goal_run_id: snapshot.id.clone(),
+        goal_step_id: "step-1".to_string(),
+        verdict: GoalStepReviewVerdict::Fail,
+        explanation: diagnosis.to_string(),
+        evidence: None,
+        submitted_at: now_millis(),
+    };
+
+    engine
+        .apply_goal_progress_supervision(&snapshot.id, &snapshot, &fail("t-threshold"))
+        .await
+        .expect("first plateau must enqueue a supervisor");
+
+    let count_supervisors = || async {
+        engine
+            .tasks
+            .lock()
+            .await
+            .iter()
+            .filter(|task| task.source == GOAL_PROGRESS_SUPERVISION_SOURCE)
+            .count()
+    };
+    assert_eq!(count_supervisors().await, 1);
+
+    {
+        let mut tasks = engine.tasks.lock().await;
+        for task in tasks.iter_mut() {
+            if task.source == GOAL_PROGRESS_SUPERVISION_SOURCE {
+                task.status = TaskStatus::Completed;
+                task.completed_at = Some(now_millis());
+            }
+        }
+    }
+    engine.persist_tasks().await;
+    engine
+        .clear_goal_stagnation_pending_if_released(&snapshot.id)
+        .await
+        .expect("finished supervisor must release the pending guard");
+
+    engine
+        .apply_goal_progress_supervision(&snapshot.id, &snapshot, &fail("t-after-release"))
+        .await
+        .expect("next matching fail after release must apply");
+
+    let progress_raw = engine
+        .history
+        .get_consolidation_state(&super::stagnation::goal_progress_state_key(&snapshot.id))
+        .await
+        .expect("load progress state")
+        .expect("progress state should remain");
+    let progress: super::stagnation::GoalProgressState =
+        serde_json::from_str(&progress_raw).expect("parse progress state");
+    assert_eq!(
+        progress.consecutive_failures, 1,
+        "the next matching fail after a supervisor finishes must start a new streak"
+    );
+    assert_eq!(
+        count_supervisors().await,
+        1,
+        "a plateau must not spawn another supervisor on every subsequent review"
     );
 }

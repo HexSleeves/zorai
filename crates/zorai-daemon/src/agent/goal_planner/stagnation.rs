@@ -183,6 +183,16 @@ pub fn should_intervene(
     None
 }
 
+/// Zero the streak counters after a supervisor is queued (or skipped because
+/// one is already active) so the next intervention requires a fresh plateau.
+pub fn reset_intervention_streaks(state: &GoalProgressState) -> GoalProgressState {
+    GoalProgressState {
+        commits_since_best: 0,
+        consecutive_failures: 0,
+        ..state.clone()
+    }
+}
+
 /// Consolidation-state key for per-goal-run progress state.
 pub fn goal_progress_state_key(goal_run_id: &str) -> String {
     format!("goal_progress:{goal_run_id}")
@@ -227,10 +237,12 @@ pub fn lineage_digest(
         }
     }
     if let Some(fingerprint) = &state.last_failure_fingerprint {
-        lines.push(format!(
-            "Last failure fingerprint (repeated {}x): {fingerprint}",
-            state.consecutive_failures
-        ));
+        if state.consecutive_failures > 0 {
+            lines.push(format!(
+                "Last failure fingerprint (repeated {}x): {fingerprint}",
+                state.consecutive_failures
+            ));
+        }
     }
     if !snapshot.step_failure_history.is_empty() {
         lines.push("Recent step failure history:".to_string());
