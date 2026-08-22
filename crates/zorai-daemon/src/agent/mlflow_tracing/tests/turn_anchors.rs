@@ -173,3 +173,67 @@ fn select_turn_user_follows_released_queue_front() {
         select_turn_user(&[first, second], runtime.front_turn_anchor("t1").as_ref()).unwrap();
     assert_eq!(selected.content, "second question");
 }
+
+#[test]
+fn unrelated_reconfigure_keeps_in_flight_turn_and_its_queued_prompt() {
+    let (_dir, runtime) = runtime();
+    let mut assembler = TurnTraceAssembler::new(MlflowTracingConfig::default());
+    let mut pending = Vec::new();
+    let config = MlflowTracingConfig {
+        enabled: true,
+        ..Default::default()
+    };
+    push(&runtime, "t1", "first", 1);
+    push(&runtime, "t1", "second", 2);
+    assembler.observe(1_000, delta("t1"), observation_context("t1"));
+
+    let keep = keep_live_assembler_on_reconfigure(
+        &runtime,
+        &config,
+        &mut assembler,
+        &mut pending,
+        true,
+        true,
+    );
+
+    assert!(keep, "tracing still on: keep the live assembler");
+    assert!(assembler.has_active_turn("t1"));
+    assert!(pending.is_empty());
+    assert_eq!(
+        runtime.front_turn_anchor("t1").unwrap().content,
+        "first",
+        "reconfigure must not pop the in-flight prompt and steal the next one"
+    );
+}
+
+#[test]
+fn disable_reconfigure_finishes_in_flight_turn_and_releases_only_its_anchor() {
+    let (_dir, runtime) = runtime();
+    let mut assembler = TurnTraceAssembler::new(MlflowTracingConfig::default());
+    let mut pending = Vec::new();
+    let config = MlflowTracingConfig {
+        enabled: true,
+        ..Default::default()
+    };
+    push(&runtime, "t1", "first", 1);
+    push(&runtime, "t1", "second", 2);
+    assembler.observe(1_000, delta("t1"), observation_context("t1"));
+
+    let keep = keep_live_assembler_on_reconfigure(
+        &runtime,
+        &config,
+        &mut assembler,
+        &mut pending,
+        true,
+        false,
+    );
+
+    assert!(!keep);
+    assert!(!assembler.has_active_turn("t1"));
+    assert_eq!(pending.len(), 1);
+    assert_eq!(
+        runtime.front_turn_anchor("t1").unwrap().content,
+        "second",
+        "only the interrupted turn's prompt is consumed"
+    );
+}

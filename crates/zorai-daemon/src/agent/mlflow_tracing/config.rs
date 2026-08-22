@@ -112,6 +112,14 @@ impl Default for MlflowTracingConfig {
     }
 }
 
+impl MlflowTracingConfig {
+    pub fn effectively_enabled(&self) -> bool {
+        MlflowTracingEffectiveConfig::resolve(self)
+            .map(|effective| effective.enabled)
+            .unwrap_or(false)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct MlflowTracingEffectiveConfig {
     pub configured: MlflowTracingConfig,

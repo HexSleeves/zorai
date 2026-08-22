@@ -162,18 +162,29 @@ async fn run_worker(
             Some(command) = command_rx.recv() => {
                 match command {
                     MlflowRuntimeCommand::Reconfigure(next) => {
-                        enqueue_completed(&runtime, &config, &mut assembler, &mut pending);
-                        for thread_id in assembler.active_thread_ids() {
-                            runtime.pop_turn_anchor(&thread_id);
-                        }
+                        let next_effective = MlflowTracingEffectiveConfig::resolve(&next).ok();
+                        let next_enabled = next_effective.as_ref().is_some_and(|value| value.enabled);
+                        let was_enabled = effective.as_ref().is_some_and(|value| value.enabled);
+                        let keep_assembler = keep_live_assembler_on_reconfigure(
+                            &runtime,
+                            &config,
+                            &mut assembler,
+                            &mut pending,
+                            was_enabled,
+                            next_enabled,
+                        );
                         let _ = flush_pending(&runtime, client.as_ref(), experiment.as_ref(), &mut pending).await;
                         config = next;
-                        effective = MlflowTracingEffectiveConfig::resolve(&config).ok();
+                        effective = next_effective;
                         observation = effective
                             .as_ref()
                             .map(MlflowTracingEffectiveConfig::observation_config)
                             .unwrap_or_else(|| config.clone());
-                        assembler = TurnTraceAssembler::new(observation.clone());
+                        if keep_assembler {
+                            assembler.set_config(observation.clone());
+                        } else {
+                            assembler = TurnTraceAssembler::new(observation.clone());
+                        }
                         client = build_client(&runtime, effective.as_ref()).ok();
                         experiment = None;
                         server_version = None;
@@ -342,6 +353,28 @@ pub(super) fn release_anchor_for_closed_untraced_turn(
         return;
     }
     runtime.pop_turn_anchor(thread_id);
+}
+
+pub(super) fn keep_live_assembler_on_reconfigure(
+    runtime: &MlflowTracingRuntime,
+    config: &MlflowTracingConfig,
+    assembler: &mut TurnTraceAssembler,
+    pending: &mut Vec<CompletedTurnTrace>,
+    was_enabled: bool,
+    next_enabled: bool,
+) -> bool {
+    enqueue_completed(runtime, config, assembler, pending);
+    if was_enabled && next_enabled {
+        return true;
+    }
+    if was_enabled {
+        let now = now_millis();
+        for thread_id in assembler.active_thread_ids() {
+            assembler.interrupt_turn(&thread_id, now);
+        }
+        enqueue_completed(runtime, config, assembler, pending);
+    }
+    false
 }
 
 fn enqueue_completed(

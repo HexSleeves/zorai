@@ -82,7 +82,9 @@ describe("resolveDaemonEventLocalThreadId", () => {
     expect(isThreadlessDaemonStreamEvent({ type: "reasoning" })).toBe(true);
     expect(isThreadlessDaemonStreamEvent({ type: "tool_call" })).toBe(true);
     expect(isThreadlessDaemonStreamEvent({ type: "workflow_notice" })).toBe(false);
+    expect(isThreadlessDaemonStreamEvent({ type: "turn_interrupted" })).toBe(true);
     expect(isThreadlessDaemonStreamEvent({ type: "delta", thread_id: "daemon-b" })).toBe(false);
+    expect(isThreadlessDaemonStreamEvent({ type: "turn_interrupted", thread_id: "daemon-b" })).toBe(false);
   });
 
   it("drops threadless stream events unless a local assistant stream is already open", () => {

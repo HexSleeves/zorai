@@ -46,6 +46,42 @@ async fn done_event_parses_provider_final_result_payload() {
 }
 
 #[tokio::test]
+async fn turn_interrupted_event_finalizes_as_done_without_usage() {
+    let (event_tx, mut event_rx) = mpsc::channel(8);
+
+    DaemonClient::dispatch_agent_event(
+        serde_json::json!({
+            "type": "turn_interrupted",
+            "thread_id": "thread-1"
+        }),
+        &event_tx,
+    )
+    .await;
+
+    match event_rx.recv().await.expect("expected done event") {
+        ClientEvent::Done {
+            thread_id,
+            input_tokens,
+            output_tokens,
+            cost,
+            provider,
+            model,
+            message_id,
+            ..
+        } => {
+            assert_eq!(thread_id, "thread-1");
+            assert_eq!(input_tokens, 0);
+            assert_eq!(output_tokens, 0);
+            assert!(cost.is_none());
+            assert!(provider.is_none());
+            assert!(model.is_none());
+            assert!(message_id.is_none());
+        }
+        other => panic!("expected turn_interrupted to map to done, got {:?}", other),
+    }
+}
+
+#[tokio::test]
 async fn daemon_agent_error_is_forwarded_to_client_error_event() {
     let (event_tx, mut event_rx) = mpsc::channel(8);
 

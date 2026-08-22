@@ -433,6 +433,7 @@ export function useAgentChatPanelProviderValue(): {
       updateLastAssistantMessage(targetThreadId, lastMessage.content || "(stopped)", false);
     }
     finalizeStreamingAssistantMessages(targetThreadId);
+    useAgentMissionStore.getState().setSharedCursorMode("idle");
   }, [activeThreadId, agentSettings.agent_backend, updateLastAssistantMessage]);
 
   const { sendMessageLegacy } = useLegacyAgentMessaging({

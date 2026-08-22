@@ -70,3 +70,18 @@ fn invalid_tracking_uri_is_rejected() {
     };
     assert!(MlflowTracingEffectiveConfig::resolve(&config).is_err());
 }
+
+#[test]
+fn env_enabled_turns_tracing_on_when_persisted_config_is_off() {
+    let _guard = crate::test_support::env_test_lock();
+    std::env::set_var("ZORAI_MLFLOW_TRACING_ENABLED", "true");
+    let persisted = MlflowTracingConfig {
+        enabled: false,
+        ..Default::default()
+    };
+    assert!(
+        persisted.effectively_enabled(),
+        "anchors must be queued when the env override enables the worker"
+    );
+    std::env::remove_var("ZORAI_MLFLOW_TRACING_ENABLED");
+}

@@ -61,6 +61,10 @@ impl TurnTraceAssembler {
         }
     }
 
+    pub fn set_config(&mut self, config: MlflowTracingConfig) {
+        self.config = config;
+    }
+
     pub fn observe(&mut self, at_ms: u64, event: AgentEvent, context: TurnObservationContext) {
         let Some(thread_id) = event_thread_id(&event) else {
             return;

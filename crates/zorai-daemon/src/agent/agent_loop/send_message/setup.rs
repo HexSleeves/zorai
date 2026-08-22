@@ -536,7 +536,7 @@ impl<'a> SendMessageRunner<'a> {
                 }
             }
         }
-        if config.mlflow_tracing.enabled {
+        if config.mlflow_tracing.effectively_enabled() {
             let threads = engine.threads.read().await;
             if let Some(thread) = threads.get(&tid) {
                 if let Some(message) = thread

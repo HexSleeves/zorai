@@ -452,9 +452,9 @@ export function ThreadComposer() {
         </div>
       </div>
 
-      <div className={["zorai-thread-composer__footer", budgetNotice ? "zorai-thread-composer__footer--budget" : ""].filter(Boolean).join(" ")}>
+      <div className="zorai-thread-composer__footer">
         <span>
-          {budgetNotice ?? "Enter sends. Shift+Enter adds a new line. Up/Down recalls sent messages when empty. Ctrl+M records. Ctrl+L reads."}
+          Enter sends. Shift+Enter adds a new line. Up/Down recalls sent messages when empty. Ctrl+M records. Ctrl+L reads.
         </span>
       </div>
     </div>

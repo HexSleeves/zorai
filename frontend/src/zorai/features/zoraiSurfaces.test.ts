@@ -645,5 +645,6 @@ describe("Zorai feature surfaces", () => {
     expect(composerSource).toContain("activeThreadBudgetExceededNotice");
     expect(composerSource).toContain("zorai-composer-budget-notice");
     expect(composerSource).toContain("if (budgetNotice || runtime.isStreamingResponse) return");
+    expect(composerSource).not.toContain("{budgetNotice ??");
   });
 });
