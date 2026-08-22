@@ -453,6 +453,7 @@ declare global {
         workspaceRenamePath?: (rootPath: string, fromPath: string, toPath: string) => Promise<{ from: string; to: string }>;
         workspaceDeletePath?: (rootPath: string, relativePath: string, options?: { recursive?: boolean }) => Promise<boolean>;
         workspaceGitStatus?: (rootPath: string) => Promise<ZoraiWorkspaceGitStatus[]>;
+        workspaceSearch?: (rootPath: string, query: string, options?: { caseSensitive?: boolean; maxResults?: number; maxFiles?: number }) => Promise<Array<{ path: string; line: number; column: number; preview: string }>>;
         workspaceGitDiff?: (rootPath: string, relativePath?: string | null, options?: { staged?: boolean }) => Promise<string>;
         dbAppendCommandLog?: (entry: unknown) => Promise<boolean>;
         dbCompleteCommandLog?: (id: string, exitCode?: number | null, durationMs?: number | null) => Promise<boolean>;

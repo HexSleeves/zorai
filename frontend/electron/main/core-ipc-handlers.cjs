@@ -98,6 +98,7 @@ function registerCoreIpcHandlers(ipcMain, options) {
     ipcMain.handle('workspace-rename-path', (_event, rootPath, fromPath, toPath) => workspaceService.renameWorkspacePath(rootPath, fromPath, toPath));
     ipcMain.handle('workspace-delete-path', (_event, rootPath, relativePath, runtimeOptions) => workspaceService.deleteWorkspacePath(rootPath, relativePath, runtimeOptions));
     ipcMain.handle('workspace-git-status', (_event, rootPath) => workspaceService.workspaceGitStatus(rootPath));
+    ipcMain.handle('workspace-search', (_event, rootPath, query, runtimeOptions) => workspaceService.searchWorkspace(rootPath, query, runtimeOptions));
     ipcMain.handle('workspace-git-diff', (_event, rootPath, relativePath, runtimeOptions) => workspaceService.workspaceGitDiff(rootPath, relativePath, runtimeOptions));
     ipcMain.handle('clipboard-read-text', () => options.clipboard.readText());
     ipcMain.handle('clipboard-write-text', (_event, text) => { options.clipboard.writeText(typeof text === 'string' ? text : ''); return true; });

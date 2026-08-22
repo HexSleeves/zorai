@@ -208,6 +208,55 @@ async function resolveGitRoot(targetPath) {
     } catch { return null; }
 }
 
+async function searchWorkspace(rootPath, query, options = {}) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const needle = typeof query === 'string' ? query.trim() : '';
+    if (!needle) return [];
+    const caseSensitive = options.caseSensitive === true;
+    const comparableNeedle = caseSensitive ? needle : needle.toLowerCase();
+    const maxResults = Math.max(1, Math.min(Number(options.maxResults) || 100, 500));
+    const maxFiles = Math.max(1, Math.min(Number(options.maxFiles) || 5000, 20000));
+    const results = [];
+    const pending = [root];
+    let visitedFiles = 0;
+
+    while (pending.length > 0 && results.length < maxResults && visitedFiles < maxFiles) {
+        const directory = pending.pop();
+        let entries;
+        try { entries = await fs.promises.readdir(directory, { withFileTypes: true }); } catch { continue; }
+        for (const entry of entries) {
+            if (results.length >= maxResults || visitedFiles >= maxFiles) break;
+            if (IGNORED_DIRECTORY_NAMES.has(entry.name) || entry.isSymbolicLink()) continue;
+            const absolutePath = path.join(directory, entry.name);
+            if (entry.isDirectory()) {
+                pending.push(absolutePath);
+                continue;
+            }
+            if (!entry.isFile()) continue;
+            visitedFiles += 1;
+            let stats;
+            try { stats = await fs.promises.stat(absolutePath); } catch { continue; }
+            if (stats.size > 1024 * 1024) continue;
+            let buffer;
+            try { buffer = await fs.promises.readFile(absolutePath); } catch { continue; }
+            if (isProbablyBinary(buffer)) continue;
+            const lines = buffer.toString('utf8').split(/\r?\n/);
+            for (let lineIndex = 0; lineIndex < lines.length && results.length < maxResults; lineIndex += 1) {
+                const comparableLine = caseSensitive ? lines[lineIndex] : lines[lineIndex].toLowerCase();
+                const columnIndex = comparableLine.indexOf(comparableNeedle);
+                if (columnIndex < 0) continue;
+                results.push({
+                    path: path.relative(root, absolutePath),
+                    line: lineIndex + 1,
+                    column: columnIndex + 1,
+                    preview: lines[lineIndex].trim().slice(0, 240),
+                });
+            }
+        }
+    }
+    return results;
+}
+
 async function workspaceGitStatus(rootPath) {
     const root = canonicalWorkspaceRoot(rootPath);
     const gitRoot = await resolveGitRoot(root);
@@ -259,6 +308,7 @@ module.exports = {
     readWorkspaceFile,
     renameWorkspacePath,
     resolveWorkspacePath,
+    searchWorkspace,
     sha256,
     workspaceGitDiff,
     workspaceGitStatus,

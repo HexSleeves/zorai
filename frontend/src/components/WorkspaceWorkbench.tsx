@@ -74,6 +74,8 @@ export function WorkspaceWorkbench() {
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [newPath, setNewPath] = useState("");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<Array<{ path: string; line: number; column: number; preview: string }>>([]);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const activeDocument = context?.activeFile ? documents[context.activeFile] : undefined;
   const statusMap = useMemo(() => new Map(gitStatus.map((entry) => [entry.path, statusLabel(entry)])), [gitStatus]);
@@ -139,6 +141,17 @@ export function WorkspaceWorkbench() {
     if (!context?.root || !activeDocument || !bridge?.workspaceGitDiff) return;
     setDiff(await bridge.workspaceGitDiff(context.root, activeDocument.path));
     setMode("diff");
+  };
+
+  const runSearch = async () => {
+    if (!context?.root || !searchQuery.trim() || !bridge?.workspaceSearch) {
+      setSearchResults([]);
+      return;
+    }
+    try {
+      setSearchResults(await bridge.workspaceSearch(context.root, searchQuery, { maxResults: 100 }));
+      setError(null);
+    } catch (reason: any) { setError(reason?.message ?? String(reason)); }
   };
 
   const createPath = async (kind: "file" | "directory") => {
@@ -231,6 +244,11 @@ export function WorkspaceWorkbench() {
               <button type="button" title="New file" onClick={() => void createPath("file")}>+F</button>
               <button type="button" title="New directory" onClick={() => void createPath("directory")}>+D</button>
             </div>
+            <div className="zorai-workspace-search-row">
+              <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search workspace" onKeyDown={(event) => { if (event.key === "Enter") void runSearch(); }} />
+              <button type="button" onClick={() => void runSearch()}>⌕</button>
+            </div>
+            {searchResults.length > 0 ? <div className="zorai-workspace-search-results">{searchResults.map((result) => <button type="button" key={`${result.path}:${result.line}:${result.column}`} onClick={() => void openFile(result.path)}><strong>{result.path}:{result.line}</strong><span>{result.preview}</span></button>)}</div> : null}
             <div className="zorai-workspace-tree">{rootEntries.map((entry) => <WorkspaceTreeNode key={entry.path} root={context.root} entry={entry} depth={0} status={statusMap} onOpen={(path) => void openFile(path)} />)}</div>
           </>
         ) : <div className="zorai-workspace-empty">Open a folder to bind it to this thread.</div>}

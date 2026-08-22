@@ -7,6 +7,7 @@ const {
     listWorkspaceDirectory,
     readWorkspaceFile,
     resolveWorkspacePath,
+    searchWorkspace,
     writeWorkspaceFile,
 } = require('./main/workspace-service.cjs');
 
@@ -52,6 +53,22 @@ test('workspace tree is lazy, sorted, and hides heavy directories by default', a
     fs.writeFileSync(path.join(root, 'z.txt'), 'z');
     const entries = await listWorkspaceDirectory(root, '');
     assert.deepEqual(entries.map((entry) => entry.name), ['src', 'z.txt']);
+    fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('workspace search is bounded, ignores heavy directories, and reports locations', async () => {
+    const root = tempWorkspace();
+    fs.mkdirSync(path.join(root, 'src'));
+    fs.mkdirSync(path.join(root, 'node_modules'));
+    fs.writeFileSync(path.join(root, 'src', 'main.ts'), 'first line\nconst workspaceNeedle = true;\n');
+    fs.writeFileSync(path.join(root, 'node_modules', 'ignored.js'), 'workspaceNeedle');
+    const results = await searchWorkspace(root, 'workspaceNeedle', { maxResults: 10 });
+    assert.deepEqual(results, [{
+        path: path.join('src', 'main.ts'),
+        line: 2,
+        column: 7,
+        preview: 'const workspaceNeedle = true;',
+    }]);
     fs.rmSync(root, { recursive: true, force: true });
 });
 

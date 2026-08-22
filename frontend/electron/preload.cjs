@@ -158,6 +158,7 @@ const bridgeApi = {
     workspaceRenamePath: (rootPath, fromPath, toPath) => ipcRenderer.invoke('workspace-rename-path', rootPath, fromPath, toPath),
     workspaceDeletePath: (rootPath, relativePath, options) => ipcRenderer.invoke('workspace-delete-path', rootPath, relativePath, options),
     workspaceGitStatus: (rootPath) => ipcRenderer.invoke('workspace-git-status', rootPath),
+    workspaceSearch: (rootPath, query, options) => ipcRenderer.invoke('workspace-search', rootPath, query, options),
     workspaceGitDiff: (rootPath, relativePath, options) => ipcRenderer.invoke('workspace-git-diff', rootPath, relativePath, options),
     readClipboardText: () => ipcRenderer.invoke('clipboard-read-text'),
     writeClipboardText: (text) => ipcRenderer.invoke('clipboard-write-text', text),
