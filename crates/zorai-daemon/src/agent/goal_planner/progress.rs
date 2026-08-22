@@ -1012,18 +1012,8 @@ impl AgentEngine {
                 })
         };
         let Some(updated_goal) = updated_goal else {
-            {
-                let mut tasks = self.tasks.lock().await;
-                tasks.retain(|task| task.id != updated_task.id);
-            }
-            if let Err(error) = self.history.delete_agent_task(&updated_task.id).await {
-                tracing::warn!(
-                    task_id = %updated_task.id,
-                    error = %error,
-                    "failed to delete orphaned progress supervisor task"
-                );
-            }
-            self.persist_tasks().await;
+            self.rollback_orphaned_progress_supervisor_task(&updated_task.id)
+                .await;
             anyhow::bail!("goal run missing while queuing progress supervision");
         };
 
@@ -1038,6 +1028,25 @@ impl AgentEngine {
             Some(format!("Stagnation detected ({reason}); supervisor queued")),
         );
         Ok(())
+    }
+
+    pub(in crate::agent) async fn rollback_orphaned_progress_supervisor_task(
+        &self,
+        task_id: &str,
+    ) {
+        {
+            let mut tasks = self.tasks.lock().await;
+            tasks.retain(|task| task.id != task_id);
+        }
+        if let Err(error) = self.history.delete_agent_task(task_id).await {
+            tracing::warn!(
+                task_id = %task_id,
+                error = %error,
+                "failed to delete orphaned progress supervisor task"
+            );
+        }
+        self.forget_memory_graph_from_task(task_id).await;
+        self.persist_tasks().await;
     }
 
     /// Clear the stagnation-pending guard once a goal-run task reaches a

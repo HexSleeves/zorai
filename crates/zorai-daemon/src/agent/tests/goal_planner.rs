@@ -5619,6 +5619,90 @@ async fn stagnation_pending_rolls_back_when_supervisor_enqueue_fails() {
 }
 
 #[tokio::test]
+async fn rolling_back_orphaned_supervisor_also_drops_memory_graph_node() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let task = engine
+        .enqueue_task(
+            "Progress supervision: Fix the parser".to_string(),
+            "Review src/parser.rs after stagnation".to_string(),
+            "high",
+            None,
+            None,
+            Vec::new(),
+            None,
+            GOAL_PROGRESS_SUPERVISION_SOURCE,
+            Some("goal-graph-rollback".to_string()),
+            None,
+            None,
+            None,
+        )
+        .await;
+    let task_node_id = format!("node:task:{}", task.id);
+
+    assert!(
+        engine
+            .history
+            .get_memory_node(&task_node_id)
+            .await
+            .expect("load task graph node")
+            .is_some(),
+        "enqueue_task records a task node before the goal run is confirmed"
+    );
+    assert!(
+        engine
+            .history
+            .list_memory_edges_for_node(&task_node_id)
+            .await
+            .expect("load task graph edges")
+            .iter()
+            .any(|edge| edge.relation_type == "task_touches_file"),
+        "enqueue_task also records task_touches_file edges that must not survive rollback"
+    );
+
+    engine
+        .rollback_orphaned_progress_supervisor_task(&task.id)
+        .await;
+
+    assert!(
+        engine
+            .tasks
+            .lock()
+            .await
+            .iter()
+            .all(|queued| queued.id != task.id),
+        "rolled-back supervisor must leave the live queue"
+    );
+    assert!(
+        !engine
+            .history
+            .has_agent_task_id(&task.id)
+            .await
+            .expect("check task history"),
+        "rolled-back supervisor must be deleted from history"
+    );
+    assert!(
+        engine
+            .history
+            .get_memory_node(&task_node_id)
+            .await
+            .expect("load rolled-back task graph node")
+            .is_none(),
+        "enqueue_task's memory-graph write must be undone or later lookups keep seeing a cancelled supervisor"
+    );
+    assert!(
+        engine
+            .history
+            .list_memory_edges_for_node(&task_node_id)
+            .await
+            .expect("load rolled-back task graph edges")
+            .is_empty(),
+        "incident graph edges must be removed with the task node"
+    );
+}
+
+#[tokio::test]
 async fn fail_verdict_requeues_when_stagnation_pending_guard_has_no_supervisor() {
     let root = tempdir().expect("temp dir");
     let manager = SessionManager::new_test(root.path()).await;
