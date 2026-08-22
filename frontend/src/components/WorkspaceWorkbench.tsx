@@ -73,6 +73,7 @@ export function WorkspaceWorkbench() {
   const [mode, setMode] = useState<"edit" | "diff">("edit");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [newPath, setNewPath] = useState("");
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const activeDocument = context?.activeFile ? documents[context.activeFile] : undefined;
   const statusMap = useMemo(() => new Map(gitStatus.map((entry) => [entry.path, statusLabel(entry)])), [gitStatus]);
@@ -140,6 +141,67 @@ export function WorkspaceWorkbench() {
     setMode("diff");
   };
 
+  const createPath = async (kind: "file" | "directory") => {
+    if (!activeThreadId || !context?.root || !newPath.trim()) return;
+    try {
+      if (kind === "directory") {
+        await bridge?.workspaceCreateDirectory?.(context.root, newPath.trim());
+      } else {
+        const created = await bridge?.workspaceWriteFile?.(context.root, newPath.trim(), "", null);
+        if (created) {
+          setDocuments((current) => ({ ...current, [created.path]: { ...created, original: "", dirty: false } }));
+          setActiveFile(activeThreadId, created.path);
+        }
+      }
+      setNewPath("");
+      await refreshRoot();
+    } catch (reason: any) { setError(reason?.message ?? String(reason)); }
+  };
+
+  const reloadActiveFile = async () => {
+    if (!context?.root || !activeDocument || !bridge?.workspaceReadFile) return;
+    if (activeDocument.dirty && !window.confirm(`Discard unsaved changes in ${activeDocument.path}?`)) return;
+    try {
+      const reloaded = await bridge.workspaceReadFile(context.root, activeDocument.path);
+      setDocuments((current) => ({ ...current, [reloaded.path]: { ...reloaded, original: reloaded.content, dirty: false } }));
+      setError(null);
+    } catch (reason: any) { setError(reason?.message ?? String(reason)); }
+  };
+
+  const renameActiveFile = async () => {
+    if (!activeThreadId || !context?.root || !activeDocument || !bridge?.workspaceRenamePath) return;
+    const nextPath = window.prompt("Rename workspace path", activeDocument.path)?.trim();
+    if (!nextPath || nextPath === activeDocument.path) return;
+    try {
+      await bridge.workspaceRenamePath(context.root, activeDocument.path, nextPath);
+      const renamed = await bridge.workspaceReadFile?.(context.root, nextPath);
+      setDocuments((current) => {
+        const next = { ...current };
+        delete next[activeDocument.path];
+        if (renamed) next[nextPath] = { ...renamed, original: renamed.content, dirty: false };
+        return next;
+      });
+      closeFile(activeThreadId, activeDocument.path);
+      if (renamed) setActiveFile(activeThreadId, nextPath);
+      await refreshRoot();
+    } catch (reason: any) { setError(reason?.message ?? String(reason)); }
+  };
+
+  const deleteActiveFile = async () => {
+    if (!activeThreadId || !context?.root || !activeDocument || !bridge?.workspaceDeletePath) return;
+    if (!window.confirm(`Delete ${activeDocument.path}?`)) return;
+    try {
+      await bridge.workspaceDeletePath(context.root, activeDocument.path, { recursive: false });
+      setDocuments((current) => {
+        const next = { ...current };
+        delete next[activeDocument.path];
+        return next;
+      });
+      closeFile(activeThreadId, activeDocument.path);
+      await refreshRoot();
+    } catch (reason: any) { setError(reason?.message ?? String(reason)); }
+  };
+
   const updateSelection = () => {
     if (!activeThreadId || !editorRef.current || !activeDocument) return;
     const textarea = editorRef.current;
@@ -164,6 +226,11 @@ export function WorkspaceWorkbench() {
         {context?.root ? (
           <>
             <div className="zorai-workspace-explorer-heading"><strong>{context.root.split(/[\\/]/).slice(-1)[0]}</strong><button type="button" onClick={() => void refreshRoot()}>↻</button></div>
+            <div className="zorai-workspace-create-row">
+              <input value={newPath} onChange={(event) => setNewPath(event.target.value)} placeholder="relative/path" />
+              <button type="button" title="New file" onClick={() => void createPath("file")}>+F</button>
+              <button type="button" title="New directory" onClick={() => void createPath("directory")}>+D</button>
+            </div>
             <div className="zorai-workspace-tree">{rootEntries.map((entry) => <WorkspaceTreeNode key={entry.path} root={context.root} entry={entry} depth={0} status={statusMap} onOpen={(path) => void openFile(path)} />)}</div>
           </>
         ) : <div className="zorai-workspace-empty">Open a folder to bind it to this thread.</div>}
@@ -183,6 +250,9 @@ export function WorkspaceWorkbench() {
               <div>
                 <button type="button" onClick={() => toggleAttachedFile(activeThreadId, activeDocument.path)}>{context?.attachedFiles.includes(activeDocument.path) ? "Detach context" : "Attach context"}</button>
                 <button type="button" onClick={() => void showDiff()}>Diff</button>
+                <button type="button" onClick={() => void reloadActiveFile()}>Reload</button>
+                <button type="button" onClick={() => void renameActiveFile()}>Rename</button>
+                <button type="button" onClick={() => void deleteActiveFile()}>Delete</button>
                 <button type="button" disabled={!activeDocument.dirty || saving} onClick={() => void save()}>{saving ? "Saving…" : "Save"}</button>
               </div>
             </div>

@@ -3015,3 +3015,27 @@
   white-space: pre;
 }
 .zorai-workspace-diff-grid pre:last-child { border-right: 0; background: #0f1515; }
+
+.zorai-workspace-create-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 4px;
+  padding: 0 8px 8px;
+}
+.zorai-workspace-create-row input {
+  min-width: 0;
+  padding: 5px 7px;
+  border: 1px solid var(--zorai-border);
+  border-radius: 4px;
+  background: var(--zorai-bg-surface);
+  color: var(--zorai-text);
+  font: 11px var(--font-mono);
+}
+.zorai-workspace-create-row button {
+  border: 1px solid var(--zorai-border);
+  border-radius: 4px;
+  background: var(--zorai-bg-elevated);
+  color: var(--zorai-text);
+  font: 10px var(--font-mono);
+  cursor: pointer;
+}
