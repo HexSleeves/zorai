@@ -3110,3 +3110,11 @@ button.zorai-composer-context-chip { cursor: pointer; }
 .zorai-workspace-operation-changes article button { width: 100%; display: flex; flex-direction: column; gap: 2px; border: 0; padding: 5px 12px; background: transparent; color: var(--zorai-text); text-align: left; font: 9px var(--font-mono); }
 .zorai-workspace-operation-changes article button:hover { background: var(--zorai-bg-active); }
 .zorai-workspace-operation-changes article button span { color: var(--zorai-muted); }
+
+.zorai-workspace-symbols { max-height: 180px; overflow: auto; border-bottom: 1px solid var(--zorai-border); background: var(--zorai-bg-panel); }
+.zorai-workspace-symbols summary { position: sticky; top: 0; z-index: 1; padding: 6px 9px; background: var(--zorai-bg-elevated); color: var(--zorai-muted); font-size: 10px; text-transform: uppercase; cursor: pointer; }
+.zorai-workspace-symbols button { width: 100%; display: grid; grid-template-columns: 55px minmax(0, 1fr) auto; gap: 6px; align-items: center; border: 0; padding: 4px 9px; background: transparent; color: var(--zorai-text); font: 10px var(--font-mono); text-align: left; }
+.zorai-workspace-symbols button:hover { background: var(--zorai-bg-active); }
+.zorai-workspace-symbols button span { color: var(--zorai-muted); }
+.zorai-workspace-symbols button strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zorai-workspace-symbols button code { color: var(--zorai-accent-secondary); }

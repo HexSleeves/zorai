@@ -3,6 +3,7 @@ import { getBridge } from "@/lib/bridge";
 import { useAgentStore } from "@/lib/agentStore";
 import { useWorkspaceStore } from "@/lib/workspaceStore";
 import { useWorkspaceContextStore } from "@/lib/workspaceContextStore";
+import { extractWorkspaceSymbols } from "@/lib/workspaceSymbols";
 
 type OpenDocument = ZoraiWorkspaceFile & { original: string; dirty: boolean; externalContent?: string; externalHash?: string };
 
@@ -85,6 +86,7 @@ export function WorkspaceWorkbench() {
   const [searchResults, setSearchResults] = useState<Array<{ path: string; line: number; column: number; preview: string }>>([]);
   const [agentChanges, setAgentChanges] = useState<ZoraiWorkContextEntry[]>([]);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  const pendingNavigationRef = useRef<{ path: string; line: number; column: number } | null>(null);
   const activeDocument = context?.activeFile ? documents[context.activeFile] : undefined;
   const operationGroups = useMemo(() => {
     const groups = new Map<string, ZoraiWorkContextEntry[]>();
@@ -94,6 +96,7 @@ export function WorkspaceWorkbench() {
     }
     return [...groups.entries()].sort((left, right) => Math.max(...right[1].map((entry) => entry.updated_at)) - Math.max(...left[1].map((entry) => entry.updated_at)));
   }, [agentChanges]);
+  const symbols = useMemo(() => activeDocument ? extractWorkspaceSymbols(activeDocument.content) : [], [activeDocument]);
   const statusMap = useMemo(() => new Map(gitStatus.map((entry) => [entry.path, statusLabel(entry)])), [gitStatus]);
 
   const refreshRoot = useCallback(async (root = context?.root) => {
@@ -230,6 +233,20 @@ export function WorkspaceWorkbench() {
     return () => window.clearInterval(timer);
   }, [activeDocument, bridge, context?.root]);
 
+  useEffect(() => {
+    const pending = pendingNavigationRef.current;
+    const textarea = editorRef.current;
+    if (!pending || !textarea || activeDocument?.path !== pending.path || mode !== "edit") return;
+    const lines = textarea.value.split("\n");
+    const lineIndex = Math.max(0, Math.min(pending.line - 1, lines.length - 1));
+    const offset = lines.slice(0, lineIndex).reduce((total, line) => total + line.length + 1, 0) + Math.max(0, pending.column - 1);
+    textarea.focus();
+    textarea.setSelectionRange(offset, offset);
+    const lineHeight = Number.parseFloat(window.getComputedStyle(textarea).lineHeight) || 20;
+    textarea.scrollTop = Math.max(0, lineIndex * lineHeight - textarea.clientHeight / 3);
+    pendingNavigationRef.current = null;
+  }, [activeDocument?.path, mode]);
+
   const openRoot = async () => {
     if (!activeThreadId || !bridge?.workspaceOpen) return;
     try {
@@ -241,16 +258,29 @@ export function WorkspaceWorkbench() {
     } catch (reason: any) { setError(reason?.message ?? String(reason)); }
   };
 
-  const openFile = async (filePath: string) => {
+  const openFile = async (filePath: string, location?: { line: number; column: number }) => {
     if (!activeThreadId || !context?.root || !bridge?.workspaceReadFile) return;
     try {
       setError(null);
+      if (location) pendingNavigationRef.current = { path: filePath, ...location };
       if (!documents[filePath]) {
         const file = await bridge.workspaceReadFile(context.root, filePath);
         setDocuments((current) => ({ ...current, [filePath]: { ...file, original: file.content, dirty: false } }));
       }
       setActiveFile(activeThreadId, filePath);
       setMode("edit");
+      if (location && documents[filePath]) {
+        requestAnimationFrame(() => {
+          const textarea = editorRef.current;
+          if (!textarea) return;
+          const lines = textarea.value.split("\n");
+          const lineIndex = Math.max(0, Math.min(location.line - 1, lines.length - 1));
+          const offset = lines.slice(0, lineIndex).reduce((total, line) => total + line.length + 1, 0) + Math.max(0, location.column - 1);
+          textarea.focus();
+          textarea.setSelectionRange(offset, offset);
+          pendingNavigationRef.current = null;
+        });
+      }
     } catch (reason: any) { setError(reason?.message ?? String(reason)); }
   };
 
@@ -456,7 +486,7 @@ export function WorkspaceWorkbench() {
                 ))}
               </details>
             ) : null}
-            {searchResults.length > 0 ? <div className="zorai-workspace-search-results">{searchResults.map((result) => <button type="button" key={`${result.path}:${result.line}:${result.column}`} onClick={() => void openFile(result.path)}><strong>{result.path}:{result.line}</strong><span>{result.preview}</span></button>)}</div> : null}
+            {searchResults.length > 0 ? <div className="zorai-workspace-search-results">{searchResults.map((result) => <button type="button" key={`${result.path}:${result.line}:${result.column}`} onClick={() => void openFile(result.path, { line: result.line, column: result.column })}><strong>{result.path}:{result.line}</strong><span>{result.preview}</span></button>)}</div> : null}
             {reviewedChange ? (
               <div className="zorai-workspace-hunk-review">
                 <div className="zorai-workspace-hunk-heading">
@@ -530,6 +560,12 @@ export function WorkspaceWorkbench() {
                 <button type="button" disabled={!activeDocument.dirty || saving} onClick={() => void save()}>{saving ? "Saving…" : "Save"}</button>
               </div>
             </div>
+            {symbols.length > 0 ? (
+              <details className="zorai-workspace-symbols">
+                <summary>Outline ({symbols.length})</summary>
+                {symbols.map((symbol) => <button type="button" key={`${symbol.line}:${symbol.column}:${symbol.name}`} onClick={() => activeDocument && void openFile(activeDocument.path, { line: symbol.line, column: symbol.column })}><span>{symbol.kind}</span><strong>{symbol.name}</strong><code>{symbol.line}</code></button>)}
+              </details>
+            ) : null}
             <div className="zorai-workspace-editor">
               {mode === "diff" ? (
                 <div className="zorai-workspace-diff-grid">
