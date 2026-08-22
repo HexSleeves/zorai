@@ -225,3 +225,7 @@ Zorai supports voice workflows in both TUI and desktop app.
 ## License
 
 [MIT](LICENSE)
+
+## MLflow conversation tracing
+
+Zorai can export daemon-wide agent turns, model phases, and tool calls to MLflow 3.6+ over OTLP/HTTP. Tracing is disabled by default, privacy-controlled, bounded, and fail-open. See [`docs/mlflow-tracing.md`](docs/mlflow-tracing.md) for local server setup, Desktop/TUI configuration, capture modes, scopes, encrypted headers, and troubleshooting.

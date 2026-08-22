@@ -23,3 +23,24 @@ pub(crate) use worker::*;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+pub(crate) async fn export_diagnostic_to_uri(
+    tracking_uri: String,
+    experiment_name: String,
+) -> anyhow::Result<MlflowConnectionInfo> {
+    let configured = MlflowTracingConfig {
+        enabled: true,
+        tracking_uri,
+        experiment_name,
+        ..Default::default()
+    };
+    let effective = MlflowTracingEffectiveConfig::resolve(&configured)?;
+    let client = MlflowClient::new(&effective, reqwest::header::HeaderMap::new())?;
+    let info = client.test_connection().await?;
+    let body = encode_otlp_batch(&[worker::diagnostic_trace()])?;
+    client
+        .export_otlp(&info.experiment.experiment_id, body)
+        .await?;
+    Ok(info)
+}

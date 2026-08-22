@@ -426,7 +426,7 @@ fn increment_exported(runtime: &MlflowTracingRuntime, count: u64) {
     runtime.status_tx.send_replace(status);
 }
 
-fn diagnostic_trace() -> CompletedTurnTrace {
+pub(super) fn diagnostic_trace() -> CompletedTurnTrace {
     let now = now_millis();
     CompletedTurnTrace {
         trace_id: *uuid::Uuid::new_v4().as_bytes(),
