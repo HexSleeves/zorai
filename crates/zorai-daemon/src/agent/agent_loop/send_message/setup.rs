@@ -757,6 +757,15 @@ impl<'a> SendMessageRunner<'a> {
         };
         let mut preferred_session_id =
             resolve_preferred_session_id(&engine.session_manager, preferred_session_hint).await;
+        if preferred_session_id.is_none() && current_task_for_setup.is_some() {
+            preferred_session_id = engine
+                .session_manager
+                .list()
+                .await
+                .into_iter()
+                .find(|session| session.workspace_id.is_some())
+                .map(|session| session.id);
+        }
         if let (Some(task), Some(source_session_id)) =
             (current_task_for_setup.as_ref(), preferred_session_id)
         {

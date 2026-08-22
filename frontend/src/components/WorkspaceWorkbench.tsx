@@ -102,6 +102,7 @@ export function WorkspaceWorkbench() {
   const monacoEditorRef = useRef<MonacoEditorApi.IStandaloneCodeEditor | null>(null);
   const pendingNavigationRef = useRef<{ path: string; line: number; column: number } | null>(null);
   const activeDocument = context?.activeFile ? documents[context.activeFile] : undefined;
+  const isolatedTaskWorktrees = useMemo(() => gitWorktrees.filter((worktree) => /\/zorai\/(?:goal|task)-/.test(worktree.branch ?? "")), [gitWorktrees]);
   const operationGroups = useMemo(() => {
     const groups = new Map<string, ZoraiWorkContextEntry[]>();
     for (const entry of agentChanges.filter((change) => change.operation_id)) {
@@ -555,6 +556,17 @@ export function WorkspaceWorkbench() {
               <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search workspace" onKeyDown={(event) => { if (event.key === "Enter") void runSearch(); }} />
               <button type="button" onClick={() => void runSearch()}>⌕</button>
             </div>
+            {isolatedTaskWorktrees.length > 0 ? (
+              <details className="zorai-workspace-isolated-reviews" open>
+                <summary>Awaiting isolated review ({isolatedTaskWorktrees.length})</summary>
+                {isolatedTaskWorktrees.map((worktree) => (
+                  <div key={worktree.path}>
+                    <button type="button" onClick={() => switchThreadWorktree(worktree.path)}><strong>{worktree.branch}</strong><span>{worktree.path}</span></button>
+                    <em>Review in worktree; integration is always explicit.</em>
+                  </div>
+                ))}
+              </details>
+            ) : null}
             {workspaceDiagnostics.length > 0 ? (
               <details className="zorai-workspace-problems" open>
                 <summary>Problems ({workspaceDiagnostics.length})</summary>

@@ -54,7 +54,11 @@ export const useWorkspaceContextStore = create<WorkspaceContextState>((set, get)
   hydrate: async () => {
     if (get().hydrated) return;
     const saved = await readPersistedJson<{ byThreadId?: Record<string, ThreadWorkspaceContext> }>(WORKSPACE_CONTEXT_FILE);
-    set({ hydrated: true, byThreadId: saved?.byThreadId ?? {} });
+    const byThreadId = Object.fromEntries(Object.entries(saved?.byThreadId ?? {}).map(([threadId, context]) => [threadId, {
+      ...context,
+      isolateAgentTasks: context.isolateAgentTasks ?? false,
+    }]));
+    set({ hydrated: true, byThreadId });
   },
   bindRoot: (threadId, root) => set((state) => {
     const previous = state.byThreadId[threadId];

@@ -3145,3 +3145,10 @@ button.zorai-composer-context-chip { cursor: pointer; }
 
 .zorai-workspace-isolation-toggle { display: flex; align-items: center; gap: 6px; padding: 0 9px 8px; color: var(--zorai-muted); font-size: 10px; cursor: pointer; }
 .zorai-workspace-isolation-toggle input { accent-color: var(--zorai-accent); }
+
+.zorai-workspace-isolated-reviews { max-height: 30%; overflow: auto; border-block: 1px solid var(--zorai-border); }
+.zorai-workspace-isolated-reviews summary { padding: 7px 9px; background: color-mix(in srgb, var(--zorai-accent-secondary) 12%, var(--zorai-bg-elevated)); color: var(--zorai-accent-secondary); font-size: 10px; text-transform: uppercase; cursor: pointer; }
+.zorai-workspace-isolated-reviews > div { padding: 6px 9px; border-bottom: 1px solid var(--zorai-border); }
+.zorai-workspace-isolated-reviews button { width: 100%; display: flex; flex-direction: column; border: 0; background: transparent; color: var(--zorai-text); text-align: left; font: 9px var(--font-mono); cursor: pointer; }
+.zorai-workspace-isolated-reviews button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--zorai-muted); }
+.zorai-workspace-isolated-reviews em { color: var(--zorai-muted); font-size: 9px; }
