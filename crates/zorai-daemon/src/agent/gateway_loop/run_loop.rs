@@ -388,6 +388,9 @@ impl AgentEngine {
                     if let Err(error) = self.supervise_operation_completion_wakeups().await {
                         tracing::warn!(error = %error, "operation wakeup supervision tick failed");
                     }
+                    if let Err(error) = self.supervise_idle_deferred_thread_continuations().await {
+                        tracing::warn!(error = %error, "idle deferred continuation supervision tick failed");
+                    }
                 }
                 _ = shutdown.changed() => break,
             }

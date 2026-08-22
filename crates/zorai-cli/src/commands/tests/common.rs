@@ -4,6 +4,8 @@ use crate::commands::common::{
     handle_post_setup_action, resolve_dm_target, resolve_gui_binary, resolve_sibling_binary,
     LaunchTarget,
 };
+#[cfg(target_os = "linux")]
+use crate::commands::common::{linux_electron_needs_no_sandbox, ChromeSandboxStatus};
 use crate::setup_wizard::PostSetupAction;
 
 #[test]
@@ -97,4 +99,34 @@ fn resolve_gui_binary_finds_development_linux_unpacked_app_from_repo_root() {
     assert_eq!(resolved, gui_binary);
 
     std::fs::remove_dir_all(temp_dir).expect("remove temp dir");
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn linux_electron_needs_no_sandbox_when_helper_exists_without_root_setuid() {
+    assert!(
+        !linux_electron_needs_no_sandbox(ChromeSandboxStatus::Missing),
+        "missing chrome-sandbox should keep Chromium user-namespace sandbox"
+    );
+    assert!(
+        !linux_electron_needs_no_sandbox(ChromeSandboxStatus::Present {
+            uid: 0,
+            mode: 0o4755,
+        }),
+        "a root-owned 4755 helper is the configuration Chromium requires"
+    );
+    assert!(
+        linux_electron_needs_no_sandbox(ChromeSandboxStatus::Present {
+            uid: 0,
+            mode: 0o0755,
+        }),
+        "Chromium aborts if chrome-sandbox exists without the setuid bit"
+    );
+    assert!(
+        linux_electron_needs_no_sandbox(ChromeSandboxStatus::Present {
+            uid: 1000,
+            mode: 0o4755,
+        }),
+        "Chromium aborts if chrome-sandbox is setuid but not owned by root"
+    );
 }

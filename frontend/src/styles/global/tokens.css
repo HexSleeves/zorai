@@ -81,6 +81,7 @@
   
   /* Primary Accent - Cyan-teal for general UI focus */
   --accent: #5ee7df;
+  --accent-secondary: #a78bfa;
   --accent-hover: #7aefe8;
   --accent-soft: rgba(94, 231, 223, 0.1);
   --accent-dim: rgba(94, 231, 223, 0.04);
@@ -302,6 +303,7 @@
    * ═══════════════════════════════════════════════════════════════════════ */
   
   --border: rgba(255, 255, 255, 0.10);
+  --border-color: rgba(255, 255, 255, 0.12);
   --border-strong: rgba(255, 255, 255, 0.15);
   --border-subtle: rgba(255, 255, 255, 0.06);
   --border-focus: rgba(94, 231, 223, 0.4);

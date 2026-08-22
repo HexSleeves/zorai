@@ -6,6 +6,7 @@ import {
   beginProgrammaticThreadHistoryScroll,
   endProgrammaticThreadHistoryScroll,
   resolveThreadHistoryScrollAction,
+  setFollowThreadHistoryBottom,
   shouldFollowThreadHistoryBottom,
   shouldIgnoreThreadHistoryScroll,
 } from "@/components/agent-chat-panel/runtime/threadHistoryScroll";
@@ -20,17 +21,27 @@ import { buildThreadAgentOptions } from "./threadHandoffModel";
 import { BUILTIN_WORKSPACE_PERSONAS } from "../workspaces/workspaceActorPicker";
 import { useThreadSpeech } from "./useThreadSpeech";
 import {
-  isMessageFromCurrentViewSession,
-  isRetryableErrorMessage,
   NativeThreadMessageBubble,
+  shouldOfferMessageRetry,
 } from "./NativeThreadMessageBubble";
+import { ThreadRetryStatusBanner } from "./ThreadRetryStatusBanner";
+import { useThreadRetryStatus } from "./threadRetryStatus";
+import { resolveThreadOwnerRuntimeProfile } from "./threadOwnerRuntime";
+import type { ZoraiReturnTarget } from "../../shell/zoraiNavigationEvents";
 
 export { ThreadsRail } from "./ThreadsRail";
 
-export function ThreadsView() {
+export function ThreadsView({
+  returnTarget = null,
+  onReturnTarget,
+}: {
+  returnTarget?: ZoraiReturnTarget | null;
+  onReturnTarget?: () => void;
+} = {}) {
   const runtime = useAgentChatPanelRuntime();
   const [pinLimitResult, setPinLimitResult] = useState<ZoraiThreadMessagePinResult | null>(null);
   const [participantsOpen, setParticipantsOpen] = useState(false);
+  const [pinnedToBottom, setPinnedToBottom] = useState(true);
   const subAgents = useAgentStore((state) => state.subAgents);
   const viewMountedAtRef = useRef(Date.now());
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -44,6 +55,10 @@ export function ThreadsView() {
   }), [runtime.messages]);
   const latestUserMessage = useMemo(
     () => [...runtime.messages].reverse().find((message) => message.role === "user" && message.content.trim()),
+    [runtime.messages],
+  );
+  const latestAssistantMessageId = useMemo(
+    () => [...runtime.messages].reverse().find((message) => message.role === "assistant")?.id,
     [runtime.messages],
   );
   const regenerateAssistantMessage = useCallback((messageId: string) => {
@@ -67,6 +82,10 @@ export function ThreadsView() {
     });
   }, [latestUserMessage, runtime.sendMessage]);
   const speech = useThreadSpeech(runtime.messages);
+  const retryStatus = useThreadRetryStatus(
+    runtime.activeThread?.daemonThreadId,
+    runtime.activeThread?.id,
+  );
 
   // Global shortcuts for the thread surface:
   //   Ctrl+L — speak/stop the latest assistant message
@@ -87,6 +106,11 @@ export function ThreadsView() {
   }, [speech]);
 
   const activeThreadId = runtime.activeThread?.id ?? null;
+
+  useEffect(() => {
+    setFollowThreadHistoryBottom(true);
+    setPinnedToBottom(true);
+  }, [activeThreadId]);
 
   useEffect(() => {
     const previousCount = previousMessageCountRef.current;
@@ -144,6 +168,7 @@ export function ThreadsView() {
       scrollHeight: scroller.scrollHeight,
       clientHeight: scroller.clientHeight,
     });
+    setPinnedToBottom(shouldFollowThreadHistoryBottom());
     if (action === "load-older") {
       const previousHeight = scroller.scrollHeight;
       const previousTop = scroller.scrollTop;
@@ -161,12 +186,28 @@ export function ThreadsView() {
       });
     }
   };
+  const scrollThreadToLatest = () => {
+    const scroller = scrollerRef.current;
+    if (!scroller) return;
+    setFollowThreadHistoryBottom(true);
+    setPinnedToBottom(true);
+    beginProgrammaticThreadHistoryScroll();
+    scroller.scrollTop = scroller.scrollHeight;
+    endProgrammaticThreadHistoryScroll();
+    if (runtime.trimThreadMessagesToLatestWindow(activeThread.id)) {
+      requestAnimationFrame(() => {
+        runtime.messagesEndRef.current?.scrollIntoView({ block: "end" });
+      });
+    }
+  };
   return (
     <section className="zorai-thread-surface zorai-native-thread-surface">
       <ThreadHeader
         thread={runtime.activeThread}
         messageCount={runtime.messages.length}
         agentOptions={agentOptions}
+        returnTarget={returnTarget}
+        onReturnTarget={onReturnTarget}
         onPushHandoff={runtime.pushHandoff}
         onReturnHandoff={runtime.returnHandoff}
         onOpenParticipants={() => setParticipantsOpen(true)}
@@ -180,7 +221,8 @@ export function ThreadsView() {
       />
       <ParticipantStrip thread={runtime.activeThread} onOpen={() => setParticipantsOpen(true)} />
 
-      <div ref={scrollerRef} className="zorai-thread-chat-scroll" onScroll={(event) => void handleThreadScroll(event)}>
+      <div className="zorai-thread-chat">
+        <div ref={scrollerRef} className="zorai-thread-chat-scroll" onScroll={(event) => void handleThreadScroll(event)}>
         {runtime.messages.length === 0 ? (
           <div className="zorai-thread-empty-state">
             {activeThread.messageCount > 0 || activeThread.lastMessagePreview ? (
@@ -232,9 +274,12 @@ export function ThreadsView() {
               onDelete={runtime.activeThread?.id || message.threadId
                 ? () => runtime.deleteMessage(runtime.activeThread?.id ?? message.threadId, message.id)
                 : undefined}
-              onRetry={isRetryableErrorMessage(message)
-                && isMessageFromCurrentViewSession(message, viewMountedAtRef.current)
-                && latestUserMessage
+              onRetry={shouldOfferMessageRetry(
+                message,
+                latestAssistantMessageId,
+                viewMountedAtRef.current,
+                Boolean(latestUserMessage),
+              )
                 ? retryLastMessage
                 : undefined}
               onPin={async () => {
@@ -247,10 +292,17 @@ export function ThreadsView() {
             />
           );
         })}
-        {runtime.isStreamingResponse ? (
+        {retryStatus ? (
+          <ThreadRetryStatusBanner
+            status={retryStatus}
+            onStop={() => runtime.stopStreaming(runtime.activeThreadId)}
+          />
+        ) : runtime.isStreamingResponse ? (
           <ThinkingIndicator agentName={runtime.activeThread.agent_name} />
         ) : null}
         <div ref={runtime.messagesEndRef} />
+        </div>
+        <ThreadScrollToBottomButton hidden={pinnedToBottom} onClick={scrollThreadToLatest} />
       </div>
 
       <ThreadComposer />
@@ -278,6 +330,8 @@ function ThreadHeader({
   thread,
   messageCount,
   agentOptions,
+  returnTarget,
+  onReturnTarget,
   onPushHandoff,
   onReturnHandoff,
   onOpenParticipants,
@@ -287,6 +341,8 @@ function ThreadHeader({
   thread: AgentThread;
   messageCount: number;
   agentOptions: ReturnType<typeof buildThreadAgentOptions>;
+  returnTarget?: ZoraiReturnTarget | null;
+  onReturnTarget?: () => void;
   onPushHandoff: ReturnType<typeof useAgentChatPanelRuntime>["pushHandoff"];
   onReturnHandoff: ReturnType<typeof useAgentChatPanelRuntime>["returnHandoff"];
   onOpenParticipants: () => void;
@@ -306,6 +362,11 @@ function ThreadHeader({
         <span>{messageCount} messages / responder: {activeResponder}</span>
       </div>
       <div className="zorai-thread-header__actions">
+        {returnTarget && onReturnTarget ? (
+          <button type="button" className="zorai-ghost-button" onClick={onReturnTarget}>
+            {returnTarget.label}
+          </button>
+        ) : null}
         <ThreadRuntimeSummary thread={thread} />
         <ThreadHandoffControl
           daemonLinked={Boolean(thread.daemonThreadId)}
@@ -331,8 +392,12 @@ function ThreadHeader({
 }
 
 function ThreadRuntimeSummary({ thread }: { thread: AgentThread }) {
-  const provider = thread.profileProvider || "default provider";
-  const model = thread.profileModel || "default model";
+  const agentSettings = useAgentStore((state) => state.agentSettings);
+  const conciergeConfig = useAgentStore((state) => state.conciergeConfig);
+  const subAgents = useAgentStore((state) => state.subAgents);
+  const profile = resolveThreadOwnerRuntimeProfile(thread, subAgents, agentSettings, conciergeConfig);
+  const provider = profile.provider || "default provider";
+  const model = profile.model || "default model";
   return (
     <div className="zorai-thread-runtime-summary" title="Provider, model, effort and context settings live in the Show Context panel">
       <span className="zorai-thread-runtime-summary__model" title="Model">{model}</span>
@@ -355,6 +420,23 @@ function ThinkingIndicator({ agentName }: { agentName: string }) {
         </div>
       </div>
     </div>
+  );
+}
+
+function ThreadScrollToBottomButton({ hidden, onClick }: { hidden: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      className={["zorai-thread-scroll-bottom", hidden ? "is-hidden" : ""].filter(Boolean).join(" ")}
+      aria-hidden={hidden}
+      aria-label="Scroll to latest messages"
+      tabIndex={hidden ? -1 : 0}
+      onClick={onClick}
+    >
+      <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+        <path d="M6 10l6 6 6-6" />
+      </svg>
+    </button>
   );
 }
 

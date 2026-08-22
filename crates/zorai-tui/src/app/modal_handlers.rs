@@ -22,14 +22,25 @@ impl TuiModel {
         &mut self,
         tab: &crate::state::modal::ThreadPickerTab,
     ) {
+        self.queue_threads_for_picker_tab_refresh_at(tab, Instant::now());
+    }
+
+    fn queue_threads_for_picker_tab_refresh_at(
+        &mut self,
+        tab: &crate::state::modal::ThreadPickerTab,
+        switched_at: Instant,
+    ) {
         self.pending_thread_picker_refresh = Some(PendingThreadPickerRefresh {
             tab: tab.clone(),
             agent_filter: tab.agent_filter(),
-            ready_at_tick: self
-                .tick_counter
-                .saturating_add(THREAD_PICKER_AGENT_REFRESH_DEBOUNCE_TICKS),
+            ready_at: switched_at + THREAD_PICKER_REFRESH_DEBOUNCE,
         });
-        self.thread_picker_loading_tab = Some(tab.clone());
+    }
+
+    pub(crate) fn pending_thread_picker_refresh_deadline(&self) -> Option<Instant> {
+        self.pending_thread_picker_refresh
+            .as_ref()
+            .map(|pending| pending.ready_at)
     }
 
     pub(crate) fn thread_picker_loading_tab(&self) -> Option<crate::state::modal::ThreadPickerTab> {

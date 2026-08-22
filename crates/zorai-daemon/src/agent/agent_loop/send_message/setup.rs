@@ -1098,6 +1098,11 @@ impl<'a> SendMessageRunner<'a> {
             system_prompt.push_str("\n\n");
             system_prompt.push_str(&memory_palace_context);
         }
+        if let Some(parent_child_context) = engine.build_parent_child_prompt_context(task_id).await
+        {
+            system_prompt.push_str("\n\n");
+            system_prompt.push_str(&parent_child_context);
+        }
         if let Some(anticipatory_context) = engine.build_anticipatory_prompt_context(&tid).await {
             system_prompt.push_str("\n\n");
             system_prompt.push_str(&anticipatory_context);

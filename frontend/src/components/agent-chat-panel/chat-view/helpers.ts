@@ -89,6 +89,11 @@ export function buildDisplayItems(messages: AgentMessage[]): ChatDisplayItem[] {
   return items;
 }
 
+export function assistantMessageHasVisibleContent(content: string): boolean {
+  const text = content.trim();
+  return text !== "" && text !== "Calling tools...";
+}
+
 function isToolPlaceholderAssistantMessage(
   message: AgentMessage,
   previous?: AgentMessage,
@@ -102,8 +107,7 @@ function isToolPlaceholderAssistantMessage(
     return false;
   }
 
-  const content = message.content.trim();
-  if (content !== "" && content !== "Calling tools...") {
+  if (assistantMessageHasVisibleContent(message.content)) {
     return false;
   }
 

@@ -38,4 +38,11 @@ describe("thread owner resolution", () => {
     const subAgents = [{ id: "reviewer_builtin", name: "Code Reviewer" } as SubAgentDefinition];
     expect(resolveThreadOwnerAgentId(thread({ agent_name: "Code Reviewer" }), subAgents)).toBe("reviewer");
   });
+
+  it("prefers the selected target agent over a leftover Svarog name", () => {
+    expect(resolveThreadOwnerAgentId(thread({
+      agent_name: "Svarog",
+      targetAgentId: "mokosh",
+    }), [{ id: "mokosh", name: "Mokosh" } as SubAgentDefinition])).toBe("mokosh");
+  });
 });

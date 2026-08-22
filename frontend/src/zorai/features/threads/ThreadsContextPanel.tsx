@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAgentChatPanelRuntime } from "@/components/agent-chat-panel/runtime/context";
-import type { AgentMessage, AgentThread, AgentTodoItem } from "@/lib/agentStore";
+import { useAgentStore, type AgentMessage, type AgentThread, type AgentTodoItem } from "@/lib/agentStore";
 import { fetchThreadWorkContext, type ThreadWorkContext, type WorkContextEntry } from "@/lib/agentWorkContext";
 import { getBridge } from "@/lib/bridge";
 import { shortenHomePath } from "@/lib/workspaceStore";
@@ -12,6 +12,7 @@ import {
 import { useThreadFilePreview } from "./ThreadFilePreviewContext";
 import { SpawnedContext } from "./ThreadsSpawnedContext";
 import { ThreadRuntimeBar } from "./ThreadRuntimeBar";
+import { resolveThreadOwnerRuntimeProfile } from "./threadOwnerRuntime";
 
 type ContextTab = "todos" | "files" | "spawned";
 
@@ -25,7 +26,12 @@ export function ThreadsContext() {
     () => countSpawnedNodes(runtime.spawnedAgentTree),
     [runtime.spawnedAgentTree],
   );
-  const contextWindowTokens = resolveThreadContextWindowTokens(activeThread, runtime.agentSettings);
+  const agentSettings = useAgentStore((state) => state.agentSettings);
+  const conciergeConfig = useAgentStore((state) => state.conciergeConfig);
+  const subAgents = useAgentStore((state) => state.subAgents);
+  const contextWindowTokens = activeThread
+    ? resolveThreadOwnerRuntimeProfile(activeThread, subAgents, agentSettings, conciergeConfig).contextWindowTokens
+    : Math.max(1, Math.trunc(agentSettings.context_window_tokens || 1));
   const currentContextTokens = resolveCurrentContextTokens(activeThread, runtime.messages);
 
   useEffect(() => {
@@ -267,18 +273,6 @@ function PinnedThreadContext({
       ))}
     </section>
   );
-}
-
-function resolveThreadContextWindowTokens(thread: AgentThread | undefined, agentSettings: any): number {
-  if (typeof thread?.profileContextWindowTokens === "number" && thread.profileContextWindowTokens > 0) {
-    return Math.trunc(thread.profileContextWindowTokens);
-  }
-
-  const activeProviderId = typeof agentSettings.active_provider === "string" ? agentSettings.active_provider : null;
-  const activeProvider = activeProviderId ? agentSettings[activeProviderId] : null;
-  const providerWindow = typeof activeProvider?.context_window_tokens === "number" ? activeProvider.context_window_tokens : null;
-  const fallbackWindow = typeof agentSettings.context_window_tokens === "number" ? agentSettings.context_window_tokens : 0;
-  return Math.max(1, Math.trunc(providerWindow ?? fallbackWindow ?? 1));
 }
 
 function resolveCurrentContextTokens(thread: AgentThread | undefined, messages: AgentMessage[]): number {

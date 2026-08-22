@@ -2,6 +2,7 @@ use super::analysis::classify_stalled_turn;
 use super::types::{StalledTurnClass, ThreadStallObservation, TurnEvidence};
 use super::*;
 use crate::agent::liveness::stuck_detection::{DetectionSnapshot, StuckDetector};
+use crate::agent::tool_executor::task_is_awaiting_parent;
 use crate::agent::types::StuckReason;
 use crate::history::{GoalRunThreadRef, SubagentMetrics};
 
@@ -87,6 +88,9 @@ impl AgentEngine {
             })
             .await
             .into_iter()
+            // Children blocked on an open ask_parent are waiting on their
+            // parent by design, not stalled — exempt them from recovery.
+            .filter(|task| !task_is_awaiting_parent(task))
             .collect::<VecDeque<_>>()
         };
         let subagent_runtime = self.subagent_runtime.read().await.clone();

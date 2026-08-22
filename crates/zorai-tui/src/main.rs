@@ -546,12 +546,16 @@ fn run_loop(
             next_tick = now + preferred_tick_rate;
         }
         let until_tick = next_tick.saturating_duration_since(now);
+        let until_thread_picker_refresh = model
+            .pending_thread_picker_refresh_deadline()
+            .map(|deadline| deadline.saturating_duration_since(now))
+            .unwrap_or(until_tick);
         let wait_for = if processed_daemon_events == MAX_DAEMON_EVENTS_PER_FRAME
             || pump_outcome.stopped_for_render
         {
             Duration::ZERO
         } else {
-            until_tick
+            until_tick.min(until_thread_picker_refresh)
         };
 
         let polled = match event::poll(wait_for) {
@@ -631,6 +635,13 @@ fn run_loop(
                 }
                 _ => {}
             }
+        }
+
+        // Terminal input wins at the debounce boundary. A source-switch event
+        // processed above replaces the pending intent with a fresh deadline;
+        // unrelated input does not starve an already-due refresh.
+        if model.dispatch_due_thread_picker_refresh(Instant::now()) {
+            needs_draw = true;
         }
     }
 }

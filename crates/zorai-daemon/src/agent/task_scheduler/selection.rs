@@ -110,6 +110,9 @@ pub(in crate::agent) fn refresh_task_queue_state(
             .unwrap_or(false);
 
         if matches!(task.status, TaskStatus::Queued | TaskStatus::Blocked) {
+            if crate::agent::tool_executor::task_is_awaiting_parent(task) {
+                continue;
+            }
             if let Some(active_children) = active_child_subagents_by_parent.get(&task.id) {
                 let reason = format!("waiting for subagents: {}", active_children.join(", "));
                 if task.status != TaskStatus::Blocked

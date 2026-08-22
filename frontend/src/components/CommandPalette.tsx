@@ -131,7 +131,7 @@ export function CommandPalette({ style, className }: CommandPaletteProps = {}) {
       <div
         onClick={(e) => e.stopPropagation()}
         style={{
-          background: "var(--zorai-bg)",
+          background: "var(--bg-void)",
           border: "1px solid var(--border)",
           borderRadius: "var(--radius-xl)",
           width: 640,

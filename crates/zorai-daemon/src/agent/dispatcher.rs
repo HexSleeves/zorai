@@ -155,6 +155,11 @@ fn apply_dispatched_task_success_update(
     active_child_ids: &[String],
     now: u64,
 ) {
+    if outcome.interrupted_for_approval
+        || crate::agent::tool_executor::task_is_awaiting_parent(task)
+    {
+        return;
+    }
     let waiting_for_subagents = !active_child_ids.is_empty();
     let budget_exceeded_reason = "execution budget exceeded for this thread".to_string();
     if let Some(report) = outcome.subagent_report.as_ref() {
@@ -1136,6 +1141,11 @@ impl AgentEngine {
                         (persisted_task, false)
                     }
                 };
+                if outcome.interrupted_for_approval
+                    || crate::agent::tool_executor::task_is_awaiting_parent(&updated)
+                {
+                    return Ok(());
+                }
                 if updated_live_task {
                     self.persist_tasks().await;
                 }
@@ -1256,6 +1266,18 @@ impl AgentEngine {
                         self.notify_task_terminal_state(&updated).await;
                     }
                     _ => {}
+                }
+                if let Some(goal_run_id) = updated.goal_run_id.as_deref() {
+                    if let Err(error) = self
+                        .clear_goal_stagnation_pending_if_released(goal_run_id)
+                        .await
+                    {
+                        tracing::warn!(
+                            goal_run_id,
+                            error = %error,
+                            "failed to clear stagnation pending guard"
+                        );
+                    }
                 }
                 Ok(())
             }
@@ -1380,6 +1402,18 @@ impl AgentEngine {
                 }
                 if updated.status == TaskStatus::Failed {
                     self.notify_task_terminal_state(&updated).await;
+                }
+                if let Some(goal_run_id) = updated.goal_run_id.as_deref() {
+                    if let Err(error) = self
+                        .clear_goal_stagnation_pending_if_released(goal_run_id)
+                        .await
+                    {
+                        tracing::warn!(
+                            goal_run_id,
+                            error = %error,
+                            "failed to clear stagnation pending guard"
+                        );
+                    }
                 }
                 Ok(())
             }
@@ -1606,32 +1640,71 @@ impl AgentEngine {
                     parent_task_id,
                 )
                 .await;
-                if self
-                    .thread_is_idle_for_subagent_wakeup(&parent_thread_id)
-                    .await
-                {
-                    let _ = self.stop_stream(&parent_thread_id).await;
-                }
-                if let Err(error) = self
-                    .flush_deferred_visible_thread_continuations(&parent_thread_id)
-                    .await
-                {
-                    tracing::warn!(
-                        thread_id = %parent_thread_id,
-                        child_task_id = %child_task.id,
-                        error = %error,
-                        "subagent completion continuation flush failed"
-                    );
-                }
+                self.resume_idle_parent_after_subagent_completion(
+                    &parent_thread_id,
+                    &child_task.id,
+                )
+                .await;
             }
         }
     }
 
-    async fn thread_is_idle_for_subagent_wakeup(&self, thread_id: &str) -> bool {
+    pub(in crate::agent) async fn thread_is_idle_for_subagent_wakeup(
+        &self,
+        thread_id: &str,
+    ) -> bool {
         let streams = self.stream_cancellations.lock().await;
-        match streams.get(thread_id) {
-            None => true,
-            Some(entry) => entry.token.is_cancelled(),
+        stream_entry_is_idle_for_subagent_wakeup(streams.get(thread_id))
+    }
+
+    async fn resume_idle_parent_after_subagent_completion(
+        &self,
+        parent_thread_id: &str,
+        child_task_id: &str,
+    ) {
+        for attempt in 0..3 {
+            let idle = self
+                .thread_is_idle_for_subagent_wakeup(parent_thread_id)
+                .await;
+            if idle {
+                let _ = self.stop_stream(parent_thread_id).await;
+            } else {
+                tracing::info!(
+                    thread_id = %parent_thread_id,
+                    child_task_id,
+                    attempt,
+                    "deferring subagent parent wakeup until the live parent stream finishes"
+                );
+                return;
+            }
+
+            if let Err(error) = self
+                .flush_deferred_visible_thread_continuations(parent_thread_id)
+                .await
+            {
+                tracing::warn!(
+                    thread_id = %parent_thread_id,
+                    child_task_id,
+                    attempt,
+                    error = %error,
+                    "subagent completion continuation flush failed"
+                );
+                return;
+            }
+            if self
+                .deferred_visible_thread_continuations_for(parent_thread_id)
+                .await
+                .is_empty()
+            {
+                return;
+            }
+            tracing::info!(
+                thread_id = %parent_thread_id,
+                child_task_id,
+                attempt,
+                "idle parent still has a queued subagent continuation; retrying wakeup"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
     }
 
@@ -1732,6 +1805,13 @@ impl AgentEngine {
         .await?;
 
         Ok(())
+    }
+}
+
+fn stream_entry_is_idle_for_subagent_wakeup(entry: Option<&StreamCancellationEntry>) -> bool {
+    match entry {
+        None => true,
+        Some(entry) => entry.token.is_cancelled(),
     }
 }
 
@@ -2316,6 +2396,299 @@ mod tests {
             .deferred_visible_thread_continuations_for(parent_thread_id)
             .await
             .is_empty());
+    }
+
+    #[tokio::test]
+    async fn stale_parent_stream_is_forced_awake_when_spawned_subagent_finishes() {
+        let root = tempdir().expect("tempdir");
+        let manager = SessionManager::new_test(root.path()).await;
+        let mut config = AgentConfig::default();
+        config.provider = zorai_shared::providers::PROVIDER_ID_OPENAI.to_string();
+        config.base_url =
+            spawn_dispatcher_stub_assistant_server("Integrated the child result.").await;
+        config.model = "gpt-4o-mini".to_string();
+        config.api_key = "test-key".to_string();
+        config.api_transport = ApiTransport::ChatCompletions;
+        config.auto_retry = false;
+        config.max_retries = 0;
+        config.max_tool_loops = 1;
+        let engine = AgentEngine::new_test(manager, config, root.path()).await;
+        let parent_thread_id = "thread-parent-stale-stream-wakeup";
+        insert_parent_thread(&engine, parent_thread_id, "Investigate the failing parser").await;
+        engine.begin_stream_cancellation(parent_thread_id).await;
+        let _ = engine.stop_stream(parent_thread_id).await;
+
+        let mut child = engine
+            .enqueue_task(
+                "Child task".to_string(),
+                "Fix the parser".to_string(),
+                "normal",
+                None,
+                None,
+                Vec::new(),
+                None,
+                "subagent",
+                None,
+                None,
+                Some(parent_thread_id.to_string()),
+                Some("daemon".to_string()),
+            )
+            .await;
+        child.status = TaskStatus::Completed;
+        child.result = Some("parser tests now pass".to_string());
+        child.parent_thread_id = Some(parent_thread_id.to_string());
+
+        timeout(
+            Duration::from_secs(8),
+            engine.record_subagent_outcome_on_parent(
+                &child,
+                TaskLogLevel::Info,
+                "subagent completed",
+                None,
+            ),
+        )
+        .await
+        .expect("stale parent wakeup should finish");
+
+        let threads = engine.threads.read().await;
+        let parent_thread = threads
+            .get(parent_thread_id)
+            .expect("parent thread should exist");
+        assert!(parent_thread.messages.iter().any(|message| {
+            message.role == MessageRole::System && message.content.contains("parser tests now pass")
+        }));
+        assert!(
+            parent_thread.messages.iter().any(|message| {
+                message.role == MessageRole::Assistant
+                    && message.content.contains("Integrated the child result.")
+            }),
+            "a cancelled leftover parent stream must not block wakeup after the child finishes"
+        );
+        assert!(
+            engine
+                .deferred_visible_thread_continuations_for(parent_thread_id)
+                .await
+                .is_empty()
+        );
+    }
+
+    #[tokio::test]
+    async fn live_parent_first_token_wait_is_not_cancelled_when_child_finishes() {
+        let root = tempdir().expect("tempdir");
+        let manager = SessionManager::new_test(root.path()).await;
+        let mut config = AgentConfig::default();
+        config.provider = zorai_shared::providers::PROVIDER_ID_OPENAI.to_string();
+        config.base_url =
+            spawn_dispatcher_stub_assistant_server("Integrated the child result.").await;
+        config.model = "gpt-4o-mini".to_string();
+        config.api_key = "test-key".to_string();
+        config.api_transport = ApiTransport::ChatCompletions;
+        config.auto_retry = false;
+        config.max_retries = 0;
+        config.max_tool_loops = 1;
+        let engine = AgentEngine::new_test(manager, config, root.path()).await;
+        let parent_thread_id = "thread-parent-first-token-wait";
+        insert_parent_thread(&engine, parent_thread_id, "Investigate the failing parser").await;
+        engine.begin_stream_cancellation(parent_thread_id).await;
+        {
+            let mut streams = engine.stream_cancellations.lock().await;
+            let entry = streams
+                .get_mut(parent_thread_id)
+                .expect("parent stream entry should exist");
+            entry.last_progress_at = now_millis().saturating_sub(60_000);
+            entry.last_progress_kind = StreamProgressKind::Started;
+        }
+
+        let mut child = engine
+            .enqueue_task(
+                "Child task".to_string(),
+                "Fix the parser".to_string(),
+                "normal",
+                None,
+                None,
+                Vec::new(),
+                None,
+                "subagent",
+                None,
+                None,
+                Some(parent_thread_id.to_string()),
+                Some("daemon".to_string()),
+            )
+            .await;
+        child.status = TaskStatus::Completed;
+        child.result = Some("parser tests now pass".to_string());
+        child.parent_thread_id = Some(parent_thread_id.to_string());
+
+        timeout(
+            Duration::from_secs(8),
+            engine.record_subagent_outcome_on_parent(
+                &child,
+                TaskLogLevel::Info,
+                "subagent completed",
+                None,
+            ),
+        )
+        .await
+        .expect("live parent deferral should finish without cancelling the stream");
+
+        let streams = engine.stream_cancellations.lock().await;
+        let entry = streams
+            .get(parent_thread_id)
+            .expect("live parent stream entry should remain");
+        assert!(
+            !entry.token.is_cancelled(),
+            "waiting for the first token must not look idle just because last_progress_kind is still Started"
+        );
+        drop(streams);
+        assert!(
+            !engine
+                .deferred_visible_thread_continuations_for(parent_thread_id)
+                .await
+                .is_empty(),
+            "child completion must wait for the live parent turn instead of aborting it"
+        );
+    }
+
+    #[test]
+    fn idle_wakeup_treats_cancelled_and_stale_streams_as_idle() {
+        let live = StreamCancellationEntry {
+            generation: 1,
+            token: CancellationToken::new(),
+            retry_now: Arc::new(tokio::sync::Notify::new()),
+            started_at: 0,
+            last_progress_at: 1_000,
+            last_progress_kind: StreamProgressKind::Started,
+            last_progress_excerpt: String::new(),
+        };
+        assert!(
+            !stream_entry_is_idle_for_subagent_wakeup(Some(&live)),
+            "a fresh live stream must keep the parent deferred"
+        );
+
+        let cancelled_token = CancellationToken::new();
+        cancelled_token.cancel();
+        let cancelled = StreamCancellationEntry {
+            generation: 1,
+            token: cancelled_token,
+            retry_now: Arc::new(tokio::sync::Notify::new()),
+            started_at: 0,
+            last_progress_at: 1_000,
+            last_progress_kind: StreamProgressKind::Started,
+            last_progress_excerpt: String::new(),
+        };
+        assert!(stream_entry_is_idle_for_subagent_wakeup(Some(&cancelled)));
+
+        let waiting_for_first_token = StreamCancellationEntry {
+            generation: 1,
+            token: CancellationToken::new(),
+            retry_now: Arc::new(tokio::sync::Notify::new()),
+            started_at: 0,
+            last_progress_at: 0,
+            last_progress_kind: StreamProgressKind::Started,
+            last_progress_excerpt: String::new(),
+        };
+        assert!(
+            !stream_entry_is_idle_for_subagent_wakeup(Some(&waiting_for_first_token)),
+            "first-token wait and provider retries stay Started; cancelling them aborts a live parent turn"
+        );
+        assert!(stream_entry_is_idle_for_subagent_wakeup(None));
+
+        let tool_in_flight = StreamCancellationEntry {
+            generation: 1,
+            token: CancellationToken::new(),
+            retry_now: Arc::new(tokio::sync::Notify::new()),
+            started_at: 0,
+            last_progress_at: 0,
+            last_progress_kind: StreamProgressKind::ToolCalls,
+            last_progress_excerpt: String::new(),
+        };
+        assert!(
+            !stream_entry_is_idle_for_subagent_wakeup(Some(&tool_in_flight)),
+            "a live tool call must not be treated as an abandoned leftover stream"
+        );
+        let content_in_flight = StreamCancellationEntry {
+            generation: 1,
+            token: CancellationToken::new(),
+            retry_now: Arc::new(tokio::sync::Notify::new()),
+            started_at: 0,
+            last_progress_at: 0,
+            last_progress_kind: StreamProgressKind::Content,
+            last_progress_excerpt: String::new(),
+        };
+        assert!(!stream_entry_is_idle_for_subagent_wakeup(Some(
+            &content_in_flight
+        )));
+    }
+
+    #[test]
+    fn dispatched_success_preserves_open_ask_parent_block() {
+        let mut task = terminal_notification_test_task(
+            "child-awaiting",
+            "Ask parent",
+            TaskStatus::Blocked,
+            Vec::new(),
+        );
+        task.completed_at = None;
+        task.progress = 40;
+        task.source = "subagent".to_string();
+        task.blocked_reason = Some("awaiting parent: Which schema?".to_string());
+        task.parent_task_id = Some("parent".to_string());
+        let outcome = SendMessageOutcome {
+            thread_id: "thread-child".to_string(),
+            interrupted_for_approval: false,
+            terminated_for_budget: false,
+            subagent_report: None,
+            upstream_message: None,
+            provider_final_result: None,
+            fresh_runner_retry: None,
+            handoff_restart: None,
+        };
+        apply_dispatched_task_success_update(&mut task, &outcome, &["nested-1".to_string()], 99);
+        assert_eq!(task.status, TaskStatus::Blocked);
+        assert_eq!(
+            task.blocked_reason.as_deref(),
+            Some("awaiting parent: Which schema?"),
+            "dispatch success must not complete a child that is still waiting on ask_parent"
+        );
+        assert!(
+            task.completed_at.is_none(),
+            "answer_child only unblocks Blocked tasks; completing here would strand the open ask"
+        );
+    }
+
+    #[test]
+    fn dispatched_success_does_not_complete_child_after_parent_answers_mid_turn() {
+        let mut task = terminal_notification_test_task(
+            "child-answered-mid-turn",
+            "Ask parent",
+            TaskStatus::Queued,
+            Vec::new(),
+        );
+        task.completed_at = None;
+        task.progress = 40;
+        task.source = "subagent".to_string();
+        task.blocked_reason = None;
+        task.parent_task_id = Some("parent".to_string());
+        let outcome = SendMessageOutcome {
+            thread_id: "thread-child".to_string(),
+            interrupted_for_approval: true,
+            terminated_for_budget: false,
+            subagent_report: None,
+            upstream_message: None,
+            provider_final_result: None,
+            fresh_runner_retry: None,
+            handoff_restart: None,
+        };
+        apply_dispatched_task_success_update(&mut task, &outcome, &[], 99);
+        assert_eq!(
+            task.status,
+            TaskStatus::Queued,
+            "answer_child clears blocked_reason while the original turn is still finishing; that turn must not complete the child"
+        );
+        assert!(
+            task.completed_at.is_none(),
+            "the injected parent answer needs a follow-up turn on the still-open child task"
+        );
     }
 
     #[tokio::test]

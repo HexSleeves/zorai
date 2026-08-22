@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { AgentMessage } from "../../../lib/agentStore";
-import { buildDisplayItems } from "./helpers";
+import { assistantMessageHasVisibleContent, buildDisplayItems } from "./helpers";
 
 function message(overrides: Partial<AgentMessage>): AgentMessage {
   return {
@@ -77,5 +77,30 @@ describe("buildDisplayItems", () => {
       "tool:bash_command:done",
       "message:The command completed.",
     ]);
+  });
+
+  it("keeps reasoning when the assistant body is only a tool-call placeholder", () => {
+    const items = buildDisplayItems([
+      message({
+        id: "assistant-reason",
+        role: "assistant",
+        content: "Calling tools...",
+        reasoning: "I should list the files.",
+        createdAt: 1,
+      }),
+      message({
+        id: "tool-1",
+        role: "tool",
+        toolCallId: "call-1",
+        toolName: "bash_command",
+        toolStatus: "done",
+        content: "{}",
+        createdAt: 2,
+      }),
+    ]);
+
+    expect(items.some((item) => item.type === "message" && item.message.reasoning === "I should list the files.")).toBe(true);
+    expect(assistantMessageHasVisibleContent("Calling tools...")).toBe(false);
+    expect(assistantMessageHasVisibleContent("The command completed.")).toBe(true);
   });
 });

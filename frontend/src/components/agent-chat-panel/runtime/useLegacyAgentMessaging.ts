@@ -201,7 +201,7 @@ export function useLegacyAgentMessaging({
               if (chunk.reasoning) accumulatedReasoning = chunk.reasoning;
               if (chunk.content) accumulated = chunk.content;
               persistReasoningTrace(accumulatedReasoning);
-              updateLastAssistantMessage(currentThreadId, accumulated || "Calling tools...", false, {
+              updateLastAssistantMessage(currentThreadId, accumulated, false, {
                 reasoning: accumulatedReasoning || undefined,
                 inputTokens: Number(chunk.inputTokens ?? 0),
                 outputTokens: Number(chunk.outputTokens ?? 0),

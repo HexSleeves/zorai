@@ -32,7 +32,7 @@ test("Linux dev launcher matches the Electron window identity", () => {
     assert.match(entry, /^Name=Zorai \(Development\)$/m);
     assert.match(entry, /^Icon=\/repo\/frontend\/assets\/icon\.png$/m);
     assert.match(entry, /^StartupWMClass=zorai$/m);
-    assert.match(entry, /^Exec="\/repo\/frontend\/node_modules\/electron\/dist\/electron" "\/repo\/frontend"$/m);
+    assert.match(entry, /^Exec="\/repo\/frontend\/node_modules\/electron\/dist\/electron" "--no-sandbox" "\/repo\/frontend"$/m);
     assert.match(entry, /^NoDisplay=true$/m);
 });
 
@@ -47,7 +47,7 @@ test("Linux dev launcher quotes Exec arguments so spaces survive parsing", () =>
     });
 
     assert.match(entry, /^Icon=\/repo\/Zorai\\sDev\/icon\.png$/m);
-    assert.match(entry, /^Exec="\/repo\/Electron Dev\/electron" "\/repo\/Zorai Dev"$/m);
+    assert.match(entry, /^Exec="\/repo\/Electron Dev\/electron" "--no-sandbox" "\/repo\/Zorai Dev"$/m);
     assert.doesNotMatch(entry, /Exec=.*\\s/);
 });
 

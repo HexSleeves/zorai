@@ -326,6 +326,20 @@ pub(crate) fn classify_tool_call(
         };
     }
 
+    if matches!(
+        normalized_tool.as_str(),
+        zorai_protocol::tool_names::ASK_PARENT
+            | zorai_protocol::tool_names::ANSWER_CHILD
+            | zorai_protocol::tool_names::NOTE_TO_CHILD
+    ) {
+        // Task-scoped parent-child messaging only writes consolidation state
+        // and task logs inside an already-validated lineage.
+        return WelesToolClassification {
+            class: WelesGovernanceClass::AllowDirect,
+            reasons: vec!["low-risk parent-child messaging state write".to_string()],
+        };
+    }
+
     if normalized_tool == zorai_protocol::tool_names::PLUGIN_API_CALL {
         return WelesToolClassification {
             class: WelesGovernanceClass::GuardAlways,

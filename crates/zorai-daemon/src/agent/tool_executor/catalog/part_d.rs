@@ -181,6 +181,7 @@ pub(crate) fn add_available_tools_part_d(
             "verifier": { "type": "string", "description": "Required for pass: what concretely ran (command + exit code, test name, review, build)" },
             "coverage": { "type": "string", "description": "Required for pass: the scope the verifier actually exercised" },
             "gaps": { "type": "string", "description": "Optional for pass: scope the verifier did not cover" },
+            "scores": { "type": "object", "description": "Optional named metric scores (e.g. benchmark results); only meaningful for pass verdicts", "additionalProperties": { "type": "number" } },
             "task_id": { "type": "string", "description": "Optional verification task ID when hidden task context is unavailable" },
             "goal_run_id": { "type": "string", "description": "Optional guard; must match the verification task" },
             "goal_step_id": { "type": "string", "description": "Optional guard; must match the verification task" }
@@ -618,4 +619,31 @@ pub(crate) fn add_available_tools_part_d(
             "required": ["plugin_name", "endpoint_name"]
         }),
     ));
+    tools.push(tool_def(tool_names::ASK_PARENT, "Ask the parent task a blocking question. Only available inside child tasks that have a parent task or parent thread. Blocks the child task until the parent answers, the ask times out, or a default is applied. Batch related questions into one call; at most 5 open asks are kept per child.", serde_json::json!({
+        "type": "object",
+        "properties": {
+            "question": { "type": "string", "description": "The blocking question for the parent" },
+            "options": { "type": "array", "items": { "type": "string" }, "description": "Optional answer choices to help the parent answer quickly" },
+            "timeout_minutes": { "type": "integer", "minimum": 1, "description": "Minutes to wait before the ask times out (default 240)" },
+            "default": { "type": "string", "description": "Answer to auto-apply when the timeout elapses without a parent answer" }
+        },
+        "required": ["question"]
+    })));
+    tools.push(tool_def(tool_names::ANSWER_CHILD, "Answer one of a child task's open ask_parent questions. Validates that the caller is the child's parent (parent task or parent thread). Pass ask_id when the child has multiple open asks; the child stays blocked until every open ask is answered or times out. The answer is injected verbatim into the child's next-turn context.", serde_json::json!({
+        "type": "object",
+        "properties": {
+            "child_task_id": { "type": "string", "description": "ID of the child task that asked the question" },
+            "ask_id": { "type": "string", "description": "ID of the specific open ask to answer; required when the child has more than one open ask" },
+            "answer": { "type": "string", "description": "Verbatim answer delivered to the child" }
+        },
+        "required": ["child_task_id", "answer"]
+    })));
+    tools.push(tool_def(tool_names::NOTE_TO_CHILD, "Append a non-blocking guidance note to a child task. Validates that the caller is the child's parent (parent task or parent thread). The note is injected into the child's next-turn context as a [parent note] block; the child's task status is not changed. At most 20 notes (2000 chars each) are kept per child.", serde_json::json!({
+        "type": "object",
+        "properties": {
+            "child_task_id": { "type": "string", "description": "ID of the child task to note" },
+            "note": { "type": "string", "description": "Guidance note for the child (truncated to 2000 chars)" }
+        },
+        "required": ["child_task_id", "note"]
+    })));
 }

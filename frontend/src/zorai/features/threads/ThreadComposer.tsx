@@ -12,6 +12,8 @@ import {
 } from "@/components/agent-chat-panel/chat-view/composerMedia";
 import type { ComposerAttachment } from "@/components/agent-chat-panel/chat-view/types";
 import { useAgentStore } from "@/lib/agentStore";
+import { useComposerInputHistory } from "./composerInputHistory";
+import { applyComposerTextareaSize } from "./composerTextareaSize";
 import {
   createQueuedComposerMessage,
   queuedComposerLabel,
@@ -20,6 +22,7 @@ import {
 } from "./composerQueue";
 import { getBridge } from "@/lib/bridge";
 import { pushToast } from "@/lib/toastStore";
+import { activeThreadBudgetExceededNotice } from "./threadBudgetNotice";
 
 export function ThreadComposer() {
   const runtime = useAgentChatPanelRuntime();
@@ -36,6 +39,12 @@ export function ThreadComposer() {
   const recordedChunksRef = useRef<Blob[]>([]);
   const discardCaptureRef = useRef(false);
   const awaitingStreamStartRef = useRef(false);
+  const history = useComposerInputHistory(runtime.input, runtime.setInput, runtime.inputRef);
+  const budgetNotice = activeThreadBudgetExceededNotice(
+    runtime.activeThread?.daemonThreadId,
+    runtime.messages,
+    runtime.spawnedAgentTree,
+  );
   const canSend = Boolean(runtime.input.trim() || attachments.length > 0);
   const ttsAvailable = agentSettings.audio_tts_enabled && Boolean(getBridge()?.agentTextToSpeech);
   const updateAgentSetting = useAgentStore((state) => state.updateAgentSetting);
@@ -58,6 +67,11 @@ export function ThreadComposer() {
     };
   }, []);
 
+  useEffect(() => {
+    const el = runtime.inputRef.current;
+    if (el) applyComposerTextareaSize(el);
+  }, [runtime.input]);
+
   const appendFiles = async (files: File[]) => {
     if (files.length === 0) return;
     const loaded = await Promise.all(files.map((file) => readComposerAttachment(file)));
@@ -65,17 +79,20 @@ export function ThreadComposer() {
   };
 
   const sendCurrentInput = () => {
-    if (runtime.isStreamingResponse) return;
+    if (budgetNotice || runtime.isStreamingResponse) return;
     const payload = buildAttachmentSendPayload(runtime.input, attachments);
     if (!payload.text && !payload.contentBlocksJson) return;
+    history.remember(payload.text);
     runtime.sendMessage(payload);
     runtime.setInput("");
     setAttachments([]);
   };
 
   const queueCurrentInput = () => {
+    if (budgetNotice) return;
     const payload = buildAttachmentSendPayload(runtime.input, attachments);
     if (!payload.text && !payload.contentBlocksJson) return;
+    history.remember(payload.text);
     setQueuedMessages((current) => [...current, createQueuedComposerMessage(payload)]);
     runtime.setInput("");
     setAttachments([]);
@@ -86,6 +103,7 @@ export function ThreadComposer() {
   };
 
   const sendQueuedMessageNow = (index: number) => {
+    if (budgetNotice) return;
     const queued = queuedMessages[index];
     if (!queued) return;
     setQueuedMessages((current) => current.filter((_, i) => i !== index));
@@ -99,6 +117,7 @@ export function ThreadComposer() {
   };
 
   useEffect(() => {
+    if (budgetNotice) return;
     if (runtime.isStreamingResponse) {
       awaitingStreamStartRef.current = false;
       return;
@@ -125,7 +144,7 @@ export function ThreadComposer() {
     }
     setQueuedMessages(rest);
     runtime.sendMessage(next);
-  }, [queuedMessages, runtime.isStreamingResponse, runtime.sendMessage, sendNowMessage]);
+  }, [budgetNotice, queuedMessages, runtime.isStreamingResponse, runtime.sendMessage, sendNowMessage]);
 
   // Ctrl+M toggles voice recording from anywhere in the thread surface
   // (including while typing in the textarea — that's where you want it most).
@@ -143,6 +162,7 @@ export function ThreadComposer() {
   }, [voiceCaptureAvailable]);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (history.handleKeyDown(event)) return;
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
       if (runtime.isStreamingResponse) {
@@ -271,6 +291,10 @@ export function ThreadComposer() {
         </div>
       ) : null}
 
+      {budgetNotice ? (
+        <p className="zorai-composer-budget-notice" role="alert">{budgetNotice}</p>
+      ) : null}
+
       {queuedMessages.length > 0 ? (
         <div className="zorai-composer-queue">
           {queuedMessages.map((queued, index) => (
@@ -302,7 +326,12 @@ export function ThreadComposer() {
         <textarea
           ref={runtime.inputRef}
           value={runtime.input}
-          onChange={(event) => runtime.setInput(event.target.value)}
+          onChange={(event) => {
+            history.commit();
+            runtime.setInput(event.target.value);
+            applyComposerTextareaSize(event.currentTarget);
+          }}
+          onClick={() => history.commit()}
           onKeyDown={handleKeyDown}
           placeholder={isTranscribing ? "Transcribing..." : isRecording ? "Recording..." : runtime.isStreamingResponse ? "Queue a follow-up…" : "Message Zorai..."}
           rows={3}
@@ -406,9 +435,9 @@ export function ThreadComposer() {
         </div>
       </div>
 
-      <div className="zorai-thread-composer__footer">
+      <div className={["zorai-thread-composer__footer", budgetNotice ? "zorai-thread-composer__footer--budget" : ""].filter(Boolean).join(" ")}>
         <span>
-          Enter sends. Shift+Enter adds a new line. Ctrl+M records. Ctrl+L reads.
+          {budgetNotice ?? "Enter sends. Shift+Enter adds a new line. Up/Down recalls sent messages when empty. Ctrl+M records. Ctrl+L reads."}
         </span>
       </div>
     </div>

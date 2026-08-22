@@ -16,6 +16,7 @@ use ratatui::prelude::*;
 use ratatui::widgets::{Block, BorderType, Borders, Clear};
 use std::process::Child;
 use std::sync::mpsc::Receiver;
+use std::time::{Duration, Instant};
 use tokio::sync::mpsc::UnboundedSender;
 
 mod commands;
@@ -57,8 +58,7 @@ mod modal_body_to_step;
 mod pending_workspace_actor_picker;
 
 const MESSAGE_DELETE_BACKFILL_THRESHOLD: usize = 5;
-pub(crate) const THREAD_PICKER_AGENT_REFRESH_DEBOUNCE_TICKS: u64 =
-    1_000 / modal_body_to_step::TUI_TICK_RATE_MS;
+pub(crate) const THREAD_PICKER_REFRESH_DEBOUNCE: Duration = Duration::from_millis(750);
 
 #[derive(Clone, Copy, Debug)]
 struct PendingDeleteBackfillFetch {
@@ -72,7 +72,7 @@ struct PendingDeleteBackfillFetch {
 struct PendingThreadPickerRefresh {
     tab: modal::ThreadPickerTab,
     agent_filter: Option<String>,
-    ready_at_tick: u64,
+    ready_at: Instant,
 }
 
 pub struct TuiModel {

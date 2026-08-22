@@ -18,9 +18,10 @@ import { useAgentStore } from "@/lib/agentStore";
 import { GoalWorkspacePanel } from "./GoalWorkspacePanel";
 import { GoalLaunchPanel } from "./GoalLaunchPanel";
 import { openThreadTarget } from "../threads/openThreadTarget";
-import { navigateZorai } from "../../shell/zoraiNavigationEvents";
+import { navigateZorai, type ZoraiReturnTarget } from "../../shell/zoraiNavigationEvents";
 
 const activeStatuses = new Set(["queued", "planning", "running", "awaiting_approval", "paused"]);
+const GOAL_LAUNCH_EVENT = "zorai-goal-launch";
 
 export function GoalsRail() {
   const { goalRunsForTrace } = useAgentChatPanelRuntime();
@@ -28,6 +29,13 @@ export function GoalsRail() {
 
   return (
     <div className="zorai-rail-stack">
+      <button
+        type="button"
+        className="zorai-primary-button"
+        onClick={() => window.dispatchEvent(new Event(GOAL_LAUNCH_EVENT))}
+      >
+        Start goal
+      </button>
       <div className="zorai-section-label">Active Goals</div>
       {activeGoals.length === 0 ? (
         <div className="zorai-empty">No goal runs are active.</div>
@@ -67,16 +75,20 @@ export function GoalsContext() {
 
 export function GoalsView({
   openGoalRunRequest,
+  returnTarget = null,
+  onReturnTarget,
 }: {
   openGoalRunRequest?: { id: string; nonce: number } | null;
+  returnTarget?: ZoraiReturnTarget | null;
+  onReturnTarget?: () => void;
 }) {
   const runtime = useAgentChatPanelRuntime();
   const { goalRunsForTrace } = runtime;
   const [goalRuns, setGoalRuns] = useState<GoalRun[]>([]);
   const [starting, setStarting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
-  const [selectedRunId, setSelectedRunId] = useState<string | null>(null);
-  const [workspaceOpen, setWorkspaceOpen] = useState(false);
+  const [selectedRunId, setSelectedRunId] = useState<string | null>(openGoalRunRequest?.id ?? null);
+  const [workspaceOpen, setWorkspaceOpen] = useState(() => Boolean(openGoalRunRequest?.id));
   const [launchOpen, setLaunchOpen] = useState(false);
   const autoRefreshIntervalSecs = useAgentStore((state) => state.agentSettings.auto_refresh_interval_secs);
   const supported = goalRunSupportAvailable();
@@ -110,6 +122,12 @@ export function GoalsView({
     setSelectedRunId(openGoalRunRequest.id);
     setWorkspaceOpen(true);
   }, [openGoalRunRequest?.id, openGoalRunRequest?.nonce]);
+
+  useEffect(() => {
+    const onLaunch = () => setLaunchOpen(true);
+    window.addEventListener(GOAL_LAUNCH_EVENT, onLaunch);
+    return () => window.removeEventListener(GOAL_LAUNCH_EVENT, onLaunch);
+  }, []);
 
   const refresh = useCallback(async () => {
     setGoalRuns(await fetchGoalRuns());
@@ -161,7 +179,11 @@ export function GoalsView({
     }
     navigateZorai({
       view: "threads",
-      returnTarget: { view: "goals", label: "Return to goal" },
+      returnTarget: {
+        view: "goals",
+        label: "Return to goal",
+        goalRunId: selectedRunId ?? selectedRun?.id,
+      },
     });
   };
 
@@ -172,6 +194,19 @@ export function GoalsView({
     await refresh();
   };
 
+  const launchOverlay = launchOpen ? (
+    <div className="zorai-goal-launch-overlay" role="dialog" aria-modal="true" aria-label="Start goal">
+      <GoalLaunchPanel
+        runtime={runtime}
+        supported={supported}
+        starting={starting}
+        message={message}
+        onLaunch={handleStartGoal}
+        onClose={() => setLaunchOpen(false)}
+      />
+    </div>
+  ) : null;
+
   if (workspaceOpen) {
     return (
       <section className="zorai-feature-surface zorai-goals-surface zorai-goal-view-surface">
@@ -181,12 +216,20 @@ export function GoalsView({
             <h1>{selectedRun ? selectedRun.title || selectedRun.goal : "Goal workspace"}</h1>
             <p>{selectedRun ? `${formatGoalRunStatus(selectedRun.status)} / ${summarizeGoalRunStep(selectedRun)}` : "Select a goal run."}</p>
           </div>
-          <button type="button" className="zorai-ghost-button" onClick={() => setWorkspaceOpen(false)}>
-            Back to goals
-          </button>
+          <div className="zorai-card-actions">
+            {returnTarget && onReturnTarget ? (
+              <button type="button" className="zorai-ghost-button" onClick={onReturnTarget}>
+                {returnTarget.label}
+              </button>
+            ) : null}
+            <button type="button" className="zorai-ghost-button" onClick={() => setWorkspaceOpen(false)}>
+              Back to goals
+            </button>
+          </div>
         </div>
         <GoalWorkspacePanel run={selectedRun} onRefresh={refresh} onMessage={setMessage} onOpenThread={openGoalThread} />
         {message ? <div className="zorai-inline-note">{message}</div> : null}
+        {launchOverlay}
       </section>
     );
   }
@@ -199,9 +242,13 @@ export function GoalsView({
           <h1>Plan, run, and supervise durable agent goals.</h1>
           <p>Goals turn a thread intent into a monitored run with steps, approvals, child tasks, and result memory.</p>
         </div>
-        <button type="button" className="zorai-primary-button" onClick={() => setLaunchOpen(true)}>
-          Start goal
-        </button>
+        <div className="zorai-card-actions">
+          {returnTarget && onReturnTarget ? (
+            <button type="button" className="zorai-ghost-button" onClick={onReturnTarget}>
+              {returnTarget.label}
+            </button>
+          ) : null}
+        </div>
       </div>
 
       <div className="zorai-metric-grid">
@@ -233,18 +280,7 @@ export function GoalsView({
           )}
         </div>
       </div>
-      {launchOpen ? (
-        <div className="zorai-goal-launch-overlay" role="dialog" aria-modal="true" aria-label="Start goal">
-          <GoalLaunchPanel
-            runtime={runtime}
-            supported={supported}
-            starting={starting}
-            message={message}
-            onLaunch={handleStartGoal}
-            onClose={() => setLaunchOpen(false)}
-          />
-        </div>
-      ) : null}
+      {launchOverlay}
     </section>
   );
 }

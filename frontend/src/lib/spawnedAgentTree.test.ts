@@ -279,4 +279,30 @@ describe("deriveSpawnedAgentTree", () => {
     expect(forward?.anchor?.item.id).toBe("root-newer");
     expect(reversed?.anchor?.item.id).toBe("root-newer");
   });
+
+  it("marks budget_exceeded spawned agents as terminal so they cannot look live", () => {
+    const tree = deriveSpawnedAgentTree(
+      [
+        {
+          id: "parent-task",
+          status: "in_progress",
+          created_at: 10,
+          thread_id: "thread-parent",
+        },
+        {
+          id: "child-task",
+          status: "budget_exceeded",
+          created_at: 20,
+          thread_id: "thread-child",
+          parent_task_id: "parent-task",
+          parent_thread_id: "thread-parent",
+        },
+      ],
+      "thread-parent",
+    );
+
+    expect(tree?.anchor?.live).toBe(true);
+    expect(tree?.anchor?.children[0]?.item.status).toBe("budget_exceeded");
+    expect(tree?.anchor?.children[0]?.live).toBe(false);
+  });
 });

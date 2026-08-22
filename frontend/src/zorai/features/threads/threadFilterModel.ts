@@ -153,7 +153,7 @@ export function resolveThreadCreationAgent(
   tab: ThreadFilterTab,
   subAgents: SubAgentDefinition[],
 ): { id: string; name: string } | null {
-  if (tab === "svarog") return { id: "svarog", name: "Svarog" };
+  if (tab === "svarog") return { id: "swarog", name: "Svarog" };
   if (tab === "rarog") return { id: "rarog", name: "Rarog" };
   if (tab === "weles") return { id: "weles", name: "Weles" };
   if (!tab.startsWith("agent:")) return null;

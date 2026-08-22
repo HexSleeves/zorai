@@ -21,14 +21,14 @@ describe("threadTurnIsActive", () => {
     // finished" and dispatch the next queued follow-up onto a still-running daemon turn.
     expect(threadTurnIsActive([
       message({ id: "user-1", role: "user", content: "do the work" }),
-      message({ id: "asst-1", role: "assistant", content: "Calling tools...", isStreaming: false }),
+      message({ id: "asst-1", role: "assistant", content: "", isStreaming: false }),
       message({ id: "tool-1", role: "tool", toolCallId: "call-1", toolName: "read_file", toolStatus: "requested" }),
     ])).toBe(true);
   });
 
   it("clears after the matching tool result arrives and no assistant is streaming", () => {
     expect(threadTurnIsActive([
-      message({ id: "asst-1", role: "assistant", content: "Calling tools...", isStreaming: false }),
+      message({ id: "asst-1", role: "assistant", content: "", isStreaming: false }),
       message({ id: "tool-1", role: "tool", toolCallId: "call-1", toolName: "read_file", toolStatus: "requested" }),
       message({ id: "tool-1-done", role: "tool", toolCallId: "call-1", toolName: "read_file", toolStatus: "done", content: "ok" }),
     ])).toBe(false);
@@ -50,7 +50,7 @@ describe("threadTurnIsActive", () => {
     // requested/executing rows then kept threadTurnIsActive true, so the composer
     // queued instead of sending the next follow-up.
     const messages = [
-      message({ id: "asst-1", role: "assistant", content: "Calling tools...", isStreaming: false }),
+      message({ id: "asst-1", role: "assistant", content: "", isStreaming: false }),
       message({ id: "tool-1", role: "tool", toolCallId: "call-1", toolName: "read_file", toolStatus: "requested" }),
     ];
     expect(threadTurnIsActive(messages)).toBe(true);

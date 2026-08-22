@@ -234,7 +234,7 @@ export const headerBtnStyle: CSSProperties = {
 export const addBtnStyle: CSSProperties = {
     background: "var(--zorai-bg-surface)", border: "1px solid var(--border)",
     color: "var(--text-primary)", cursor: "pointer", fontSize: 11,
-    padding: "4px 10px", borderRadius: 0, marginTop: 8,
+    padding: "4px 10px", borderRadius: 0
 };
 
 export const kbdStyle: CSSProperties = {

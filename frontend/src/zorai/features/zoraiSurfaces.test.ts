@@ -53,6 +53,44 @@ describe("Zorai feature surfaces", () => {
     expect(openThreadSource).not.toContain("refreshThreadList");
   });
 
+  it("keeps linked thread and goal round-trips on the destination header instead of the removed topbar", () => {
+    const shellSource = readFeature("../shell/ZoraiShell.tsx");
+    const threadSource = readFeature("./threads/ThreadsView.tsx");
+    const goalsSource = readFeature("./goals/GoalsView.tsx");
+    const workspacesSource = readFeature("./workspaces/WorkspacesView.tsx");
+
+    expect(shellSource).toContain("if (detail.returnTarget !== undefined) setReturnTarget(detail.returnTarget)");
+    expect(shellSource).toContain("setReturnTarget(null)");
+    expect(shellSource).not.toContain("zorai-topbar");
+    expect(threadSource).toContain("className=\"zorai-thread-header\"");
+    expect(threadSource).toContain("returnTarget.label");
+    expect(threadSource).toContain("onReturnTarget");
+    expect(goalsSource).toContain("returnTarget.label");
+    expect(goalsSource).toContain("goalRunId: selectedRunId ?? selectedRun?.id");
+    expect(shellSource).toContain("returnTarget.goalRunId");
+    expect(workspacesSource).toContain('returnTarget: { view: "workspaces", label: "Return to workspace" }');
+  });
+
+  it("lets the operator collapse the contextual rail from the heading without losing the restore control", () => {
+    // Why: the thread/goal list competes with the main canvas. Collapse must
+    // start expanded, hide the list, and keep the hamburger in the heading so
+    // the rail can be restored without hunting a second control.
+    const shellSource = readFeature("../shell/ZoraiShell.tsx");
+    const iconSource = readFeature("../shell/ZoraiIcons.tsx");
+    const styleSource = readFileSync(new URL("../styles/zorai.css", import.meta.url), "utf8");
+
+    expect(shellSource).toContain("const [railOpen, setRailOpen] = useState(true)");
+    expect(shellSource).toContain("zorai-rail-toggle");
+    expect(shellSource).toContain("ZoraiHamburgerIcon");
+    expect(shellSource).toContain("aria-expanded={railOpen}");
+    expect(shellSource).toContain("hidden={!railOpen}");
+    expect(shellSource).toContain("zorai-contextual-rail--collapsed");
+    expect(shellSource).toContain("zorai-shell--rail-collapsed");
+    expect(iconSource).toContain("export function ZoraiHamburgerIcon");
+    expect(styleSource).toContain(".zorai-shell--rail-collapsed");
+    expect(styleSource).toContain("68px 48px minmax(0, 1fr) auto");
+  });
+
   it("starts goals through the TUI-compatible Mission Control preflight", () => {
     const source = readFeature("./goals/GoalsView.tsx");
     const launchSource = readFeature("./goals/GoalLaunchPanel.tsx");
@@ -62,6 +100,9 @@ describe("Zorai feature surfaces", () => {
     expect(source).toContain("GoalLaunchPanel");
     expect(source).toContain("goal-launch-overlay");
     expect(source).toContain("setLaunchOpen(true)");
+    expect(source).toContain("GOAL_LAUNCH_EVENT");
+    expect(source).toContain("Start goal");
+    expect(source).toContain("window.dispatchEvent(new Event(GOAL_LAUNCH_EVENT))");
     expect(source).not.toContain("Optional goal title");
     expect(launchSource).not.toContain("MISSION CONTROL");
     expect(launchSource).not.toContain("Prompt editor");
@@ -277,6 +318,9 @@ describe("Zorai feature surfaces", () => {
     expect(source).toContain("goalRunId");
     expect(source).toContain("WorkspaceActorPickerControl");
     expect(source).not.toContain("placeholder=\"reviewer: user, svarog\"");
+    expect(source).toContain("New workspace");
+    expect(source).toContain("WorkspaceCreatePanel");
+    expect(source).not.toContain("Main workspace");
   });
 
   it("keeps Threads native to the Zorai shell instead of embedding the old chat view", () => {
@@ -330,6 +374,10 @@ describe("Zorai feature surfaces", () => {
     expect(source).toContain("runtime.isStreamingResponse");
     // Assistant fallback name should come from the thread's agent, not hardcoded "Zorai".
     expect(source).toContain("threadAgentName");
+    expect(source).toContain("ThreadRetryStatusBanner");
+    expect(source).toContain("useThreadRetryStatus");
+    expect(readFeature("../../components/agent-chat-panel/runtime/useDaemonAgentEvents.ts")).toContain("case \"retry_status\"");
+    expect(readFeature("../styles/zorai.css")).toContain(".zorai-retry-status");
   });
 
   it("lets the current thread change provider, model, and context from the context panel", () => {
@@ -348,6 +396,7 @@ describe("Zorai feature surfaces", () => {
     expect(runtimeSource).toContain("Model");
     expect(runtimeSource).toContain("Effort");
     expect(runtimeSource).toContain("Context");
+    expect(runtimeSource).toContain("resolveThreadOwnerRuntimeProfile");
     expect(actionsSource).toContain("agentSetProviderModel");
     expect(actionsSource).toContain("agentSetTargetAgentProviderModel");
     expect(actionsSource).toContain("agentSetTargetAgentReasoningEffort");
@@ -361,6 +410,7 @@ describe("Zorai feature surfaces", () => {
 
     expect(source).toContain("Attach files");
     expect(source).toContain("readComposerAttachment");
+    expect(source).toContain("applyComposerTextareaSize");
     expect(source).toContain("agentSpeechToText");
     expect(source).toContain("Record voice message");
     expect(speechSource).toContain("agentTextToSpeech");
@@ -405,7 +455,8 @@ describe("Zorai feature surfaces", () => {
     expect(contextSource).toContain("Todos");
     expect(contextSource).toContain("Files");
     expect(contextSource).toContain("Spawned");
-    expect(contextSource).toContain("profileContextWindowTokens");
+    expect(contextSource).toContain("resolveThreadOwnerRuntimeProfile");
+    expect(readFeature("./threads/threadOwnerRuntime.ts")).toContain("profileContextWindowTokens");
     expect(contextSource).toContain("activeContextWindowTokens");
     expect(contextSource).toContain("tokens");
     expect(contextSource).toContain("zorai-todo-context-list");
@@ -449,11 +500,24 @@ describe("Zorai feature surfaces", () => {
     const css = readFeature("../styles/zorai.css");
 
     expect(css).toMatch(/\.zorai-native-thread-surface\s*{[^}]*grid-template-areas:/s);
-    expect(css).toMatch(/\.zorai-thread-chat-scroll\s*{[^}]*grid-area:\s*messages/s);
+    expect(css).toMatch(/\.zorai-thread-chat\s*{[^}]*grid-area:\s*messages/s);
     expect(css).toMatch(/\.zorai-thread-composer\s*{[^}]*grid-area:\s*composer/s);
     expect(css).toMatch(/\.zorai-thread-chat-scroll\s*>\s*\*\s*{[^}]*min-width:\s*0/s);
     expect(css).toMatch(/\.zorai-message\s*{[^}]*box-sizing:\s*border-box/s);
     expect(css).toMatch(/\.zorai-message__content\s*{[^}]*overflow-wrap:\s*anywhere/s);
+  });
+
+  it("shows a centered jump-to-latest control when thread history is not pinned to the bottom", () => {
+    const source = readFeature("./threads/ThreadsView.tsx");
+    const css = readFeature("../styles/zorai.css");
+
+    expect(source).toContain("ThreadScrollToBottomButton");
+    expect(source).toContain("Scroll to latest messages");
+    expect(source).toContain("setPinnedToBottom(shouldFollowThreadHistoryBottom())");
+    expect(source).toContain("setFollowThreadHistoryBottom(true)");
+    expect(css).toMatch(/\.zorai-thread-scroll-bottom\s*{[^}]*position:\s*absolute/s);
+    expect(css).toMatch(/\.zorai-thread-scroll-bottom\s*{[^}]*left:\s*50%/s);
+    expect(css).toMatch(/\.zorai-thread-scroll-bottom\s*{[^}]*bottom:\s*18px/s);
   });
 
   it("keeps assistant reasoning separate from visible message content", () => {
@@ -466,10 +530,16 @@ describe("Zorai feature surfaces", () => {
     expect(messageSource).not.toContain("zorai-message__content--preview");
     expect(messageSource).not.toContain("summarizeThreadMessageText");
     expect(messageSource).toContain("Reasoning");
+    expect(messageSource).toContain("ThreadReasoningBlock");
+    expect(messageSource).toContain("streaming={Boolean(message.isStreaming)}");
     expect(messageSource).not.toContain("open={message.isStreaming ? true : undefined}");
     expect(messageSource).not.toContain("<p className=\"zorai-message__reasoning\">");
     expect(css).toMatch(/\.zorai-message__reasoning\s*{[^}]*border:\s*1px solid var\(--zorai-border\)/s);
     expect(css).toMatch(/\.zorai-message__reasoning\s*>\s*div\s*{[^}]*max-height:\s*min\(42vh, 360px\)/s);
+    expect(messageSource).toContain("assistantMessageHasVisibleContent");
+    expect(messageSource).toContain("hasVisibleContent && message.toolCalls");
+    expect(readFeature("../../components/agent-chat-panel/runtime/useDaemonAgentEvents.ts")).not.toContain("Calling tools...");
+    expect(readFeature("../../components/agent-chat-panel/runtime/useLegacyAgentMessaging.ts")).not.toContain("Calling tools...");
   });
 
   it("renders classified system activity as collapsed rows like tool calls", () => {
@@ -555,5 +625,16 @@ describe("Zorai feature surfaces", () => {
     );
 
     expect(handler).toContain("consumePendingFocusSearch");
+  });
+
+  it("surfaces TUI thread-budget-exceeded copy on the native composer", () => {
+    const composerSource = readFeature("./threads/ThreadComposer.tsx");
+    const noticeSource = readFeature("./threads/threadBudgetNotice.ts");
+
+    expect(noticeSource).toContain("Thread budget exceeded for");
+    expect(noticeSource).toContain("continue from the parent thread");
+    expect(composerSource).toContain("activeThreadBudgetExceededNotice");
+    expect(composerSource).toContain("zorai-composer-budget-notice");
+    expect(composerSource).toContain("if (budgetNotice || runtime.isStreamingResponse) return");
   });
 });

@@ -6,9 +6,12 @@ use super::*;
 mod finalization_impl;
 #[path = "goal_planner/progress.rs"]
 mod progress_impl;
+#[path = "goal_planner/stagnation.rs"]
+pub(in crate::agent) mod stagnation;
 
 pub(super) const GOAL_FINAL_REVIEW_SOURCE: &str = "goal_final_review";
 pub(in crate::agent) const GOAL_VERIFICATION_SOURCE: &str = "goal_verification";
+pub(in crate::agent) const GOAL_PROGRESS_SUPERVISION_SOURCE: &str = "goal_progress_supervision";
 const GOAL_REVIEWER_ROLE_ID: &str = "reviewer";
 const GOAL_REVIEW_VERDICT_PASS: &str = "VERDICT: PASS";
 const GOAL_REVIEW_VERDICT_FAIL: &str = "VERDICT: FAIL";
@@ -38,13 +41,24 @@ pub(in crate::agent) fn parse_goal_verdict_evidence(
     let verifier = field("verifier");
     let coverage = field("coverage");
     let gaps = field("gaps");
-    if verifier.is_none() && coverage.is_none() && gaps.is_none() {
+    let scores = args
+        .get("scores")
+        .and_then(|value| value.as_object())
+        .map(|obj| {
+            obj.iter()
+                .filter_map(|(k, v)| v.as_f64().map(|n| (k.clone(), n)))
+                .collect::<std::collections::BTreeMap<String, f64>>()
+        })
+        .filter(|map| !map.is_empty());
+    if verifier.is_none() && coverage.is_none() && gaps.is_none() && scores.is_none() {
         return Ok(None);
     }
     Ok(Some(GoalVerdictEvidence {
         verifier: verifier.unwrap_or_default(),
         coverage: coverage.unwrap_or_default(),
         gaps,
+        scores,
+        is_new_best: None,
     }))
 }
 
@@ -1070,3 +1084,7 @@ mod tests;
 #[cfg(test)]
 #[path = "tests/goal_planner_structured_fallback.rs"]
 mod structured_fallback_tests;
+
+#[cfg(test)]
+#[path = "goal_planner/stagnation_tests.rs"]
+mod stagnation_tests;

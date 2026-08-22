@@ -9,15 +9,17 @@ import {
   threadProviderIds,
   threadReasoningEfforts,
 } from "./threadRuntimeActions";
-import { resolveThreadOwnerAgentId } from "./threadOwner";
+import { resolveThreadOwnerRuntimeProfile } from "./threadOwnerRuntime";
 
 export function ThreadRuntimeBar({ thread }: { thread: AgentThread }) {
   const agentSettings = useAgentStore((state) => state.agentSettings);
+  const conciergeConfig = useAgentStore((state) => state.conciergeConfig);
   const subAgents = useAgentStore((state) => state.subAgents);
   const [busy, setBusy] = useState(false);
   const providers = useMemo(() => threadProviderIds(), [agentSettings]);
-  const ownerId = resolveThreadOwnerAgentId(thread, subAgents);
-  const providerId = (thread.profileProvider || agentSettings.active_provider || providers[0] || "") as AgentProviderId;
+  const profile = resolveThreadOwnerRuntimeProfile(thread, subAgents, agentSettings, conciergeConfig);
+  const ownerId = profile.ownerId;
+  const providerId = (profile.provider || providers[0] || "") as AgentProviderId;
   const providerConfig = agentSettings[providerId] as {
     model?: string;
     custom_model_name?: string;
@@ -26,12 +28,9 @@ export function ThreadRuntimeBar({ thread }: { thread: AgentThread }) {
     api_key?: string;
     auth_source?: "api_key" | "chatgpt_subscription" | "github_copilot";
   } | undefined;
-  const model = thread.profileModel || providerConfig?.custom_model_name || providerConfig?.model || "";
-  const effort = thread.profileReasoningEffort || agentSettings.reasoning_effort || "none";
-  const contextTokens = thread.profileContextWindowTokens
-    ?? providerConfig?.context_window_tokens
-    ?? agentSettings.context_window_tokens
-    ?? 128000;
+  const model = profile.model;
+  const effort = profile.effort || "none";
+  const contextTokens = profile.contextWindowTokens;
 
   const run = async (action: () => Promise<void>) => {
     if (busy) return;

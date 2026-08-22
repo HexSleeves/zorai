@@ -125,6 +125,46 @@ fn find_development_gui_in_release_root(release_root: &Path) -> Option<PathBuf> 
     unpacked.exists().then_some(unpacked)
 }
 
+#[cfg(target_os = "linux")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ChromeSandboxStatus {
+    Missing,
+    Present { uid: u32, mode: u32 },
+}
+
+#[cfg(target_os = "linux")]
+pub(crate) fn linux_electron_needs_no_sandbox(status: ChromeSandboxStatus) -> bool {
+    match status {
+        ChromeSandboxStatus::Missing => false,
+        ChromeSandboxStatus::Present { uid, mode } => uid != 0 || (mode & 0o4000) == 0,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn chrome_sandbox_status(gui_binary: &Path) -> ChromeSandboxStatus {
+    use std::os::unix::fs::MetadataExt;
+
+    let Some(parent) = gui_binary.parent() else {
+        return ChromeSandboxStatus::Missing;
+    };
+    match std::fs::metadata(parent.join("chrome-sandbox")) {
+        Ok(meta) => ChromeSandboxStatus::Present {
+            uid: meta.uid(),
+            mode: meta.mode(),
+        },
+        Err(_) => ChromeSandboxStatus::Missing,
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn linux_gui_sandbox_args(gui_binary: &Path) -> &'static [&'static str] {
+    if linux_electron_needs_no_sandbox(chrome_sandbox_status(gui_binary)) {
+        &["--no-sandbox"]
+    } else {
+        &[]
+    }
+}
+
 fn platform_binary_name(name: &str) -> String {
     #[cfg(windows)]
     {
@@ -178,7 +218,12 @@ pub(crate) fn launch_gui() -> Result<()> {
         cwd.as_deref(),
     );
 
-    match Command::new(&gui_binary).spawn() {
+    let mut command = Command::new(&gui_binary);
+    #[cfg(target_os = "linux")]
+    {
+        command.args(linux_gui_sandbox_args(&gui_binary));
+    }
+    match command.spawn() {
         Ok(_) => {
             println!("Launched zorai desktop GUI.");
             Ok(())

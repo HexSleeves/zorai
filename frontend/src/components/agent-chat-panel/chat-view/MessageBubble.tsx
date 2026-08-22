@@ -195,7 +195,7 @@ export function MessageBubble({
           <details className="acp-reasoning">
             <summary>Reasoning</summary>
             <div className="acp-reasoning__body">
-              <MarkdownContent content={message.reasoning} />
+              <MarkdownContent content={message.reasoning} streaming={Boolean(message.isStreaming)} />
             </div>
           </details>
         )}
@@ -274,7 +274,7 @@ export function MessageBubble({
           </div>
         ) : (
           <>
-            <MarkdownContent content={displayContent} />
+            <MarkdownContent content={displayContent} streaming={Boolean(message.isStreaming)} />
             {mediaBlocks.length > 0 && (
               <div className="acp-media">
                 {mediaBlocks.map((block, index) => {

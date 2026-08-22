@@ -737,6 +737,11 @@ impl AgentEngine {
             let streams = self.stream_cancellations.lock().await;
             if let Some(entry) = streams.get(thread_id) {
                 if !entry.token.is_cancelled() {
+                    tracing::debug!(
+                        thread_id = %thread_id,
+                        last_progress_at = entry.last_progress_at,
+                        "skipping deferred continuation flush because a live stream is active"
+                    );
                     return Ok(());
                 }
             }
@@ -747,8 +752,17 @@ impl AgentEngine {
             active.insert(thread_id.to_string())
         };
         if !acquired_flush_slot {
+            tracing::debug!(
+                thread_id = %thread_id,
+                "skipping deferred continuation flush because another flush holds the slot"
+            );
             return Ok(());
         }
+
+        let mut slot_guard = FlushSlotGuard::new(
+            &self.active_visible_thread_continuation_flushes,
+            thread_id.to_string(),
+        );
 
         let result = async {
             loop {
@@ -764,6 +778,11 @@ impl AgentEngine {
                     let streams = self.stream_cancellations.lock().await;
                     if let Some(entry) = streams.get(thread_id) {
                         if !entry.token.is_cancelled() {
+                            tracing::debug!(
+                                thread_id = %thread_id,
+                                last_progress_at = entry.last_progress_at,
+                                "stopping deferred continuation drain because a live stream is active"
+                            );
                             break;
                         }
                     }
@@ -787,11 +806,42 @@ impl AgentEngine {
         }
         .await;
 
-        self.active_visible_thread_continuation_flushes
-            .lock()
-            .await
-            .remove(thread_id);
+        slot_guard.release().await;
         result
+    }
+
+    pub(in crate::agent) async fn supervise_idle_deferred_thread_continuations(
+        &self,
+    ) -> Result<()> {
+        let queued_thread_ids = {
+            let queued = self.deferred_visible_thread_continuations.lock().await;
+            queued
+                .iter()
+                .filter(|(_, items)| !items.is_empty())
+                .map(|(thread_id, _)| thread_id.clone())
+                .collect::<Vec<_>>()
+        };
+        for thread_id in queued_thread_ids {
+            if !self.thread_is_idle_for_subagent_wakeup(&thread_id).await {
+                continue;
+            }
+            tracing::info!(
+                thread_id = %thread_id,
+                "flushing deferred continuation on idle thread"
+            );
+            let _ = self.stop_stream(&thread_id).await;
+            if let Err(error) = self
+                .flush_deferred_visible_thread_continuations(&thread_id)
+                .await
+            {
+                tracing::warn!(
+                    thread_id = %thread_id,
+                    error = %error,
+                    "idle deferred continuation flush failed"
+                );
+            }
+        }
+        Ok(())
     }
 
     async fn continue_visible_thread_as_agent(
@@ -2159,6 +2209,42 @@ impl AgentEngine {
     }
 }
 
+struct FlushSlotGuard<'a> {
+    slots: &'a Mutex<HashSet<String>>,
+    thread_id: String,
+    released: bool,
+}
+
+impl<'a> FlushSlotGuard<'a> {
+    fn new(slots: &'a Mutex<HashSet<String>>, thread_id: String) -> Self {
+        Self {
+            slots,
+            thread_id,
+            released: false,
+        }
+    }
+
+    async fn release(&mut self) {
+        if self.released {
+            return;
+        }
+        self.slots.lock().await.remove(&self.thread_id);
+        self.released = true;
+    }
+}
+
+impl Drop for FlushSlotGuard<'_> {
+    fn drop(&mut self) {
+        if self.released {
+            return;
+        }
+        if let Ok(mut active) = self.slots.try_lock() {
+            active.remove(&self.thread_id);
+            self.released = true;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2239,6 +2325,24 @@ mod tests {
         assert_eq!(
             engine.task_provider_override_for_compaction(&task.id).await,
             Some(("openai".to_string(), Some("gpt-5.4-mini".to_string())))
+        );
+    }
+
+    #[tokio::test]
+    async fn flush_slot_guard_does_not_steal_slot_acquired_after_release() {
+        let slots = Mutex::new(HashSet::new());
+        slots.lock().await.insert("thread-a".to_string());
+        {
+            let mut guard = FlushSlotGuard::new(&slots, "thread-a".to_string());
+            guard.release().await;
+            assert!(
+                slots.lock().await.insert("thread-a".to_string()),
+                "after release another flush must be able to acquire the slot"
+            );
+        }
+        assert!(
+            slots.lock().await.contains("thread-a"),
+            "drop after release must not steal the next flush's slot"
         );
     }
 }

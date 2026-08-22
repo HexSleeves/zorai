@@ -1,4 +1,5 @@
 import { memo, useState } from "react";
+import { assistantMessageHasVisibleContent } from "@/components/agent-chat-panel/chat-view/helpers";
 import { MarkdownContent } from "@/components/agent-chat-panel/chat-view/markdown";
 import type { AgentMessage } from "@/lib/agentStore";
 
@@ -11,9 +12,19 @@ export function isMessageFromCurrentViewSession(message: AgentMessage, mountedAt
 
 export function isRetryableErrorMessage(message: AgentMessage): boolean {
   if (message.role !== "assistant" || message.isStreaming) return false;
-  const content = message.content.trim();
-  return /^error\s*:/i.test(content)
-    || /\b429\b|rate[ -]?limit|quota|temporar(?:y|ily) unavailable|timeout|timed out|connection (?:reset|closed)/i.test(content);
+  return /^error\s*:/i.test(message.content.trim());
+}
+
+export function shouldOfferMessageRetry(
+  message: AgentMessage,
+  latestAssistantMessageId: string | undefined,
+  mountedAt: number,
+  hasUserMessage: boolean,
+): boolean {
+  return Boolean(hasUserMessage)
+    && message.id === latestAssistantMessageId
+    && isMessageFromCurrentViewSession(message, mountedAt)
+    && isRetryableErrorMessage(message);
 }
 
 export const NativeThreadMessageBubble = memo(function NativeThreadMessageBubble({
@@ -51,7 +62,7 @@ export const NativeThreadMessageBubble = memo(function NativeThreadMessageBubble
   const isAssistant = message.role === "assistant";
   const author = message.authorAgentName ?? (fromUser ? "You" : message.role === "assistant" ? (threadAgentName ?? "Zorai") : message.role);
   const tokenText = message.totalTokens > 0 ? `${message.totalTokens.toLocaleString()} tokens` : null;
-  const hasVisibleContent = message.content.trim().length > 0;
+  const hasVisibleContent = assistantMessageHasVisibleContent(message.content);
   const shouldRenderContent = hasVisibleContent || !message.reasoning;
 
   return (
@@ -61,17 +72,16 @@ export const NativeThreadMessageBubble = memo(function NativeThreadMessageBubble
         <span>{formatTime(message.createdAt)}{tokenText ? ` / ${tokenText}` : ""}</span>
       </div>
       {message.reasoning ? (
-        <details className="zorai-message__reasoning">
-          <summary className="zorai-message__reasoning-toggle">Reasoning</summary>
-          <div><MarkdownContent content={message.reasoning} /></div>
-        </details>
+        <ThreadReasoningBlock content={message.reasoning} streaming={Boolean(message.isStreaming)} />
       ) : null}
       {shouldRenderContent ? (
         <div className="zorai-message__content">
-          {hasVisibleContent ? <MarkdownContent content={message.content} /> : null}
+          {hasVisibleContent ? (
+            <MarkdownContent content={message.content} streaming={Boolean(message.isStreaming)} />
+          ) : null}
         </div>
       ) : null}
-      {message.toolCalls && message.toolCalls.length > 0 ? (
+      {hasVisibleContent && message.toolCalls && message.toolCalls.length > 0 ? (
         <div className="zorai-message__tools">{message.toolCalls.length} tool calls</div>
       ) : null}
       {onRetry && !retryDismissed ? (
@@ -81,13 +91,22 @@ export const NativeThreadMessageBubble = memo(function NativeThreadMessageBubble
             <span>Retry the last message?</span>
           </div>
           <div className="zorai-message-retry__actions">
-            <button type="button" className="zorai-primary-button" onClick={onRetry}>Yes, retry</button>
+            <button
+              type="button"
+              className="zorai-primary-button"
+              onClick={() => {
+                setRetryDismissed(true);
+                onRetry();
+              }}
+            >
+              Yes, retry
+            </button>
             <button type="button" className="zorai-ghost-button" onClick={() => setRetryDismissed(true)}>No</button>
           </div>
         </div>
       ) : null}
       <div className="zorai-message__actions">
-        {message.content.trim() ? (
+        {hasVisibleContent ? (
           <button
             type="button"
             className="zorai-ghost-button zorai-message-action"
@@ -139,7 +158,7 @@ export const NativeThreadMessageBubble = memo(function NativeThreadMessageBubble
             <MessageActionIcon kind="regenerate" />
           </button>
         ) : null}
-        {ttsEnabled && message.content.trim() ? (
+        {ttsEnabled && hasVisibleContent ? (
           <button
             type="button"
             className={["zorai-ghost-button zorai-message-action", speaking ? "zorai-button--active" : ""].filter(Boolean).join(" ")}
@@ -186,6 +205,24 @@ export const NativeThreadMessageBubble = memo(function NativeThreadMessageBubble
   && previous.onRegenerate === next.onRegenerate
   && previous.onDelete === next.onDelete
 ));
+
+function ThreadReasoningBlock({ content, streaming }: { content: string; streaming: boolean }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <details
+      className="zorai-message__reasoning"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary className="zorai-message__reasoning-toggle">Reasoning</summary>
+      {open ? (
+        <div>
+          <MarkdownContent content={content} streaming={streaming} />
+        </div>
+      ) : null}
+    </details>
+  );
+}
 
 function MessageActionIcon({ kind, filled = false, animated = false }: { kind: "speak" | "pin" | "copy" | "copied" | "thumb-up" | "thumb-down" | "regenerate" | "delete"; filled?: boolean; animated?: boolean }) {
   if (kind === "speak") {

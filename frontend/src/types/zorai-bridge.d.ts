@@ -274,6 +274,7 @@ declare global {
         | "awaiting_approval"
         | "blocked"
         | "failed_analyzing"
+        | "budget_exceeded"
         | "completed"
         | "failed"
         | "cancelled";
