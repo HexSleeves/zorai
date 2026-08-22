@@ -1,6 +1,8 @@
 import { Component, Suspense, lazy, useEffect, useRef, type ErrorInfo, type ReactNode } from "react";
+import { getBridge } from "@/lib/bridge";
 import "@/lib/monacoEnvironment";
 import type { OnMount } from "@monaco-editor/react";
+import type { languages as MonacoLanguagesApi } from "monaco-editor";
 
 const MonacoEditor = lazy(() => import("@monaco-editor/react").then((module) => ({ default: module.default })));
 const MonacoDiffEditor = lazy(() => import("@monaco-editor/react").then((module) => ({ default: module.DiffEditor })));
@@ -29,11 +31,20 @@ export function WorkspaceCodeEditor({
   onSelect,
   onSave,
   diagnostics = [],
+  lsp,
+  onNavigateLocation,
   onMount,
   textareaRef,
-}: FallbackEditorProps & { language: string; diagnostics?: ZoraiLspDiagnostic[]; onMount?: OnMount }) {
+}: FallbackEditorProps & {
+  language: string;
+  diagnostics?: ZoraiLspDiagnostic[];
+  lsp?: { root: string; path: string; language: string; available: boolean };
+  onNavigateLocation?: (path: string, line: number, column: number) => void;
+  onMount?: OnMount;
+}) {
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const monacoRef = useRef<Parameters<OnMount>[1] | null>(null);
+  const providerDisposablesRef = useRef<Array<{ dispose: () => void }>>([]);
   const fallback = <FallbackEditor value={value} path={path} onChange={onChange} onSelect={onSelect} onSave={onSave} textareaRef={textareaRef} />;
   useEffect(() => {
     const monacoEditor = editorRef.current;
@@ -61,6 +72,59 @@ export function WorkspaceCodeEditor({
   const handleMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
+    providerDisposablesRef.current.forEach((disposable) => disposable.dispose());
+    providerDisposablesRef.current = [];
+    const bridge = getBridge();
+    if (lsp?.available && bridge?.workspaceLspRequest) {
+      const request = (method: "hover" | "definition" | "references", position: { lineNumber: number; column: number }) => bridge.workspaceLspRequest!(
+        lsp.root,
+        lsp.path,
+        lsp.language,
+        method,
+        { line: position.lineNumber - 1, character: position.column - 1 },
+      );
+      providerDisposablesRef.current.push(monaco.languages.registerHoverProvider(language, {
+        provideHover: async (_model, position) => {
+          const response = await request("hover", position).catch(() => null);
+          const hover = response?.result as any;
+          if (!hover?.contents) return null;
+          return {
+            contents: (Array.isArray(hover.contents) ? hover.contents : [hover.contents]).map((content: any) => ({
+              value: typeof content === "string" ? content : content.value ?? String(content),
+            })),
+          };
+        },
+      }));
+      const locations = (result: any): any[] => result ? (Array.isArray(result) ? result : [result]) : [];
+      const convertLocation = (location: any): MonacoLanguagesApi.Location | null => {
+        const uri = location.targetUri ?? location.uri;
+        const range = location.targetSelectionRange ?? location.targetRange ?? location.range;
+        if (!uri || !range) return null;
+        let relativePath = uri;
+        try {
+          relativePath = decodeURIComponent(new URL(uri).pathname).replace(/^\/[A-Za-z]:\//, (value) => value.slice(1));
+        } catch {
+          relativePath = String(uri);
+        }
+        const rootNormalized = lsp.root.replace(/\\/g, "/").replace(/\/$/, "");
+        relativePath = relativePath.replace(/\\/g, "/");
+        if (relativePath.startsWith(rootNormalized)) relativePath = relativePath.slice(rootNormalized.length).replace(/^\//, "");
+        const rangeValue = new monaco.Range(range.start.line + 1, range.start.character + 1, range.end.line + 1, range.end.character + 1);
+        if (relativePath === lsp.path) return { uri: editor.getModel()!.uri, range: rangeValue };
+        onNavigateLocation?.(relativePath, range.start.line + 1, range.start.character + 1);
+        return null;
+      };
+      providerDisposablesRef.current.push(monaco.languages.registerDefinitionProvider(language, {
+        provideDefinition: async (_model, position) => locations((await request("definition", position).catch(() => null))?.result).map(convertLocation).filter((location): location is MonacoLanguagesApi.Location => location !== null),
+      }));
+      providerDisposablesRef.current.push(monaco.languages.registerReferenceProvider(language, {
+        provideReferences: async (_model, position) => locations((await request("references", position).catch(() => null))?.result).map(convertLocation).filter((location): location is MonacoLanguagesApi.Location => location !== null),
+      }));
+    }
+    editor.onDidDispose(() => {
+      providerDisposablesRef.current.forEach((disposable) => disposable.dispose());
+      providerDisposablesRef.current = [];
+    });
     editor.onDidChangeCursorSelection((event) => onSelect(
       event.selection.startLineNumber,
       event.selection.startColumn,

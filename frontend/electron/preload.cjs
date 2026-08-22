@@ -180,6 +180,7 @@ const bridgeApi = {
     workspaceLspStatus: (rootPath, language) => ipcRenderer.invoke('workspace-lsp-status', rootPath, language),
     workspaceLspOpen: (rootPath, relativePath, language, content, version) => ipcRenderer.invoke('workspace-lsp-open', rootPath, relativePath, language, content, version),
     workspaceLspChange: (rootPath, relativePath, language, content, version) => ipcRenderer.invoke('workspace-lsp-change', rootPath, relativePath, language, content, version),
+    workspaceLspRequest: (rootPath, relativePath, language, method, position) => ipcRenderer.invoke('workspace-lsp-request', rootPath, relativePath, language, method, position),
     workspaceLspClose: (rootPath, relativePath, language) => ipcRenderer.invoke('workspace-lsp-close', rootPath, relativePath, language),
     workspaceLspUnsubscribe: (rootPath, language) => ipcRenderer.invoke('workspace-lsp-unsubscribe', rootPath, language),
     onWorkspaceLspDiagnostics: (cb) => {

@@ -533,6 +533,7 @@ declare global {
         workspaceLspStatus?: (rootPath: string, language: string) => Promise<{ root: string; language: string; configured: boolean; available: boolean; command: string | null; server: string | null }>;
         workspaceLspOpen?: (rootPath: string, relativePath: string, language: string, content: string, version: number) => Promise<{ available: boolean; reason?: string; root?: string; server?: string; command?: string; document?: { path: string; version: number } }>;
         workspaceLspChange?: (rootPath: string, relativePath: string, language: string, content: string, version: number) => Promise<unknown>;
+        workspaceLspRequest?: (rootPath: string, relativePath: string, language: string, method: "hover" | "definition" | "references", position: { line: number; character: number }) => Promise<{ available: boolean; reason?: string; result?: unknown }>;
         workspaceLspClose?: (rootPath: string, relativePath: string, language: string) => Promise<boolean>;
         workspaceLspUnsubscribe?: (rootPath: string, language: string) => Promise<boolean>;
         onWorkspaceLspDiagnostics?: (cb: (payload: ZoraiLspDiagnosticsPayload) => void) => (() => void) | void;

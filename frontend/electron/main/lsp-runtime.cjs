@@ -205,6 +205,26 @@ class LspSession {
         return this.openDocument(relativePath, content, version);
     }
 
+    async requestDocument(relativePath, method, params) {
+        await this.start();
+        const resolved = resolveWorkspacePath(this.root, relativePath);
+        const document = this.documents.get(resolved.relativePath);
+        const textDocument = { uri: document?.uri ?? pathToFileURL(resolved.absolutePath).href };
+        return this.request(method, { textDocument, ...params });
+    }
+
+    async hover(relativePath, position) {
+        return this.requestDocument(relativePath, 'textDocument/hover', { position });
+    }
+
+    async definition(relativePath, position) {
+        return this.requestDocument(relativePath, 'textDocument/definition', { position });
+    }
+
+    async references(relativePath, position) {
+        return this.requestDocument(relativePath, 'textDocument/references', { position, context: { includeDeclaration: true } });
+    }
+
     closeDocument(relativePath) {
         const resolved = resolveWorkspacePath(this.root, relativePath);
         const document = this.documents.get(resolved.relativePath);
@@ -265,6 +285,16 @@ function createLspRuntime() {
         },
         async change(webContents, rootPath, relativePath, language, content, version) {
             return this.open(webContents, rootPath, relativePath, language, content, version);
+        },
+        async request(webContents, rootPath, relativePath, language, method, position) {
+            const resolved = await getSession(webContents, rootPath, language);
+            if (!resolved.available) return resolved;
+            if (!['hover', 'definition', 'references'].includes(method)) throw new Error(`Unsupported LSP request: ${method}`);
+            const result = await resolved.session[method](relativePath, {
+                line: Math.max(0, Number(position?.line) || 0),
+                character: Math.max(0, Number(position?.character) || 0),
+            });
+            return { available: true, root: resolved.root, server: resolved.server, result };
         },
         close(rootPath, relativePath, language) {
             const root = canonicalWorkspaceRoot(rootPath);

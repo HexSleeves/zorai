@@ -706,6 +706,8 @@ export function WorkspaceWorkbench() {
                     onMount={(editor) => { monacoEditorRef.current = editor; }}
                     onSave={() => void save()}
                     diagnostics={diagnosticsByPath[activeDocument.path] ?? []}
+                    lsp={context?.root && lspStatus ? { root: context.root, path: activeDocument.path, language: activeDocument.language, available: lspStatus.available } : undefined}
+                    onNavigateLocation={(targetPath, line, column) => void openFile(targetPath, { line, column })}
                     onSelect={recordEditorSelection}
                     onChange={(value) => setDocuments((current) => ({ ...current, [activeDocument.path]: { ...activeDocument, content: value, dirty: value !== activeDocument.original } }))}
                   />
