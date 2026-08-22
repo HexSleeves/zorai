@@ -1,3 +1,4 @@
+use super::assembler_support::*;
 use super::*;
 use crate::agent::types::AgentEvent;
 use std::collections::{HashMap, HashSet, VecDeque};
@@ -37,6 +38,8 @@ struct ActiveTurn {
     spans: Vec<CompletedTraceSpan>,
     llm: Option<ActiveSpan>,
     tools: HashMap<String, ActiveSpan>,
+    events: Vec<CompletedSpanEvent>,
+    dropped_events: u32,
     seen_terminal_message_ids: HashSet<String>,
     input_tokens: u64,
     output_tokens: u64,
@@ -77,6 +80,9 @@ impl TurnTraceAssembler {
             return;
         }
         let thread_id = thread_id.to_string();
+        if !opens_turn(&event) && !self.active.contains_key(&thread_id) {
+            return;
+        }
         let context_input_tokens = context.input_tokens;
         let context_output_tokens = context.output_tokens;
         let context_cache_read = context.cache_read_input_tokens;
@@ -207,6 +213,46 @@ impl TurnTraceAssembler {
                     None,
                 );
             }
+            AgentEvent::ApprovalRequired {
+                approval_id,
+                command,
+                risk_level,
+                ..
+            } => {
+                record_span_event(
+                    &mut turn.events,
+                    &mut turn.dropped_events,
+                    at_ms,
+                    "approval_required",
+                    approval_event_attributes(&approval_id, &command, &risk_level),
+                    self.config.max_events_per_span,
+                );
+            }
+            AgentEvent::RetryStatus {
+                phase,
+                attempt,
+                max_retries,
+                delay_ms,
+                failure_class,
+                message,
+                ..
+            } => {
+                record_span_event(
+                    &mut turn.events,
+                    &mut turn.dropped_events,
+                    at_ms,
+                    "retry_status",
+                    retry_event_attributes(
+                        &phase,
+                        attempt,
+                        max_retries,
+                        delay_ms,
+                        &failure_class,
+                        &message,
+                    ),
+                    self.config.max_events_per_span,
+                );
+            }
             _ => {}
         }
     }
@@ -314,6 +360,8 @@ impl TurnTraceAssembler {
                 spans: Vec::new(),
                 llm: None,
                 tools: HashMap::new(),
+                events: Vec::new(),
+                dropped_events: 0,
                 seen_terminal_message_ids: HashSet::new(),
                 input_tokens,
                 output_tokens,
@@ -371,7 +419,7 @@ impl TurnTraceAssembler {
             .context
             .relationships
             .classify_scope(turn.context.autonomous);
-        let trace = CompletedTurnTrace {
+        let mut trace = CompletedTurnTrace {
             trace_id: turn.trace_id,
             root_span_id: turn.root_span_id,
             relationships: turn.context.relationships,
@@ -386,6 +434,8 @@ impl TurnTraceAssembler {
             output,
             reasoning,
             spans: turn.spans,
+            events: turn.events,
+            dropped_events: turn.dropped_events,
             input_tokens,
             output_tokens,
             cache_read_input_tokens,
@@ -394,6 +444,7 @@ impl TurnTraceAssembler {
             provider,
             model,
         };
+        cap_completed_trace(&mut trace, self.config.max_trace_bytes);
         while self.completed.len() >= self.config.queue_capacity {
             self.completed.pop_front();
         }
@@ -436,49 +487,4 @@ fn finish_span(turn: &mut ActiveTurn, span: ActiveSpan, at_ms: u64, outcome: Mlf
         output: span.output,
         call_id: span.call_id,
     });
-}
-
-fn append_capped(target: &mut String, value: &str, max_chars: usize) {
-    let remaining = max_chars.saturating_sub(target.chars().count());
-    target.extend(value.chars().take(remaining));
-}
-
-fn random_trace_id() -> [u8; 16] {
-    *uuid::Uuid::new_v4().as_bytes()
-}
-
-fn random_span_id() -> [u8; 8] {
-    let bytes = uuid::Uuid::new_v4();
-    let mut id = [0; 8];
-    id.copy_from_slice(&bytes.as_bytes()[..8]);
-    id
-}
-
-fn is_traceable(event: &AgentEvent) -> bool {
-    matches!(
-        event,
-        AgentEvent::Delta { .. }
-            | AgentEvent::Reasoning { .. }
-            | AgentEvent::ToolCall { .. }
-            | AgentEvent::ToolResult { .. }
-            | AgentEvent::Done { .. }
-            | AgentEvent::Error { .. }
-            | AgentEvent::ApprovalRequired { .. }
-            | AgentEvent::RetryStatus { .. }
-    )
-}
-
-fn event_thread_id(event: &AgentEvent) -> Option<&str> {
-    match event {
-        AgentEvent::Delta { thread_id, .. }
-        | AgentEvent::Reasoning { thread_id, .. }
-        | AgentEvent::ToolCall { thread_id, .. }
-        | AgentEvent::ToolResult { thread_id, .. }
-        | AgentEvent::Done { thread_id, .. }
-        | AgentEvent::Error { thread_id, .. }
-        | AgentEvent::TurnInterrupted { thread_id }
-        | AgentEvent::ApprovalRequired { thread_id, .. }
-        | AgentEvent::RetryStatus { thread_id, .. } => Some(thread_id),
-        _ => None,
-    }
 }

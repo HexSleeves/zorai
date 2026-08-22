@@ -286,8 +286,8 @@ fn root_span(trace: &CompletedTurnTrace) -> OtlpSpan {
         end_time_unix_nano: millis_to_nanos(trace.ended_at_ms),
         attributes,
         dropped_attributes_count: 0,
-        events: Vec::new(),
-        dropped_events_count: 0,
+        events: encode_events(&trace.events),
+        dropped_events_count: trace.dropped_events,
         links: Vec::new(),
         dropped_links_count: 0,
         status: Some(status(trace.outcome, trace.partial_reason.as_deref())),
@@ -365,6 +365,8 @@ fn relationship_attributes(trace: &CompletedTurnTrace) -> Vec<KeyValue> {
     let relationships = &trace.relationships;
     let mut values = vec![
         kv_string("zorai.thread.id", &relationships.thread_id),
+        kv_string("session.id", &relationships.thread_id),
+        kv_string("gen_ai.conversation.id", &relationships.thread_id),
         kv_i64("zorai.turn.generation", trace.generation as i64),
     ];
     for (key, value) in [
@@ -407,17 +409,43 @@ fn relationship_attributes(trace: &CompletedTurnTrace) -> Vec<KeyValue> {
 }
 
 fn capture_flags(trace: &CompletedTurnTrace) -> (&'static str, &'static str) {
-    let values = [
+    let mut values: Vec<&CapturedValue> = [
         trace.input.as_ref(),
         trace.output.as_ref(),
         trace.reasoning.as_ref(),
-    ];
-    let redacted = values.iter().flatten().any(|value| value.redacted);
-    let truncated = values.iter().flatten().any(|value| value.truncated);
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    for span in &trace.spans {
+        values.extend(
+            [span.input.as_ref(), span.output.as_ref()]
+                .into_iter()
+                .flatten(),
+        );
+    }
+    let redacted = values.iter().any(|value| value.redacted);
+    let truncated = values.iter().any(|value| value.truncated);
     (
         if redacted { "true" } else { "false" },
         if truncated { "true" } else { "false" },
     )
+}
+
+fn encode_events(events: &[CompletedSpanEvent]) -> Vec<SpanEvent> {
+    events
+        .iter()
+        .map(|event| SpanEvent {
+            time_unix_nano: millis_to_nanos(event.at_ms),
+            name: event.name.clone(),
+            attributes: event
+                .attributes
+                .iter()
+                .map(|(key, value)| kv_string(key, value))
+                .collect(),
+            dropped_attributes_count: 0,
+        })
+        .collect()
 }
 
 fn message_json(role: &str, content: &str) -> String {

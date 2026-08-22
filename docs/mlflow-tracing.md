@@ -45,7 +45,7 @@ Independent toggles control:
 - concierge turns;
 - heartbeat/autonomous maintenance (off by default).
 
-One trace represents one Zorai turn. `zorai.thread.id`, task/goal IDs, parent IDs, agent/persona, provider/model, and client surface correlate traces across a conversation and multi-agent workflow.
+One trace represents one Zorai turn. The root span sets `session.id` and `gen_ai.conversation.id` to the Zorai thread ID so MLflow's Session column and **Group by session** can join turns from the same thread. `zorai.thread.id`, task/goal IDs, parent IDs, agent/persona, provider/model, and client surface remain as Zorai-specific correlation attributes.
 
 ## Encrypted custom headers
 

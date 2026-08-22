@@ -268,8 +268,29 @@ async fn run_worker(
                                 continue;
                             }
                             if let Some(context) = enrich_event(&engine, &event, &observation).await {
+                                let untraced_error_thread = match &event {
+                                    AgentEvent::Error { thread_id, .. }
+                                        if !assembler.has_active_turn(thread_id) =>
+                                    {
+                                        Some(thread_id.clone())
+                                    }
+                                    _ => None,
+                                };
                                 assembler.observe(now_millis(), event, context);
-                                enqueue_completed(&runtime, &config, &mut assembler, &mut pending);
+                                let completed = enqueue_completed(
+                                    &runtime,
+                                    &config,
+                                    &mut assembler,
+                                    &mut pending,
+                                );
+                                if let Some(thread_id) = untraced_error_thread {
+                                    release_anchor_for_untraced_error(
+                                        &runtime,
+                                        &assembler,
+                                        &thread_id,
+                                        completed,
+                                    );
+                                }
                             } else {
                                 release_anchor_for_closed_untraced_turn(&runtime, &assembler, &event);
                             }
@@ -355,6 +376,18 @@ pub(super) fn release_anchor_for_closed_untraced_turn(
     runtime.pop_turn_anchor(thread_id);
 }
 
+pub(super) fn release_anchor_for_untraced_error(
+    runtime: &MlflowTracingRuntime,
+    assembler: &TurnTraceAssembler,
+    thread_id: &str,
+    completed_now: usize,
+) {
+    if completed_now > 0 || assembler.has_active_turn(thread_id) {
+        return;
+    }
+    runtime.pop_turn_anchor(thread_id);
+}
+
 pub(super) fn keep_live_assembler_on_reconfigure(
     runtime: &MlflowTracingRuntime,
     config: &MlflowTracingConfig,
@@ -382,8 +415,10 @@ fn enqueue_completed(
     config: &MlflowTracingConfig,
     assembler: &mut TurnTraceAssembler,
     pending: &mut Vec<CompletedTurnTrace>,
-) {
-    for trace in assembler.drain_completed() {
+) -> usize {
+    let traces = assembler.drain_completed();
+    let completed = traces.len();
+    for trace in traces {
         runtime.pop_turn_anchor(&trace.relationships.thread_id);
         if pending.len() >= config.queue_capacity {
             pending.remove(0);
@@ -397,6 +432,7 @@ fn enqueue_completed(
     status.queue_depth = pending.len();
     status.active_partial_turns = assembler.active_len();
     runtime.status_tx.send_replace(status);
+    completed
 }
 
 async fn flush_pending_with_retry(
@@ -547,6 +583,8 @@ pub(super) fn diagnostic_trace() -> CompletedTurnTrace {
         output: None,
         reasoning: None,
         spans: Vec::new(),
+        events: Vec::new(),
+        dropped_events: 0,
         input_tokens: 0,
         output_tokens: 0,
         cache_read_input_tokens: 0,

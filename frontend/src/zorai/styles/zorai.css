@@ -1518,6 +1518,7 @@
     box-shadow var(--zorai-transition),
     transform var(--zorai-transition),
     opacity var(--zorai-transition);
+  padding: 0;
 }
 
 .zorai-composer-icon-button:hover:not(:disabled) {

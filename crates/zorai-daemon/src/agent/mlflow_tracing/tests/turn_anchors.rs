@@ -175,6 +175,32 @@ fn select_turn_user_follows_released_queue_front() {
 }
 
 #[test]
+fn retry_of_the_same_user_message_does_not_leave_a_duplicate_anchor() {
+    let (_dir, runtime) = runtime();
+    push(&runtime, "t1", "first", 1);
+    push(&runtime, "t1", "first", 1);
+    push(&runtime, "t1", "second", 2);
+
+    assert_eq!(runtime.pop_turn_anchor("t1").unwrap().content, "first");
+    assert_eq!(
+        runtime.pop_turn_anchor("t1").unwrap().content,
+        "second",
+        "a fresh_runner_retry re-init must not keep an extra copy of the first prompt in front of the next turn"
+    );
+    assert!(runtime.front_turn_anchor("t1").is_none());
+}
+
+#[test]
+fn completed_turn_can_requeue_the_same_user_message_id_on_a_later_resend() {
+    let (_dir, runtime) = runtime();
+    push(&runtime, "t1", "first", 1);
+    runtime.pop_turn_anchor("t1");
+    push(&runtime, "t1", "first", 2);
+
+    assert_eq!(runtime.front_turn_anchor("t1").unwrap().content, "first");
+}
+
+#[test]
 fn unrelated_reconfigure_keeps_in_flight_turn_and_its_queued_prompt() {
     let (_dir, runtime) = runtime();
     let mut assembler = TurnTraceAssembler::new(MlflowTracingConfig::default());
@@ -235,5 +261,66 @@ fn disable_reconfigure_finishes_in_flight_turn_and_releases_only_its_anchor() {
         runtime.front_turn_anchor("t1").unwrap().content,
         "second",
         "only the interrupted turn's prompt is consumed"
+    );
+}
+
+#[test]
+fn pre_stream_error_releases_the_queued_prompt_so_the_next_turn_keeps_its_input() {
+    let (_dir, runtime) = runtime();
+    let mut assembler = TurnTraceAssembler::new(MlflowTracingConfig::default());
+    push(&runtime, "t1", "first", 1);
+    push(&runtime, "t1", "second", 2);
+
+    assembler.observe(
+        1_000,
+        AgentEvent::Error {
+            thread_id: "t1".into(),
+            message: "Provider unavailable".into(),
+        },
+        observation_context("t1"),
+    );
+    let completed = assembler.drain_completed().len();
+    release_anchor_for_untraced_error(&runtime, &assembler, "t1", completed);
+
+    assert_eq!(
+        completed, 0,
+        "Error without Delta/Reasoning/ToolCall must not open a turn"
+    );
+    assert_eq!(
+        runtime.front_turn_anchor("t1").unwrap().content,
+        "second",
+        "a provider failure before the first stream token must consume its own FIFO prompt"
+    );
+}
+
+#[test]
+fn error_that_finished_a_live_turn_does_not_extra_pop_the_next_prompt() {
+    let (_dir, runtime) = runtime();
+    let mut assembler = TurnTraceAssembler::new(MlflowTracingConfig::default());
+    push(&runtime, "t1", "first", 1);
+    push(&runtime, "t1", "second", 2);
+    assembler.observe(1_000, delta("t1"), observation_context("t1"));
+    assembler.observe(
+        1_050,
+        AgentEvent::Error {
+            thread_id: "t1".into(),
+            message: "Tool execution limit reached".into(),
+        },
+        observation_context("t1"),
+    );
+    let traces = assembler.drain_completed();
+    let completed = traces.len();
+    for trace in traces {
+        runtime.pop_turn_anchor(&trace.relationships.thread_id);
+    }
+    release_anchor_for_untraced_error(&runtime, &assembler, "t1", completed);
+    assembler.observe(1_060, done("t1"), observation_context("t1"));
+    assert_eq!(assembler.drain_completed().len(), 0);
+
+    assert_eq!(completed, 1);
+    assert_eq!(
+        runtime.front_turn_anchor("t1").unwrap().content,
+        "second",
+        "deferred Done after a traced Error must not steal the next queued prompt"
     );
 }

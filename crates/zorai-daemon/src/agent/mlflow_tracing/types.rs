@@ -130,6 +130,13 @@ pub enum MlflowTraceOutcome {
     Unset,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CompletedSpanEvent {
+    pub name: String,
+    pub at_ms: u64,
+    pub attributes: Vec<(String, String)>,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct CompletedTraceSpan {
     pub span_id: [u8; 8],
@@ -161,6 +168,8 @@ pub struct CompletedTurnTrace {
     pub output: Option<CapturedValue>,
     pub reasoning: Option<CapturedValue>,
     pub spans: Vec<CompletedTraceSpan>,
+    pub events: Vec<CompletedSpanEvent>,
+    pub dropped_events: u32,
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub cache_read_input_tokens: u64,
