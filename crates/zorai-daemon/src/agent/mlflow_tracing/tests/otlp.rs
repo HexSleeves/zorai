@@ -292,3 +292,48 @@ fn cap_completed_trace_keeps_encoded_batch_under_max_trace_bytes() {
     assert_eq!(trace.partial_reason.as_deref(), Some("trace_bytes"));
     assert!(trace.output.as_ref().unwrap().truncated);
 }
+
+#[test]
+fn cap_completed_trace_enforces_budget_for_many_tool_payloads() {
+    let mut trace = fixture_trace();
+    let payload = "tool result with spaces. ".repeat(80);
+    trace.spans = (0..80)
+        .map(|index| CompletedTraceSpan {
+            span_id: [index as u8; 8],
+            parent_span_id: [2; 8],
+            name: format!("zorai.tool t{index}"),
+            kind: MlflowSpanKind::Tool,
+            started_at_ms: 1_400,
+            ended_at_ms: 1_600,
+            timing_inferred: false,
+            outcome: MlflowTraceOutcome::Ok,
+            input: Some(CapturedValue {
+                value: payload.clone(),
+                redacted: false,
+                truncated: false,
+                original_chars: payload.chars().count(),
+            }),
+            output: Some(CapturedValue {
+                value: payload.clone(),
+                redacted: false,
+                truncated: false,
+                original_chars: payload.chars().count(),
+            }),
+            call_id: Some(format!("c{index}")),
+        })
+        .collect();
+    let uncapped = encode_otlp_batch(std::slice::from_ref(&trace)).unwrap();
+    assert!(
+        uncapped.len() > 16 * 1024,
+        "tool-heavy fixture must start over the budget, got {}",
+        uncapped.len()
+    );
+    cap_completed_trace(&mut trace, 16 * 1024);
+    let encoded = encode_otlp_batch(std::slice::from_ref(&trace)).unwrap();
+    assert!(
+        encoded.len() <= 16 * 1024,
+        "48 single-payload halvings are not enough for 80 tool spans; encoded {}",
+        encoded.len()
+    );
+    assert_eq!(trace.partial_reason.as_deref(), Some("trace_bytes"));
+}
