@@ -748,7 +748,7 @@ impl AgentEngine {
         }
 
         let acquired_flush_slot = {
-            let mut active = self.active_visible_thread_continuation_flushes.lock().await;
+            let mut active = lock_flush_slots(&self.active_visible_thread_continuation_flushes);
             active.insert(thread_id.to_string())
         };
         if !acquired_flush_slot {
@@ -2210,13 +2210,21 @@ impl AgentEngine {
 }
 
 struct FlushSlotGuard<'a> {
-    slots: &'a Mutex<HashSet<String>>,
+    slots: &'a std::sync::Mutex<HashSet<String>>,
     thread_id: String,
     released: bool,
 }
 
+fn lock_flush_slots(
+    slots: &std::sync::Mutex<HashSet<String>>,
+) -> std::sync::MutexGuard<'_, HashSet<String>> {
+    slots
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
+
 impl<'a> FlushSlotGuard<'a> {
-    fn new(slots: &'a Mutex<HashSet<String>>, thread_id: String) -> Self {
+    fn new(slots: &'a std::sync::Mutex<HashSet<String>>, thread_id: String) -> Self {
         Self {
             slots,
             thread_id,
@@ -2228,7 +2236,7 @@ impl<'a> FlushSlotGuard<'a> {
         if self.released {
             return;
         }
-        self.slots.lock().await.remove(&self.thread_id);
+        lock_flush_slots(self.slots).remove(&self.thread_id);
         self.released = true;
     }
 }
@@ -2238,10 +2246,8 @@ impl Drop for FlushSlotGuard<'_> {
         if self.released {
             return;
         }
-        if let Ok(mut active) = self.slots.try_lock() {
-            active.remove(&self.thread_id);
-            self.released = true;
-        }
+        lock_flush_slots(self.slots).remove(&self.thread_id);
+        self.released = true;
     }
 }
 
@@ -2330,19 +2336,30 @@ mod tests {
 
     #[tokio::test]
     async fn flush_slot_guard_does_not_steal_slot_acquired_after_release() {
-        let slots = Mutex::new(HashSet::new());
-        slots.lock().await.insert("thread-a".to_string());
+        let slots = std::sync::Mutex::new(HashSet::new());
+        lock_flush_slots(&slots).insert("thread-a".to_string());
         {
             let mut guard = FlushSlotGuard::new(&slots, "thread-a".to_string());
             guard.release().await;
             assert!(
-                slots.lock().await.insert("thread-a".to_string()),
+                lock_flush_slots(&slots).insert("thread-a".to_string()),
                 "after release another flush must be able to acquire the slot"
             );
         }
         assert!(
-            slots.lock().await.contains("thread-a"),
+            lock_flush_slots(&slots).contains("thread-a"),
             "drop after release must not steal the next flush's slot"
+        );
+    }
+
+    #[tokio::test]
+    async fn flush_slot_guard_drop_releases_slot_without_explicit_release() {
+        let slots = std::sync::Mutex::new(HashSet::new());
+        lock_flush_slots(&slots).insert("thread-a".to_string());
+        drop(FlushSlotGuard::new(&slots, "thread-a".to_string()));
+        assert!(
+            lock_flush_slots(&slots).insert("thread-a".to_string()),
+            "cancelling a flush before release() must still free the slot; try_lock on a tokio mutex leaves it stuck when the lock is busy"
         );
     }
 }

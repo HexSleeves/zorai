@@ -5607,6 +5607,15 @@ async fn stagnation_pending_rolls_back_when_supervisor_enqueue_fails() {
         progress.consecutive_failures, 3,
         "a failed enqueue must keep the streak so the next review can still intervene"
     );
+    assert!(
+        engine
+            .tasks
+            .lock()
+            .await
+            .iter()
+            .all(|task| task.source != GOAL_PROGRESS_SUPERVISION_SOURCE),
+        "failing before the goal run is confirmed must not leave a queued supervisor behind"
+    );
 }
 
 #[tokio::test]

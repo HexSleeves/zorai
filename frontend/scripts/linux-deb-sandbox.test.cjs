@@ -3,9 +3,13 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 
-const BUILD_LINUX_DIR = path.join(__dirname, "..", "build", "linux");
+const FRONTEND_DIR = path.join(__dirname, "..");
+const BUILD_LINUX_DIR = path.join(FRONTEND_DIR, "build", "linux");
 const AFTER_INSTALL = path.join(BUILD_LINUX_DIR, "after-install.sh");
 const AFTER_REMOVE = path.join(BUILD_LINUX_DIR, "after-remove.sh");
+const PACKAGE_CONFIG = JSON.parse(
+    fs.readFileSync(path.join(FRONTEND_DIR, "package.json"), "utf8"),
+);
 const ELECTRON_BUILDER_MACROS = new Set(["executable", "sanitizedProductName", "productFilename"]);
 const MACRO_PATTERN = /\$\{([a-zA-Z]+)\}/g;
 
@@ -33,6 +37,27 @@ function renderDebScripts() {
         afterRemove: interpolate(fs.readFileSync(AFTER_REMOVE, "utf8"), options),
     };
 }
+
+test("deb maintainer scripts are configured on deb, not linux", () => {
+    assert.equal(PACKAGE_CONFIG.build?.linux?.afterInstall, undefined);
+    assert.equal(PACKAGE_CONFIG.build?.linux?.afterRemove, undefined);
+    assert.equal(
+        PACKAGE_CONFIG.build?.deb?.afterInstall,
+        "build/linux/after-install.sh",
+    );
+    assert.equal(
+        PACKAGE_CONFIG.build?.deb?.afterRemove,
+        "build/linux/after-remove.sh",
+    );
+});
+
+test("electron-builder 25 schema accepts the current build field on every platform", () => {
+    const validateSchema = require("@develar/schema-utils");
+    const scheme = require("app-builder-lib/scheme.json");
+    validateSchema(scheme, PACKAGE_CONFIG.build, {
+        name: "electron-builder 25.1.8",
+    });
+});
 
 test("deb install scripts only use electron-builder linux macros", () => {
     for (const file of [AFTER_INSTALL, AFTER_REMOVE]) {
