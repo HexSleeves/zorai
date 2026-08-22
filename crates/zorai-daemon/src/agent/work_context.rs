@@ -892,11 +892,11 @@ impl AgentEngine {
         });
 
         for fresh in fresh_entries {
-            if let Some(existing) = context
-                .entries
-                .iter_mut()
-                .find(|entry| entry.path == fresh.path && entry.repo_root == fresh.repo_root)
-            {
+            if let Some(existing) = context.entries.iter_mut().find(|entry| {
+                entry.path == fresh.path
+                    && entry.repo_root == fresh.repo_root
+                    && entry.operation_id == fresh.operation_id
+            }) {
                 existing.change_kind = fresh.change_kind.clone();
                 existing.previous_path = fresh.previous_path.clone();
                 existing.updated_at = fresh.updated_at;
@@ -931,11 +931,11 @@ impl AgentEngine {
             });
 
         for fresh in fresh_entries {
-            if let Some(existing) = context
-                .entries
-                .iter_mut()
-                .find(|entry| entry.path == fresh.path && entry.repo_root == fresh.repo_root)
-            {
+            if let Some(existing) = context.entries.iter_mut().find(|entry| {
+                entry.path == fresh.path
+                    && entry.repo_root == fresh.repo_root
+                    && entry.operation_id == fresh.operation_id
+            }) {
                 *existing = fresh;
             } else {
                 context.entries.push(fresh);
@@ -1118,6 +1118,40 @@ mod tests {
     use super::*;
     use crate::session_manager::SessionManager;
     use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn merge_work_context_keeps_distinct_operations_for_the_same_file() {
+        let root = tempdir().expect("tempdir");
+        let manager = SessionManager::new_test(root.path()).await;
+        let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+        let entry = |operation_id: &str, updated_at| WorkContextEntry {
+            path: "src/lib.rs".to_string(),
+            previous_path: None,
+            kind: WorkContextEntryKind::RepoChange,
+            source: "write_file".to_string(),
+            change_kind: Some("modified".to_string()),
+            repo_root: Some(root.path().to_string_lossy().to_string()),
+            goal_run_id: None,
+            step_index: None,
+            session_id: None,
+            operation_id: Some(operation_id.to_string()),
+            task_id: None,
+            before_hash: Some(format!("before-{operation_id}")),
+            after_hash: Some(format!("after-{operation_id}")),
+            is_text: true,
+            updated_at,
+        };
+        engine
+            .merge_work_context_entries("thread-operation-history", vec![entry("op-1", 1)])
+            .await;
+        engine
+            .merge_work_context_entries("thread-operation-history", vec![entry("op-2", 2)])
+            .await;
+        let context = engine.get_work_context("thread-operation-history").await;
+        assert_eq!(context.entries.len(), 2);
+        assert_eq!(context.entries[0].operation_id.as_deref(), Some("op-2"));
+        assert_eq!(context.entries[1].operation_id.as_deref(), Some("op-1"));
+    }
 
     #[tokio::test]
     async fn replace_thread_todos_records_goal_snapshot_for_persisted_goal_after_live_queue_clear()
