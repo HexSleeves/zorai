@@ -3131,3 +3131,14 @@ button.zorai-composer-context-chip { cursor: pointer; }
 .zorai-workspace-worktree-path span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--zorai-muted); }
 
 .zorai-workspace-editor-loading { width: 100%; height: 100%; display: grid; place-items: center; background: #0d1117; color: var(--zorai-muted); font: 11px var(--font-mono); }
+
+.zorai-workspace-problems { max-height: 34%; overflow: auto; border-block: 1px solid var(--zorai-border); }
+.zorai-workspace-problems summary { position: sticky; top: 0; z-index: 1; padding: 7px 9px; background: var(--zorai-bg-elevated); color: var(--zorai-muted); font-size: 10px; text-transform: uppercase; cursor: pointer; }
+.zorai-workspace-problems button { width: 100%; display: grid; grid-template-columns: 16px minmax(0, 1fr); gap: 3px 6px; border: 0; border-bottom: 1px solid var(--zorai-border); padding: 5px 9px; background: transparent; color: var(--zorai-text); text-align: left; font: 9px var(--font-mono); }
+.zorai-workspace-problems button:hover { background: var(--zorai-bg-active); }
+.zorai-workspace-problems button > span { grid-row: 1 / span 2; font-weight: 800; }
+.zorai-workspace-problems .severity-1 { color: var(--danger); }
+.zorai-workspace-problems .severity-2 { color: #d7a94a; }
+.zorai-workspace-problems .severity-3, .zorai-workspace-problems .severity-4 { color: var(--zorai-accent-secondary); }
+.zorai-workspace-problems button strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zorai-workspace-problems button code { color: var(--zorai-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

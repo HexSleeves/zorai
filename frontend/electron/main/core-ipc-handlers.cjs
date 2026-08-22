@@ -44,6 +44,7 @@ function registerCoreIpcHandlers(ipcMain, options) {
         workspaceService,
         startWorkspaceWatch,
         stopWorkspaceWatch,
+        lspRuntime,
     } = options;
 
     ipcMain.handle('getSocketPath', getSocketPath);
@@ -114,6 +115,11 @@ function registerCoreIpcHandlers(ipcMain, options) {
     ipcMain.handle('workspace-git-diff', (_event, rootPath, relativePath, runtimeOptions) => workspaceService.workspaceGitDiff(rootPath, relativePath, runtimeOptions));
     ipcMain.handle('workspace-watch-start', (event, rootPath, runtimeOptions) => startWorkspaceWatch(event.sender, rootPath, runtimeOptions));
     ipcMain.handle('workspace-watch-stop', (_event, subscriptionId) => stopWorkspaceWatch(subscriptionId));
+    ipcMain.handle('workspace-lsp-status', (_event, rootPath, language) => lspRuntime.status(rootPath, language));
+    ipcMain.handle('workspace-lsp-open', (event, rootPath, relativePath, language, content, version) => lspRuntime.open(event.sender, rootPath, relativePath, language, content, version));
+    ipcMain.handle('workspace-lsp-change', (event, rootPath, relativePath, language, content, version) => lspRuntime.change(event.sender, rootPath, relativePath, language, content, version));
+    ipcMain.handle('workspace-lsp-close', (_event, rootPath, relativePath, language) => lspRuntime.close(rootPath, relativePath, language));
+    ipcMain.handle('workspace-lsp-unsubscribe', (event, rootPath, language) => lspRuntime.unsubscribe(event.sender, rootPath, language));
     ipcMain.handle('clipboard-read-text', () => options.clipboard.readText());
     ipcMain.handle('clipboard-write-text', (_event, text) => { options.clipboard.writeText(typeof text === 'string' ? text : ''); return true; });
     ipcMain.handle('terminal-start', terminalBridgeRuntime.startTerminalBridge);

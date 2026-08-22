@@ -424,6 +424,25 @@ declare global {
         worktreeStatus: string;
     };
 
+    type ZoraiLspDiagnostic = {
+        message: string;
+        severity: number;
+        source: string | null;
+        code: string | null;
+        startLine: number;
+        startColumn: number;
+        endLine: number;
+        endColumn: number;
+    };
+
+    type ZoraiLspDiagnosticsPayload = {
+        root: string;
+        language: string;
+        path: string;
+        version: number | null;
+        diagnostics: ZoraiLspDiagnostic[];
+    };
+
     type ZoraiGitWorktree = {
         path: string;
         head: string | null;
@@ -511,6 +530,12 @@ declare global {
         workspaceWatchStart?: (rootPath: string, options?: { debounceMs?: number; maxDirectories?: number }) => Promise<{ subscriptionId: string; root: string; watchedDirectoryCount: number }>;
         workspaceWatchStop?: (subscriptionId: string) => Promise<boolean>;
         onWorkspaceFilesChanged?: (cb: (batch: { subscriptionId: string; root: string; changes: Array<{ path: string; eventType: "change" | "rename"; observedAt: number }>; emittedAt: number }) => void) => (() => void) | void;
+        workspaceLspStatus?: (rootPath: string, language: string) => Promise<{ root: string; language: string; configured: boolean; available: boolean; command: string | null; server: string | null }>;
+        workspaceLspOpen?: (rootPath: string, relativePath: string, language: string, content: string, version: number) => Promise<{ available: boolean; reason?: string; root?: string; server?: string; command?: string; document?: { path: string; version: number } }>;
+        workspaceLspChange?: (rootPath: string, relativePath: string, language: string, content: string, version: number) => Promise<unknown>;
+        workspaceLspClose?: (rootPath: string, relativePath: string, language: string) => Promise<boolean>;
+        workspaceLspUnsubscribe?: (rootPath: string, language: string) => Promise<boolean>;
+        onWorkspaceLspDiagnostics?: (cb: (payload: ZoraiLspDiagnosticsPayload) => void) => (() => void) | void;
         dbAppendCommandLog?: (entry: unknown) => Promise<boolean>;
         dbCompleteCommandLog?: (id: string, exitCode?: number | null, durationMs?: number | null) => Promise<boolean>;
         dbQueryCommandLog?: (opts?: { workspaceId?: string | null; paneId?: string | null; limit?: number | null }) => Promise<unknown[]>;

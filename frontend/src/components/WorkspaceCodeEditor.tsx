@@ -1,4 +1,4 @@
-import { Component, Suspense, lazy, type ErrorInfo, type ReactNode } from "react";
+import { Component, Suspense, lazy, useEffect, useRef, type ErrorInfo, type ReactNode } from "react";
 import "@/lib/monacoEnvironment";
 import type { OnMount } from "@monaco-editor/react";
 
@@ -28,11 +28,39 @@ export function WorkspaceCodeEditor({
   onChange,
   onSelect,
   onSave,
+  diagnostics = [],
   onMount,
   textareaRef,
-}: FallbackEditorProps & { language: string; onMount?: OnMount }) {
+}: FallbackEditorProps & { language: string; diagnostics?: ZoraiLspDiagnostic[]; onMount?: OnMount }) {
+  const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
+  const monacoRef = useRef<Parameters<OnMount>[1] | null>(null);
   const fallback = <FallbackEditor value={value} path={path} onChange={onChange} onSelect={onSelect} onSave={onSave} textareaRef={textareaRef} />;
+  useEffect(() => {
+    const monacoEditor = editorRef.current;
+    const monaco = monacoRef.current;
+    const model = monacoEditor?.getModel();
+    if (!monacoEditor || !monaco || !model) return;
+    monaco.editor.setModelMarkers(model, "zorai-lsp", diagnostics.map((diagnostic) => ({
+      message: diagnostic.message,
+      severity: diagnostic.severity === 1
+        ? monaco.MarkerSeverity.Error
+        : diagnostic.severity === 2
+          ? monaco.MarkerSeverity.Warning
+          : diagnostic.severity === 3
+            ? monaco.MarkerSeverity.Info
+            : monaco.MarkerSeverity.Hint,
+      source: diagnostic.source ?? undefined,
+      code: diagnostic.code ?? undefined,
+      startLineNumber: diagnostic.startLine,
+      startColumn: diagnostic.startColumn,
+      endLineNumber: diagnostic.endLine,
+      endColumn: diagnostic.endColumn,
+    })));
+    return () => monaco.editor.setModelMarkers(model, "zorai-lsp", []);
+  }, [diagnostics, path]);
   const handleMount: OnMount = (editor, monaco) => {
+    editorRef.current = editor;
+    monacoRef.current = monaco;
     editor.onDidChangeCursorSelection((event) => onSelect(
       event.selection.startLineNumber,
       event.selection.startColumn,

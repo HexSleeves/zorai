@@ -177,6 +177,16 @@ const bridgeApi = {
         ipcRenderer.on('workspace-files-changed', listener);
         return () => ipcRenderer.removeListener('workspace-files-changed', listener);
     },
+    workspaceLspStatus: (rootPath, language) => ipcRenderer.invoke('workspace-lsp-status', rootPath, language),
+    workspaceLspOpen: (rootPath, relativePath, language, content, version) => ipcRenderer.invoke('workspace-lsp-open', rootPath, relativePath, language, content, version),
+    workspaceLspChange: (rootPath, relativePath, language, content, version) => ipcRenderer.invoke('workspace-lsp-change', rootPath, relativePath, language, content, version),
+    workspaceLspClose: (rootPath, relativePath, language) => ipcRenderer.invoke('workspace-lsp-close', rootPath, relativePath, language),
+    workspaceLspUnsubscribe: (rootPath, language) => ipcRenderer.invoke('workspace-lsp-unsubscribe', rootPath, language),
+    onWorkspaceLspDiagnostics: (cb) => {
+        const listener = (_event, payload) => cb(payload);
+        ipcRenderer.on('workspace-lsp-diagnostics', listener);
+        return () => ipcRenderer.removeListener('workspace-lsp-diagnostics', listener);
+    },
     readClipboardText: () => ipcRenderer.invoke('clipboard-read-text'),
     writeClipboardText: (text) => ipcRenderer.invoke('clipboard-write-text', text),
     startTerminalSession: (options) => ipcRenderer.invoke('terminal-start', options),

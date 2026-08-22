@@ -93,6 +93,10 @@ export function WorkspaceWorkbench() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Array<{ path: string; line: number; column: number; preview: string }>>([]);
   const [agentChanges, setAgentChanges] = useState<ZoraiWorkContextEntry[]>([]);
+  const [lspStatus, setLspStatus] = useState<{ available: boolean; command?: string | null; reason?: string } | null>(null);
+  const [diagnosticsByPath, setDiagnosticsByPath] = useState<Record<string, ZoraiLspDiagnostic[]>>({});
+  const lspVersionRef = useRef<Record<string, number>>({});
+  const lspChangeTimer = useRef<number | null>(null);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const monacoEditorRef = useRef<MonacoEditorApi.IStandaloneCodeEditor | null>(null);
   const pendingNavigationRef = useRef<{ path: string; line: number; column: number } | null>(null);
@@ -106,6 +110,7 @@ export function WorkspaceWorkbench() {
     return [...groups.entries()].sort((left, right) => Math.max(...right[1].map((entry) => entry.updated_at)) - Math.max(...left[1].map((entry) => entry.updated_at)));
   }, [agentChanges]);
   const symbols = useMemo(() => activeDocument ? extractWorkspaceSymbols(activeDocument.content) : [], [activeDocument]);
+  const workspaceDiagnostics = useMemo(() => Object.entries(diagnosticsByPath).flatMap(([path, diagnostics]) => diagnostics.map((diagnostic) => ({ path, ...diagnostic }))), [diagnosticsByPath]);
   const statusMap = useMemo(() => new Map(gitStatus.map((entry) => [entry.path, statusLabel(entry)])), [gitStatus]);
 
   const refreshRoot = useCallback(async (root = context?.root) => {
@@ -266,6 +271,41 @@ export function WorkspaceWorkbench() {
     textarea.scrollTop = Math.max(0, lineIndex * lineHeight - textarea.clientHeight / 3);
     pendingNavigationRef.current = null;
   }, [activeDocument?.path, mode]);
+
+  useEffect(() => {
+    if (!context?.root || !bridge?.onWorkspaceLspDiagnostics) return;
+    const unsubscribe = bridge.onWorkspaceLspDiagnostics((payload) => {
+      if (payload.root !== context.root) return;
+      setDiagnosticsByPath((current) => ({ ...current, [payload.path]: payload.diagnostics }));
+    });
+    return () => { if (typeof unsubscribe === "function") unsubscribe(); };
+  }, [bridge, context?.root]);
+  useEffect(() => {
+    if (!context?.root || !activeDocument || !bridge?.workspaceLspOpen) {
+      setLspStatus(null);
+      return;
+    }
+    const version = (lspVersionRef.current[activeDocument.path] ?? 0) + 1;
+    lspVersionRef.current[activeDocument.path] = version;
+    let disposed = false;
+    void bridge.workspaceLspOpen(context.root, activeDocument.path, activeDocument.language, activeDocument.content, version).then((result) => {
+      if (!disposed) setLspStatus({ available: result.available, command: result.command ?? null, reason: result.reason });
+    }).catch((reason) => { if (!disposed) setLspStatus({ available: false, reason: reason?.message ?? String(reason) }); });
+    return () => {
+      disposed = true;
+      void bridge.workspaceLspClose?.(context.root, activeDocument.path, activeDocument.language);
+    };
+  }, [activeDocument?.language, activeDocument?.path, bridge, context?.root]);
+  useEffect(() => {
+    if (!context?.root || !activeDocument || !lspStatus?.available || !bridge?.workspaceLspChange) return;
+    if (lspChangeTimer.current !== null) window.clearTimeout(lspChangeTimer.current);
+    lspChangeTimer.current = window.setTimeout(() => {
+      const version = (lspVersionRef.current[activeDocument.path] ?? 0) + 1;
+      lspVersionRef.current[activeDocument.path] = version;
+      void bridge.workspaceLspChange!(context.root, activeDocument.path, activeDocument.language, activeDocument.content, version).catch(() => {});
+    }, 250);
+    return () => { if (lspChangeTimer.current !== null) window.clearTimeout(lspChangeTimer.current); };
+  }, [activeDocument?.content, activeDocument?.language, activeDocument?.path, bridge, context?.root, lspStatus?.available]);
 
   const openRoot = async () => {
     if (!activeThreadId || !bridge?.workspaceOpen) return;
@@ -511,6 +551,18 @@ export function WorkspaceWorkbench() {
               <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search workspace" onKeyDown={(event) => { if (event.key === "Enter") void runSearch(); }} />
               <button type="button" onClick={() => void runSearch()}>⌕</button>
             </div>
+            {workspaceDiagnostics.length > 0 ? (
+              <details className="zorai-workspace-problems" open>
+                <summary>Problems ({workspaceDiagnostics.length})</summary>
+                {workspaceDiagnostics.map((diagnostic, index) => (
+                  <button type="button" key={`${diagnostic.path}:${diagnostic.startLine}:${diagnostic.startColumn}:${diagnostic.code ?? index}`} onClick={() => void openFile(diagnostic.path, { line: diagnostic.startLine, column: diagnostic.startColumn })}>
+                    <span className={`severity-${diagnostic.severity}`}>{diagnostic.severity === 1 ? "E" : diagnostic.severity === 2 ? "W" : "I"}</span>
+                    <strong>{diagnostic.message}</strong>
+                    <code>{diagnostic.path}:{diagnostic.startLine}{diagnostic.source ? ` · ${diagnostic.source}` : ""}</code>
+                  </button>
+                ))}
+              </details>
+            ) : null}
             {gitOverview?.isRepository ? (
               <details className="zorai-workspace-worktrees">
                 <summary>Worktrees ({gitWorktrees.length})</summary>
@@ -618,7 +670,7 @@ export function WorkspaceWorkbench() {
         {activeDocument ? (
           <>
             <div className="zorai-workspace-actionbar">
-              <span>{activeDocument.path}</span>
+              <span>{activeDocument.path}{lspStatus ? ` · LSP ${lspStatus.available ? lspStatus.command ?? "ready" : "unavailable"}` : ""}</span>
               <div>
                 <button type="button" onClick={() => toggleAttachedFile(activeThreadId, activeDocument.path)}>{context?.attachedFiles.includes(activeDocument.path) ? "Detach context" : "Attach context"}</button>
                 <button type="button" onClick={() => void showDiff()}>Diff</button>
@@ -653,6 +705,7 @@ export function WorkspaceWorkbench() {
                     textareaRef={editorRef}
                     onMount={(editor) => { monacoEditorRef.current = editor; }}
                     onSave={() => void save()}
+                    diagnostics={diagnosticsByPath[activeDocument.path] ?? []}
                     onSelect={recordEditorSelection}
                     onChange={(value) => setDocuments((current) => ({ ...current, [activeDocument.path]: { ...activeDocument, content: value, dirty: value !== activeDocument.original } }))}
                   />
