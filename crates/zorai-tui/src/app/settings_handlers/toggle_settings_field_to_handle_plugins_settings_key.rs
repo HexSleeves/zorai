@@ -45,6 +45,49 @@ impl TuiModel {
                     levels[(current_idx + 1) % levels.len()].to_string();
                 self.sync_config_to_daemon();
             }
+            "mlflow_enabled" => {
+                self.config.mlflow_enabled = !self.config.mlflow_enabled;
+                self.sync_config_to_daemon();
+            }
+            "mlflow_visible_operator" => {
+                self.config.mlflow_visible_operator = !self.config.mlflow_visible_operator;
+                self.sync_config_to_daemon();
+            }
+            "mlflow_gateway" => {
+                self.config.mlflow_gateway = !self.config.mlflow_gateway;
+                self.sync_config_to_daemon();
+            }
+            "mlflow_goal_task" => {
+                self.config.mlflow_goal_task = !self.config.mlflow_goal_task;
+                self.sync_config_to_daemon();
+            }
+            "mlflow_subagent" => {
+                self.config.mlflow_subagent = !self.config.mlflow_subagent;
+                self.sync_config_to_daemon();
+            }
+            "mlflow_concierge" => {
+                self.config.mlflow_concierge = !self.config.mlflow_concierge;
+                self.sync_config_to_daemon();
+            }
+            "mlflow_heartbeat_autonomous" => {
+                self.config.mlflow_heartbeat_autonomous = !self.config.mlflow_heartbeat_autonomous;
+                self.sync_config_to_daemon();
+            }
+            "mlflow_capture_mode" => {
+                self.config.mlflow_capture_mode = match self.config.mlflow_capture_mode.as_str() {
+                    "metadata" => "guarded",
+                    "guarded" => "full",
+                    _ => "metadata",
+                }
+                .to_string();
+                self.sync_config_to_daemon();
+            }
+            "mlflow_test_connection" => {
+                self.send_daemon_command(crate::state::DaemonCommand::TestMlflowTracingConnection);
+            }
+            "mlflow_send_test_trace" => {
+                self.send_daemon_command(crate::state::DaemonCommand::SendMlflowTracingTestTrace);
+            }
             "gateway_enabled" => {
                 self.config.gateway_enabled = !self.config.gateway_enabled;
                 self.sync_config_to_daemon();

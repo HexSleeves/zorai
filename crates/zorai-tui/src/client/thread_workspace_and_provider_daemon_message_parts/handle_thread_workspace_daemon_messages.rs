@@ -288,6 +288,27 @@ impl DaemonClient {
                     Err(err) => warn!("Failed to parse agent config response: {}", err),
                 }
             }
+            DaemonMessage::AgentMlflowTracingStatus { status_json } => {
+                match serde_json::from_str::<Value>(&status_json) {
+                    Ok(status) => {
+                        let _ = event_tx
+                            .send(ClientEvent::MlflowTracingStatus(status))
+                            .await;
+                    }
+                    Err(err) => warn!("Failed to parse MLflow tracing status: {}", err),
+                }
+            }
+            DaemonMessage::AgentMlflowTracingTestResult { result_json } => {
+                match serde_json::from_str::<Value>(&result_json) {
+                    Ok(result) => {
+                        let _ = event_tx
+                            .send(ClientEvent::MlflowTracingTestResult(result))
+                            .await;
+                    }
+                    Err(err) => warn!("Failed to parse MLflow tracing test result: {}", err),
+                }
+            }
+            DaemonMessage::AgentMlflowTracingHeaders { .. } => {}
             DaemonMessage::AgentExternalRuntimeMigrationResult { result_json } => {
                 match serde_json::from_str::<Value>(&result_json) {
                     Ok(raw) => {

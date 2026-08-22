@@ -35,6 +35,9 @@ impl AgentEngine {
             tracing::warn!("failed to persist agent config to sqlite: {error}");
         }
         *self.config.write().await = config.clone();
+        self.mlflow_tracing
+            .reconfigure(config.mlflow_tracing.clone())
+            .await;
         self.config_notify.notify_waiters();
         self.report_weles_collisions_once(&collisions).await;
         config

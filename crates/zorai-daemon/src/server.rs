@@ -177,6 +177,7 @@ fn client_message_requires_startup_readiness(msg: &ClientMessage) -> bool {
         msg,
         ClientMessage::Ping
             | ClientMessage::AgentGetConfig
+            | ClientMessage::AgentGetMlflowTracingStatus
             | ClientMessage::AgentGetGatewayConfig
             | ClientMessage::AgentGetEffectiveConfigState
             | ClientMessage::AgentGetProviderCatalog
@@ -211,6 +212,12 @@ fn client_message_variant_name(msg: &ClientMessage) -> &'static str {
         AgentSubscribe => "AgentSubscribe",
         AgentUnsubscribe => "AgentUnsubscribe",
         AgentGetConfig => "AgentGetConfig",
+        AgentGetMlflowTracingStatus => "AgentGetMlflowTracingStatus",
+        AgentTestMlflowTracingConnection => "AgentTestMlflowTracingConnection",
+        AgentSendMlflowTracingTestTrace => "AgentSendMlflowTracingTestTrace",
+        AgentListMlflowTracingHeaders => "AgentListMlflowTracingHeaders",
+        AgentSetMlflowTracingHeader { .. } => "AgentSetMlflowTracingHeader",
+        AgentDeleteMlflowTracingHeader { .. } => "AgentDeleteMlflowTracingHeader",
         AgentGetGatewayConfig => "AgentGetGatewayConfig",
         AgentGetEffectiveConfigState => "AgentGetEffectiveConfigState",
         AgentGetProviderCatalog => "AgentGetProviderCatalog",

@@ -201,6 +201,14 @@ impl TuiModel {
                 self.handle_agent_config_raw_event(raw);
                 None
             }
+            ClientEvent::MlflowTracingStatus(status) => {
+                self.config.mlflow_runtime_status = Some(status);
+                None
+            }
+            ClientEvent::MlflowTracingTestResult(result) => {
+                self.config.mlflow_runtime_status = Some(result);
+                None
+            }
             ClientEvent::ExternalRuntimeMigrationResult(raw) => {
                 self.handle_external_runtime_migration_result(raw);
                 None

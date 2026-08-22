@@ -411,6 +411,36 @@ where
         AgentBridgeCommand::GetConfig => {
             framed.send(ClientMessage::AgentGetConfig).await?;
         }
+        AgentBridgeCommand::GetMlflowTracingStatus => {
+            framed
+                .send(ClientMessage::AgentGetMlflowTracingStatus)
+                .await?;
+        }
+        AgentBridgeCommand::TestMlflowTracingConnection => {
+            framed
+                .send(ClientMessage::AgentTestMlflowTracingConnection)
+                .await?;
+        }
+        AgentBridgeCommand::SendMlflowTracingTestTrace => {
+            framed
+                .send(ClientMessage::AgentSendMlflowTracingTestTrace)
+                .await?;
+        }
+        AgentBridgeCommand::ListMlflowTracingHeaders => {
+            framed
+                .send(ClientMessage::AgentListMlflowTracingHeaders)
+                .await?;
+        }
+        AgentBridgeCommand::SetMlflowTracingHeader { name, value } => {
+            framed
+                .send(ClientMessage::AgentSetMlflowTracingHeader { name, value })
+                .await?;
+        }
+        AgentBridgeCommand::DeleteMlflowTracingHeader { name } => {
+            framed
+                .send(ClientMessage::AgentDeleteMlflowTracingHeader { name })
+                .await?;
+        }
         AgentBridgeCommand::ExternalRuntimeMigrationStatus => {
             framed
                 .send(ClientMessage::AgentExternalRuntimeMigrationStatus)

@@ -334,6 +334,18 @@ where
             let msg = serde_json::json!({"type":"file-preview","data":{"path":path,"content":content,"truncated":truncated,"is_text":is_text}});
             emit_agent_event(&msg.to_string())?;
         }
+        Some(Ok(DaemonMessage::AgentMlflowTracingStatus { status_json })) => {
+            let msg = serde_json::json!({"type":"mlflow-tracing-status","data":serde_json::from_str::<serde_json::Value>(&status_json).unwrap_or_default()});
+            emit_agent_event(&msg.to_string())?;
+        }
+        Some(Ok(DaemonMessage::AgentMlflowTracingTestResult { result_json })) => {
+            let msg = serde_json::json!({"type":"mlflow-tracing-test-result","data":serde_json::from_str::<serde_json::Value>(&result_json).unwrap_or_default()});
+            emit_agent_event(&msg.to_string())?;
+        }
+        Some(Ok(DaemonMessage::AgentMlflowTracingHeaders { names })) => {
+            let msg = serde_json::json!({"type":"mlflow-tracing-headers","data":{"names":names}});
+            emit_agent_event(&msg.to_string())?;
+        }
         Some(Ok(DaemonMessage::AgentConfigResponse { config_json })) => {
             let msg = serde_json::json!({"type":"config","data":serde_json::from_str::<serde_json::Value>(&config_json).unwrap_or_default()});
             emit_agent_event(&msg.to_string())?;

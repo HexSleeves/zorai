@@ -85,6 +85,18 @@ impl DaemonClient {
         self.send(ClientMessage::AgentGetConfig)
     }
 
+    pub fn get_mlflow_tracing_status(&self) -> Result<()> {
+        self.send(ClientMessage::AgentGetMlflowTracingStatus)
+    }
+
+    pub fn test_mlflow_tracing_connection(&self) -> Result<()> {
+        self.send(ClientMessage::AgentTestMlflowTracingConnection)
+    }
+
+    pub fn send_mlflow_tracing_test_trace(&self) -> Result<()> {
+        self.send(ClientMessage::AgentSendMlflowTracingTestTrace)
+    }
+
     pub fn refresh_services(&self) -> Result<()> {
         for request in [
             ClientMessage::AgentListTasks,

@@ -84,6 +84,21 @@ impl TuiModel {
         patch["honcho_base_url"] = serde_json::Value::String(self.config.honcho_base_url.clone());
         patch["honcho_workspace_id"] =
             serde_json::Value::String(self.config.honcho_workspace_id.clone());
+        patch["mlflow_tracing"] = serde_json::json!({
+            "enabled": self.config.mlflow_enabled,
+            "tracking_uri": self.config.mlflow_tracking_uri,
+            "experiment_name": self.config.mlflow_experiment_name,
+            "experiment_id": if self.config.mlflow_experiment_id.trim().is_empty() { serde_json::Value::Null } else { serde_json::Value::String(self.config.mlflow_experiment_id.clone()) },
+            "capture_mode": self.config.mlflow_capture_mode,
+            "scopes": {
+                "visible_operator": self.config.mlflow_visible_operator,
+                "gateway": self.config.mlflow_gateway,
+                "goal_task": self.config.mlflow_goal_task,
+                "subagent": self.config.mlflow_subagent,
+                "concierge": self.config.mlflow_concierge,
+                "heartbeat_autonomous": self.config.mlflow_heartbeat_autonomous,
+            }
+        });
         patch["tool_gateway"] = serde_json::Value::Bool(self.config.tool_gateway);
         patch["tools"] = serde_json::json!({
             "bash": self.config.tool_bash,

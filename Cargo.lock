@@ -9740,6 +9740,7 @@ dependencies = [
  "oauth2",
  "percent-encoding",
  "portable-pty",
+ "prost 0.14.3",
  "qrcode",
  "rand 0.8.5",
  "regex",

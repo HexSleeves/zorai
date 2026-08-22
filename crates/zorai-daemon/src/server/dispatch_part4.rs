@@ -41,6 +41,12 @@ pub(crate) async fn dispatch_part4(
             | ClientMessage::AgentListTools { .. }
             | ClientMessage::AgentSearchTools { .. }
             | ClientMessage::AgentGetConfig
+            | ClientMessage::AgentGetMlflowTracingStatus
+            | ClientMessage::AgentTestMlflowTracingConnection
+            | ClientMessage::AgentSendMlflowTracingTestTrace
+            | ClientMessage::AgentListMlflowTracingHeaders
+            | ClientMessage::AgentSetMlflowTracingHeader { .. }
+            | ClientMessage::AgentDeleteMlflowTracingHeader { .. }
             | ClientMessage::AgentExternalRuntimeMigrationStatus
             | ClientMessage::AgentExternalRuntimeMigrationPreview { .. }
             | ClientMessage::AgentExternalRuntimeMigrationApply { .. }
@@ -590,6 +596,60 @@ pub(crate) async fn dispatch_part4(
                 json_len,
                 "dispatch: AgentConfigResponse sent"
             );
+        }
+
+        ClientMessage::AgentGetMlflowTracingStatus => {
+            let status_json = serde_json::to_string(&agent.mlflow_tracing.status())?;
+            framed
+                .send(DaemonMessage::AgentMlflowTracingStatus { status_json })
+                .await?;
+        }
+
+        ClientMessage::AgentTestMlflowTracingConnection => {
+            let result = agent.mlflow_tracing.test_connection().await;
+            let result_json = serde_json::to_string(&match result {
+                Ok(info) => serde_json::json!({ "ok": true, "connection": info }),
+                Err(error) => serde_json::json!({ "ok": false, "error": error }),
+            })?;
+            framed
+                .send(DaemonMessage::AgentMlflowTracingTestResult { result_json })
+                .await?;
+        }
+
+        ClientMessage::AgentSendMlflowTracingTestTrace => {
+            let result = agent.mlflow_tracing.send_diagnostic_trace().await;
+            let result_json = serde_json::to_string(&match result {
+                Ok(info) => serde_json::json!({ "ok": true, "connection": info }),
+                Err(error) => serde_json::json!({ "ok": false, "error": error }),
+            })?;
+            framed
+                .send(DaemonMessage::AgentMlflowTracingTestResult { result_json })
+                .await?;
+        }
+
+        ClientMessage::AgentListMlflowTracingHeaders => {
+            let names = agent.mlflow_tracing.header_store().list_names()?;
+            framed
+                .send(DaemonMessage::AgentMlflowTracingHeaders { names })
+                .await?;
+        }
+
+        ClientMessage::AgentSetMlflowTracingHeader { name, value } => {
+            agent.mlflow_tracing.header_store().set(&name, &value)?;
+            agent.mlflow_tracing.refresh_headers().await;
+            let names = agent.mlflow_tracing.header_store().list_names()?;
+            framed
+                .send(DaemonMessage::AgentMlflowTracingHeaders { names })
+                .await?;
+        }
+
+        ClientMessage::AgentDeleteMlflowTracingHeader { name } => {
+            agent.mlflow_tracing.header_store().delete(&name)?;
+            agent.mlflow_tracing.refresh_headers().await;
+            let names = agent.mlflow_tracing.header_store().list_names()?;
+            framed
+                .send(DaemonMessage::AgentMlflowTracingHeaders { names })
+                .await?;
         }
 
         ClientMessage::AgentExternalRuntimeMigrationStatus => {
