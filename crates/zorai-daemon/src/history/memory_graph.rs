@@ -119,11 +119,8 @@ impl HistoryStore {
             db::db_params![id],
         )
         .await?;
-        txn.execute(
-            "DELETE FROM memory_nodes WHERE id = ?1",
-            db::db_params![id],
-        )
-        .await?;
+        txn.execute("DELETE FROM memory_nodes WHERE id = ?1", db::db_params![id])
+            .await?;
         txn.commit().await?;
         Ok(())
     }

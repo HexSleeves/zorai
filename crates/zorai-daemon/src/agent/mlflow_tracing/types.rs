@@ -163,6 +163,8 @@ pub struct CompletedTurnTrace {
     pub spans: Vec<CompletedTraceSpan>,
     pub input_tokens: u64,
     pub output_tokens: u64,
+    pub cache_read_input_tokens: u64,
+    pub cache_creation_input_tokens: u64,
     pub cost_usd: Option<f64>,
     pub provider: Option<String>,
     pub model: Option<String>,

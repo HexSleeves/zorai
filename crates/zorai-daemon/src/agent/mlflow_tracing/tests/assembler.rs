@@ -19,6 +19,8 @@ fn context(thread: &str) -> TurnObservationContext {
         autonomous: false,
         input_tokens: 0,
         output_tokens: 0,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
     }
 }
 
@@ -215,6 +217,8 @@ fn zero_token_done_uses_persisted_turn_usage() {
     let mut done_context = context("t1");
     done_context.input_tokens = 128;
     done_context.output_tokens = 32;
+    done_context.cache_read_input_tokens = 40;
+    done_context.cache_creation_input_tokens = 8;
     assembler.observe(1_100, done_without_usage("t1", "a1"), done_context);
     let trace = assembler.drain_completed().pop().unwrap();
     assert_eq!(
@@ -222,4 +226,126 @@ fn zero_token_done_uses_persisted_turn_usage() {
         "MLflow usage must come from persisted assistant messages when Done reports 0"
     );
     assert_eq!(trace.output_tokens, 32);
+    assert_eq!(
+        trace.cache_read_input_tokens, 40,
+        "cache read must survive a zero-usage Done event"
+    );
+    assert_eq!(
+        trace.cache_creation_input_tokens, 8,
+        "cache write must survive a zero-usage Done event"
+    );
+}
+
+#[test]
+fn later_user_context_does_not_overwrite_frozen_turn_input() {
+    let mut assembler = TurnTraceAssembler::new(MlflowTracingConfig::default());
+    assembler.observe(
+        1_000,
+        AgentEvent::Delta {
+            thread_id: "t1".into(),
+            content: "A1".into(),
+        },
+        context("t1"),
+    );
+    let mut second = context("t1");
+    second.input = capture_text(
+        "second user",
+        MlflowCaptureMode::Guarded,
+        MlflowContentKind::User,
+        100,
+    );
+    second.relationships.user_message_id = Some("u2".into());
+    assembler.observe(
+        1_050,
+        AgentEvent::Delta {
+            thread_id: "t1".into(),
+            content: " more".into(),
+        },
+        second,
+    );
+    assembler.observe(1_100, done("t1", "a1"), context("t1"));
+    let trace = assembler.drain_completed().pop().unwrap();
+    assert_eq!(
+        trace.input.as_ref().unwrap().value,
+        "hello",
+        "turn input is frozen at the first observed event, not the latest user message"
+    );
+    assert_eq!(trace.output.as_ref().unwrap().value, "A1 more");
+}
+
+#[test]
+fn interrupt_exports_partial_turn_including_open_tools() {
+    let mut assembler = TurnTraceAssembler::new(MlflowTracingConfig::default());
+    assembler.observe(
+        1_000,
+        AgentEvent::Delta {
+            thread_id: "t1".into(),
+            content: "plan".into(),
+        },
+        context("t1"),
+    );
+    assembler.observe(
+        1_050,
+        AgentEvent::ToolCall {
+            thread_id: "t1".into(),
+            call_id: "c1".into(),
+            name: "read_file".into(),
+            arguments: "{}".into(),
+            weles_review: None,
+            message_id: None,
+        },
+        context("t1"),
+    );
+    assert!(assembler.interrupt_turn("t1", 1_080));
+    let trace = assembler.drain_completed().pop().unwrap();
+    assert_eq!(trace.partial_reason.as_deref(), Some("interrupted"));
+    assert!(
+        trace
+            .spans
+            .iter()
+            .any(|span| span.kind == MlflowSpanKind::Tool),
+        "send-now must export the tool stack that was in flight"
+    );
+    assert_eq!(assembler.active_len(), 0);
+}
+
+#[test]
+fn interrupt_without_active_turn_does_not_emit() {
+    let mut assembler = TurnTraceAssembler::new(MlflowTracingConfig::default());
+    assert!(!assembler.interrupt_turn("t1", 1_000));
+    assert!(assembler.drain_completed().is_empty());
+}
+
+#[test]
+fn interrupt_then_follow_up_starts_a_new_turn() {
+    let mut assembler = TurnTraceAssembler::new(MlflowTracingConfig::default());
+    assembler.observe(
+        1_000,
+        AgentEvent::Delta {
+            thread_id: "t1".into(),
+            content: "A1".into(),
+        },
+        context("t1"),
+    );
+    assembler.interrupt_turn("t1", 1_050);
+    assembler.drain_completed();
+    let mut follow_up = context("t1");
+    follow_up.input = capture_text(
+        "follow up",
+        MlflowCaptureMode::Guarded,
+        MlflowContentKind::User,
+        100,
+    );
+    assembler.observe(
+        1_100,
+        AgentEvent::Delta {
+            thread_id: "t1".into(),
+            content: "A2".into(),
+        },
+        follow_up.clone(),
+    );
+    assembler.observe(1_200, done("t1", "a2"), follow_up);
+    let trace = assembler.drain_completed().pop().unwrap();
+    assert_eq!(trace.input.as_ref().unwrap().value, "follow up");
+    assert_eq!(trace.output.as_ref().unwrap().value, "A2");
 }

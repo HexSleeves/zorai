@@ -8,7 +8,10 @@ pub async fn enrich_event(
     config: &MlflowTracingConfig,
 ) -> Option<TurnObservationContext> {
     let thread_id = event_thread_id(event)?.to_string();
-    let thread = engine.get_thread(&thread_id).await?;
+    let thread = match engine.live_thread(&thread_id).await {
+        Some(thread) if !thread.messages.is_empty() => thread,
+        _ => engine.get_thread(&thread_id).await?,
+    };
     let protocol_surface = engine.get_thread_client_surface(&thread_id).await;
     let gateway_bound = engine
         .gateway_threads
@@ -38,24 +41,27 @@ pub async fn enrich_event(
             .cloned()
     };
 
-    let user = thread
-        .messages
-        .iter()
-        .rev()
-        .find(|message| message.role == MessageRole::User);
+    let user_anchor = engine.mlflow_tracing.front_turn_anchor(&thread_id);
+    let user = select_turn_user(&thread.messages, user_anchor.as_ref());
     let assistant = thread
         .messages
         .iter()
         .rev()
         .find(|message| message.role == MessageRole::Assistant);
-    let (input_tokens, output_tokens) = turn_usage_tokens(&thread, user.map(|message| message.timestamp));
+    let (input_tokens, output_tokens, cache_read_input_tokens, cache_creation_input_tokens) =
+        turn_usage_tokens(
+            &thread,
+            user.as_ref().map(|message| message.timestamp),
+            user.as_ref()
+                .and_then(|message| next_user_timestamp(&thread.messages, &message.id)),
+        );
     let task_is_subagent = task
         .as_ref()
         .is_some_and(crate::agent::types::AgentTask::is_spawned_subagent);
     let autonomous = surface.is_none() && (task.is_some() || goal.is_some());
     let relationships = MlflowTraceRelationships {
         thread_id: thread_id.clone(),
-        user_message_id: user.map(|message| message.id.clone()),
+        user_message_id: user.as_ref().map(|message| message.id.clone()),
         assistant_message_id: assistant.map(|message| message.id.clone()),
         agent_id: task
             .as_ref()
@@ -88,7 +94,7 @@ pub async fn enrich_event(
         return None;
     }
     Some(TurnObservationContext {
-        input: user.and_then(|message| {
+        input: user.as_ref().and_then(|message| {
             capture_text(
                 &message.content,
                 config.capture_mode,
@@ -96,11 +102,13 @@ pub async fn enrich_event(
                 config.max_user_chars,
             )
         }),
-        user_message_timestamp_ms: user.map(|message| message.timestamp),
+        user_message_timestamp_ms: user.as_ref().map(|message| message.timestamp),
         relationships,
         autonomous: autonomous && !task_is_subagent,
         input_tokens,
         output_tokens,
+        cache_read_input_tokens,
+        cache_creation_input_tokens,
     })
 }
 
@@ -147,6 +155,7 @@ fn event_thread_id(event: &AgentEvent) -> Option<&str> {
         | AgentEvent::ToolResult { thread_id, .. }
         | AgentEvent::Done { thread_id, .. }
         | AgentEvent::Error { thread_id, .. }
+        | AgentEvent::TurnInterrupted { thread_id }
         | AgentEvent::ApprovalRequired { thread_id, .. }
         | AgentEvent::RetryStatus { thread_id, .. } => Some(thread_id),
         _ => None,
@@ -167,16 +176,87 @@ fn event_model(event: &AgentEvent) -> Option<String> {
     }
 }
 
-fn turn_usage_tokens(thread: &AgentThread, user_timestamp_ms: Option<u64>) -> (u64, u64) {
+fn turn_usage_tokens(
+    thread: &AgentThread,
+    user_timestamp_ms: Option<u64>,
+    next_user_timestamp_ms: Option<u64>,
+) -> (u64, u64, u64, u64) {
     let Some(started_at_ms) = user_timestamp_ms else {
-        return (0, 0);
+        return (0, 0, 0, 0);
     };
-    thread.messages.iter().filter(|message| {
-        message.role == MessageRole::Assistant && message.timestamp >= started_at_ms
-    }).fold((0, 0), |(input, output), message| {
-        (
-            input.saturating_add(message.input_tokens),
-            output.saturating_add(message.output_tokens),
+    thread
+        .messages
+        .iter()
+        .filter(|message| {
+            message.role == MessageRole::Assistant
+                && message.timestamp >= started_at_ms
+                && next_user_timestamp_ms.is_none_or(|ended_at_ms| message.timestamp < ended_at_ms)
+        })
+        .fold(
+            (0, 0, 0, 0),
+            |(input, output, cache_read, cache_write), message| {
+                let (message_cache_read, message_cache_write) = message.cache_usage_tokens();
+                (
+                    input.saturating_add(message.input_tokens),
+                    output.saturating_add(message.output_tokens),
+                    cache_read.saturating_add(message_cache_read),
+                    cache_write.saturating_add(message_cache_write),
+                )
+            },
         )
-    })
+}
+
+fn next_user_timestamp(
+    messages: &[crate::agent::types::AgentMessage],
+    user_message_id: &str,
+) -> Option<u64> {
+    let mut seen = false;
+    for message in messages {
+        if message.id == user_message_id {
+            seen = true;
+            continue;
+        }
+        if seen && message.role == MessageRole::User {
+            return Some(message.timestamp);
+        }
+    }
+    None
+}
+
+pub(super) struct SelectedTurnUser {
+    pub id: String,
+    pub content: String,
+    pub timestamp: u64,
+}
+
+pub(super) fn select_turn_user(
+    messages: &[crate::agent::types::AgentMessage],
+    anchor: Option<&MlflowTurnAnchor>,
+) -> Option<SelectedTurnUser> {
+    if let Some(anchor) = anchor {
+        if let Some(message) = messages
+            .iter()
+            .find(|message| message.id == anchor.user_message_id)
+        {
+            return Some(SelectedTurnUser {
+                id: message.id.clone(),
+                content: message.content.clone(),
+                timestamp: message.timestamp,
+            });
+        }
+        return Some(SelectedTurnUser {
+            id: anchor.user_message_id.clone(),
+            content: anchor.content.clone(),
+            timestamp: anchor.timestamp_ms,
+        });
+    }
+    messages
+        .iter()
+        .rev()
+        .find(|message| message.role == MessageRole::User)
+        .map(|message| SelectedTurnUser {
+            id: message.id.clone(),
+            content: message.content.clone(),
+            timestamp: message.timestamp,
+        })
 }

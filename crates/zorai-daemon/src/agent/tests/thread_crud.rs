@@ -2989,3 +2989,135 @@ async fn ensure_thread_messages_loaded_preserves_in_memory_tail_added_after_hydr
         "newly appended assistant tail must remain after hydration check"
     );
 }
+
+#[tokio::test]
+async fn get_thread_does_not_replace_live_tail_with_stale_db_snapshot() {
+    // Why this matters: MLflow enrichment used to call get_thread() on every
+    // agent event. get_thread prefers get_authoritative_persisted_thread_detail,
+    // which loaded SQLite and overwrote live memory. During a turn that wipe
+    // dropped streaming assistant/tool rows; persist then wrote the truncated
+    // snapshot back. Both GUI and TUI then showed missing messages even after
+    // reload, and the UI treated the full (wiped) window as complete so scroll-up
+    // stopped requesting older pages.
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let thread_id = "thread-get-thread-preserves-live-tail";
+
+    let mut persisted_assistant = assistant_message("persisted assistant", 2);
+    persisted_assistant.id = "msg-persisted-assistant".to_string();
+    engine.threads.write().await.insert(
+        thread_id.to_string(),
+        make_thread(
+            thread_id,
+            Some("Svarog"),
+            "Live tail thread",
+            false,
+            1,
+            2,
+            vec![AgentMessage::user("user-1", 1), persisted_assistant],
+        ),
+    );
+    engine.persist_thread_by_id(thread_id).await;
+
+    {
+        let mut threads = engine.threads.write().await;
+        let thread = threads.get_mut(thread_id).expect("thread should exist");
+        let mut new_assistant = assistant_message("new assistant tail", 3);
+        new_assistant.id = "msg-new-assistant".to_string();
+        thread.messages.push(new_assistant);
+        thread.updated_at = 3;
+    }
+
+    let detail = engine
+        .get_thread(thread_id)
+        .await
+        .expect("thread should remain readable");
+    assert_eq!(
+        detail.messages.len(),
+        3,
+        "returned detail must keep the live tail"
+    );
+    assert_eq!(
+        detail.messages.last().map(|m| m.id.as_str()),
+        Some("msg-new-assistant")
+    );
+
+    let threads = engine.threads.read().await;
+    let thread = threads.get(thread_id).expect("thread retained");
+    assert_eq!(
+        thread.messages.len(),
+        3,
+        "in-memory tail must survive get_thread"
+    );
+    assert_eq!(
+        thread.messages.last().map(|m| m.content.as_str()),
+        Some("new assistant tail")
+    );
+}
+
+#[tokio::test]
+async fn get_thread_does_not_replace_richer_live_tool_payload_with_empty_db_stub() {
+    // Why this matters: streaming tool-call rows keep the same id/timestamp as
+    // the empty stub persisted at creation. Count-and-tail-id checks treat that
+    // as "not ahead", so get_thread used to restore the empty DB stub over the
+    // filled live payload. Those empty Svarog headers then survived reload.
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let thread_id = "thread-get-thread-preserves-richer-tool";
+
+    let mut stub = assistant_message("", 2);
+    stub.id = "msg-tool-stub".to_string();
+    stub.role = MessageRole::Tool;
+    stub.tool_name = Some("bash_command".to_string());
+    engine.threads.write().await.insert(
+        thread_id.to_string(),
+        make_thread(
+            thread_id,
+            Some("Svarog"),
+            "Tool stub thread",
+            false,
+            1,
+            2,
+            vec![AgentMessage::user("run ls", 1), stub],
+        ),
+    );
+    engine.persist_thread_by_id(thread_id).await;
+
+    {
+        let mut threads = engine.threads.write().await;
+        let thread = threads.get_mut(thread_id).expect("thread should exist");
+        let live = thread
+            .messages
+            .last_mut()
+            .expect("tool stub should exist in memory");
+        live.tool_arguments = Some(r#"{"command":"ls"}"#.to_string());
+        live.content = "file.txt\n".to_string();
+    }
+
+    let detail = engine
+        .get_thread(thread_id)
+        .await
+        .expect("thread should remain readable");
+    let returned = detail.messages.last().expect("tool message");
+    assert_eq!(returned.content, "file.txt\n");
+    assert_eq!(
+        returned.tool_arguments.as_deref(),
+        Some(r#"{"command":"ls"}"#)
+    );
+
+    let threads = engine.threads.read().await;
+    let live = threads
+        .get(thread_id)
+        .expect("thread retained")
+        .messages
+        .last()
+        .expect("live tool message");
+    assert_eq!(
+        live.tool_arguments.as_deref(),
+        Some(r#"{"command":"ls"}"#),
+        "empty DB stub must not replace the filled live tool payload"
+    );
+    assert_eq!(live.content, "file.txt\n");
+}

@@ -73,6 +73,8 @@ fn fixture_trace() -> CompletedTurnTrace {
         ],
         input_tokens: 10,
         output_tokens: 4,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
         cost_usd: Some(0.01),
         provider: Some("openai".into()),
         model: Some("gpt-test".into()),
@@ -135,9 +137,22 @@ fn otlp_batch_preserves_hierarchy_and_mlflow_genai_attributes() {
     assert_eq!(i64_attr(root, "gen_ai.usage.input_tokens"), Some(10));
     assert_eq!(i64_attr(root, "gen_ai.usage.output_tokens"), Some(4));
     assert_eq!(i64_attr(root, "gen_ai.usage.total_tokens"), Some(14));
-    assert!(string_attr(root, "mlflow.chat.tokenUsage")
-        .unwrap()
-        .contains("\"input_tokens\":10"));
+    assert_eq!(
+        i64_attr(root, "gen_ai.usage.cache_read.input_tokens"),
+        None,
+        "omit cache-read when the provider did not report it so MLflow stays n/a"
+    );
+    assert_eq!(
+        i64_attr(root, "gen_ai.usage.cache_creation.input_tokens"),
+        None
+    );
+    let token_usage = string_attr(root, "mlflow.chat.tokenUsage").unwrap();
+    assert!(token_usage.contains("\"input_tokens\":10"));
+    assert!(
+        !token_usage.contains("cache_read_input_tokens"),
+        "zero cache read must not appear in mlflow.chat.tokenUsage"
+    );
+    assert!(!token_usage.contains("cache_creation_input_tokens"));
     let llm = spans
         .iter()
         .find(|span| span.name == "gen_ai.response")
@@ -145,6 +160,31 @@ fn otlp_batch_preserves_hierarchy_and_mlflow_genai_attributes() {
     assert_eq!(i64_attr(llm, "gen_ai.usage.input_tokens"), Some(10));
     assert_eq!(i64_attr(llm, "gen_ai.usage.output_tokens"), Some(4));
     assert_eq!(i64_attr(tool, "gen_ai.usage.input_tokens"), None);
+}
+
+#[test]
+fn otlp_usage_includes_cache_tokens_when_present() {
+    let mut trace = fixture_trace();
+    trace.cache_read_input_tokens = 40;
+    trace.cache_creation_input_tokens = 8;
+    let request =
+        ExportTraceServiceRequest::decode(encode_otlp_batch(&[trace]).unwrap().as_slice()).unwrap();
+    let root = request.resource_spans[0].scope_spans[0]
+        .spans
+        .iter()
+        .find(|span| span.parent_span_id.is_empty())
+        .unwrap();
+    assert_eq!(
+        i64_attr(root, "gen_ai.usage.cache_read.input_tokens"),
+        Some(40)
+    );
+    assert_eq!(
+        i64_attr(root, "gen_ai.usage.cache_creation.input_tokens"),
+        Some(8)
+    );
+    let token_usage = string_attr(root, "mlflow.chat.tokenUsage").unwrap();
+    assert!(token_usage.contains("\"cache_read_input_tokens\":40"));
+    assert!(token_usage.contains("\"cache_creation_input_tokens\":8"));
 }
 
 #[test]

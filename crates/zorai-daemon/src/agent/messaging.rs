@@ -73,11 +73,15 @@ fn sum_message_token_totals(messages: &[AgentMessage]) -> (u64, u64) {
 // Returns true if the in-memory thread is ahead of the DB hydration payload —
 // i.e., the live state has messages the DB hasn't received yet. Hydrating would
 // wipe out the newer in-memory turn before persistence can write it back.
-// Triggers: more in-memory messages than DB delivered, or a strictly newer
-// timestamp/message id on the in-memory tail. A trailing optimistic message
-// without an id is treated as ahead even when counts match, because the daemon
-// just appended it locally.
-fn thread_in_memory_is_ahead_of_db(thread: &AgentThread, db_messages: &[AgentMessage]) -> bool {
+// Triggers: more in-memory messages than DB delivered, a strictly newer
+// timestamp/message id on the in-memory tail, or the same ids with richer live
+// payloads (streaming assistant/tool stubs vs. empty DB rows). A trailing
+// optimistic message without an id is treated as ahead even when counts match,
+// because the daemon just appended it locally.
+pub(super) fn thread_in_memory_is_ahead_of_db(
+    thread: &AgentThread,
+    db_messages: &[AgentMessage],
+) -> bool {
     if thread.messages.len() > db_messages.len() {
         return true;
     }
@@ -96,7 +100,39 @@ fn thread_in_memory_is_ahead_of_db(thread: &AgentThread, db_messages: &[AgentMes
     if in_memory_tail.id != db_tail.id {
         return true;
     }
-    false
+    memory_messages_are_richer_than_db(&thread.messages, db_messages)
+}
+
+fn memory_messages_are_richer_than_db(memory: &[AgentMessage], db: &[AgentMessage]) -> bool {
+    memory.iter().any(|mem| {
+        if mem.id.is_empty() {
+            return true;
+        }
+        match db.iter().find(|db_msg| db_msg.id == mem.id) {
+            None => true,
+            Some(db_msg) => message_is_richer_than(mem, db_msg),
+        }
+    })
+}
+
+fn message_is_richer_than(memory: &AgentMessage, db: &AgentMessage) -> bool {
+    if memory.content.len() > db.content.len() {
+        return true;
+    }
+    if memory.content_blocks.len() > db.content_blocks.len() {
+        return true;
+    }
+    let mem_args = memory.tool_arguments.as_deref().unwrap_or("").len();
+    let db_args = db.tool_arguments.as_deref().unwrap_or("").len();
+    if mem_args > db_args {
+        return true;
+    }
+    let mem_calls = memory.tool_calls.as_ref().map(Vec::len).unwrap_or(0);
+    let db_calls = db.tool_calls.as_ref().map(Vec::len).unwrap_or(0);
+    if mem_calls > db_calls {
+        return true;
+    }
+    memory.reasoning.as_deref().unwrap_or("").len() > db.reasoning.as_deref().unwrap_or("").len()
 }
 
 impl AgentEngine {

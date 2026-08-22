@@ -106,6 +106,8 @@ async fn persisted_assistant_messages_reload_upstream_message_metadata() {
                                 signature: None,
                                 input_json: None,
                             }],
+                            cache_creation_input_tokens: None,
+                            cache_read_input_tokens: None,
                         }),
                         provider_final_result: None,
                         author_agent_id: None,

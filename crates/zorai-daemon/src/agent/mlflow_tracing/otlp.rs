@@ -241,7 +241,12 @@ fn root_span(trace: &CompletedTurnTrace) -> OtlpSpan {
         kv_string("zorai.capture.redacted", capture_flags(trace).0),
         kv_string("zorai.capture.truncated", capture_flags(trace).1),
     ]);
-    attributes.extend(usage_attributes(trace.input_tokens, trace.output_tokens));
+    attributes.extend(usage_attributes(
+        trace.input_tokens,
+        trace.output_tokens,
+        trace.cache_read_input_tokens,
+        trace.cache_creation_input_tokens,
+    ));
     if let Some(provider) = trace.provider.as_deref() {
         attributes.push(kv_string("gen_ai.provider.name", provider));
     }
@@ -304,7 +309,12 @@ fn child_span(
         kv_bool("zorai.timing.inferred", span.timing_inferred),
     ];
     if include_usage {
-        attributes.extend(usage_attributes(trace.input_tokens, trace.output_tokens));
+        attributes.extend(usage_attributes(
+            trace.input_tokens,
+            trace.output_tokens,
+            trace.cache_read_input_tokens,
+            trace.cache_creation_input_tokens,
+        ));
         if let Some(provider) = trace.provider.as_deref() {
             attributes.push(kv_string("gen_ai.provider.name", provider));
         }
@@ -438,22 +448,43 @@ fn scope_name(scope: MlflowTraceScope) -> &'static str {
     }
 }
 
-fn usage_attributes(input_tokens: u64, output_tokens: u64) -> Vec<KeyValue> {
+fn usage_attributes(
+    input_tokens: u64,
+    output_tokens: u64,
+    cache_read_input_tokens: u64,
+    cache_creation_input_tokens: u64,
+) -> Vec<KeyValue> {
     let total = input_tokens.saturating_add(output_tokens);
-    vec![
+    let mut token_usage = serde_json::json!({
+        "input_tokens": input_tokens,
+        "output_tokens": output_tokens,
+        "total_tokens": total,
+    });
+    if cache_read_input_tokens > 0 {
+        token_usage["cache_read_input_tokens"] = cache_read_input_tokens.into();
+    }
+    if cache_creation_input_tokens > 0 {
+        token_usage["cache_creation_input_tokens"] = cache_creation_input_tokens.into();
+    }
+    let mut attributes = vec![
         kv_i64("gen_ai.usage.input_tokens", input_tokens as i64),
         kv_i64("gen_ai.usage.output_tokens", output_tokens as i64),
         kv_i64("gen_ai.usage.total_tokens", total as i64),
-        kv_string(
-            "mlflow.chat.tokenUsage",
-            &serde_json::json!({
-                "input_tokens": input_tokens,
-                "output_tokens": output_tokens,
-                "total_tokens": total,
-            })
-            .to_string(),
-        ),
-    ]
+        kv_string("mlflow.chat.tokenUsage", &token_usage.to_string()),
+    ];
+    if cache_read_input_tokens > 0 {
+        attributes.push(kv_i64(
+            "gen_ai.usage.cache_read.input_tokens",
+            cache_read_input_tokens as i64,
+        ));
+    }
+    if cache_creation_input_tokens > 0 {
+        attributes.push(kv_i64(
+            "gen_ai.usage.cache_creation.input_tokens",
+            cache_creation_input_tokens as i64,
+        ));
+    }
+    attributes
 }
 
 fn millis_to_nanos(value: u64) -> u64 {

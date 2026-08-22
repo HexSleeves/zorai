@@ -11,6 +11,7 @@ pub(crate) async fn parse_openai_sse(
     let mut pending_tool_calls: HashMap<u32, PendingToolCall> = HashMap::new();
     let mut input_tokens: u64 = 0;
     let mut output_tokens: u64 = 0;
+    let mut cache_read_input_tokens: Option<u64> = None;
     let mut cost_usd: Option<f64> = None;
     let mut response_id: Option<String> = None;
     let mut response_model: Option<String> = None;
@@ -48,6 +49,8 @@ pub(crate) async fn parse_openai_sse(
                                 finish_reason: finish_reason.clone(),
                                 input_tokens: Some(input_tokens),
                                 output_tokens: Some(output_tokens),
+                                cache_creation_input_tokens: None,
+                                cache_read_input_tokens,
                             },
                         ),
                     );
@@ -78,7 +81,7 @@ pub(crate) async fn parse_openai_sse(
                             provider_final_result: provider_final_result.clone(),
                             upstream_thread_id: None,
                             cache_creation_input_tokens: None,
-                            cache_read_input_tokens: None,
+                            cache_read_input_tokens,
                             server_tool_use: None,
                         }))
                         .await;
@@ -95,6 +98,8 @@ pub(crate) async fn parse_openai_sse(
                                 finish_reason: finish_reason.clone(),
                                 input_tokens: Some(input_tokens),
                                 output_tokens: Some(output_tokens),
+                                cache_creation_input_tokens: None,
+                                cache_read_input_tokens,
                             },
                         ),
                     );
@@ -121,7 +126,7 @@ pub(crate) async fn parse_openai_sse(
                             provider_final_result,
                             upstream_thread_id: None,
                             cache_creation_input_tokens: None,
-                            cache_read_input_tokens: None,
+                            cache_read_input_tokens,
                             server_tool_use: None,
                         }))
                         .await;
@@ -155,6 +160,8 @@ pub(crate) async fn parse_openai_sse(
                 let total_tokens = usage.get("total_tokens").and_then(|v| v.as_u64());
                 (input_tokens, output_tokens) =
                     normalize_openai_usage_tokens(input_tokens, output_tokens, total_tokens);
+                cache_read_input_tokens =
+                    openai_usage_cache_read(usage).or(cache_read_input_tokens);
                 cost_usd = usage.get("cost").and_then(|v| v.as_f64()).or(cost_usd);
             }
 
@@ -242,7 +249,7 @@ pub(crate) async fn parse_openai_sse(
                 provider_final_result: None,
                 upstream_thread_id: None,
                 cache_creation_input_tokens: None,
-                cache_read_input_tokens: None,
+                cache_read_input_tokens,
                 server_tool_use: None,
             }))
             .await;
@@ -270,7 +277,7 @@ pub(crate) async fn parse_openai_sse(
                 provider_final_result: None,
                 upstream_thread_id: None,
                 cache_creation_input_tokens: None,
-                cache_read_input_tokens: None,
+                cache_read_input_tokens,
                 server_tool_use: None,
             }))
             .await;
@@ -315,6 +322,19 @@ fn non_empty_owned(value: &str) -> Option<String> {
     (!value.is_empty()).then(|| value.to_owned())
 }
 
+fn openai_usage_cache_read(usage: &serde_json::Value) -> Option<u64> {
+    usage
+        .pointer("/prompt_tokens_details/cached_tokens")
+        .or_else(|| usage.pointer("/input_tokens_details/cached_tokens"))
+        .and_then(|value| value.as_u64())
+}
+
+fn openai_responses_cache_read(response: Option<&OpenAiResponsesTerminalResponse>) -> Option<u64> {
+    response
+        .and_then(|response| response.usage.input_tokens_details.as_ref())
+        .and_then(|details| details.cached_tokens)
+}
+
 fn build_openai_responses_provider_final_result(
     response_id: Option<String>,
     total_content: &str,
@@ -325,6 +345,7 @@ fn build_openai_responses_provider_final_result(
     input_tokens: u64,
     output_tokens: u64,
 ) -> crate::agent::types::CompletionProviderFinalResult {
+    let cache_read_input_tokens = openai_responses_cache_read(response.as_ref());
     crate::agent::types::CompletionProviderFinalResult::OpenAiResponses(
         crate::agent::types::CompletionOpenAiResponsesFinalResult {
             id: response_id,
@@ -335,6 +356,8 @@ fn build_openai_responses_provider_final_result(
             response_json,
             input_tokens: Some(input_tokens),
             output_tokens: Some(output_tokens),
+            cache_creation_input_tokens: None,
+            cache_read_input_tokens,
         },
     )
 }
@@ -395,6 +418,7 @@ async fn emit_openai_responses_terminal_chunk(
     input_tokens: u64,
     output_tokens: u64,
 ) {
+    let cache_read_input_tokens = openai_responses_cache_read(response.as_ref());
     let content = non_empty_owned(total_content);
     let reasoning = non_empty_owned(total_reasoning);
 
@@ -420,7 +444,7 @@ async fn emit_openai_responses_terminal_chunk(
                 stop_reason: None,
                 stop_sequence: None,
                 cache_creation_input_tokens: None,
-                cache_read_input_tokens: None,
+                cache_read_input_tokens,
                 server_tool_use: None,
                 response_id,
                 request_id: None,
@@ -456,7 +480,7 @@ async fn emit_openai_responses_terminal_chunk(
             stop_reason: None,
             stop_sequence: None,
             cache_creation_input_tokens: None,
-            cache_read_input_tokens: None,
+            cache_read_input_tokens,
             server_tool_use: None,
             response_id,
             request_id: None,

@@ -1,12 +1,14 @@
 use super::super::*;
-use crate::agent::types::AgentConfig;
+use crate::agent::types::{AgentConfig, AgentEvent, AgentMessage, AgentThread};
 use crate::agent::AgentEngine;
 use crate::session_manager::SessionManager;
-use std::io::{Read, Write};
+use std::io::{ErrorKind, Read, Write};
 use std::net::TcpListener;
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use std::time::Duration;
+use std::time::{Duration, Instant};
+use zorai_protocol::ClientSurface;
 
 fn spawn_server(
     responses: Vec<(u16, &'static str, &'static str)>,
@@ -58,6 +60,101 @@ fn spawn_server(
         }
     });
     (format!("http://{address}"), targets, handle)
+}
+
+fn spawn_looping_mlflow() -> (
+    String,
+    Arc<AtomicUsize>,
+    Arc<AtomicBool>,
+    thread::JoinHandle<()>,
+) {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let address = listener.local_addr().unwrap();
+    let traces = Arc::new(AtomicUsize::new(0));
+    let stop = Arc::new(AtomicBool::new(false));
+    let traces_for_thread = Arc::clone(&traces);
+    let stop_for_thread = Arc::clone(&stop);
+    let handle = thread::spawn(move || {
+        while !stop_for_thread.load(Ordering::Relaxed) {
+            match listener.accept() {
+                Ok((mut stream, _)) => {
+                    stream.set_nonblocking(false).ok();
+                    stream
+                        .set_read_timeout(Some(Duration::from_millis(200)))
+                        .ok();
+                    let mut bytes = Vec::new();
+                    let mut buffer = [0_u8; 4096];
+                    loop {
+                        match stream.read(&mut buffer) {
+                            Ok(0) => break,
+                            Ok(count) => bytes.extend_from_slice(&buffer[..count]),
+                            Err(_) => break,
+                        }
+                        let Some(header_end) =
+                            bytes.windows(4).position(|window| window == b"\r\n\r\n")
+                        else {
+                            continue;
+                        };
+                        let headers = String::from_utf8_lossy(&bytes[..header_end + 4]);
+                        let length = headers
+                            .lines()
+                            .find_map(|line| {
+                                line.to_ascii_lowercase()
+                                    .strip_prefix("content-length:")
+                                    .map(str::trim)
+                                    .and_then(|value| value.parse::<usize>().ok())
+                            })
+                            .unwrap_or(0);
+                        if bytes.len() >= header_end + 4 + length {
+                            break;
+                        }
+                    }
+                    let target = String::from_utf8_lossy(&bytes)
+                        .lines()
+                        .next()
+                        .and_then(|line| line.split_whitespace().nth(1))
+                        .unwrap_or_default()
+                        .to_string();
+                    let (content_type, body) = if target.contains("/v1/traces") {
+                        traces_for_thread.fetch_add(1, Ordering::Relaxed);
+                        ("application/json", "{}")
+                    } else {
+                        ("text/plain", "3.15.1")
+                    };
+                    let _ = write!(
+                        stream,
+                        "HTTP/1.1 200 OK\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                        body.len()
+                    );
+                }
+                Err(error) if error.kind() == ErrorKind::WouldBlock => {
+                    thread::sleep(Duration::from_millis(5));
+                }
+                Err(_) => break,
+            }
+        }
+    });
+    (format!("http://{address}"), traces, stop, handle)
+}
+
+async fn wait_status(
+    engine: &AgentEngine,
+    timeout: Duration,
+    predicate: impl Fn(&MlflowTracingStatus) -> bool,
+) -> MlflowTracingStatus {
+    let deadline = Instant::now() + timeout;
+    loop {
+        let status = engine.mlflow_tracing.status();
+        if predicate(&status) {
+            return status;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for MLflow status: {status:?}"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
 }
 
 async fn engine_with_config(root: &std::path::Path, config: AgentConfig) -> Arc<AgentEngine> {
@@ -151,4 +248,95 @@ async fn header_refresh_and_shutdown_commands_are_bounded() {
     .await;
     assert!(result.is_ok());
     assert!(result.unwrap().is_err());
+}
+
+#[tokio::test]
+async fn flush_exports_while_event_queue_stays_ready() {
+    let (uri, traces, stop_server, server) = spawn_looping_mlflow();
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = AgentConfig::default();
+    config.mlflow_tracing.enabled = true;
+    config.mlflow_tracing.tracking_uri = uri;
+    config.mlflow_tracing.experiment_id = Some("11".into());
+    config.mlflow_tracing.flush_interval_ms = 100;
+    let engine = engine_with_config(dir.path(), config).await;
+    engine.threads.write().await.insert(
+        "work".into(),
+        AgentThread {
+            id: "work".into(),
+            agent_name: Some("Svarog".into()),
+            title: "Work".into(),
+            messages: vec![AgentMessage::user("hello", 1)],
+            pinned: false,
+            upstream_thread_id: None,
+            upstream_transport: None,
+            upstream_provider: None,
+            upstream_model: None,
+            upstream_assistant_id: None,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
+            created_at: 1,
+            updated_at: 1,
+        },
+    );
+    engine
+        .set_thread_client_surface("work", ClientSurface::Tui)
+        .await;
+
+    wait_status(&engine, Duration::from_secs(2), |status| {
+        status.state == MlflowTracingState::Ready
+    })
+    .await;
+
+    let tx = engine.event_sender();
+    let _ = tx.send(AgentEvent::Delta {
+        thread_id: "work".into(),
+        content: "Hello".into(),
+    });
+    let _ = tx.send(AgentEvent::Done {
+        thread_id: "work".into(),
+        input_tokens: 10,
+        output_tokens: 4,
+        cost: None,
+        provider: Some("openai".into()),
+        model: Some("gpt".into()),
+        tps: None,
+        generation_ms: None,
+        reasoning: None,
+        upstream_message: None,
+        provider_final_result: None,
+        message_id: Some("a1".into()),
+    });
+    wait_status(&engine, Duration::from_secs(1), |status| {
+        status.queue_depth >= 1
+    })
+    .await;
+
+    let flood_stop = Arc::new(AtomicBool::new(false));
+    let flood_running = Arc::clone(&flood_stop);
+    let flood_tx = engine.event_sender();
+    let flood = thread::spawn(move || {
+        while !flood_running.load(Ordering::Relaxed) {
+            let _ = flood_tx.send(AgentEvent::Delta {
+                thread_id: "noise".into(),
+                content: "x".into(),
+            });
+            thread::yield_now();
+        }
+    });
+
+    wait_status(&engine, Duration::from_secs(2), |status| {
+        status.traces_exported >= 1
+    })
+    .await;
+    assert!(
+        traces.load(Ordering::Relaxed) >= 1,
+        "flush should export OTLP while the event stream stays ready"
+    );
+
+    flood_stop.store(true, Ordering::Relaxed);
+    flood.join().unwrap();
+    engine.mlflow_tracing.shutdown().await;
+    stop_server.store(true, Ordering::Relaxed);
+    server.join().unwrap();
 }

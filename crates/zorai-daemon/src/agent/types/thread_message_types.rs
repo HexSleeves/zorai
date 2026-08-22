@@ -320,6 +320,21 @@ impl AgentMessage {
         }
         message
     }
+
+    pub fn cache_usage_tokens(&self) -> (u64, u64) {
+        let from_upstream = self
+            .upstream_message
+            .as_ref()
+            .map(CompletionUpstreamMessage::cache_usage_tokens)
+            .unwrap_or((0, 0));
+        if from_upstream != (0, 0) {
+            return from_upstream;
+        }
+        self.provider_final_result
+            .as_ref()
+            .map(CompletionProviderFinalResult::cache_usage_tokens)
+            .unwrap_or((0, 0))
+    }
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]

@@ -5595,9 +5595,7 @@ async fn stagnation_pending_rolls_back_when_supervisor_enqueue_fails() {
     );
     let progress_raw = engine
         .history
-        .get_consolidation_state(&super::stagnation::goal_progress_state_key(
-            &snapshot.id,
-        ))
+        .get_consolidation_state(&super::stagnation::goal_progress_state_key(&snapshot.id))
         .await
         .expect("load progress state")
         .expect("merge must persist even when enqueue fails");

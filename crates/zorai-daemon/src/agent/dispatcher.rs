@@ -2464,12 +2464,10 @@ mod tests {
             }),
             "a cancelled leftover parent stream must not block wakeup after the child finishes"
         );
-        assert!(
-            engine
-                .deferred_visible_thread_continuations_for(parent_thread_id)
-                .await
-                .is_empty()
-        );
+        assert!(engine
+            .deferred_visible_thread_continuations_for(parent_thread_id)
+            .await
+            .is_empty());
     }
 
     #[tokio::test]

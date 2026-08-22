@@ -2,6 +2,7 @@ use super::*;
 use crate::agent::types::AgentEvent;
 use crate::agent::AgentEngine;
 use anyhow::Result;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 use tokio::sync::{broadcast, mpsc, oneshot, watch};
@@ -28,6 +29,8 @@ pub struct MlflowTracingRuntime {
     command_rx: std::sync::Mutex<Option<mpsc::Receiver<MlflowRuntimeCommand>>>,
     status_tx: watch::Sender<MlflowTracingStatus>,
     header_store: MlflowHeaderSecretStore,
+    pub(super) turn_anchors:
+        std::sync::Mutex<HashMap<String, VecDeque<super::turn_anchors::MlflowTurnAnchor>>>,
 }
 
 impl MlflowTracingRuntime {
@@ -45,6 +48,7 @@ impl MlflowTracingRuntime {
             command_rx: std::sync::Mutex::new(Some(command_rx)),
             status_tx,
             header_store: MlflowHeaderSecretStore::new(data_dir),
+            turn_anchors: std::sync::Mutex::new(HashMap::new()),
         })
     }
 
@@ -170,6 +174,7 @@ async fn run_worker(
                         experiment = None;
                         server_version = None;
                         flush = tokio::time::interval(Duration::from_millis(config.flush_interval_ms));
+                        flush.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
                         publish_config_status(&runtime, &config, effective.as_ref());
                     }
                     MlflowRuntimeCommand::RefreshHeaders => {
@@ -205,25 +210,6 @@ async fn run_worker(
                     }
                 }
             }
-            event = event_rx.recv() => {
-                let enabled = effective.as_ref().is_some_and(|value| value.enabled);
-                if !enabled { continue; }
-                match event {
-                    Ok(event) => {
-                        if let Some(engine) = engine.upgrade() {
-                            if let Some(context) = enrich_event(&engine, &event, &observation).await {
-                                assembler.observe(now_millis(), event, context);
-                                enqueue_completed(&runtime, &config, &mut assembler, &mut pending);
-                            }
-                        } else { break; }
-                    }
-                    Err(broadcast::error::RecvError::Lagged(_)) => {
-                        assembler.mark_broadcast_lag(now_millis());
-                        enqueue_completed(&runtime, &config, &mut assembler, &mut pending);
-                    }
-                    Err(broadcast::error::RecvError::Closed) => break,
-                }
-            }
             _ = flush.tick() => {
                 if !effective.as_ref().is_some_and(|value| value.enabled) { continue; }
                 assembler.expire_stale(now_millis());
@@ -247,6 +233,33 @@ async fn run_worker(
                     publish_error(&runtime, &config, &error, pending.len(), assembler.active_len());
                 } else if let (Some(version), Some(experiment)) = (server_version.as_ref(), experiment.as_ref()) {
                     publish_ready(&runtime, &config, &MlflowConnectionInfo { server_version: version.clone(), experiment: experiment.clone() }, pending.len(), assembler.active_len());
+                }
+            }
+            event = event_rx.recv() => {
+                let enabled = effective.as_ref().is_some_and(|value| value.enabled);
+                if !enabled { continue; }
+                match event {
+                    Ok(event) => {
+                        if let Some(engine) = engine.upgrade() {
+                            if let AgentEvent::TurnInterrupted { thread_id } = &event {
+                                let had_active = assembler.interrupt_turn(thread_id, now_millis());
+                                if !had_active {
+                                    runtime.pop_turn_anchor(thread_id);
+                                }
+                                enqueue_completed(&runtime, &config, &mut assembler, &mut pending);
+                                continue;
+                            }
+                            if let Some(context) = enrich_event(&engine, &event, &observation).await {
+                                assembler.observe(now_millis(), event, context);
+                                enqueue_completed(&runtime, &config, &mut assembler, &mut pending);
+                            }
+                        } else { break; }
+                    }
+                    Err(broadcast::error::RecvError::Lagged(_)) => {
+                        assembler.mark_broadcast_lag(now_millis());
+                        enqueue_completed(&runtime, &config, &mut assembler, &mut pending);
+                    }
+                    Err(broadcast::error::RecvError::Closed) => break,
                 }
             }
         }
@@ -294,6 +307,7 @@ fn enqueue_completed(
     pending: &mut Vec<CompletedTurnTrace>,
 ) {
     for trace in assembler.drain_completed() {
+        runtime.pop_turn_anchor(&trace.relationships.thread_id);
         if pending.len() >= config.queue_capacity {
             pending.remove(0);
             let mut status = runtime.status();
@@ -458,6 +472,8 @@ pub(super) fn diagnostic_trace() -> CompletedTurnTrace {
         spans: Vec::new(),
         input_tokens: 0,
         output_tokens: 0,
+        cache_read_input_tokens: 0,
+        cache_creation_input_tokens: 0,
         cost_usd: None,
         provider: None,
         model: None,

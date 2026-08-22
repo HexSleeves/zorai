@@ -1,5 +1,6 @@
 mod assembler;
 mod config;
+mod enrichment;
 mod integration;
 mod mlflow_client;
 mod otlp;

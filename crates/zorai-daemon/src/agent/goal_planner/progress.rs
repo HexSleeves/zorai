@@ -1030,10 +1030,7 @@ impl AgentEngine {
         Ok(())
     }
 
-    pub(in crate::agent) async fn rollback_orphaned_progress_supervisor_task(
-        &self,
-        task_id: &str,
-    ) {
+    pub(in crate::agent) async fn rollback_orphaned_progress_supervisor_task(&self, task_id: &str) {
         {
             let mut tasks = self.tasks.lock().await;
             tasks.retain(|task| task.id != task_id);
@@ -1151,9 +1148,8 @@ impl AgentEngine {
                     return Err(error);
                 }
             }
-            let reset_json = serde_json::to_string(
-                &super::stagnation::reset_intervention_streaks(&new_state),
-            )?;
+            let reset_json =
+                serde_json::to_string(&super::stagnation::reset_intervention_streaks(&new_state))?;
             self.history
                 .set_consolidation_state(&progress_key, &reset_json, now)
                 .await?;

@@ -167,6 +167,8 @@ async fn persisted_assistant_messages_reload_provider_final_result_metadata() {
                                     response_json: Some(r#"{"id":"resp_provider_final_result","object":"response","status":"completed","output":[],"usage":{"input_tokens":7,"output_tokens":3},"error":null,"metadata":{"source":"persisted-test"}}"#.to_string()),
                                     input_tokens: Some(7),
                                     output_tokens: Some(3),
+                                    cache_creation_input_tokens: None,
+                                    cache_read_input_tokens: None,
                                 },
                             ),
                         ),

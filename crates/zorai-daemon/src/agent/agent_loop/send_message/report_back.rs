@@ -95,6 +95,7 @@ impl<'a> SendMessageRunner<'a> {
         message_id: Option<String>,
     ) {
         self.needs_turn_done = false;
+        self.turn_done_emitted = true;
         let _ = self.engine.event_tx.send(AgentEvent::Done {
             thread_id: self.tid.clone(),
             input_tokens,

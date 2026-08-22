@@ -5,6 +5,7 @@ mod mlflow_client;
 mod otlp;
 mod privacy;
 mod secrets;
+mod turn_anchors;
 #[allow(dead_code)]
 mod types;
 
@@ -17,6 +18,7 @@ pub(crate) use mlflow_client::*;
 pub(crate) use otlp::*;
 pub(crate) use privacy::*;
 pub(crate) use secrets::*;
+pub(crate) use turn_anchors::MlflowTurnAnchor;
 #[allow(unused_imports)]
 pub(crate) use types::*;
 pub(crate) use worker::*;

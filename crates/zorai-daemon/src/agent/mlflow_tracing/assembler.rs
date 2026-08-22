@@ -10,6 +10,8 @@ pub struct TurnObservationContext {
     pub autonomous: bool,
     pub input_tokens: u64,
     pub output_tokens: u64,
+    pub cache_read_input_tokens: u64,
+    pub cache_creation_input_tokens: u64,
 }
 
 struct ActiveSpan {
@@ -38,6 +40,8 @@ struct ActiveTurn {
     seen_terminal_message_ids: HashSet<String>,
     input_tokens: u64,
     output_tokens: u64,
+    cache_read_input_tokens: u64,
+    cache_creation_input_tokens: u64,
 }
 
 pub struct TurnTraceAssembler {
@@ -61,17 +65,26 @@ impl TurnTraceAssembler {
         let Some(thread_id) = event_thread_id(&event) else {
             return;
         };
+        if matches!(event, AgentEvent::TurnInterrupted { .. }) {
+            self.interrupt_turn(&thread_id.to_string(), at_ms);
+            return;
+        }
         if !is_traceable(&event) {
             return;
         }
         let thread_id = thread_id.to_string();
         let context_input_tokens = context.input_tokens;
         let context_output_tokens = context.output_tokens;
+        let context_cache_read = context.cache_read_input_tokens;
+        let context_cache_write = context.cache_creation_input_tokens;
         self.ensure_turn(&thread_id, at_ms, context);
         let turn = self.active.get_mut(&thread_id).expect("turn inserted");
         turn.last_event_at_ms = at_ms;
         turn.input_tokens = turn.input_tokens.max(context_input_tokens);
         turn.output_tokens = turn.output_tokens.max(context_output_tokens);
+        turn.cache_read_input_tokens = turn.cache_read_input_tokens.max(context_cache_read);
+        turn.cache_creation_input_tokens =
+            turn.cache_creation_input_tokens.max(context_cache_write);
         match event {
             AgentEvent::Delta { content, .. } => {
                 ensure_llm(turn, at_ms);
@@ -243,6 +256,24 @@ impl TurnTraceAssembler {
         self.active.len()
     }
 
+    pub fn interrupt_turn(&mut self, thread_id: &str, now_ms: u64) -> bool {
+        if !self.active.contains_key(thread_id) {
+            return false;
+        }
+        self.finish_turn(
+            thread_id,
+            now_ms,
+            MlflowTraceOutcome::Unset,
+            Some("interrupted".into()),
+            0,
+            0,
+            None,
+            None,
+            None,
+        );
+        true
+    }
+
     fn ensure_turn(&mut self, thread_id: &str, at_ms: u64, context: TurnObservationContext) {
         if self.active.contains_key(thread_id) {
             return;
@@ -251,6 +282,8 @@ impl TurnTraceAssembler {
         *generation += 1;
         let input_tokens = context.input_tokens;
         let output_tokens = context.output_tokens;
+        let cache_read_input_tokens = context.cache_read_input_tokens;
+        let cache_creation_input_tokens = context.cache_creation_input_tokens;
         self.active.insert(
             thread_id.to_string(),
             ActiveTurn {
@@ -268,6 +301,8 @@ impl TurnTraceAssembler {
                 seen_terminal_message_ids: HashSet::new(),
                 input_tokens,
                 output_tokens,
+                cache_read_input_tokens,
+                cache_creation_input_tokens,
             },
         );
     }
@@ -290,6 +325,8 @@ impl TurnTraceAssembler {
         };
         let input_tokens = input_tokens.max(turn.input_tokens);
         let output_tokens = output_tokens.max(turn.output_tokens);
+        let cache_read_input_tokens = turn.cache_read_input_tokens;
+        let cache_creation_input_tokens = turn.cache_creation_input_tokens;
         close_llm(&mut turn, at_ms, outcome);
         let tools = std::mem::take(&mut turn.tools);
         if !tools.is_empty() && partial_reason.is_none() {
@@ -335,6 +372,8 @@ impl TurnTraceAssembler {
             spans: turn.spans,
             input_tokens,
             output_tokens,
+            cache_read_input_tokens,
+            cache_creation_input_tokens,
             cost_usd,
             provider,
             model,
@@ -421,6 +460,7 @@ fn event_thread_id(event: &AgentEvent) -> Option<&str> {
         | AgentEvent::ToolResult { thread_id, .. }
         | AgentEvent::Done { thread_id, .. }
         | AgentEvent::Error { thread_id, .. }
+        | AgentEvent::TurnInterrupted { thread_id }
         | AgentEvent::ApprovalRequired { thread_id, .. }
         | AgentEvent::RetryStatus { thread_id, .. } => Some(thread_id),
         _ => None,
