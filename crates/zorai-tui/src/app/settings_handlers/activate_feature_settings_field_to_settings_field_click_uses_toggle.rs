@@ -267,6 +267,16 @@ impl TuiModel {
                 | "feat_auto_thread_title"
                 | "whatsapp_link_device"
                 | "whatsapp_relink_device"
+                | "mlflow_enabled"
+                | "mlflow_visible_operator"
+                | "mlflow_gateway"
+                | "mlflow_goal_task"
+                | "mlflow_subagent"
+                | "mlflow_concierge"
+                | "mlflow_heartbeat_autonomous"
+                | "mlflow_capture_mode"
+                | "mlflow_test_connection"
+                | "mlflow_send_test_trace"
         ) || (self.current_settings_field_name().starts_with("tool_")
             && self.current_settings_field_name() != "tool_synthesis_max_generated_tools")
     }

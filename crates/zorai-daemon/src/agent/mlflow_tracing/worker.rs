@@ -101,6 +101,7 @@ impl MlflowTracingRuntime {
         self.status_tx.borrow().clone()
     }
 
+    #[cfg(test)]
     pub fn subscribe_status(&self) -> watch::Receiver<MlflowTracingStatus> {
         self.status_tx.subscribe()
     }

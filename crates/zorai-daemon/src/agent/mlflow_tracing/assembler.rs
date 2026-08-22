@@ -8,6 +8,8 @@ pub struct TurnObservationContext {
     pub input: Option<CapturedValue>,
     pub user_message_timestamp_ms: Option<u64>,
     pub autonomous: bool,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
 }
 
 struct ActiveSpan {
@@ -34,6 +36,8 @@ struct ActiveTurn {
     llm: Option<ActiveSpan>,
     tools: HashMap<String, ActiveSpan>,
     seen_terminal_message_ids: HashSet<String>,
+    input_tokens: u64,
+    output_tokens: u64,
 }
 
 pub struct TurnTraceAssembler {
@@ -61,9 +65,13 @@ impl TurnTraceAssembler {
             return;
         }
         let thread_id = thread_id.to_string();
+        let context_input_tokens = context.input_tokens;
+        let context_output_tokens = context.output_tokens;
         self.ensure_turn(&thread_id, at_ms, context);
         let turn = self.active.get_mut(&thread_id).expect("turn inserted");
         turn.last_event_at_ms = at_ms;
+        turn.input_tokens = turn.input_tokens.max(context_input_tokens);
+        turn.output_tokens = turn.output_tokens.max(context_output_tokens);
         match event {
             AgentEvent::Delta { content, .. } => {
                 ensure_llm(turn, at_ms);
@@ -154,8 +162,8 @@ impl TurnTraceAssembler {
                     at_ms,
                     MlflowTraceOutcome::Ok,
                     None,
-                    input_tokens,
-                    output_tokens,
+                    input_tokens.max(context_input_tokens),
+                    output_tokens.max(context_output_tokens),
                     cost,
                     provider,
                     model,
@@ -241,6 +249,8 @@ impl TurnTraceAssembler {
         }
         let generation = self.generations.entry(thread_id.to_string()).or_insert(0);
         *generation += 1;
+        let input_tokens = context.input_tokens;
+        let output_tokens = context.output_tokens;
         self.active.insert(
             thread_id.to_string(),
             ActiveTurn {
@@ -256,6 +266,8 @@ impl TurnTraceAssembler {
                 llm: None,
                 tools: HashMap::new(),
                 seen_terminal_message_ids: HashSet::new(),
+                input_tokens,
+                output_tokens,
             },
         );
     }
@@ -276,6 +288,8 @@ impl TurnTraceAssembler {
         let Some(mut turn) = self.active.remove(thread_id) else {
             return;
         };
+        let input_tokens = input_tokens.max(turn.input_tokens);
+        let output_tokens = output_tokens.max(turn.output_tokens);
         close_llm(&mut turn, at_ms, outcome);
         let tools = std::mem::take(&mut turn.tools);
         if !tools.is_empty() && partial_reason.is_none() {

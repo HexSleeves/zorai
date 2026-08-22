@@ -89,6 +89,16 @@ fn string_attr<'a>(span: &'a OtlpSpan, key: &str) -> Option<&'a str> {
         })
 }
 
+fn i64_attr(span: &OtlpSpan, key: &str) -> Option<i64> {
+    span.attributes
+        .iter()
+        .find(|entry| entry.key == key)
+        .and_then(|entry| match entry.value.as_ref()?.value.as_ref()? {
+            any_value::Value::IntValue(value) => Some(*value),
+            _ => None,
+        })
+}
+
 #[test]
 fn otlp_batch_preserves_hierarchy_and_mlflow_genai_attributes() {
     let bytes = encode_otlp_batch(&[fixture_trace()]).unwrap();
@@ -122,6 +132,38 @@ fn otlp_batch_preserves_hierarchy_and_mlflow_genai_attributes() {
     assert_eq!(string_attr(tool, "gen_ai.tool.call.id"), Some("c1"));
     assert_eq!(root.start_time_unix_nano, 1_000_000_000);
     assert_eq!(root.end_time_unix_nano, 2_000_000_000);
+    assert_eq!(i64_attr(root, "gen_ai.usage.input_tokens"), Some(10));
+    assert_eq!(i64_attr(root, "gen_ai.usage.output_tokens"), Some(4));
+    assert_eq!(i64_attr(root, "gen_ai.usage.total_tokens"), Some(14));
+    assert!(string_attr(root, "mlflow.chat.tokenUsage")
+        .unwrap()
+        .contains("\"input_tokens\":10"));
+    let llm = spans
+        .iter()
+        .find(|span| span.name == "gen_ai.response")
+        .unwrap();
+    assert_eq!(i64_attr(llm, "gen_ai.usage.input_tokens"), Some(10));
+    assert_eq!(i64_attr(llm, "gen_ai.usage.output_tokens"), Some(4));
+    assert_eq!(i64_attr(tool, "gen_ai.usage.input_tokens"), None);
+}
+
+#[test]
+fn otlp_root_span_exports_full_capture_reasoning() {
+    let mut trace = fixture_trace();
+    trace.reasoning = Some(CapturedValue {
+        value: "private plan".into(),
+        redacted: false,
+        truncated: false,
+        original_chars: 12,
+    });
+    let request =
+        ExportTraceServiceRequest::decode(encode_otlp_batch(&[trace]).unwrap().as_slice()).unwrap();
+    let root = request.resource_spans[0].scope_spans[0]
+        .spans
+        .iter()
+        .find(|span| span.parent_span_id.is_empty())
+        .unwrap();
+    assert_eq!(string_attr(root, "gen_ai.reasoning"), Some("private plan"));
 }
 
 #[test]

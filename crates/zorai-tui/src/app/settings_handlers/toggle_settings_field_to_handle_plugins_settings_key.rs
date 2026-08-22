@@ -82,11 +82,8 @@ impl TuiModel {
                 .to_string();
                 self.sync_config_to_daemon();
             }
-            "mlflow_test_connection" => {
-                self.send_daemon_command(crate::state::DaemonCommand::TestMlflowTracingConnection);
-            }
-            "mlflow_send_test_trace" => {
-                self.send_daemon_command(crate::state::DaemonCommand::SendMlflowTracingTestTrace);
+            "mlflow_test_connection" | "mlflow_send_test_trace" => {
+                self.activate_settings_field();
             }
             "gateway_enabled" => {
                 self.config.gateway_enabled = !self.config.gateway_enabled;

@@ -88,3 +88,73 @@ fn relationship_scope_uses_specific_precedence() {
         MlflowTraceScope::Subagent
     );
 }
+
+#[test]
+fn tui_debug_surface_is_visible_operator_not_gateway() {
+    let relationships = MlflowTraceRelationships {
+        thread_id: "t".into(),
+        client_surface: Some("tui".into()),
+        ..Default::default()
+    };
+    assert_eq!(
+        relationships.classify_scope(false),
+        MlflowTraceScope::VisibleOperator
+    );
+}
+
+#[test]
+fn gateway_surface_is_exported_when_gateway_scope_is_enabled() {
+    let relationships = MlflowTraceRelationships {
+        thread_id: "slack-thread".into(),
+        client_surface: Some("gateway".into()),
+        ..Default::default()
+    };
+    assert_eq!(
+        relationships.classify_scope(false),
+        MlflowTraceScope::Gateway
+    );
+    assert!(scope_enabled(
+        MlflowTraceScope::Gateway,
+        &MlflowTracingScopes::default()
+    ));
+}
+
+#[test]
+fn missing_surface_without_task_is_unknown_and_dropped() {
+    let relationships = MlflowTraceRelationships {
+        thread_id: "unlabeled".into(),
+        ..Default::default()
+    };
+    assert_eq!(
+        relationships.classify_scope(false),
+        MlflowTraceScope::Unknown
+    );
+    assert!(!scope_enabled(
+        MlflowTraceScope::Unknown,
+        &MlflowTracingScopes::default()
+    ));
+}
+
+#[test]
+fn gateway_binding_or_title_labels_surface_as_gateway() {
+    assert_eq!(
+        resolved_client_surface(None, true, "Daily notes"),
+        Some("gateway".into())
+    );
+    assert_eq!(
+        resolved_client_surface(None, false, "Slack alice"),
+        Some("gateway".into())
+    );
+    assert_eq!(
+        resolved_client_surface(None, false, "Discord bob"),
+        Some("gateway".into())
+    );
+    assert_eq!(
+        resolved_client_surface(
+            Some(zorai_protocol::ClientSurface::Tui),
+            false,
+            "Daily notes"
+        ),
+        Some("tui".into())
+    );
+}

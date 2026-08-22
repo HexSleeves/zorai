@@ -17,6 +17,8 @@ fn context(thread: &str) -> TurnObservationContext {
         ),
         user_message_timestamp_ms: Some(900),
         autonomous: false,
+        input_tokens: 0,
+        output_tokens: 0,
     }
 }
 
@@ -57,6 +59,8 @@ fn simple_turn_reconstructs_root_and_inferred_llm_span() {
     assert_eq!(trace.spans.len(), 1);
     assert_eq!(trace.spans[0].kind, MlflowSpanKind::Llm);
     assert!(trace.spans[0].timing_inferred);
+    assert_eq!(trace.input_tokens, 10);
+    assert_eq!(trace.output_tokens, 4);
 }
 
 #[test]
@@ -178,4 +182,44 @@ fn configured_span_limit_is_hard() {
     assembler.observe(1_100, done("t", "a1"), context("t"));
     let trace = assembler.drain_completed().pop().unwrap();
     assert_eq!(trace.spans.len(), 1);
+}
+
+fn done_without_usage(thread: &str, id: &str) -> AgentEvent {
+    AgentEvent::Done {
+        thread_id: thread.into(),
+        input_tokens: 0,
+        output_tokens: 0,
+        cost: None,
+        provider: Some("openai".into()),
+        model: Some("gpt".into()),
+        tps: None,
+        generation_ms: Some(100),
+        reasoning: None,
+        upstream_message: None,
+        provider_final_result: None,
+        message_id: Some(id.into()),
+    }
+}
+
+#[test]
+fn zero_token_done_uses_persisted_turn_usage() {
+    let mut assembler = TurnTraceAssembler::new(MlflowTracingConfig::default());
+    assembler.observe(
+        1_000,
+        AgentEvent::Delta {
+            thread_id: "t1".into(),
+            content: "Hello".into(),
+        },
+        context("t1"),
+    );
+    let mut done_context = context("t1");
+    done_context.input_tokens = 128;
+    done_context.output_tokens = 32;
+    assembler.observe(1_100, done_without_usage("t1", "a1"), done_context);
+    let trace = assembler.drain_completed().pop().unwrap();
+    assert_eq!(
+        trace.input_tokens, 128,
+        "MLflow usage must come from persisted assistant messages when Done reports 0"
+    );
+    assert_eq!(trace.output_tokens, 32);
 }

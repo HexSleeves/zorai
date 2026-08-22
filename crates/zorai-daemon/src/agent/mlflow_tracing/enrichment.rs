@@ -1,5 +1,5 @@
 use super::*;
-use crate::agent::types::{AgentEvent, MessageRole};
+use crate::agent::types::{AgentEvent, AgentThread, MessageRole};
 use crate::agent::AgentEngine;
 
 pub async fn enrich_event(
@@ -9,10 +9,14 @@ pub async fn enrich_event(
 ) -> Option<TurnObservationContext> {
     let thread_id = event_thread_id(event)?.to_string();
     let thread = engine.get_thread(&thread_id).await?;
-    let surface = engine
-        .get_thread_client_surface(&thread_id)
+    let protocol_surface = engine.get_thread_client_surface(&thread_id).await;
+    let gateway_bound = engine
+        .gateway_threads
+        .read()
         .await
-        .map(|value| format!("{value:?}").to_ascii_lowercase());
+        .values()
+        .any(|id| id == &thread_id);
+    let surface = resolved_client_surface(protocol_surface, gateway_bound, &thread.title);
 
     let task = {
         let tasks = engine.tasks.lock().await;
@@ -44,6 +48,7 @@ pub async fn enrich_event(
         .iter()
         .rev()
         .find(|message| message.role == MessageRole::Assistant);
+    let (input_tokens, output_tokens) = turn_usage_tokens(&thread, user.map(|message| message.timestamp));
     let task_is_subagent = task
         .as_ref()
         .is_some_and(crate::agent::types::AgentTask::is_spawned_subagent);
@@ -94,6 +99,8 @@ pub async fn enrich_event(
         user_message_timestamp_ms: user.map(|message| message.timestamp),
         relationships,
         autonomous: autonomous && !task_is_subagent,
+        input_tokens,
+        output_tokens,
     })
 }
 
@@ -107,6 +114,29 @@ pub fn scope_enabled(scope: MlflowTraceScope, scopes: &MlflowTracingScopes) -> b
         MlflowTraceScope::HeartbeatAutonomous => scopes.heartbeat_autonomous,
         MlflowTraceScope::Unknown => false,
     }
+}
+
+const GATEWAY_THREAD_TITLE_PREFIXES: [&str; 4] = ["slack ", "discord ", "telegram ", "whatsapp "];
+
+pub(super) fn resolved_client_surface(
+    protocol_surface: Option<zorai_protocol::ClientSurface>,
+    gateway_bound: bool,
+    thread_title: &str,
+) -> Option<String> {
+    if gateway_bound || is_gateway_thread_title(thread_title) {
+        return Some("gateway".into());
+    }
+    protocol_surface.map(|surface| match surface {
+        zorai_protocol::ClientSurface::Tui => "tui".into(),
+        zorai_protocol::ClientSurface::Electron => "electron".into(),
+    })
+}
+
+fn is_gateway_thread_title(title: &str) -> bool {
+    let title = title.trim().to_ascii_lowercase();
+    GATEWAY_THREAD_TITLE_PREFIXES
+        .iter()
+        .any(|prefix| title.starts_with(prefix))
 }
 
 fn event_thread_id(event: &AgentEvent) -> Option<&str> {
@@ -135,4 +165,18 @@ fn event_model(event: &AgentEvent) -> Option<String> {
         AgentEvent::Done { model, .. } => model.clone(),
         _ => None,
     }
+}
+
+fn turn_usage_tokens(thread: &AgentThread, user_timestamp_ms: Option<u64>) -> (u64, u64) {
+    let Some(started_at_ms) = user_timestamp_ms else {
+        return (0, 0);
+    };
+    thread.messages.iter().filter(|message| {
+        message.role == MessageRole::Assistant && message.timestamp >= started_at_ms
+    }).fold((0, 0), |(input, output), message| {
+        (
+            input.saturating_add(message.input_tokens),
+            output.saturating_add(message.output_tokens),
+        )
+    })
 }

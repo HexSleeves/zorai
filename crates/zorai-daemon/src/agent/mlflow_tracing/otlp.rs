@@ -192,7 +192,17 @@ pub fn encode_otlp_batch(traces: &[CompletedTurnTrace]) -> Result<Vec<u8>> {
     let mut spans = Vec::new();
     for trace in traces {
         spans.push(root_span(trace));
-        spans.extend(trace.spans.iter().map(|span| child_span(trace, span)));
+        let last_llm = trace
+            .spans
+            .iter()
+            .rposition(|span| span.kind == MlflowSpanKind::Llm);
+        spans.extend(
+            trace
+                .spans
+                .iter()
+                .enumerate()
+                .map(|(index, span)| child_span(trace, span, last_llm == Some(index))),
+        );
     }
     let request = ExportTraceServiceRequest {
         resource_spans: vec![ResourceSpans {
@@ -227,12 +237,11 @@ fn root_span(trace: &CompletedTurnTrace) -> OtlpSpan {
     attributes.extend([
         kv_string("gen_ai.operation.name", "invoke_agent"),
         kv_bool("zorai.timing.inferred", trace.timing_inferred),
-        kv_i64("gen_ai.usage.input_tokens", trace.input_tokens as i64),
-        kv_i64("gen_ai.usage.output_tokens", trace.output_tokens as i64),
         kv_string("zorai.scope", scope_name(trace.scope)),
         kv_string("zorai.capture.redacted", capture_flags(trace).0),
         kv_string("zorai.capture.truncated", capture_flags(trace).1),
     ]);
+    attributes.extend(usage_attributes(trace.input_tokens, trace.output_tokens));
     if let Some(provider) = trace.provider.as_deref() {
         attributes.push(kv_string("gen_ai.provider.name", provider));
     }
@@ -258,6 +267,9 @@ fn root_span(trace: &CompletedTurnTrace) -> OtlpSpan {
             &message_json("assistant", &output.value),
         ));
     }
+    if let Some(reasoning) = trace.reasoning.as_ref() {
+        attributes.push(kv_string("gen_ai.reasoning", &reasoning.value));
+    }
     OtlpSpan {
         trace_id: trace.trace_id.to_vec(),
         span_id: trace.root_span_id.to_vec(),
@@ -278,7 +290,11 @@ fn root_span(trace: &CompletedTurnTrace) -> OtlpSpan {
     }
 }
 
-fn child_span(trace: &CompletedTurnTrace, span: &CompletedTraceSpan) -> OtlpSpan {
+fn child_span(
+    trace: &CompletedTurnTrace,
+    span: &CompletedTraceSpan,
+    include_usage: bool,
+) -> OtlpSpan {
     let operation = match span.kind {
         MlflowSpanKind::Llm => "response",
         MlflowSpanKind::Tool => "execute_tool",
@@ -287,6 +303,15 @@ fn child_span(trace: &CompletedTurnTrace, span: &CompletedTraceSpan) -> OtlpSpan
         kv_string("gen_ai.operation.name", operation),
         kv_bool("zorai.timing.inferred", span.timing_inferred),
     ];
+    if include_usage {
+        attributes.extend(usage_attributes(trace.input_tokens, trace.output_tokens));
+        if let Some(provider) = trace.provider.as_deref() {
+            attributes.push(kv_string("gen_ai.provider.name", provider));
+        }
+        if let Some(model) = trace.model.as_deref() {
+            attributes.push(kv_string("gen_ai.response.model", model));
+        }
+    }
     if let Some(call_id) = span.call_id.as_deref() {
         attributes.push(kv_string("gen_ai.tool.call.id", call_id));
     }
@@ -411,6 +436,24 @@ fn scope_name(scope: MlflowTraceScope) -> &'static str {
         MlflowTraceScope::HeartbeatAutonomous => "heartbeat_autonomous",
         MlflowTraceScope::Unknown => "unknown",
     }
+}
+
+fn usage_attributes(input_tokens: u64, output_tokens: u64) -> Vec<KeyValue> {
+    let total = input_tokens.saturating_add(output_tokens);
+    vec![
+        kv_i64("gen_ai.usage.input_tokens", input_tokens as i64),
+        kv_i64("gen_ai.usage.output_tokens", output_tokens as i64),
+        kv_i64("gen_ai.usage.total_tokens", total as i64),
+        kv_string(
+            "mlflow.chat.tokenUsage",
+            &serde_json::json!({
+                "input_tokens": input_tokens,
+                "output_tokens": output_tokens,
+                "total_tokens": total,
+            })
+            .to_string(),
+        ),
+    ]
 }
 
 fn millis_to_nanos(value: u64) -> u64 {

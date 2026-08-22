@@ -1,3 +1,4 @@
+use super::render_edit_buffer_with_cursor;
 use crate::state::config::ConfigState;
 use crate::state::settings::SettingsState;
 use crate::theme::ThemeTokens;
@@ -19,13 +20,13 @@ pub(crate) fn render_mlflow_tab<'a>(
     ];
     let toggles = [
         (0, config.mlflow_enabled, "Enabled"),
-        (5, config.mlflow_visible_operator, "Visible operator turns"),
-        (6, config.mlflow_gateway, "Gateway turns"),
-        (7, config.mlflow_goal_task, "Goal/task turns"),
-        (8, config.mlflow_subagent, "Subagent turns"),
-        (9, config.mlflow_concierge, "Concierge turns"),
+        (1, config.mlflow_visible_operator, "Visible operator turns"),
+        (2, config.mlflow_gateway, "Gateway turns"),
+        (3, config.mlflow_goal_task, "Goal/task turns"),
+        (4, config.mlflow_subagent, "Subagent turns"),
+        (5, config.mlflow_concierge, "Concierge turns"),
         (
-            10,
+            6,
             config.mlflow_heartbeat_autonomous,
             "Heartbeat/autonomous",
         ),
@@ -36,22 +37,25 @@ pub(crate) fn render_mlflow_tab<'a>(
     lines.push(value_line(
         settings,
         theme,
-        1,
+        7,
         "Tracking URI",
+        "mlflow_tracking_uri",
         &config.mlflow_tracking_uri,
     ));
     lines.push(value_line(
         settings,
         theme,
-        2,
+        8,
         "Experiment",
+        "mlflow_experiment_name",
         &config.mlflow_experiment_name,
     ));
     lines.push(value_line(
         settings,
         theme,
-        3,
+        9,
         "Experiment ID",
+        "mlflow_experiment_id",
         if config.mlflow_experiment_id.is_empty() {
             "<by name>"
         } else {
@@ -61,8 +65,9 @@ pub(crate) fn render_mlflow_tab<'a>(
     lines.push(value_line(
         settings,
         theme,
-        4,
+        10,
         "Capture mode",
+        "mlflow_capture_mode",
         &config.mlflow_capture_mode,
     ));
     lines.push(action_line(settings, theme, 11, "Test connection"));
@@ -149,13 +154,20 @@ fn toggle_line<'a>(
 }
 
 fn value_line<'a>(
-    settings: &SettingsState,
+    settings: &'a SettingsState,
     theme: &ThemeTokens,
     index: usize,
     label: &'a str,
-    value: &'a str,
+    field_name: &str,
+    value: &str,
 ) -> Line<'a> {
     let selected = settings.field_cursor() == index;
+    let editing = settings.is_editing() && settings.editing_field() == Some(field_name);
+    let display = if editing {
+        render_edit_buffer_with_cursor(settings.edit_buffer(), settings.edit_cursor())
+    } else {
+        value.to_string()
+    };
     Line::from(vec![
         Span::styled(
             if selected { "> " } else { "  " },
@@ -167,7 +179,7 @@ fn value_line<'a>(
         ),
         Span::styled(format!("{label}: "), theme.fg_dim),
         Span::styled(
-            value,
+            display,
             if selected {
                 theme.accent_primary
             } else {

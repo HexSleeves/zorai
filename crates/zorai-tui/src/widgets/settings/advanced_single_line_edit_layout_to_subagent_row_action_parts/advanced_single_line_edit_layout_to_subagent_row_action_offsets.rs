@@ -308,22 +308,10 @@ pub(crate) fn settings_row_hit(
             .checked_sub(4)
             .filter(|idx| *idx < 23)
             .map(|idx| (idx, None)),
-        SettingsTab::Mlflow => match row {
-            4 => Some((0, None)),
-            5 => Some((5, None)),
-            6 => Some((6, None)),
-            7 => Some((7, None)),
-            8 => Some((8, None)),
-            9 => Some((9, None)),
-            10 => Some((10, None)),
-            11 => Some((1, None)),
-            12 => Some((2, None)),
-            13 => Some((3, None)),
-            14 => Some((4, None)),
-            15 => Some((11, None)),
-            16 => Some((12, None)),
-            _ => None,
-        },
+        SettingsTab::Mlflow => row
+            .checked_sub(4)
+            .filter(|idx| *idx < 13)
+            .map(|idx| (idx, None)),
         SettingsTab::Advanced => advanced_settings_row_hit(config, row),
         SettingsTab::Gateway => match row {
             4 => Some((0, None)),

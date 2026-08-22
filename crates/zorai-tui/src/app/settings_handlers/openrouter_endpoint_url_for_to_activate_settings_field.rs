@@ -145,13 +145,29 @@ impl TuiModel {
     }
 
     fn activate_mlflow_settings_field(&mut self, field: &str) -> bool {
-        let current = match field {
-            "mlflow_tracking_uri" => self.config.mlflow_tracking_uri.clone(),
-            "mlflow_experiment_name" => self.config.mlflow_experiment_name.clone(),
-            "mlflow_experiment_id" => self.config.mlflow_experiment_id.clone(),
+        match field {
+            "mlflow_tracking_uri" => {
+                self.settings
+                    .start_editing(field, &self.config.mlflow_tracking_uri.clone());
+            }
+            "mlflow_experiment_name" => {
+                self.settings
+                    .start_editing(field, &self.config.mlflow_experiment_name.clone());
+            }
+            "mlflow_experiment_id" => {
+                self.settings
+                    .start_editing(field, &self.config.mlflow_experiment_id.clone());
+            }
+            "mlflow_test_connection" => {
+                self.send_daemon_command(DaemonCommand::TestMlflowTracingConnection);
+                self.status_line = "Testing MLflow connection…".to_string();
+            }
+            "mlflow_send_test_trace" => {
+                self.send_daemon_command(DaemonCommand::SendMlflowTracingTestTrace);
+                self.status_line = "Sending MLflow test trace…".to_string();
+            }
             _ => return false,
-        };
-        self.settings.start_editing(field, &current);
+        }
         true
     }
 }
