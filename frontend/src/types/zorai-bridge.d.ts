@@ -420,6 +420,23 @@ declare global {
         worktreeStatus: string;
     };
 
+    type ZoraiWorkspaceGitHunk = {
+        id: string;
+        index: number;
+        path: string;
+        staged: boolean;
+        header: string;
+        section: string;
+        oldStart: number;
+        oldLines: number;
+        newStart: number;
+        newLines: number;
+        additions: number;
+        deletions: number;
+        preview: string;
+        patch: string;
+    };
+
     type ZoraiBridge = {
         checkSetupPrereqs?: (profile?: "source" | "desktop") => Promise<ZoraiSetupPrereqReport>;
         discoverCodingAgents?: () => Promise<ZoraiCodingAgentDiscoveryResult[]>;
@@ -456,6 +473,8 @@ declare global {
         workspaceGitStage?: (rootPath: string, relativePath: string) => Promise<ZoraiWorkspaceGitStatus[]>;
         workspaceGitUnstage?: (rootPath: string, relativePath: string) => Promise<ZoraiWorkspaceGitStatus[]>;
         workspaceGitDiscard?: (rootPath: string, relativePath: string) => Promise<ZoraiWorkspaceGitStatus[]>;
+        workspaceGitHunks?: (rootPath: string, relativePath: string, options?: { staged?: boolean }) => Promise<ZoraiWorkspaceGitHunk[]>;
+        workspaceGitApplyHunk?: (rootPath: string, relativePath: string, hunkId: string, action: "stage" | "unstage" | "discard") => Promise<{ status: ZoraiWorkspaceGitStatus[]; hunks: ZoraiWorkspaceGitHunk[] }>;
         workspaceSearch?: (rootPath: string, query: string, options?: { caseSensitive?: boolean; maxResults?: number; maxFiles?: number }) => Promise<Array<{ path: string; line: number; column: number; preview: string }>>;
         workspaceGitDiff?: (rootPath: string, relativePath?: string | null, options?: { staged?: boolean }) => Promise<string>;
         workspaceWatchStart?: (rootPath: string, options?: { debounceMs?: number; maxDirectories?: number }) => Promise<{ subscriptionId: string; root: string; watchedDirectoryCount: number }>;

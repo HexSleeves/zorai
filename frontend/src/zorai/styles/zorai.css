@@ -3084,3 +3084,14 @@ button.zorai-composer-context-chip { cursor: pointer; }
 .zorai-composer-context-preview { position: absolute; left: 0; bottom: calc(100% + 6px); z-index: 20; width: min(520px, 92vw); display: flex; flex-direction: column; gap: 5px; padding: 10px 12px; border: 1px solid var(--zorai-border-strong); border-radius: 7px; background: var(--zorai-bg-panel); box-shadow: 0 14px 34px var(--zorai-shadow); color: var(--zorai-text); font-size: 11px; }
 .zorai-composer-context-preview code { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font: 10px var(--font-mono); color: var(--zorai-accent-secondary); }
 .zorai-composer-context-preview span { color: var(--zorai-muted); }
+
+.zorai-workspace-hunk-review { max-height: 48%; overflow: auto; border-block: 1px solid var(--zorai-border); background: var(--zorai-bg-panel); }
+.zorai-workspace-hunk-heading { position: sticky; top: 0; z-index: 2; display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 4px; padding: 7px 9px; background: var(--zorai-bg-elevated); }
+.zorai-workspace-hunk-heading strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+.zorai-workspace-hunk-heading button { border: 1px solid var(--zorai-border); border-radius: 3px; background: transparent; color: var(--zorai-muted); cursor: pointer; }
+.zorai-workspace-hunk-review article { padding: 7px 9px; border-bottom: 1px solid var(--zorai-border); }
+.zorai-workspace-hunk-review article header { display: flex; justify-content: space-between; gap: 5px; color: var(--zorai-accent-secondary); font-size: 9px; }
+.zorai-workspace-hunk-review article > strong { display: block; margin-top: 4px; color: var(--zorai-text); font-size: 10px; }
+.zorai-workspace-hunk-review pre { max-height: 150px; overflow: auto; margin: 5px 0; padding: 6px; background: #0d1117; color: #d8dee9; font: 9px/1.45 var(--font-mono); white-space: pre; }
+.zorai-workspace-hunk-review footer { display: flex; gap: 4px; }
+.zorai-workspace-hunk-review footer button { padding: 3px 6px; border: 1px solid var(--zorai-border); border-radius: 3px; background: var(--zorai-bg-elevated); color: var(--zorai-muted); font-size: 9px; cursor: pointer; }

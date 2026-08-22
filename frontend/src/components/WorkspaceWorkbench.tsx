@@ -69,6 +69,7 @@ export function WorkspaceWorkbench() {
   const [rootInput, setRootInput] = useState(context?.root ?? activeWorkspace?.cwd ?? "");
   const [rootEntries, setRootEntries] = useState<ZoraiWorkspaceEntry[]>([]);
   const [gitStatus, setGitStatus] = useState<ZoraiWorkspaceGitStatus[]>([]);
+  const [reviewedChange, setReviewedChange] = useState<{ path: string; staged: boolean; hunks: ZoraiWorkspaceGitHunk[] } | null>(null);
   const [documents, setDocuments] = useState<Record<string, OpenDocument>>({});
   const [diff, setDiff] = useState<string | null>(null);
   const [mode, setMode] = useState<"edit" | "diff" | "external">("edit");
@@ -261,6 +262,26 @@ export function WorkspaceWorkbench() {
     setMode("diff");
   };
 
+  const reviewHunks = async (filePath: string, staged: boolean) => {
+    if (!context?.root || !bridge?.workspaceGitHunks) return;
+    try {
+      setReviewedChange({ path: filePath, staged, hunks: await bridge.workspaceGitHunks(context.root, filePath, { staged }) });
+      setError(null);
+    } catch (reason: any) { setError(reason?.message ?? String(reason)); }
+  };
+
+  const applyHunkAction = async (hunk: ZoraiWorkspaceGitHunk, action: "stage" | "unstage" | "discard") => {
+    if (!context?.root || !bridge?.workspaceGitApplyHunk) return;
+    if (action === "discard" && !window.confirm(`Discard this hunk from ${hunk.path}? This cannot be undone.`)) return;
+    try {
+      const result = await bridge.workspaceGitApplyHunk(context.root, hunk.path, hunk.id, action);
+      setGitStatus(result.status);
+      setReviewedChange((current) => current ? { ...current, hunks: result.hunks } : current);
+      if (action === "discard" && activeDocument?.path === hunk.path) await reloadActiveFile();
+      setError(null);
+    } catch (reason: any) { setError(reason?.code === "WORKSPACE_HUNK_STALE" ? "The diff changed. Refresh hunks and try again." : reason?.message ?? String(reason)); }
+  };
+
   const runGitAction = async (action: "stage" | "unstage" | "discard", filePath: string) => {
     if (!context?.root) return;
     if (action === "discard" && !window.confirm(`Discard all unstaged changes in ${filePath}? This cannot be undone.`)) return;
@@ -390,6 +411,8 @@ export function WorkspaceWorkbench() {
                       <strong>{entry.path}</strong><span>{entry.indexStatus}{entry.worktreeStatus}</span>
                     </button>
                     <span className="zorai-workspace-change-actions">
+                      {entry.worktreeStatus.trim() || entry.indexStatus === "?" ? <button type="button" onClick={() => void reviewHunks(entry.path, false)}>Hunks</button> : null}
+                      {entry.indexStatus.trim() && entry.indexStatus !== "?" ? <button type="button" onClick={() => void reviewHunks(entry.path, true)}>Staged hunks</button> : null}
                       {entry.worktreeStatus.trim() || entry.indexStatus === "?" ? <button type="button" onClick={() => void runGitAction("stage", entry.path)}>Stage</button> : null}
                       {entry.indexStatus.trim() && entry.indexStatus !== "?" ? <button type="button" onClick={() => void runGitAction("unstage", entry.path)}>Unstage</button> : null}
                       {entry.worktreeStatus.trim() && entry.worktreeStatus !== "?" ? <button type="button" onClick={() => void runGitAction("discard", entry.path)}>Discard</button> : null}
@@ -399,6 +422,26 @@ export function WorkspaceWorkbench() {
               </details>
             ) : null}
             {searchResults.length > 0 ? <div className="zorai-workspace-search-results">{searchResults.map((result) => <button type="button" key={`${result.path}:${result.line}:${result.column}`} onClick={() => void openFile(result.path)}><strong>{result.path}:{result.line}</strong><span>{result.preview}</span></button>)}</div> : null}
+            {reviewedChange ? (
+              <div className="zorai-workspace-hunk-review">
+                <div className="zorai-workspace-hunk-heading">
+                  <strong>{reviewedChange.staged ? "Staged" : "Unstaged"} hunks · {reviewedChange.path}</strong>
+                  <button type="button" onClick={() => void reviewHunks(reviewedChange.path, reviewedChange.staged)}>↻</button>
+                  <button type="button" onClick={() => setReviewedChange(null)}>×</button>
+                </div>
+                {reviewedChange.hunks.length === 0 ? <span className="zorai-workspace-empty">No matching hunks.</span> : reviewedChange.hunks.map((hunk) => (
+                  <article key={hunk.id}>
+                    <header><code>{hunk.header}</code><span>+{hunk.additions} −{hunk.deletions}</span></header>
+                    {hunk.section ? <strong>{hunk.section}</strong> : null}
+                    <pre>{hunk.preview}</pre>
+                    <footer>
+                      {reviewedChange.staged ? <button type="button" onClick={() => void applyHunkAction(hunk, "unstage")}>Unstage hunk</button> : <button type="button" onClick={() => void applyHunkAction(hunk, "stage")}>Stage hunk</button>}
+                      {!reviewedChange.staged ? <button type="button" onClick={() => void applyHunkAction(hunk, "discard")}>Discard hunk</button> : null}
+                    </footer>
+                  </article>
+                ))}
+              </div>
+            ) : null}
             {agentChanges.length > 0 ? (
               <details className="zorai-workspace-agent-changes" open>
                 <summary>Agent changes ({agentChanges.length})</summary>

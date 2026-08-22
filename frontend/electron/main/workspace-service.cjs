@@ -1,7 +1,7 @@
 const crypto = require('crypto');
 const fs = require('fs');
 const path = require('path');
-const { execFile } = require('child_process');
+const { execFile, spawn } = require('child_process');
 const { promisify } = require('util');
 
 const execFileAsync = promisify(execFile);
@@ -327,6 +327,102 @@ async function workspaceGitDiscard(rootPath, relativePath) {
     return workspaceGitStatus(root);
 }
 
+function runGitWithInput(args, cwd, input) {
+    return new Promise((resolve, reject) => {
+        const child = spawn('git', args, { cwd, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+        const stdout = [];
+        const stderr = [];
+        child.stdout.on('data', (chunk) => stdout.push(chunk));
+        child.stderr.on('data', (chunk) => stderr.push(chunk));
+        child.once('error', reject);
+        child.once('close', (code) => {
+            const output = Buffer.concat(stdout).toString('utf8');
+            const errorOutput = Buffer.concat(stderr).toString('utf8');
+            if (code === 0) {
+                resolve(output);
+                return;
+            }
+            reject(workspaceError('WORKSPACE_GIT_APPLY_FAILED', errorOutput.trim() || `git exited with ${code}`, { exitCode: code }));
+        });
+        child.stdin.end(input, 'utf8');
+    });
+}
+
+function parseUnifiedDiffHunks(diff, relativePath, staged) {
+    if (typeof diff !== 'string' || !diff.trim()) return [];
+    const lines = diff.split('\n');
+    const firstHunk = lines.findIndex((line) => line.startsWith('@@ '));
+    if (firstHunk < 0) return [];
+    const header = lines.slice(0, firstHunk).join('\n');
+    const hunks = [];
+    let index = firstHunk;
+    while (index < lines.length) {
+        if (!lines[index].startsWith('@@ ')) {
+            index += 1;
+            continue;
+        }
+        const hunkLines = [lines[index]];
+        const headerMatch = lines[index].match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/);
+        index += 1;
+        while (index < lines.length && !lines[index].startsWith('@@ ')) {
+            hunkLines.push(lines[index]);
+            index += 1;
+        }
+        while (hunkLines.length > 1 && hunkLines[hunkLines.length - 1] === '') hunkLines.pop();
+        const patch = `${header}\n${hunkLines.join('\n')}\n`;
+        const body = hunkLines.slice(1);
+        const additions = body.filter((line) => line.startsWith('+') && !line.startsWith('+++')).length;
+        const deletions = body.filter((line) => line.startsWith('-') && !line.startsWith('---')).length;
+        hunks.push({
+            id: sha256(Buffer.from(patch, 'utf8')),
+            index: hunks.length,
+            path: relativePath,
+            staged: Boolean(staged),
+            header: hunkLines[0],
+            section: headerMatch?.[5]?.trim() || '',
+            oldStart: Number(headerMatch?.[1] || 0),
+            oldLines: Number(headerMatch?.[2] || 1),
+            newStart: Number(headerMatch?.[3] || 0),
+            newLines: Number(headerMatch?.[4] || 1),
+            additions,
+            deletions,
+            preview: body.slice(0, 12).join('\n'),
+            patch,
+        });
+    }
+    return hunks;
+}
+
+async function workspaceGitHunks(rootPath, relativePath, options = {}) {
+    const diff = await workspaceGitDiff(rootPath, relativePath, { staged: options.staged === true });
+    return parseUnifiedDiffHunks(diff, relativePath, options.staged === true);
+}
+
+async function workspaceGitApplyHunk(rootPath, relativePath, hunkId, action) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) throw workspaceError('WORKSPACE_NOT_GIT_REPOSITORY', 'Workspace is not inside a Git repository.');
+    resolveWorkspacePath(root, relativePath, { allowMissing: true });
+    if (!['stage', 'unstage', 'discard'].includes(action)) {
+        throw workspaceError('WORKSPACE_HUNK_ACTION_INVALID', `Unsupported hunk action: ${action}`);
+    }
+    const staged = action === 'unstage';
+    const hunks = await workspaceGitHunks(root, relativePath, { staged });
+    const hunk = hunks.find((candidate) => candidate.id === hunkId);
+    if (!hunk) {
+        throw workspaceError('WORKSPACE_HUNK_STALE', 'The selected hunk no longer matches the current Git diff. Refresh and try again.');
+    }
+    const args = ['apply', '--recount', '--whitespace=nowarn'];
+    if (action === 'stage' || action === 'unstage') args.push('--cached');
+    if (action === 'unstage' || action === 'discard') args.push('--reverse');
+    args.push('-');
+    await runGitWithInput(args, gitRoot, hunk.patch);
+    return {
+        status: await workspaceGitStatus(root),
+        hunks: await workspaceGitHunks(root, relativePath, { staged }),
+    };
+}
+
 async function workspaceGitDiff(rootPath, relativePath = null, options = {}) {
     const root = canonicalWorkspaceRoot(rootPath);
     const gitRoot = await resolveGitRoot(root);
@@ -355,8 +451,11 @@ module.exports = {
     resolveWorkspacePath,
     searchWorkspace,
     sha256,
+    parseUnifiedDiffHunks,
+    workspaceGitApplyHunk,
     workspaceGitDiff,
     workspaceGitDiscard,
+    workspaceGitHunks,
     workspaceGitStage,
     workspaceGitStatus,
     workspaceGitUnstage,
