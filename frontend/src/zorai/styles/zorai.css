@@ -3129,3 +3129,5 @@ button.zorai-composer-context-chip { cursor: pointer; }
 .zorai-workspace-worktrees > div.active { background: var(--zorai-bg-active); }
 .zorai-workspace-worktree-path { min-width: 0; display: flex; flex-direction: column; border: 0; background: transparent; color: var(--zorai-text); text-align: left; font: 9px var(--font-mono); cursor: pointer; }
 .zorai-workspace-worktree-path span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--zorai-muted); }
+
+.zorai-workspace-editor-loading { width: 100%; height: 100%; display: grid; place-items: center; background: #0d1117; color: var(--zorai-muted); font: 11px var(--font-mono); }

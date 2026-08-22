@@ -1,9 +1,13 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { getBridge } from "@/lib/bridge";
 import { useAgentStore } from "@/lib/agentStore";
 import { useWorkspaceStore } from "@/lib/workspaceStore";
 import { useWorkspaceContextStore } from "@/lib/workspaceContextStore";
 import { extractWorkspaceSymbols } from "@/lib/workspaceSymbols";
+import type { editor as MonacoEditorApi } from "monaco-editor";
+
+const WorkspaceCodeEditor = lazy(() => import("@/components/WorkspaceCodeEditor").then((module) => ({ default: module.WorkspaceCodeEditor })));
+const WorkspaceDiffEditor = lazy(() => import("@/components/WorkspaceCodeEditor").then((module) => ({ default: module.WorkspaceDiffEditor })));
 
 type OpenDocument = ZoraiWorkspaceFile & { original: string; dirty: boolean; externalContent?: string; externalHash?: string };
 
@@ -90,6 +94,7 @@ export function WorkspaceWorkbench() {
   const [searchResults, setSearchResults] = useState<Array<{ path: string; line: number; column: number; preview: string }>>([]);
   const [agentChanges, setAgentChanges] = useState<ZoraiWorkContextEntry[]>([]);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
+  const monacoEditorRef = useRef<MonacoEditorApi.IStandaloneCodeEditor | null>(null);
   const pendingNavigationRef = useRef<{ path: string; line: number; column: number } | null>(null);
   const activeDocument = context?.activeFile ? documents[context.activeFile] : undefined;
   const operationGroups = useMemo(() => {
@@ -241,8 +246,17 @@ export function WorkspaceWorkbench() {
 
   useEffect(() => {
     const pending = pendingNavigationRef.current;
+    if (!pending || activeDocument?.path !== pending.path || mode !== "edit") return;
+    const monacoEditor = monacoEditorRef.current;
+    if (monacoEditor) {
+      monacoEditor.focus();
+      monacoEditor.setPosition({ lineNumber: pending.line, column: pending.column });
+      monacoEditor.revealPositionInCenter({ lineNumber: pending.line, column: pending.column });
+      pendingNavigationRef.current = null;
+      return;
+    }
     const textarea = editorRef.current;
-    if (!pending || !textarea || activeDocument?.path !== pending.path || mode !== "edit") return;
+    if (!textarea) return;
     const lines = textarea.value.split("\n");
     const lineIndex = Math.max(0, Math.min(pending.line - 1, lines.length - 1));
     const offset = lines.slice(0, lineIndex).reduce((total, line) => total + line.length + 1, 0) + Math.max(0, pending.column - 1);
@@ -277,6 +291,14 @@ export function WorkspaceWorkbench() {
       setMode("edit");
       if (location && documents[filePath]) {
         requestAnimationFrame(() => {
+          const monacoEditor = monacoEditorRef.current;
+          if (monacoEditor) {
+            monacoEditor.focus();
+            monacoEditor.setPosition({ lineNumber: location.line, column: location.column });
+            monacoEditor.revealPositionInCenter({ lineNumber: location.line, column: location.column });
+            pendingNavigationRef.current = null;
+            return;
+          }
           const textarea = editorRef.current;
           if (!textarea) return;
           const lines = textarea.value.split("\n");
@@ -463,15 +485,8 @@ export function WorkspaceWorkbench() {
     } catch (reason: any) { setError(reason?.message ?? String(reason)); }
   };
 
-  const updateSelection = () => {
-    if (!activeThreadId || !editorRef.current || !activeDocument) return;
-    const textarea = editorRef.current;
-    const beforeStart = textarea.value.slice(0, textarea.selectionStart);
-    const beforeEnd = textarea.value.slice(0, textarea.selectionEnd);
-    const startLine = beforeStart.split("\n").length;
-    const endLine = beforeEnd.split("\n").length;
-    const startColumn = beforeStart.length - beforeStart.lastIndexOf("\n");
-    const endColumn = beforeEnd.length - beforeEnd.lastIndexOf("\n");
+  const recordEditorSelection = (startLine: number, startColumn: number, endLine: number, endColumn: number) => {
+    if (!activeThreadId) return;
     setSelection(activeThreadId, { startLine, startColumn, endLine, endColumn });
   };
 
@@ -622,43 +637,26 @@ export function WorkspaceWorkbench() {
             ) : null}
             <div className="zorai-workspace-editor">
               {mode === "diff" ? (
-                <div className="zorai-workspace-diff-grid">
-                  <pre aria-label="Saved file">{activeDocument.original}</pre>
-                  <pre aria-label="Edited file">{activeDocument.content}</pre>
-                </div>
+                <Suspense fallback={<div className="zorai-workspace-diff-grid"><pre>{activeDocument.original}</pre><pre>{activeDocument.content}</pre></div>}>
+                  <WorkspaceDiffEditor original={activeDocument.original} modified={activeDocument.content} language={activeDocument.language} />
+                </Suspense>
               ) : mode === "external" ? (
-                <div className="zorai-workspace-diff-grid">
-                  <pre aria-label="Editor buffer">{activeDocument.content}</pre>
-                  <pre aria-label="External disk version">{activeDocument.externalContent}</pre>
-                </div>
+                <Suspense fallback={<div className="zorai-workspace-diff-grid"><pre>{activeDocument.content}</pre><pre>{activeDocument.externalContent}</pre></div>}>
+                  <WorkspaceDiffEditor original={activeDocument.content} modified={activeDocument.externalContent ?? ""} language={activeDocument.language} />
+                </Suspense>
               ) : (
-                <textarea
-                  ref={editorRef}
-                  className="zorai-workspace-code-editor"
-                  value={activeDocument.content}
-                  spellCheck={false}
-                  aria-label={`Edit ${activeDocument.path}`}
-                  onSelect={updateSelection}
-                  onKeyDown={(event) => {
-                    if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
-                      event.preventDefault();
-                      void save();
-                    }
-                    if (event.key === "Tab") {
-                      event.preventDefault();
-                      const target = event.currentTarget;
-                      const start = target.selectionStart;
-                      const end = target.selectionEnd;
-                      const next = `${target.value.slice(0, start)}  ${target.value.slice(end)}`;
-                      setDocuments((current) => ({ ...current, [activeDocument.path]: { ...activeDocument, content: next, dirty: next !== activeDocument.original } }));
-                      requestAnimationFrame(() => { target.selectionStart = target.selectionEnd = start + 2; });
-                    }
-                  }}
-                  onChange={(event) => {
-                    const value = event.target.value;
-                    setDocuments((current) => ({ ...current, [activeDocument.path]: { ...activeDocument, content: value, dirty: value !== activeDocument.original } }));
-                  }}
-                />
+                <Suspense fallback={<div className="zorai-workspace-editor-loading">Loading Monaco editor…</div>}>
+                  <WorkspaceCodeEditor
+                    path={activeDocument.path}
+                    value={activeDocument.content}
+                    language={activeDocument.language}
+                    textareaRef={editorRef}
+                    onMount={(editor) => { monacoEditorRef.current = editor; }}
+                    onSave={() => void save()}
+                    onSelect={recordEditorSelection}
+                    onChange={(value) => setDocuments((current) => ({ ...current, [activeDocument.path]: { ...activeDocument, content: value, dirty: value !== activeDocument.original } }))}
+                  />
+                </Suspense>
               )}
             </div>
             {mode === "diff" && diff !== null ? <details className="zorai-workspace-raw-diff"><summary>Git patch</summary><pre>{diff || "No working-tree diff for this file."}</pre></details> : null}
