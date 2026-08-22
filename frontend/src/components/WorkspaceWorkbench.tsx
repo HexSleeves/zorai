@@ -77,6 +77,7 @@ export function WorkspaceWorkbench() {
   const [gitStatus, setGitStatus] = useState<ZoraiWorkspaceGitStatus[]>([]);
   const [gitOverview, setGitOverview] = useState<ZoraiWorkspaceGitOverview | null>(null);
   const [gitWorktrees, setGitWorktrees] = useState<ZoraiGitWorktree[]>([]);
+  const [worktreeReviews, setWorktreeReviews] = useState<Record<string, ZoraiWorktreeReview>>({});
   const [worktreeName, setWorktreeName] = useState("");
   const [worktreeBranch, setWorktreeBranch] = useState("");
   const [worktreeBaseRef, setWorktreeBaseRef] = useState("HEAD");
@@ -377,6 +378,36 @@ export function WorkspaceWorkbench() {
     setMode("diff");
   };
 
+  useEffect(() => {
+    if (!context?.root || !bridge?.workspaceGitReviewWorktree || isolatedTaskWorktrees.length === 0) {
+      setWorktreeReviews({});
+      return;
+    }
+    let cancelled = false;
+    void Promise.all(isolatedTaskWorktrees.map(async (worktree) => {
+      try { return [worktree.path, await bridge.workspaceGitReviewWorktree!(context.root, worktree.path)] as const; }
+      catch { return null; }
+    })).then((results) => {
+      if (!cancelled) setWorktreeReviews(Object.fromEntries(results.filter((result): result is readonly [string, ZoraiWorktreeReview] => result !== null)));
+    });
+    return () => { cancelled = true; };
+  }, [bridge, context?.root, isolatedTaskWorktrees]);
+
+  const integrateIsolatedWorktree = async (worktreePath: string) => {
+    if (!context?.root || !bridge?.workspaceGitIntegrateWorktree) return;
+    const review = worktreeReviews[worktreePath];
+    if (!review?.canIntegrate) return;
+    if (!window.confirm(`Integrate ${review.commits.length} reviewed commit(s) into the current worktree? Conflicts will be aborted automatically.`)) return;
+    try {
+      const result = await bridge.workspaceGitIntegrateWorktree(context.root, worktreePath, review.commits.map((commit) => commit.hash));
+      setGitOverview(result.overview);
+      setGitStatus(result.status);
+      setWorktreeReviews((current) => ({ ...current, [worktreePath]: result.review }));
+      await refreshRoot();
+      setError(null);
+    } catch (reason: any) { setError(reason?.message ?? String(reason)); }
+  };
+
   const createManagedWorktree = async () => {
     if (!activeThreadId || !context?.root || !bridge?.workspaceGitCreateWorktree) return;
     try {
@@ -559,12 +590,17 @@ export function WorkspaceWorkbench() {
             {isolatedTaskWorktrees.length > 0 ? (
               <details className="zorai-workspace-isolated-reviews" open>
                 <summary>Awaiting isolated review ({isolatedTaskWorktrees.length})</summary>
-                {isolatedTaskWorktrees.map((worktree) => (
-                  <div key={worktree.path}>
-                    <button type="button" onClick={() => switchThreadWorktree(worktree.path)}><strong>{worktree.branch}</strong><span>{worktree.path}</span></button>
-                    <em>Review in worktree; integration is always explicit.</em>
-                  </div>
-                ))}
+                {isolatedTaskWorktrees.map((worktree) => {
+                  const review = worktreeReviews[worktree.path];
+                  return (
+                    <div key={worktree.path}>
+                      <button type="button" onClick={() => switchThreadWorktree(worktree.path)}><strong>{worktree.branch}</strong><span>{worktree.path}</span></button>
+                      <em>{review ? `${review.commits.length} commit(s) · ${review.files.length} file(s) · source ${review.source.clean ? "clean" : "dirty"} · target ${review.target.clean ? "clean" : "dirty"}` : "Loading review…"}</em>
+                      {review?.commits.map((commit) => <code key={commit.hash}>{commit.hash.slice(0, 8)} · {commit.subject}</code>)}
+                      {review?.canIntegrate ? <button type="button" className="zorai-workspace-integrate-button" onClick={() => void integrateIsolatedWorktree(worktree.path)}>Integrate reviewed commits</button> : null}
+                    </div>
+                  );
+                })}
               </details>
             ) : null}
             {workspaceDiagnostics.length > 0 ? (

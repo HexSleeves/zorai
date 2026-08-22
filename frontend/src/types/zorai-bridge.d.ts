@@ -443,6 +443,15 @@ declare global {
         diagnostics: ZoraiLspDiagnostic[];
     };
 
+    type ZoraiWorktreeReview = {
+        source: { path: string; branch: string | null; head: string; clean: boolean };
+        target: { path: string; head: string; clean: boolean };
+        mergeBase: string;
+        commits: Array<{ hash: string; subject: string }>;
+        files: Array<{ status: string; path: string; previousPath: string | null }>;
+        canIntegrate: boolean;
+    };
+
     type ZoraiGitWorktree = {
         path: string;
         head: string | null;
@@ -520,6 +529,8 @@ declare global {
         workspaceGitListWorktrees?: (rootPath: string) => Promise<ZoraiGitWorktree[]>;
         workspaceGitCreateWorktree?: (rootPath: string, options: { name: string; branch: string; baseRef?: string }) => Promise<{ root: string; branch: string; baseRef: string; worktrees: ZoraiGitWorktree[] }>;
         workspaceGitRemoveWorktree?: (rootPath: string, worktreePath: string) => Promise<ZoraiGitWorktree[]>;
+        workspaceGitReviewWorktree?: (rootPath: string, worktreePath: string) => Promise<ZoraiWorktreeReview>;
+        workspaceGitIntegrateWorktree?: (rootPath: string, worktreePath: string, commitHashes: string[]) => Promise<{ integratedCommits: string[]; overview: ZoraiWorkspaceGitOverview; status: ZoraiWorkspaceGitStatus[]; review: ZoraiWorktreeReview }>;
         workspaceGitStage?: (rootPath: string, relativePath: string) => Promise<ZoraiWorkspaceGitStatus[]>;
         workspaceGitUnstage?: (rootPath: string, relativePath: string) => Promise<ZoraiWorkspaceGitStatus[]>;
         workspaceGitDiscard?: (rootPath: string, relativePath: string) => Promise<ZoraiWorkspaceGitStatus[]>;

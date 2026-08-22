@@ -14,7 +14,9 @@ const {
     workspaceGitCommit,
     workspaceGitCreateWorktree,
     workspaceGitDiscard,
+    workspaceGitIntegrateWorktree,
     workspaceGitRemoveWorktree,
+    workspaceGitReviewWorktree,
     workspaceGitStage,
     workspaceGitUnstage,
     writeWorkspaceFile,
@@ -253,6 +255,57 @@ test('managed worktree removal refuses dirty worktrees', async () => {
     await assert.rejects(workspaceGitRemoveWorktree(root, created.root), { code: 'WORKSPACE_WORKTREE_DIRTY' });
     assert.equal(fs.existsSync(created.root), true);
     runGit('worktree', 'remove', '--force', created.root);
+    fs.rmSync(parent, { recursive: true, force: true });
+});
+
+test('reviewed worktree integration cherry-picks only the refreshed commit list', async () => {
+    const parent = tempWorkspace();
+    const root = path.join(parent, 'repo');
+    fs.mkdirSync(root);
+    const runGit = (cwd, ...args) => require('node:child_process').execFileSync('git', args, { cwd, encoding: 'utf8' });
+    runGit(root, 'init', '-b', 'main');
+    runGit(root, 'config', 'user.email', 'workspace-test@zorai.local');
+    runGit(root, 'config', 'user.name', 'Workspace Test');
+    fs.writeFileSync(path.join(root, 'file.txt'), 'base\n');
+    runGit(root, 'add', 'file.txt');
+    runGit(root, 'commit', '-m', 'base');
+    const created = await workspaceGitCreateWorktree(root, { name: 'review-feature', branch: 'zorai/task-review' });
+    fs.writeFileSync(path.join(created.root, 'file.txt'), 'reviewed\n');
+    runGit(created.root, 'add', 'file.txt');
+    runGit(created.root, 'commit', '-m', 'reviewed change');
+    const review = await workspaceGitReviewWorktree(root, created.root);
+    assert.equal(review.canIntegrate, true);
+    assert.equal(review.commits.length, 1);
+    assert.equal(review.files[0].path, 'file.txt');
+    await assert.rejects(workspaceGitIntegrateWorktree(root, created.root, ['stale']), { code: 'WORKSPACE_INTEGRATION_STALE' });
+    const integrated = await workspaceGitIntegrateWorktree(root, created.root, review.commits.map((commit) => commit.hash));
+    assert.equal(fs.readFileSync(path.join(root, 'file.txt'), 'utf8'), 'reviewed\n');
+    assert.deepEqual(integrated.status, []);
+    assert.equal(fs.existsSync(created.root), true);
+    runGit(root, 'worktree', 'remove', created.root);
+    fs.rmSync(parent, { recursive: true, force: true });
+});
+
+test('reviewed integration refuses a dirty target worktree', async () => {
+    const parent = tempWorkspace();
+    const root = path.join(parent, 'repo');
+    fs.mkdirSync(root);
+    const runGit = (cwd, ...args) => require('node:child_process').execFileSync('git', args, { cwd, encoding: 'utf8' });
+    runGit(root, 'init', '-b', 'main');
+    runGit(root, 'config', 'user.email', 'workspace-test@zorai.local');
+    runGit(root, 'config', 'user.name', 'Workspace Test');
+    fs.writeFileSync(path.join(root, 'file.txt'), 'base\n');
+    runGit(root, 'add', 'file.txt');
+    runGit(root, 'commit', '-m', 'base');
+    const created = await workspaceGitCreateWorktree(root, { name: 'dirty-target-feature', branch: 'zorai/task-dirty-target' });
+    fs.writeFileSync(path.join(created.root, 'new.txt'), 'isolated\n');
+    runGit(created.root, 'add', 'new.txt');
+    runGit(created.root, 'commit', '-m', 'isolated change');
+    const review = await workspaceGitReviewWorktree(root, created.root);
+    fs.writeFileSync(path.join(root, 'file.txt'), 'dirty target\n');
+    await assert.rejects(workspaceGitIntegrateWorktree(root, created.root, review.commits.map((commit) => commit.hash)), { code: 'WORKSPACE_TARGET_DIRTY' });
+    runGit(root, 'restore', 'file.txt');
+    runGit(root, 'worktree', 'remove', created.root);
     fs.rmSync(parent, { recursive: true, force: true });
 });
 

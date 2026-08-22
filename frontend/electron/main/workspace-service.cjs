@@ -337,19 +337,78 @@ async function workspaceGitCreateWorktree(rootPath, options = {}) {
     return { root: fs.realpathSync.native(destination), branch, baseRef, worktrees: await workspaceGitListWorktrees(gitRoot) };
 }
 
+async function resolveManagedWorktree(repoRoot, worktreePath) {
+    const candidate = canonicalWorkspaceRoot(worktreePath);
+    const containerPath = path.join(path.dirname(repoRoot), `${path.basename(repoRoot)}-worktrees`);
+    if (!fs.existsSync(containerPath)) throw workspaceError('WORKSPACE_WORKTREE_REMOVE_SCOPE', 'Managed worktree container does not exist.');
+    const container = fs.realpathSync.native(containerPath);
+    if (!isWithinRoot(container, candidate) || candidate === container || candidate === repoRoot) {
+        throw workspaceError('WORKSPACE_WORKTREE_REMOVE_SCOPE', 'Only sibling worktrees in the managed worktree container are allowed.');
+    }
+    const worktrees = await workspaceGitListWorktrees(repoRoot);
+    const registered = worktrees.find((entry) => path.resolve(entry.path) === candidate);
+    if (!registered) throw workspaceError('WORKSPACE_WORKTREE_NOT_REGISTERED', 'The selected directory is not a registered worktree for this repository.');
+    return { candidate, registered, worktrees };
+}
+
+async function workspaceGitReviewWorktree(rootPath, worktreePath) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) throw workspaceError('WORKSPACE_NOT_GIT_REPOSITORY', 'Workspace is not inside a Git repository.');
+    const { candidate, registered } = await resolveManagedWorktree(gitRoot, worktreePath);
+    const sourceStatus = await execFileAsync('git', ['status', '--porcelain'], { cwd: candidate, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER });
+    const targetStatus = await execFileAsync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER });
+    const sourceHead = registered.head || await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: candidate, encoding: 'utf8', timeout: 5000 }).then(({ stdout }) => stdout.trim());
+    const targetHead = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', timeout: 5000 }).then(({ stdout }) => stdout.trim());
+    const mergeBase = await execFileAsync('git', ['merge-base', targetHead, sourceHead], { cwd: gitRoot, encoding: 'utf8', timeout: 5000 }).then(({ stdout }) => stdout.trim());
+    const commitsRaw = await execFileAsync('git', ['log', '--reverse', '--format=%H%x00%s', `${targetHead}..${sourceHead}`], { cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER }).then(({ stdout }) => stdout);
+    const commits = commitsRaw.split('\n').filter(Boolean).map((line) => {
+        const separator = line.indexOf('\0');
+        return { hash: separator >= 0 ? line.slice(0, separator) : line, subject: separator >= 0 ? line.slice(separator + 1) : '' };
+    });
+    const filesRaw = await execFileAsync('git', ['diff', '--name-status', `${mergeBase}..${sourceHead}`], { cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER }).then(({ stdout }) => stdout);
+    const files = filesRaw.split(/\r?\n/).filter(Boolean).map((line) => {
+        const [status, ...parts] = line.split('\t');
+        return { status, path: parts[parts.length - 1] || '', previousPath: parts.length > 1 ? parts[0] : null };
+    });
+    return {
+        source: { path: candidate, branch: registered.branch, head: sourceHead, clean: !sourceStatus.stdout.trim() },
+        target: { path: root, head: targetHead, clean: !targetStatus.stdout.trim() },
+        mergeBase,
+        commits,
+        files,
+        canIntegrate: !sourceStatus.stdout.trim() && !targetStatus.stdout.trim() && commits.length > 0,
+    };
+}
+
+async function workspaceGitIntegrateWorktree(rootPath, worktreePath, expectedCommitHashes) {
+    const review = await workspaceGitReviewWorktree(rootPath, worktreePath);
+    if (!review.source.clean) throw workspaceError('WORKSPACE_WORKTREE_DIRTY', 'The isolated worktree has uncommitted changes. Commit or discard them before integration.');
+    if (!review.target.clean) throw workspaceError('WORKSPACE_TARGET_DIRTY', 'The target worktree has uncommitted changes. Commit or stash them before integration.');
+    const expected = Array.isArray(expectedCommitHashes) ? expectedCommitHashes.map(String) : [];
+    const actual = review.commits.map((commit) => commit.hash);
+    if (expected.length === 0 || expected.length !== actual.length || expected.some((hash, index) => hash !== actual[index])) {
+        throw workspaceError('WORKSPACE_INTEGRATION_STALE', 'The isolated commit list changed. Refresh the review before integrating.');
+    }
+    try {
+        await execFileAsync('git', ['cherry-pick', ...actual], { cwd: review.target.path, encoding: 'utf8', timeout: 120000, maxBuffer: GIT_MAX_BUFFER });
+    } catch (error) {
+        await execFileAsync('git', ['cherry-pick', '--abort'], { cwd: review.target.path, encoding: 'utf8', timeout: 30000, maxBuffer: GIT_MAX_BUFFER }).catch(() => {});
+        throw workspaceError('WORKSPACE_INTEGRATION_CONFLICT', error?.stderr?.trim() || error?.message || 'Cherry-pick conflicted and was aborted.');
+    }
+    return {
+        integratedCommits: actual,
+        overview: await workspaceGitOverview(review.target.path),
+        status: await workspaceGitStatus(review.target.path),
+        review: await workspaceGitReviewWorktree(review.target.path, worktreePath),
+    };
+}
+
 async function workspaceGitRemoveWorktree(rootPath, worktreePath) {
     const root = canonicalWorkspaceRoot(rootPath);
     const gitRoot = await resolveGitRoot(root);
     if (!gitRoot) throw workspaceError('WORKSPACE_NOT_GIT_REPOSITORY', 'Workspace is not inside a Git repository.');
-    const candidate = canonicalWorkspaceRoot(worktreePath);
-    const container = fs.realpathSync.native(path.join(path.dirname(gitRoot), `${path.basename(gitRoot)}-worktrees`));
-    if (!isWithinRoot(container, candidate) || candidate === container || candidate === gitRoot) {
-        throw workspaceError('WORKSPACE_WORKTREE_REMOVE_SCOPE', 'Only sibling worktrees created in the managed worktree container can be removed.');
-    }
-    const worktrees = await workspaceGitListWorktrees(gitRoot);
-    if (!worktrees.some((entry) => path.resolve(entry.path) === candidate)) {
-        throw workspaceError('WORKSPACE_WORKTREE_NOT_REGISTERED', 'The selected directory is not a registered worktree for this repository.');
-    }
+    const { candidate } = await resolveManagedWorktree(gitRoot, worktreePath);
     const { stdout: status } = await execFileAsync('git', ['status', '--porcelain'], { cwd: candidate, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER });
     if (status.trim()) throw workspaceError('WORKSPACE_WORKTREE_DIRTY', 'The worktree has uncommitted changes and cannot be removed.');
     await execFileAsync('git', ['worktree', 'remove', candidate], { cwd: gitRoot, encoding: 'utf8', timeout: 60000, maxBuffer: GIT_MAX_BUFFER })
@@ -585,9 +644,11 @@ module.exports = {
     workspaceGitDiff,
     workspaceGitDiscard,
     workspaceGitHunks,
+    workspaceGitIntegrateWorktree,
     workspaceGitListWorktrees,
     workspaceGitOverview,
     workspaceGitRemoveWorktree,
+    workspaceGitReviewWorktree,
     workspaceGitStage,
     workspaceGitStatus,
     workspaceGitUnstage,

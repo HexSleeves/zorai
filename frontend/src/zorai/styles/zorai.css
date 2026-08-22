@@ -3152,3 +3152,6 @@ button.zorai-composer-context-chip { cursor: pointer; }
 .zorai-workspace-isolated-reviews button { width: 100%; display: flex; flex-direction: column; border: 0; background: transparent; color: var(--zorai-text); text-align: left; font: 9px var(--font-mono); cursor: pointer; }
 .zorai-workspace-isolated-reviews button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--zorai-muted); }
 .zorai-workspace-isolated-reviews em { color: var(--zorai-muted); font-size: 9px; }
+
+.zorai-workspace-isolated-reviews > div > code { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--zorai-accent-secondary); font: 9px var(--font-mono); }
+.zorai-workspace-integrate-button { margin-top: 5px; padding: 4px 7px; border: 1px solid var(--zorai-accent); border-radius: 3px; background: var(--accent-soft); color: var(--zorai-accent); font-size: 9px; cursor: pointer; }
