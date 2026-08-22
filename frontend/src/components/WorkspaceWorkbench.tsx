@@ -4,7 +4,7 @@ import { useAgentStore } from "@/lib/agentStore";
 import { useWorkspaceStore } from "@/lib/workspaceStore";
 import { useWorkspaceContextStore } from "@/lib/workspaceContextStore";
 
-type OpenDocument = ZoraiWorkspaceFile & { original: string; dirty: boolean };
+type OpenDocument = ZoraiWorkspaceFile & { original: string; dirty: boolean; externalContent?: string; externalHash?: string };
 
 type TreeNodeProps = {
   root: string;
@@ -71,13 +71,15 @@ export function WorkspaceWorkbench() {
   const [gitStatus, setGitStatus] = useState<ZoraiWorkspaceGitStatus[]>([]);
   const [documents, setDocuments] = useState<Record<string, OpenDocument>>({});
   const [diff, setDiff] = useState<string | null>(null);
-  const [mode, setMode] = useState<"edit" | "diff">("edit");
+  const [mode, setMode] = useState<"edit" | "diff" | "external">("edit");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const workspaceSyncTimer = useRef<number | null>(null);
   const [daemonContextLoadedFor, setDaemonContextLoadedFor] = useState<string | null>(null);
   const [newPath, setNewPath] = useState("");
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Array<{ path: string; line: number; column: number; preview: string }>>([]);
+  const [agentChanges, setAgentChanges] = useState<ZoraiWorkContextEntry[]>([]);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const activeDocument = context?.activeFile ? documents[context.activeFile] : undefined;
   const statusMap = useMemo(() => new Map(gitStatus.map((entry) => [entry.path, statusLabel(entry)])), [gitStatus]);
@@ -120,11 +122,67 @@ export function WorkspaceWorkbench() {
     }).catch(() => {});
   }, [activeDaemonThreadId, activeThreadId, bridge, daemonContextLoadedFor]);
   useEffect(() => {
+    if (!activeThreadId || !activeDaemonThreadId || !context || !bridge?.agentSetThreadWorkspaceContext) return;
+    if (workspaceSyncTimer.current !== null) window.clearTimeout(workspaceSyncTimer.current);
+    workspaceSyncTimer.current = window.setTimeout(() => {
+      void bridge.agentSetThreadWorkspaceContext!(activeDaemonThreadId, {
+        root: context.root,
+        active_file: context.activeFile,
+        selection: context.selection ? {
+          start_line: context.selection.startLine,
+          start_column: context.selection.startColumn,
+          end_line: context.selection.endLine,
+          end_column: context.selection.endColumn,
+        } : null,
+        attached_files: context.attachedFiles,
+        open_files: context.openFiles,
+        updated_at: context.updatedAt,
+      }).catch(() => {});
+    }, 350);
+    return () => {
+      if (workspaceSyncTimer.current !== null) window.clearTimeout(workspaceSyncTimer.current);
+    };
+  }, [activeDaemonThreadId, activeThreadId, bridge, context]);
+  useEffect(() => {
     if (context?.root) {
       setRootInput(context.root);
       void refreshRoot(context.root).catch((reason) => setError(reason?.message ?? String(reason)));
     }
   }, [context?.root, refreshRoot]);
+  useEffect(() => {
+    if (!activeDaemonThreadId || !bridge?.agentGetWorkContext) {
+      setAgentChanges([]);
+      return;
+    }
+    const loadChanges = () => {
+      void bridge.agentGetWorkContext!(activeDaemonThreadId).then((response: any) => {
+        const workContext = response?.context ?? response;
+        setAgentChanges(Array.isArray(workContext?.entries) ? workContext.entries : []);
+      }).catch(() => {});
+    };
+    loadChanges();
+    const timer = window.setInterval(loadChanges, 3000);
+    return () => window.clearInterval(timer);
+  }, [activeDaemonThreadId, bridge]);
+  useEffect(() => {
+    if (!context?.root || !activeDocument || !bridge?.workspaceReadFile) return;
+    const timer = window.setInterval(() => {
+      void bridge.workspaceReadFile!(context.root, activeDocument.path).then((diskFile) => {
+        if (diskFile.hash === activeDocument.hash || diskFile.hash === activeDocument.externalHash) return;
+        if (activeDocument.dirty) {
+          setDocuments((current) => ({ ...current, [activeDocument.path]: {
+            ...activeDocument,
+            externalContent: diskFile.content,
+            externalHash: diskFile.hash,
+          } }));
+          setError(`External change detected in ${activeDocument.path}. Compare or reload before saving.`);
+        } else {
+          setDocuments((current) => ({ ...current, [diskFile.path]: { ...diskFile, original: diskFile.content, dirty: false } }));
+        }
+      }).catch(() => {});
+    }, 2500);
+    return () => window.clearInterval(timer);
+  }, [activeDocument, bridge, context?.root]);
 
   const openRoot = async () => {
     if (!activeThreadId || !bridge?.workspaceOpen) return;
@@ -277,6 +335,17 @@ export function WorkspaceWorkbench() {
               <button type="button" onClick={() => void runSearch()}>⌕</button>
             </div>
             {searchResults.length > 0 ? <div className="zorai-workspace-search-results">{searchResults.map((result) => <button type="button" key={`${result.path}:${result.line}:${result.column}`} onClick={() => void openFile(result.path)}><strong>{result.path}:{result.line}</strong><span>{result.preview}</span></button>)}</div> : null}
+            {agentChanges.length > 0 ? (
+              <details className="zorai-workspace-agent-changes" open>
+                <summary>Agent changes ({agentChanges.length})</summary>
+                {agentChanges.slice(0, 40).map((entry) => (
+                  <button type="button" key={`${entry.path}:${entry.updated_at}:${entry.source}`} onClick={() => void openFile(entry.path)}>
+                    <strong>{entry.path}</strong>
+                    <span>{entry.change_kind ?? entry.kind ?? "changed"} · {entry.source}</span>
+                  </button>
+                ))}
+              </details>
+            ) : null}
             <div className="zorai-workspace-tree">{rootEntries.map((entry) => <WorkspaceTreeNode key={entry.path} root={context.root} entry={entry} depth={0} status={statusMap} onOpen={(path) => void openFile(path)} />)}</div>
           </>
         ) : <div className="zorai-workspace-empty">Open a folder to bind it to this thread.</div>}
@@ -296,6 +365,7 @@ export function WorkspaceWorkbench() {
               <div>
                 <button type="button" onClick={() => toggleAttachedFile(activeThreadId, activeDocument.path)}>{context?.attachedFiles.includes(activeDocument.path) ? "Detach context" : "Attach context"}</button>
                 <button type="button" onClick={() => void showDiff()}>Diff</button>
+                {activeDocument.externalContent !== undefined ? <button type="button" onClick={() => setMode("external")}>External diff</button> : null}
                 <button type="button" onClick={() => void reloadActiveFile()}>Reload</button>
                 <button type="button" onClick={() => void renameActiveFile()}>Rename</button>
                 <button type="button" onClick={() => void deleteActiveFile()}>Delete</button>
@@ -307,6 +377,11 @@ export function WorkspaceWorkbench() {
                 <div className="zorai-workspace-diff-grid">
                   <pre aria-label="Saved file">{activeDocument.original}</pre>
                   <pre aria-label="Edited file">{activeDocument.content}</pre>
+                </div>
+              ) : mode === "external" ? (
+                <div className="zorai-workspace-diff-grid">
+                  <pre aria-label="Editor buffer">{activeDocument.content}</pre>
+                  <pre aria-label="External disk version">{activeDocument.externalContent}</pre>
                 </div>
               ) : (
                 <textarea

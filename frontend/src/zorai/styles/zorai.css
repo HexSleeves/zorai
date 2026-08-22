@@ -3060,3 +3060,9 @@
 .zorai-workspace-search-results button { width: 100%; display: flex; flex-direction: column; gap: 2px; border: 0; border-bottom: 1px solid var(--zorai-border); padding: 6px 9px; background: transparent; color: var(--zorai-text); text-align: left; font: 10px var(--font-mono); }
 .zorai-workspace-search-results button:hover { background: var(--zorai-bg-active); }
 .zorai-workspace-search-results span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--zorai-muted); }
+
+.zorai-workspace-agent-changes { max-height: 30%; overflow: auto; border-block: 1px solid var(--zorai-border); }
+.zorai-workspace-agent-changes summary { position: sticky; top: 0; padding: 7px 9px; background: var(--zorai-bg-elevated); color: var(--zorai-muted); font-size: 10px; text-transform: uppercase; cursor: pointer; }
+.zorai-workspace-agent-changes button { width: 100%; display: flex; flex-direction: column; gap: 2px; border: 0; border-bottom: 1px solid var(--zorai-border); padding: 6px 9px; background: transparent; color: var(--zorai-text); text-align: left; font: 10px var(--font-mono); }
+.zorai-workspace-agent-changes button:hover { background: var(--zorai-bg-active); }
+.zorai-workspace-agent-changes span { color: var(--zorai-muted); }
