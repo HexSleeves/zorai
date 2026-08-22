@@ -101,6 +101,37 @@ fn mark_task_waiting_for_approval(
     ));
 }
 
+#[derive(Debug, Clone)]
+pub(super) struct ToolFileSnapshot {
+    pub path: String,
+    pub before_hash: Option<String>,
+}
+
+fn file_sha256(path: &str) -> Option<String> {
+    use sha2::{Digest, Sha256};
+    let bytes = std::fs::read(path).ok()?;
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    Some(format!("{:x}", hasher.finalize()))
+}
+
+fn mutation_tool_paths(tool_name: &str, args_json: &str) -> Vec<String> {
+    let Ok(args) = serde_json::from_str::<serde_json::Value>(args_json) else {
+        return Vec::new();
+    };
+    if tool_name == zorai_protocol::tool_names::APPLY_PATCH {
+        return super::tool_executor::get_apply_patch_text_arg(&args)
+            .and_then(|input| super::tool_executor::extract_apply_patch_paths(input).ok())
+            .unwrap_or_default();
+    }
+    args.get("path")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(|path| vec![path.to_string()])
+        .unwrap_or_default()
+}
+
 impl AgentEngine {
     async fn resolve_repo_monitor_scope(&self, repo_root: &str) -> Option<RepoMonitorScope> {
         let repo_root =
@@ -271,12 +302,36 @@ impl AgentEngine {
         }
     }
 
+    pub(super) fn snapshot_tool_file_context(
+        &self,
+        tool_name: &str,
+        args_json: &str,
+    ) -> Vec<ToolFileSnapshot> {
+        match tool_name {
+            zorai_protocol::tool_names::CREATE_FILE
+            | zorai_protocol::tool_names::WRITE_FILE
+            | zorai_protocol::tool_names::APPEND_TO_FILE
+            | zorai_protocol::tool_names::REPLACE_IN_FILE
+            | zorai_protocol::tool_names::APPLY_FILE_PATCH
+            | zorai_protocol::tool_names::APPLY_PATCH => mutation_tool_paths(tool_name, args_json)
+                .into_iter()
+                .map(|path| ToolFileSnapshot {
+                    before_hash: file_sha256(&path),
+                    path,
+                })
+                .collect(),
+            _ => Vec::new(),
+        }
+    }
+
     pub(super) async fn capture_tool_work_context(
         &self,
         thread_id: &str,
         task_id: Option<&str>,
         tool_name: &str,
+        operation_id: &str,
         args_json: &str,
+        snapshots: &[ToolFileSnapshot],
     ) {
         match tool_name {
             zorai_protocol::tool_names::CREATE_FILE
@@ -285,30 +340,28 @@ impl AgentEngine {
             | zorai_protocol::tool_names::REPLACE_IN_FILE
             | zorai_protocol::tool_names::APPLY_FILE_PATCH
             | zorai_protocol::tool_names::APPLY_PATCH => {
-                let Ok(args) = serde_json::from_str::<serde_json::Value>(args_json) else {
-                    return;
+                let paths = if snapshots.is_empty() {
+                    mutation_tool_paths(tool_name, args_json)
+                        .into_iter()
+                        .map(|path| ToolFileSnapshot {
+                            before_hash: None,
+                            path,
+                        })
+                        .collect::<Vec<_>>()
+                } else {
+                    snapshots.to_vec()
                 };
-                if tool_name == zorai_protocol::tool_names::APPLY_PATCH {
-                    if let Some(input) = super::tool_executor::get_apply_patch_text_arg(&args) {
-                        if let Ok(paths) = super::tool_executor::extract_apply_patch_paths(input) {
-                            for path in paths {
-                                self.record_file_work_context(thread_id, task_id, tool_name, &path)
-                                    .await;
-                            }
-                            return;
-                        }
-                    }
-                }
-                let Some(path) = args
-                    .get("path")
-                    .and_then(|value| value.as_str())
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty())
-                else {
-                    return;
-                };
-                self.record_file_work_context(thread_id, task_id, tool_name, path)
+                for snapshot in paths {
+                    self.record_file_operation_work_context(
+                        thread_id,
+                        task_id,
+                        tool_name,
+                        operation_id,
+                        &snapshot.path,
+                        snapshot.before_hash.as_deref(),
+                    )
                     .await;
+                }
             }
             zorai_protocol::tool_names::RUN_TERMINAL_COMMAND
             | zorai_protocol::tool_names::RUN_BASH
@@ -336,6 +389,10 @@ impl AgentEngine {
                 goal_run_id: Some(goal_run.id.clone()),
                 step_index: Some(goal_run.current_step_index),
                 session_id: goal_run.session_id.clone(),
+                operation_id: None,
+                task_id: None,
+                before_hash: None,
+                after_hash: None,
                 is_text: true,
                 updated_at: now_millis(),
             }],
@@ -345,6 +402,57 @@ impl AgentEngine {
         }
         self.merge_work_context_entries(&context.thread_id, context.entries)
             .await;
+    }
+
+    pub(super) async fn record_file_operation_work_context(
+        &self,
+        thread_id: &str,
+        task_id: Option<&str>,
+        source: &str,
+        operation_id: &str,
+        path: &str,
+        before_hash: Option<&str>,
+    ) {
+        let normalized = std::fs::canonicalize(path)
+            .unwrap_or_else(|_| std::path::PathBuf::from(path))
+            .to_string_lossy()
+            .to_string();
+        let repo_root = crate::git::find_git_root(&normalized);
+        let (goal_run_id, step_index, session_id) = self.goal_context_for_task(task_id).await;
+        let (entry_path, kind) = if let Some(repo_root) = repo_root.as_deref() {
+            let relative = std::path::Path::new(&normalized)
+                .strip_prefix(repo_root)
+                .ok()
+                .map(|value| value.to_string_lossy().trim_start_matches('/').to_string())
+                .filter(|value| !value.is_empty())
+                .unwrap_or_else(|| normalized.clone());
+            (relative, WorkContextEntryKind::RepoChange)
+        } else {
+            (normalized.clone(), WorkContextEntryKind::Artifact)
+        };
+        let after_hash = file_sha256(&normalized);
+        self.merge_work_context_entries(
+            thread_id,
+            vec![WorkContextEntry {
+                path: entry_path,
+                previous_path: None,
+                kind,
+                source: source.to_string(),
+                change_kind: None,
+                repo_root,
+                goal_run_id,
+                step_index,
+                session_id,
+                operation_id: Some(operation_id.to_string()),
+                task_id: task_id.map(str::to_string),
+                before_hash: before_hash.map(str::to_string),
+                after_hash,
+                is_text: true,
+                updated_at: now_millis(),
+            }],
+        )
+        .await;
+        self.refresh_thread_repo_context(thread_id).await;
     }
 
     pub(super) async fn record_file_work_context(
@@ -384,6 +492,10 @@ impl AgentEngine {
                 goal_run_id,
                 step_index,
                 session_id,
+                operation_id: None,
+                task_id: None,
+                before_hash: None,
+                after_hash: None,
                 is_text: true,
                 updated_at: now_millis(),
             }],
@@ -657,6 +769,10 @@ impl AgentEngine {
             goal_run_id: goal_run_id.clone(),
             step_index,
             session_id: session_id.clone(),
+            operation_id: None,
+            task_id: None,
+            before_hash: None,
+            after_hash: None,
             is_text: true,
             updated_at: now,
         };

@@ -405,6 +405,10 @@ impl<'a> SendMessageRunner<'a> {
                 return Ok(disposition);
             }
 
+            let tool_file_snapshots = self.engine.snapshot_tool_file_context(
+                tc.function.name.as_str(),
+                tc.function.arguments.as_str(),
+            );
             let result = self.execute_tool_call(tc).await;
             self.record_tool_trace(tc, &result);
 
@@ -447,7 +451,9 @@ impl<'a> SendMessageRunner<'a> {
                         &self.tid,
                         self.task_id,
                         tc.function.name.as_str(),
+                        tc.id.as_str(),
                         tc.function.arguments.as_str(),
+                        &tool_file_snapshots,
                     )
                     .await;
             }

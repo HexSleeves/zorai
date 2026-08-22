@@ -124,6 +124,10 @@ declare global {
         goal_run_id?: string | null;
         step_index?: number | null;
         session_id?: string | null;
+        operation_id?: string | null;
+        task_id?: string | null;
+        before_hash?: string | null;
+        after_hash?: string | null;
         is_text?: boolean;
         updated_at: number;
     };

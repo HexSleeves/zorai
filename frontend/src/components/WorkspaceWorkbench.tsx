@@ -86,6 +86,14 @@ export function WorkspaceWorkbench() {
   const [agentChanges, setAgentChanges] = useState<ZoraiWorkContextEntry[]>([]);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const activeDocument = context?.activeFile ? documents[context.activeFile] : undefined;
+  const operationGroups = useMemo(() => {
+    const groups = new Map<string, ZoraiWorkContextEntry[]>();
+    for (const entry of agentChanges.filter((change) => change.operation_id)) {
+      const key = entry.operation_id as string;
+      groups.set(key, [...(groups.get(key) ?? []), entry]);
+    }
+    return [...groups.entries()].sort((left, right) => Math.max(...right[1].map((entry) => entry.updated_at)) - Math.max(...left[1].map((entry) => entry.updated_at)));
+  }, [agentChanges]);
   const statusMap = useMemo(() => new Map(gitStatus.map((entry) => [entry.path, statusLabel(entry)])), [gitStatus]);
 
   const refreshRoot = useCallback(async (root = context?.root) => {
@@ -468,6 +476,22 @@ export function WorkspaceWorkbench() {
                   </article>
                 ))}
               </div>
+            ) : null}
+            {operationGroups.length > 0 ? (
+              <details className="zorai-workspace-operation-changes" open>
+                <summary>Agent operations ({operationGroups.length})</summary>
+                {operationGroups.slice(0, 30).map(([operationId, entries]) => (
+                  <article key={operationId}>
+                    <header><code>{operationId}</code><span>{entries[0]?.source}</span></header>
+                    {entries.map((entry) => (
+                      <button type="button" key={`${operationId}:${entry.path}`} onClick={() => void openFile(entry.path)}>
+                        <strong>{entry.path}</strong>
+                        <span>{entry.before_hash ? entry.before_hash.slice(0, 8) : "∅"} → {entry.after_hash ? entry.after_hash.slice(0, 8) : "∅"}{entry.task_id ? ` · task ${entry.task_id}` : ""}{entry.goal_run_id ? ` · goal ${entry.goal_run_id}` : ""}</span>
+                      </button>
+                    ))}
+                  </article>
+                ))}
+              </details>
             ) : null}
             {agentChanges.length > 0 ? (
               <details className="zorai-workspace-agent-changes" open>

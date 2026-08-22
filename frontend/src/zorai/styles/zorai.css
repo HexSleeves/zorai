@@ -3101,3 +3101,12 @@ button.zorai-composer-context-chip { cursor: pointer; }
 .zorai-workspace-git-overview textarea { width: 100%; resize: vertical; box-sizing: border-box; border: 1px solid var(--zorai-border); border-radius: 4px; padding: 6px; background: var(--zorai-bg-surface); color: var(--zorai-text); font: 10px/1.4 var(--font-mono); }
 .zorai-workspace-git-overview button { padding: 5px 7px; border: 1px solid var(--zorai-accent); border-radius: 4px; background: var(--accent-soft); color: var(--zorai-accent); font-size: 10px; cursor: pointer; }
 .zorai-workspace-git-overview button:disabled { opacity: .45; cursor: default; }
+
+.zorai-workspace-operation-changes { max-height: 38%; overflow: auto; border-block: 1px solid var(--zorai-border); }
+.zorai-workspace-operation-changes summary { position: sticky; top: 0; z-index: 1; padding: 7px 9px; background: var(--zorai-bg-elevated); color: var(--zorai-muted); font-size: 10px; text-transform: uppercase; cursor: pointer; }
+.zorai-workspace-operation-changes article { border-bottom: 1px solid var(--zorai-border); }
+.zorai-workspace-operation-changes article header { display: flex; justify-content: space-between; gap: 5px; padding: 5px 9px; color: var(--zorai-accent-secondary); font-size: 9px; }
+.zorai-workspace-operation-changes article header code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zorai-workspace-operation-changes article button { width: 100%; display: flex; flex-direction: column; gap: 2px; border: 0; padding: 5px 12px; background: transparent; color: var(--zorai-text); text-align: left; font: 9px var(--font-mono); }
+.zorai-workspace-operation-changes article button:hover { background: var(--zorai-bg-active); }
+.zorai-workspace-operation-changes article button span { color: var(--zorai-muted); }
