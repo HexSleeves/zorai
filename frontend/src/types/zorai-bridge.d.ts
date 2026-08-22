@@ -424,6 +424,27 @@ declare global {
         worktreeStatus: string;
     };
 
+    type ZoraiWorkspaceTest = {
+        id: string;
+        framework: "rust" | "javascript" | "python" | "go";
+        path: string;
+        name: string;
+        line: number;
+        selector: string;
+    };
+
+    type ZoraiWorkspaceTestEvent = {
+        runId: string;
+        type: "output" | "finished";
+        stream?: "stdout" | "stderr";
+        text?: string;
+        status?: "passed" | "failed" | "cancelled" | "error";
+        exitCode?: number | null;
+        durationMs?: number;
+        output?: string;
+        error?: string;
+    };
+
     type ZoraiLspDiagnostic = {
         message: string;
         severity: number;
@@ -548,6 +569,10 @@ declare global {
         workspaceLspClose?: (rootPath: string, relativePath: string, language: string) => Promise<boolean>;
         workspaceLspUnsubscribe?: (rootPath: string, language: string) => Promise<boolean>;
         onWorkspaceLspDiagnostics?: (cb: (payload: ZoraiLspDiagnosticsPayload) => void) => (() => void) | void;
+        workspaceTestsDiscover?: (rootPath: string, options?: { maxTests?: number }) => Promise<{ root: string; frameworks: Array<{ id: string; label: string; command: string }>; tests: ZoraiWorkspaceTest[]; truncated: boolean }>;
+        workspaceTestsRun?: (rootPath: string, request: { framework: string; path?: string; selector?: string }) => Promise<{ runId: string; command: string; args: string[]; startedAt: number }>;
+        workspaceTestsCancel?: (runId: string) => Promise<boolean>;
+        onWorkspaceTestEvent?: (cb: (payload: ZoraiWorkspaceTestEvent) => void) => (() => void) | void;
         dbAppendCommandLog?: (entry: unknown) => Promise<boolean>;
         dbCompleteCommandLog?: (id: string, exitCode?: number | null, durationMs?: number | null) => Promise<boolean>;
         dbQueryCommandLog?: (opts?: { workspaceId?: string | null; paneId?: string | null; limit?: number | null }) => Promise<unknown[]>;

@@ -59,6 +59,7 @@ const { createChildLogEnv } = require('./main/log-env.cjs');
 const workspaceService = require('./main/workspace-service.cjs');
 const { createWorkspaceWatcher } = require('./main/workspace-watch-service.cjs');
 const { createLspRuntime } = require('./main/lsp-runtime.cjs');
+const { createTestRuntime } = require('./main/test-runtime.cjs');
 
 const DAEMON_NAME = 'zorai-daemon';
 const CLI_NAME = 'zorai';
@@ -71,6 +72,7 @@ const VISION_SCREENSHOT_TTL_MS = 10 * 60 * 1000;
 let mainWindow = null;
 const workspaceWatchers = new Map();
 const lspRuntime = createLspRuntime();
+const testRuntime = createTestRuntime((webContents, event) => webContents.send('workspace-test-event', event));
 // Module-level reference to sendAgentCommand (set during registerIpcHandlers)
 let sendAgentCommandFn = null;
 
@@ -570,6 +572,7 @@ function registerIpcHandlers() {
             return true;
         },
         lspRuntime,
+        testRuntime,
         writeFsText,
         writeJsonFile,
         writeTextFile,
@@ -631,6 +634,7 @@ app.on('before-quit', () => {
     for (const watcher of workspaceWatchers.values()) watcher.close();
     workspaceWatchers.clear();
     void lspRuntime.stopAll();
+    testRuntime.stopAll();
     if (whatsAppRuntime.isDaemonSubscribed() && sendAgentCommandFn) {
         try {
             sendAgentCommandFn({ type: 'whats-app-link-unsubscribe' });

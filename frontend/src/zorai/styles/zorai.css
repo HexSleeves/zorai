@@ -3155,3 +3155,16 @@ button.zorai-composer-context-chip { cursor: pointer; }
 
 .zorai-workspace-isolated-reviews > div > code { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--zorai-accent-secondary); font: 9px var(--font-mono); }
 .zorai-workspace-integrate-button { margin-top: 5px; padding: 4px 7px; border: 1px solid var(--zorai-accent); border-radius: 3px; background: var(--accent-soft); color: var(--zorai-accent); font-size: 9px; cursor: pointer; }
+
+.zorai-workspace-tests { max-height: 48%; overflow: auto; border-block: 1px solid var(--zorai-border); }
+.zorai-workspace-tests summary { position: sticky; top: 0; z-index: 2; padding: 7px 9px; background: var(--zorai-bg-elevated); color: var(--zorai-muted); font-size: 10px; text-transform: uppercase; cursor: pointer; }
+.zorai-workspace-test-actions { position: sticky; top: 27px; z-index: 1; display: flex; align-items: center; gap: 5px; padding: 5px 7px; background: var(--zorai-bg-panel); border-bottom: 1px solid var(--zorai-border); }
+.zorai-workspace-test-actions button, .zorai-workspace-tests > div:not(.zorai-workspace-test-actions) > button:last-child { padding: 3px 5px; border: 1px solid var(--zorai-border); border-radius: 3px; background: var(--zorai-bg-elevated); color: var(--zorai-muted); font-size: 9px; cursor: pointer; }
+.zorai-workspace-test-actions .status-passed { color: #65c98c; }
+.zorai-workspace-test-actions .status-failed, .zorai-workspace-test-actions .status-error { color: var(--danger); }
+.zorai-workspace-tests > div:not(.zorai-workspace-test-actions) { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px; align-items: center; padding: 4px 7px; border-bottom: 1px solid var(--zorai-border); }
+.zorai-workspace-tests > div:not(.zorai-workspace-test-actions) > button:first-child { min-width: 0; display: grid; grid-template-columns: 45px minmax(0, 1fr); gap: 2px 5px; border: 0; background: transparent; color: var(--zorai-text); text-align: left; font: 9px var(--font-mono); }
+.zorai-workspace-tests > div button span { grid-row: 1 / span 2; color: var(--zorai-muted); }
+.zorai-workspace-tests > div button strong, .zorai-workspace-tests > div button code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zorai-workspace-tests > div button code { color: var(--zorai-muted); }
+.zorai-workspace-tests > pre { max-height: 220px; overflow: auto; margin: 0; padding: 8px; background: #0d1117; color: #d8dee9; font: 9px/1.45 var(--font-mono); white-space: pre-wrap; }

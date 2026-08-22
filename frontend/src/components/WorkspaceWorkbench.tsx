@@ -97,6 +97,8 @@ export function WorkspaceWorkbench() {
   const [agentChanges, setAgentChanges] = useState<ZoraiWorkContextEntry[]>([]);
   const [lspStatus, setLspStatus] = useState<{ available: boolean; command?: string | null; reason?: string } | null>(null);
   const [diagnosticsByPath, setDiagnosticsByPath] = useState<Record<string, ZoraiLspDiagnostic[]>>({});
+  const [workspaceTests, setWorkspaceTests] = useState<ZoraiWorkspaceTest[]>([]);
+  const [testRun, setTestRun] = useState<{ runId: string; status: "running" | "passed" | "failed" | "cancelled" | "error"; output: string; durationMs?: number } | null>(null);
   const lspVersionRef = useRef<Record<string, number>>({});
   const lspChangeTimer = useRef<number | null>(null);
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
@@ -311,6 +313,36 @@ export function WorkspaceWorkbench() {
     }, 250);
     return () => { if (lspChangeTimer.current !== null) window.clearTimeout(lspChangeTimer.current); };
   }, [activeDocument?.content, activeDocument?.language, activeDocument?.path, bridge, context?.root, lspStatus?.available]);
+
+  useEffect(() => {
+    if (!context?.root || !bridge?.workspaceTestsDiscover) {
+      setWorkspaceTests([]);
+      return;
+    }
+    void bridge.workspaceTestsDiscover(context.root, { maxTests: 2000 }).then((result) => setWorkspaceTests(result.tests)).catch(() => setWorkspaceTests([]));
+  }, [bridge, context?.root]);
+  useEffect(() => {
+    if (!bridge?.onWorkspaceTestEvent) return;
+    const unsubscribe = bridge.onWorkspaceTestEvent((event) => {
+      setTestRun((current) => {
+        if (!current || current.runId !== event.runId) return current;
+        if (event.type === "output") return { ...current, output: `${current.output}${event.text ?? ""}`.slice(-500000) };
+        return { ...current, status: event.status ?? "error", output: event.output ?? current.output, durationMs: event.durationMs };
+      });
+    });
+    return () => { if (typeof unsubscribe === "function") unsubscribe(); };
+  }, [bridge]);
+
+  const runWorkspaceTest = async (test?: ZoraiWorkspaceTest) => {
+    if (!context?.root || !bridge?.workspaceTestsRun) return;
+    const framework = test?.framework ?? workspaceTests[0]?.framework;
+    if (!framework) return;
+    try {
+      const started = await bridge.workspaceTestsRun(context.root, { framework, path: test?.path, selector: test?.selector });
+      setTestRun({ runId: started.runId, status: "running", output: `$ ${started.command} ${started.args.join(" ")}\n` });
+      setError(null);
+    } catch (reason: any) { setError(reason?.message ?? String(reason)); }
+  };
 
   const openRoot = async () => {
     if (!activeThreadId || !bridge?.workspaceOpen) return;
@@ -587,6 +619,23 @@ export function WorkspaceWorkbench() {
               <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search workspace" onKeyDown={(event) => { if (event.key === "Enter") void runSearch(); }} />
               <button type="button" onClick={() => void runSearch()}>⌕</button>
             </div>
+            {workspaceTests.length > 0 ? (
+              <details className="zorai-workspace-tests">
+                <summary>Tests ({workspaceTests.length})</summary>
+                <div className="zorai-workspace-test-actions">
+                  <button type="button" disabled={testRun?.status === "running"} onClick={() => void runWorkspaceTest()}>Run all</button>
+                  {testRun?.status === "running" ? <button type="button" onClick={() => bridge?.workspaceTestsCancel?.(testRun.runId)}>Stop</button> : null}
+                  {testRun ? <span className={`status-${testRun.status}`}>{testRun.status}{testRun.durationMs ? ` · ${testRun.durationMs}ms` : ""}</span> : null}
+                </div>
+                {workspaceTests.slice(0, 500).map((test) => (
+                  <div key={test.id}>
+                    <button type="button" onClick={() => void openFile(test.path, { line: test.line, column: 1 })}><span>{test.framework}</span><strong>{test.name}</strong><code>{test.path}:{test.line}</code></button>
+                    <button type="button" disabled={testRun?.status === "running"} onClick={() => void runWorkspaceTest(test)}>Run</button>
+                  </div>
+                ))}
+                {testRun?.output ? <pre>{testRun.output}</pre> : null}
+              </details>
+            ) : null}
             {isolatedTaskWorktrees.length > 0 ? (
               <details className="zorai-workspace-isolated-reviews" open>
                 <summary>Awaiting isolated review ({isolatedTaskWorktrees.length})</summary>

@@ -190,6 +190,14 @@ const bridgeApi = {
         ipcRenderer.on('workspace-lsp-diagnostics', listener);
         return () => ipcRenderer.removeListener('workspace-lsp-diagnostics', listener);
     },
+    workspaceTestsDiscover: (rootPath, options) => ipcRenderer.invoke('workspace-tests-discover', rootPath, options),
+    workspaceTestsRun: (rootPath, request) => ipcRenderer.invoke('workspace-tests-run', rootPath, request),
+    workspaceTestsCancel: (runId) => ipcRenderer.invoke('workspace-tests-cancel', runId),
+    onWorkspaceTestEvent: (cb) => {
+        const listener = (_event, payload) => cb(payload);
+        ipcRenderer.on('workspace-test-event', listener);
+        return () => ipcRenderer.removeListener('workspace-test-event', listener);
+    },
     readClipboardText: () => ipcRenderer.invoke('clipboard-read-text'),
     writeClipboardText: (text) => ipcRenderer.invoke('clipboard-write-text', text),
     startTerminalSession: (options) => ipcRenderer.invoke('terminal-start', options),
