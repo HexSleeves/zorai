@@ -38,6 +38,7 @@ pub(crate) async fn dispatch_part4(
             | ClientMessage::AgentListTodos
             | ClientMessage::AgentGetTodos { .. }
             | ClientMessage::AgentGetWorkContext { .. }
+            | ClientMessage::AgentRevertFileOperation { .. }
             | ClientMessage::AgentGetThreadWorkspaceContext { .. }
             | ClientMessage::AgentSetThreadWorkspaceContext { .. }
             | ClientMessage::AgentListTools { .. }
@@ -543,6 +544,26 @@ pub(crate) async fn dispatch_part4(
                     context_json: json,
                 })
                 .await?;
+        }
+
+        ClientMessage::AgentRevertFileOperation { operation_id } => {
+            match agent.revert_file_operation(&operation_id).await {
+                Ok(result) => {
+                    framed
+                        .send(DaemonMessage::AgentFileOperationReverted {
+                            operation_id,
+                            result_json: serde_json::to_string(&result).unwrap_or_default(),
+                        })
+                        .await?;
+                }
+                Err(error) => {
+                    framed
+                        .send(DaemonMessage::Error {
+                            message: error.to_string(),
+                        })
+                        .await?;
+                }
+            }
         }
 
         ClientMessage::AgentGetThreadWorkspaceContext { thread_id } => {

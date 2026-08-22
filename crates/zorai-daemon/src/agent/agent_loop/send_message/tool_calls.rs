@@ -405,10 +405,14 @@ impl<'a> SendMessageRunner<'a> {
                 return Ok(disposition);
             }
 
-            let tool_file_snapshots = self.engine.snapshot_tool_file_context(
-                tc.function.name.as_str(),
-                tc.function.arguments.as_str(),
-            );
+            let tool_file_snapshots = self
+                .engine
+                .snapshot_tool_file_context(
+                    tc.function.name.as_str(),
+                    tc.function.arguments.as_str(),
+                    self.preferred_session_id,
+                )
+                .await;
             let result = self.execute_tool_call(tc).await;
             self.record_tool_trace(tc, &result);
 

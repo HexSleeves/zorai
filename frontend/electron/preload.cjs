@@ -316,6 +316,7 @@ const bridgeApi = {
     agentListTodos: () => ipcRenderer.invoke('agent-list-todos'),
     agentGetTodos: (threadId) => ipcRenderer.invoke('agent-get-todos', threadId),
     agentGetWorkContext: (threadId) => ipcRenderer.invoke('agent-get-work-context', threadId),
+    agentRevertFileOperation: (operationId) => ipcRenderer.invoke('agent-revert-file-operation', operationId),
     agentGetThreadWorkspaceContext: (threadId) => ipcRenderer.invoke('agent-get-thread-workspace-context', threadId),
     agentSetThreadWorkspaceContext: (threadId, context) => ipcRenderer.invoke('agent-set-thread-workspace-context', threadId, context),
     agentGetGitDiff: (repoPath, filePath) => ipcRenderer.invoke('agent-get-git-diff', repoPath, filePath),

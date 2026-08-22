@@ -77,6 +77,7 @@ pub enum DaemonMessage {
     AgentTodoList { todos_json: String },
     AgentTodoDetail { thread_id: String, todos_json: String },
     AgentWorkContextDetail { thread_id: String, context_json: String },
+    AgentFileOperationReverted { operation_id: String, result_json: String },
     AgentThreadWorkspaceContext { thread_id: String, context_json: String, updated: bool },
     AgentTaskApprovalRules { rules: Vec<TaskApprovalRule> },
     AgentConfigResponse { config_json: String },

@@ -392,6 +392,11 @@ where
                 .send(ClientMessage::AgentGetWorkContext { thread_id })
                 .await?;
         }
+        AgentBridgeCommand::RevertFileOperation { operation_id } => {
+            framed
+                .send(ClientMessage::AgentRevertFileOperation { operation_id })
+                .await?;
+        }
         AgentBridgeCommand::GetThreadWorkspaceContext { thread_id } => {
             framed
                 .send(ClientMessage::AgentGetThreadWorkspaceContext { thread_id })

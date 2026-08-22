@@ -613,6 +613,7 @@ declare global {
         agentListTodos?: () => Promise<Record<string, ZoraiTodoItem[]> | unknown>;
         agentGetTodos?: (threadId: string) => Promise<{ thread_id: string; items: ZoraiTodoItem[] } | ZoraiTodoItem[] | unknown>;
         agentGetWorkContext?: (threadId: string) => Promise<{ thread_id: string; context: ZoraiThreadWorkContext } | ZoraiThreadWorkContext | null | unknown>;
+        agentRevertFileOperation?: (operationId: string) => Promise<{ operation_id?: string; result?: { operation_id: string; reverted_paths: string[] }; ok?: boolean; error?: string }>;
         agentGetThreadWorkspaceContext?: (threadId: string) => Promise<{ thread_id: string; context: unknown; updated: boolean }>;
         agentSetThreadWorkspaceContext?: (threadId: string, context: unknown) => Promise<{ thread_id: string; context: unknown; updated: boolean; error?: string }>;
         agentGetGitDiff?: (repoPath: string, filePath?: string | null) => Promise<{ repo_path: string; file_path?: string | null; diff: string } | string | unknown>;

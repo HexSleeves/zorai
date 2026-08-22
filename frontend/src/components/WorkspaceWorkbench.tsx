@@ -441,6 +441,23 @@ export function WorkspaceWorkbench() {
     } catch (reason: any) { setError(reason?.message ?? String(reason)); }
   };
 
+  const revertAgentOperation = async (operationId: string) => {
+    if (!bridge?.agentRevertFileOperation) return;
+    if (!window.confirm(`Revert every file change from operation ${operationId}? This is allowed only if no later edit changed those files.`)) return;
+    try {
+      const result = await bridge.agentRevertFileOperation(operationId);
+      if (result?.ok === false || result?.error) throw new Error(result.error || "Operation revert failed.");
+      if (activeDocument) await reloadActiveFile();
+      await refreshRoot();
+      if (activeDaemonThreadId && bridge.agentGetWorkContext) {
+        const response: any = await bridge.agentGetWorkContext(activeDaemonThreadId);
+        const workContext = response?.context ?? response;
+        setAgentChanges(Array.isArray(workContext?.entries) ? workContext.entries : []);
+      }
+      setError(null);
+    } catch (reason: any) { setError(reason?.message ?? String(reason)); }
+  };
+
   const createManagedWorktree = async () => {
     if (!activeThreadId || !context?.root || !bridge?.workspaceGitCreateWorktree) return;
     try {
@@ -758,6 +775,7 @@ export function WorkspaceWorkbench() {
                         <span>{entry.before_hash ? entry.before_hash.slice(0, 8) : "∅"} → {entry.after_hash ? entry.after_hash.slice(0, 8) : "∅"}{entry.task_id ? ` · task ${entry.task_id}` : ""}{entry.goal_run_id ? ` · goal ${entry.goal_run_id}` : ""}</span>
                       </button>
                     ))}
+                    <footer><button type="button" onClick={() => void revertAgentOperation(operationId)}>Revert operation</button></footer>
                   </article>
                 ))}
               </details>

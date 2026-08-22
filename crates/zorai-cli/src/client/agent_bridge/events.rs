@@ -325,6 +325,13 @@ where
             let msg = serde_json::json!({"type":"thread-workspace-context","data":{"thread_id":thread_id,"context":serde_json::from_str::<serde_json::Value>(&context_json).unwrap_or(serde_json::Value::Null),"updated":updated}});
             emit_agent_event(&msg.to_string())?;
         }
+        Some(Ok(DaemonMessage::AgentFileOperationReverted {
+            operation_id,
+            result_json,
+        })) => {
+            let msg = serde_json::json!({"type":"file-operation-reverted","data":{"operation_id":operation_id,"result":serde_json::from_str::<serde_json::Value>(&result_json).unwrap_or_default()}});
+            emit_agent_event(&msg.to_string())?;
+        }
         Some(Ok(DaemonMessage::GitDiff {
             repo_path,
             file_path,

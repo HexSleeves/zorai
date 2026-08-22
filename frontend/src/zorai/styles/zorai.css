@@ -3168,3 +3168,6 @@ button.zorai-composer-context-chip { cursor: pointer; }
 .zorai-workspace-tests > div button strong, .zorai-workspace-tests > div button code { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .zorai-workspace-tests > div button code { color: var(--zorai-muted); }
 .zorai-workspace-tests > pre { max-height: 220px; overflow: auto; margin: 0; padding: 8px; background: #0d1117; color: #d8dee9; font: 9px/1.45 var(--font-mono); white-space: pre-wrap; }
+
+.zorai-workspace-operation-changes article footer { padding: 4px 12px 7px; }
+.zorai-workspace-operation-changes article footer button { padding: 3px 6px; border: 1px solid var(--danger); border-radius: 3px; background: transparent; color: var(--danger); font-size: 9px; cursor: pointer; }

@@ -5,7 +5,33 @@ use std::path::{Path, PathBuf};
 
 use super::*;
 
+const MAX_OPERATION_SNAPSHOT_BYTES: u64 = 2 * 1024 * 1024;
 const RAPID_REVERT_WINDOW_MS: u64 = 30_000;
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct OperationSnapshotEntry {
+    pub path: String,
+    pub before_hash: Option<String>,
+    pub after_hash: Option<String>,
+    pub before_existed: bool,
+    pub snapshot_file: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub(crate) struct OperationSnapshotManifest {
+    pub operation_id: String,
+    pub thread_id: String,
+    pub tool_name: String,
+    pub task_id: Option<String>,
+    pub created_at: u64,
+    pub entries: Vec<OperationSnapshotEntry>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct OperationRevertResult {
+    pub operation_id: String,
+    pub reverted_paths: Vec<String>,
+}
 
 #[derive(Debug, Clone)]
 struct RepoMonitorScope {
@@ -105,6 +131,31 @@ fn mark_task_waiting_for_approval(
 pub(super) struct ToolFileSnapshot {
     pub path: String,
     pub before_hash: Option<String>,
+    pub before_existed: bool,
+    pub before_bytes: Option<Vec<u8>>,
+}
+
+fn operation_snapshot_allowed(path: &Path) -> bool {
+    let name = path
+        .file_name()
+        .and_then(|value| value.to_str())
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    !name.starts_with(".env")
+        && !name.contains("secret")
+        && !name.contains("credential")
+        && !name.ends_with(".pem")
+        && !name.ends_with(".key")
+        && std::fs::metadata(path)
+            .map(|metadata| metadata.len() <= MAX_OPERATION_SNAPSHOT_BYTES)
+            .unwrap_or(true)
+}
+
+fn operation_snapshot_component(operation_id: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(operation_id.as_bytes());
+    format!("{:x}", hasher.finalize())
 }
 
 fn file_sha256(path: &str) -> Option<String> {
@@ -302,11 +353,23 @@ impl AgentEngine {
         }
     }
 
-    pub(super) fn snapshot_tool_file_context(
+    pub(super) async fn snapshot_tool_file_context(
         &self,
         tool_name: &str,
         args_json: &str,
+        preferred_session_id: Option<zorai_protocol::SessionId>,
     ) -> Vec<ToolFileSnapshot> {
+        let base_dir = if let Some(session_id) = preferred_session_id {
+            self.session_manager
+                .list()
+                .await
+                .into_iter()
+                .find(|session| session.id == session_id)
+                .and_then(|session| session.cwd)
+                .map(PathBuf::from)
+        } else {
+            None
+        };
         match tool_name {
             zorai_protocol::tool_names::CREATE_FILE
             | zorai_protocol::tool_names::WRITE_FILE
@@ -315,9 +378,30 @@ impl AgentEngine {
             | zorai_protocol::tool_names::APPLY_FILE_PATCH
             | zorai_protocol::tool_names::APPLY_PATCH => mutation_tool_paths(tool_name, args_json)
                 .into_iter()
-                .map(|path| ToolFileSnapshot {
-                    before_hash: file_sha256(&path),
-                    path,
+                .map(|path| {
+                    let resolved = {
+                        let candidate = PathBuf::from(&path);
+                        if candidate.is_absolute() {
+                            candidate
+                        } else if let Some(base_dir) = base_dir.as_deref() {
+                            base_dir.join(candidate)
+                        } else {
+                            candidate
+                        }
+                    };
+                    let resolved_string = resolved.to_string_lossy().to_string();
+                    let before_existed = resolved.is_file();
+                    let before_bytes = if before_existed && operation_snapshot_allowed(&resolved) {
+                        std::fs::read(&resolved).ok()
+                    } else {
+                        None
+                    };
+                    ToolFileSnapshot {
+                        before_hash: file_sha256(&resolved_string),
+                        before_existed,
+                        before_bytes,
+                        path: resolved_string,
+                    }
                 })
                 .collect(),
             _ => Vec::new(),
@@ -345,6 +429,8 @@ impl AgentEngine {
                         .into_iter()
                         .map(|path| ToolFileSnapshot {
                             before_hash: None,
+                            before_existed: Path::new(&path).is_file(),
+                            before_bytes: None,
                             path,
                         })
                         .collect::<Vec<_>>()
@@ -362,6 +448,14 @@ impl AgentEngine {
                     )
                     .await;
                 }
+                self.persist_operation_snapshot(
+                    thread_id,
+                    task_id,
+                    tool_name,
+                    operation_id,
+                    snapshots,
+                )
+                .await;
             }
             zorai_protocol::tool_names::RUN_TERMINAL_COMMAND
             | zorai_protocol::tool_names::RUN_BASH
@@ -402,6 +496,122 @@ impl AgentEngine {
         }
         self.merge_work_context_entries(&context.thread_id, context.entries)
             .await;
+    }
+
+    async fn persist_operation_snapshot(
+        &self,
+        thread_id: &str,
+        task_id: Option<&str>,
+        tool_name: &str,
+        operation_id: &str,
+        snapshots: &[ToolFileSnapshot],
+    ) {
+        if snapshots.is_empty() {
+            return;
+        }
+        let operation_dir = self
+            .data_dir
+            .join("operation-snapshots")
+            .join(operation_snapshot_component(operation_id));
+        if let Err(error) = tokio::fs::create_dir_all(&operation_dir).await {
+            tracing::warn!(%error, operation_id, "failed to create operation snapshot directory");
+            return;
+        }
+        let mut entries = Vec::new();
+        for (index, snapshot) in snapshots.iter().enumerate() {
+            let after_hash = file_sha256(&snapshot.path);
+            let snapshot_file = if let Some(bytes) = snapshot.before_bytes.as_deref() {
+                let filename = format!("before-{index}.bin");
+                if tokio::fs::write(operation_dir.join(&filename), bytes)
+                    .await
+                    .is_ok()
+                {
+                    Some(filename)
+                } else {
+                    None
+                }
+            } else {
+                None
+            };
+            entries.push(OperationSnapshotEntry {
+                path: snapshot.path.clone(),
+                before_hash: snapshot.before_hash.clone(),
+                after_hash,
+                before_existed: snapshot.before_existed,
+                snapshot_file,
+            });
+        }
+        let manifest = OperationSnapshotManifest {
+            operation_id: operation_id.to_string(),
+            thread_id: thread_id.to_string(),
+            tool_name: tool_name.to_string(),
+            task_id: task_id.map(str::to_string),
+            created_at: now_millis(),
+            entries,
+        };
+        match serde_json::to_vec_pretty(&manifest) {
+            Ok(bytes) => {
+                if let Err(error) =
+                    tokio::fs::write(operation_dir.join("manifest.json"), bytes).await
+                {
+                    tracing::warn!(%error, operation_id, "failed to write operation snapshot manifest");
+                }
+            }
+            Err(error) => {
+                tracing::warn!(%error, operation_id, "failed to serialize operation snapshot manifest")
+            }
+        }
+    }
+
+    pub async fn revert_file_operation(&self, operation_id: &str) -> Result<OperationRevertResult> {
+        let operation_dir = self
+            .data_dir
+            .join("operation-snapshots")
+            .join(operation_snapshot_component(operation_id));
+        let manifest_bytes = tokio::fs::read(operation_dir.join("manifest.json")).await?;
+        let manifest: OperationSnapshotManifest = serde_json::from_slice(&manifest_bytes)?;
+        if manifest.operation_id != operation_id {
+            anyhow::bail!("operation snapshot identity mismatch");
+        }
+        for entry in &manifest.entries {
+            let current_hash = file_sha256(&entry.path);
+            if current_hash != entry.after_hash {
+                anyhow::bail!(
+                    "cannot revert {}: current file hash does not match the operation result",
+                    entry.path
+                );
+            }
+            if entry.before_existed && entry.snapshot_file.is_none() {
+                anyhow::bail!(
+                    "cannot revert {}: pre-operation content was not retained (sensitive or oversized file)",
+                    entry.path
+                );
+            }
+        }
+        let mut reverted_paths = Vec::new();
+        for entry in &manifest.entries {
+            let path = PathBuf::from(&entry.path);
+            if entry.before_existed {
+                let snapshot_file = entry
+                    .snapshot_file
+                    .as_deref()
+                    .ok_or_else(|| anyhow::anyhow!("missing pre-operation snapshot"))?;
+                let bytes = tokio::fs::read(operation_dir.join(snapshot_file)).await?;
+                if let Some(parent) = path.parent() {
+                    tokio::fs::create_dir_all(parent).await?;
+                }
+                let temp = path.with_extension(format!("zorai-revert-{}.tmp", now_millis()));
+                tokio::fs::write(&temp, bytes).await?;
+                tokio::fs::rename(&temp, &path).await?;
+            } else if path.exists() {
+                tokio::fs::remove_file(&path).await?;
+            }
+            reverted_paths.push(entry.path.clone());
+        }
+        Ok(OperationRevertResult {
+            operation_id: operation_id.to_string(),
+            reverted_paths,
+        })
     }
 
     pub(super) async fn record_file_operation_work_context(
@@ -1118,6 +1328,95 @@ mod tests {
     use super::*;
     use crate::session_manager::SessionManager;
     use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn operation_snapshot_revert_restores_content_and_rejects_later_edits() {
+        let root = tempdir().expect("tempdir");
+        let manager = SessionManager::new_test(root.path()).await;
+        let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+        let file = root.path().join("tracked.txt");
+        std::fs::write(&file, b"before").expect("write before");
+        let before_hash = file_sha256(file.to_string_lossy().as_ref());
+        let snapshots = vec![ToolFileSnapshot {
+            path: file.to_string_lossy().to_string(),
+            before_hash,
+            before_existed: true,
+            before_bytes: Some(b"before".to_vec()),
+        }];
+        std::fs::write(&file, b"after").expect("write after");
+        engine
+            .persist_operation_snapshot(
+                "thread-1",
+                None,
+                "write_file",
+                "operation-restore",
+                &snapshots,
+            )
+            .await;
+        let reverted = engine
+            .revert_file_operation("operation-restore")
+            .await
+            .expect("revert operation");
+        assert_eq!(reverted.reverted_paths, vec![file.to_string_lossy()]);
+        assert_eq!(std::fs::read(&file).expect("read restored"), b"before");
+
+        std::fs::write(&file, b"new before").expect("write second before");
+        let snapshots = vec![ToolFileSnapshot {
+            path: file.to_string_lossy().to_string(),
+            before_hash: file_sha256(file.to_string_lossy().as_ref()),
+            before_existed: true,
+            before_bytes: Some(b"new before".to_vec()),
+        }];
+        std::fs::write(&file, b"operation after").expect("write operation result");
+        engine
+            .persist_operation_snapshot(
+                "thread-1",
+                None,
+                "write_file",
+                "operation-stale",
+                &snapshots,
+            )
+            .await;
+        std::fs::write(&file, b"later edit").expect("write later edit");
+        let error = engine
+            .revert_file_operation("operation-stale")
+            .await
+            .expect_err("later edit must block revert");
+        assert!(error.to_string().contains("current file hash"));
+        assert_eq!(
+            std::fs::read(&file).expect("read later edit"),
+            b"later edit"
+        );
+    }
+
+    #[tokio::test]
+    async fn operation_snapshot_revert_removes_files_created_by_operation() {
+        let root = tempdir().expect("tempdir");
+        let manager = SessionManager::new_test(root.path()).await;
+        let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+        let file = root.path().join("created.txt");
+        let snapshots = vec![ToolFileSnapshot {
+            path: file.to_string_lossy().to_string(),
+            before_hash: None,
+            before_existed: false,
+            before_bytes: None,
+        }];
+        std::fs::write(&file, b"created").expect("create operation result");
+        engine
+            .persist_operation_snapshot(
+                "thread-1",
+                None,
+                "create_file",
+                "operation-create",
+                &snapshots,
+            )
+            .await;
+        engine
+            .revert_file_operation("operation-create")
+            .await
+            .expect("revert created file");
+        assert!(!file.exists());
+    }
 
     #[tokio::test]
     async fn merge_work_context_keeps_distinct_operations_for_the_same_file() {
