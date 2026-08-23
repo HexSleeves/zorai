@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { OperatorQuestionDock } from "@/components/OperatorQuestionDock";
 import { ActivityRail, ActivityView } from "../features/activity/ActivityView";
 import { DatabaseRail, DatabaseView } from "../features/database/DatabaseView";
@@ -10,6 +10,17 @@ import { ThreadFilePreviewProvider } from "../features/threads/ThreadFilePreview
 import { ThreadsView } from "../features/threads/ThreadsView";
 import { ThreadsRail } from "../features/threads/ThreadsRail";
 import { CodeAgentPane, CodeRail, CodeView } from "../features/code/CodeView";
+import { CodeResizeHandle } from "../features/code/CodeResizeHandle";
+import {
+  CODE_AGENT_DEFAULT_WIDTH,
+  CODE_AGENT_MIN_WIDTH,
+  CODE_EXPLORER_DEFAULT_WIDTH,
+  CODE_EXPLORER_MIN_WIDTH,
+  codeFixedChromeWidth,
+  maxCodePanelWidth,
+  resolveCodePanelWidths,
+} from "../features/code/codeLayoutModel";
+import { useCodeLayoutStore } from "../features/code/codeLayoutStore";
 import { ToolsContext, ToolsRail, ToolsView } from "../features/tools/ToolsView";
 import { getDefaultZoraiTool, type ZoraiToolId } from "../features/tools/tools";
 import { WorkspacesRail, WorkspacesView } from "../features/workspaces/WorkspacesView";
@@ -30,6 +41,11 @@ export function ZoraiShell() {
   const [activeDatabaseTable, setActiveDatabaseTable] = useState<string | null>(null);
   const [railOpen, setRailOpen] = useState(true);
   const [contextOpen, setContextOpen] = useState(false);
+  const [viewportWidth, setViewportWidth] = useState(() => typeof window === "undefined" ? 1600 : window.innerWidth);
+  const explorerPreferredWidth = useCodeLayoutStore((state) => state.explorerPreferredWidth);
+  const agentPreferredWidth = useCodeLayoutStore((state) => state.agentPreferredWidth);
+  const setExplorerPreferredWidth = useCodeLayoutStore((state) => state.setExplorerPreferredWidth);
+  const setAgentPreferredWidth = useCodeLayoutStore((state) => state.setAgentPreferredWidth);
   const codeAgentOpenedRef = useRef(false);
   const [returnTarget, setReturnTarget] = useState<ZoraiReturnTarget | null>(null);
   const [goalOpenRequest, setGoalOpenRequest] = useState<GoalOpenRequest | null>(null);
@@ -60,10 +76,41 @@ export function ZoraiShell() {
   }, []);
 
   useEffect(() => {
+    const updateViewport = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", updateViewport);
+    return () => window.removeEventListener("resize", updateViewport);
+  }, []);
+
+  useEffect(() => {
     if (activeView !== "code" || codeAgentOpenedRef.current) return;
     codeAgentOpenedRef.current = true;
     setContextOpen(true);
   }, [activeView]);
+
+  const effectiveCodeWidths = useMemo(() => resolveCodePanelWidths({
+    viewportWidth,
+    explorerPreferred: explorerPreferredWidth,
+    agentPreferred: agentPreferredWidth,
+    explorerOpen: railOpen,
+    agentOpen: contextOpen,
+  }), [agentPreferredWidth, contextOpen, explorerPreferredWidth, railOpen, viewportWidth]);
+  const fixedCodeChrome = codeFixedChromeWidth(railOpen, contextOpen);
+  const explorerResizeMax = maxCodePanelWidth({
+    panel: "explorer",
+    viewportWidth,
+    otherWidth: effectiveCodeWidths.agent,
+    fixedChromeWidth: fixedCodeChrome,
+  });
+  const agentResizeMax = maxCodePanelWidth({
+    panel: "agent",
+    viewportWidth,
+    otherWidth: effectiveCodeWidths.explorer,
+    fixedChromeWidth: fixedCodeChrome,
+  });
+  const shellStyle = activeView === "code" ? {
+    "--zorai-code-explorer-width": `${effectiveCodeWidths.explorer}px`,
+    "--zorai-code-agent-width": `${effectiveCodeWidths.agent}px`,
+  } as CSSProperties : undefined;
 
   const selectView = (view: ZoraiViewId) => {
     setActiveView(view);
@@ -87,7 +134,9 @@ export function ZoraiShell() {
         "zorai-shell",
         activeView === "code" ? "zorai-shell--code" : "",
         railOpen ? "" : "zorai-shell--rail-collapsed",
-      ].filter(Boolean).join(" ")}>
+        contextOpen ? "zorai-shell--context-open" : "",
+      ].filter(Boolean).join(" ")}
+      style={shellStyle}>
         <nav className="zorai-global-rail" aria-label="Zorai navigation">
           <div className="zorai-brand" title="Zorai">
             <ZoraiBrandMark />
@@ -134,10 +183,32 @@ export function ZoraiShell() {
           </div>
         </aside>
 
+        {activeView === "code" && railOpen ? (
+          <CodeResizeHandle
+            panel="explorer"
+            value={effectiveCodeWidths.explorer}
+            min={CODE_EXPLORER_MIN_WIDTH}
+            max={explorerResizeMax}
+            onChange={setExplorerPreferredWidth}
+            onReset={() => setExplorerPreferredWidth(CODE_EXPLORER_DEFAULT_WIDTH)}
+          />
+        ) : null}
+
         <main className="zorai-main">
           <div className="zorai-main-body">{renderMain(activeView, activeTool, setActiveTool, activeSettingsTab, setActiveSettingsTab, goalOpenRequest, activeDatabaseTable, selectDatabaseTable, returnTarget, returnToTarget)}</div>
           <OperatorQuestionDock />
         </main>
+
+        {activeView === "code" && contextOpen ? (
+          <CodeResizeHandle
+            panel="agent"
+            value={effectiveCodeWidths.agent}
+            min={CODE_AGENT_MIN_WIDTH}
+            max={agentResizeMax}
+            onChange={setAgentPreferredWidth}
+            onReset={() => setAgentPreferredWidth(CODE_AGENT_DEFAULT_WIDTH)}
+          />
+        ) : null}
 
         <ZoraiContextPanel
           title={contextLabels.title}

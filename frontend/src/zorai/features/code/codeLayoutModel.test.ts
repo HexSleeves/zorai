@@ -73,6 +73,26 @@ describe("resolveCodePanelWidths", () => {
     expect(resolved.editor).toBe(1600 - 68 - 48 - 40);
   });
 
+  it("accounts for only visible handles when panels are collapsed", () => {
+    const explorerCollapsed = resolveCodePanelWidths({
+      viewportWidth: 1000,
+      explorerPreferred: 280,
+      agentPreferred: 320,
+      explorerOpen: false,
+      agentOpen: true,
+    });
+    expect(explorerCollapsed.explorer + explorerCollapsed.agent + explorerCollapsed.editor + 68 + 5).toBe(1000);
+
+    const agentCollapsed = resolveCodePanelWidths({
+      viewportWidth: 1000,
+      explorerPreferred: 280,
+      agentPreferred: 320,
+      explorerOpen: true,
+      agentOpen: false,
+    });
+    expect(agentCollapsed.explorer + agentCollapsed.agent + agentCollapsed.editor + 68 + 5).toBe(1000);
+  });
+
   it("gives the editor the remaining space on wide viewports", () => {
     const resolved = resolveCodePanelWidths({
       viewportWidth: 2400,

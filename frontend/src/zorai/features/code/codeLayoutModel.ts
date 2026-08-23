@@ -47,6 +47,8 @@ export type MaxCodePanelWidthInput = {
   viewportWidth: number;
   /** Effective width of the sibling side panel (collapsed width when closed). */
   otherWidth: number;
+  /** Current global rail + visible resize handles; defaults to both handles. */
+  fixedChromeWidth?: number;
 };
 
 export type ResizeKey =
@@ -86,7 +88,9 @@ export function clampCodePanelWidth(panel: CodePanelName, value: number): number
  * effective width. Used as the drag/keyboard bound for resize handles.
  */
 export function maxCodePanelWidth(input: MaxCodePanelWidthInput): number {
-  const remaining = Math.floor(input.viewportWidth - CODE_GLOBAL_RAIL_WIDTH - (2 * CODE_RESIZE_HANDLE_WIDTH) - CODE_EDITOR_MIN_WIDTH - input.otherWidth);
+  const fixedChromeWidth = input.fixedChromeWidth
+    ?? (CODE_GLOBAL_RAIL_WIDTH + (2 * CODE_RESIZE_HANDLE_WIDTH));
+  const remaining = Math.floor(input.viewportWidth - fixedChromeWidth - CODE_EDITOR_MIN_WIDTH - input.otherWidth);
   return Math.max(codePanelMinWidth(input.panel), Math.min(codePanelMaxWidth(input.panel), remaining));
 }
 

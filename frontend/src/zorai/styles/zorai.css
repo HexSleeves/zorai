@@ -2442,7 +2442,8 @@
 
   .zorai-contextual-rail,
   .zorai-context-panel,
-  .zorai-context-tab {
+  .zorai-context-tab,
+  .zorai-code-resize-handle {
     display: none;
   }
 
@@ -3225,7 +3226,15 @@ button.zorai-composer-context-chip { cursor: pointer; }
   --zorai-accent: #d6d7da;
   --zorai-accent-secondary: #9ca1a8;
   --zorai-accent-glow: rgba(255, 255, 255, 0.08);
-  grid-template-columns: 68px minmax(250px, 280px) minmax(380px, 1fr) 320px;
+  --zorai-code-explorer-width: 280px;
+  --zorai-code-agent-width: 320px;
+  grid-template-columns:
+    68px
+    var(--zorai-code-explorer-width)
+    5px
+    minmax(380px, 1fr)
+    5px
+    var(--zorai-code-agent-width);
   background: var(--zorai-bg);
 }
 
@@ -3256,8 +3265,54 @@ button.zorai-composer-context-chip { cursor: pointer; }
   background: var(--zorai-bg-elevated);
 }
 
-.zorai-shell.zorai-shell--code.zorai-shell--rail-collapsed {
-  grid-template-columns: 68px 48px minmax(380px, 1fr) 320px;
+.zorai-shell.zorai-shell--code.zorai-shell--rail-collapsed.zorai-shell--context-open {
+  grid-template-columns: 68px 48px minmax(380px, 1fr) 5px var(--zorai-code-agent-width);
+}
+
+.zorai-shell.zorai-shell--code.zorai-shell--rail-collapsed:not(.zorai-shell--context-open) {
+  grid-template-columns: 68px 48px minmax(380px, 1fr) auto;
+}
+
+.zorai-shell.zorai-shell--code:not(.zorai-shell--rail-collapsed).zorai-shell--context-open {
+  grid-template-columns: 68px var(--zorai-code-explorer-width) 5px minmax(380px, 1fr) 5px var(--zorai-code-agent-width);
+}
+
+.zorai-shell.zorai-shell--code:not(.zorai-shell--rail-collapsed):not(.zorai-shell--context-open) {
+  grid-template-columns: 68px var(--zorai-code-explorer-width) 5px minmax(380px, 1fr) auto;
+}
+
+.zorai-code-resize-handle {
+  position: relative;
+  z-index: 12;
+  width: 5px;
+  min-width: 5px;
+  height: 100%;
+  border: 0;
+  outline: 0;
+  background: var(--zorai-bg);
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.zorai-code-resize-handle > span {
+  position: absolute;
+  inset-block: 0;
+  left: 2px;
+  width: 1px;
+  background: var(--zorai-border);
+  transition: background var(--zorai-transition), box-shadow var(--zorai-transition);
+}
+
+.zorai-code-resize-handle:hover > span,
+.zorai-code-resize-handle:focus-visible > span,
+.zorai-code-resize-handle.is-dragging > span {
+  background: var(--zorai-muted);
+  box-shadow: 0 0 0 1px var(--zorai-bg-active);
+}
+
+.zorai-code-resize-handle:focus-visible {
+  outline: 1px solid var(--zorai-muted);
+  outline-offset: -1px;
 }
 
 .zorai-code-explorer {
@@ -3577,6 +3632,194 @@ button.zorai-composer-context-chip { cursor: pointer; }
     "header"
     "messages"
     "composer";
+}
+
+.zorai-code-agent-thread-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+}
+
+.zorai-code-agent-thread-actions .zorai-thread-runtime-summary {
+  min-width: 0;
+  overflow: hidden;
+  padding: 3px 5px;
+  gap: 4px;
+}
+
+.zorai-code-agent-thread-actions .zorai-thread-runtime-summary span {
+  max-width: 76px;
+  text-overflow: ellipsis;
+}
+
+.zorai-code-thread-controls {
+  position: relative;
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+}
+
+.zorai-code-thread-action {
+  width: 27px;
+  min-width: 27px;
+  height: 27px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid var(--zorai-border-strong);
+  border-radius: 999px;
+  background: var(--zorai-bg-elevated);
+  color: var(--zorai-text);
+  cursor: pointer;
+}
+
+.zorai-code-thread-action:hover:not(:disabled),
+.zorai-code-thread-action:focus-visible {
+  border-color: var(--zorai-muted);
+  background: var(--zorai-bg-active);
+}
+
+.zorai-code-thread-action:focus-visible {
+  outline: 1px solid var(--zorai-text);
+  outline-offset: 1px;
+}
+
+.zorai-code-thread-action:disabled {
+  opacity: .35;
+  cursor: not-allowed;
+}
+
+.zorai-code-thread-action svg {
+  width: 14px;
+  height: 14px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.zorai-code-thread-history {
+  position: absolute;
+  z-index: 80;
+  top: 34px;
+  right: 0;
+  width: min(286px, calc(var(--zorai-code-agent-width) - 16px));
+  max-width: calc(100vw - 24px);
+  max-height: min(460px, calc(100vh - 118px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 7px;
+  border: 1px solid var(--zorai-border-strong);
+  border-radius: 9px;
+  background: var(--zorai-bg-surface);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, .58);
+}
+
+.zorai-code-thread-search {
+  width: 100%;
+  min-height: 30px;
+  border: 1px solid var(--zorai-border);
+  border-radius: 6px;
+  padding: 5px 7px;
+  background: var(--zorai-bg-panel);
+  color: var(--zorai-text);
+  font-size: 10px;
+}
+
+.zorai-code-thread-search:focus {
+  border-color: var(--zorai-muted);
+  outline: none;
+}
+
+.zorai-code-thread-history-list {
+  min-height: 0;
+  overflow-y: auto;
+  padding-top: 5px;
+}
+
+.zorai-code-thread-history-item {
+  width: 100%;
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr);
+  gap: 6px;
+  align-items: start;
+  border: 0;
+  border-radius: 6px;
+  padding: 7px;
+  background: transparent;
+  color: var(--zorai-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.zorai-code-thread-history-item:hover,
+.zorai-code-thread-history-item.is-keyboard-active,
+.zorai-code-thread-history-item.is-current {
+  background: var(--zorai-bg-active);
+}
+
+.zorai-code-thread-history-item.is-current {
+  box-shadow: inset 2px 0 var(--zorai-muted);
+}
+
+.zorai-code-thread-status {
+  width: 7px;
+  height: 7px;
+  margin-top: 3px;
+  border-radius: 50%;
+  background: transparent;
+}
+
+.zorai-code-thread-status.is-amber { background: #d8a84e; }
+.zorai-code-thread-status.is-blue { background: #78a9df; }
+.zorai-code-thread-status.is-green { background: #70bf8f; }
+
+.zorai-code-thread-history-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.zorai-code-thread-history-copy strong,
+.zorai-code-thread-history-copy span,
+.zorai-code-thread-history-copy time {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zorai-code-thread-history-copy strong { font-size: 10px; }
+.zorai-code-thread-history-copy span,
+.zorai-code-thread-history-copy time,
+.zorai-code-thread-empty { color: var(--zorai-muted); font-size: 9px; }
+.zorai-code-thread-empty { padding: 12px 7px; text-align: center; }
+
+.zorai-code-thread-error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: 5px;
+  padding: 6px;
+  border: 1px solid var(--danger);
+  border-radius: 6px;
+  color: var(--danger);
+  font-size: 9px;
+}
+
+.zorai-code-thread-error button {
+  border: 1px solid currentColor;
+  border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
 }
 
 .zorai-code-agent-thread-header {
