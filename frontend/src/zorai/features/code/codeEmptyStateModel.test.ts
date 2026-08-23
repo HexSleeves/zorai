@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   createCodeEmptyStateController,
+  createCodeEmptyStateLifecycle,
   createMemoizedCodeEmptyStateController,
   initialCodeEmptyState,
   normalizeInvokeError,
   type CodeEmptyStateDeps,
+  type ZoraiWorkspaceSelection,
   type ZoraiWorkspaceValidatedRoot,
 } from "./codeEmptyStateModel";
 
@@ -353,6 +355,92 @@ describe("codeEmptyState model", () => {
 
     expect(second.controller).toBe(first.controller);
     expect(second.controller.getState().manualOpen).toBe(true);
+  });
+
+  it("survives StrictMode subscription setup-cleanup-setup replay", () => {
+    const controller = createCodeEmptyStateController(createDeps());
+    const lifecycle = createCodeEmptyStateLifecycle();
+    const snapshots: Array<{ manualOpen: boolean; pathValue: string }> = [];
+    const publish = (state: ReturnType<typeof controller.getState>) => {
+      snapshots.push({ manualOpen: state.manualOpen, pathValue: state.pathValue });
+    };
+
+    lifecycle.activate(controller, publish);
+    lifecycle.deactivate();
+    lifecycle.activate(controller, publish);
+
+    controller.toggleManual();
+    controller.setPathValue("/work/strict-mode");
+
+    expect(controller.isDisposed()).toBe(false);
+    expect(lifecycle.isActive(controller)).toBe(true);
+    expect(snapshots.at(-1)).toEqual({
+      manualOpen: true,
+      pathValue: "/work/strict-mode",
+    });
+  });
+
+  it("synchronizes replacement state and disposes the abandoned controller", () => {
+    const first = createCodeEmptyStateController(createDeps());
+    const second = createCodeEmptyStateController(createDeps());
+    const lifecycle = createCodeEmptyStateLifecycle();
+    const snapshots: Array<ReturnType<typeof first.getState>> = [];
+
+    lifecycle.activate(first, (state) => snapshots.push(state));
+    first.toggleManual();
+    first.setPathValue("/work/old");
+
+    lifecycle.activate(second, (state) => snapshots.push(state));
+
+    expect(first.isDisposed()).toBe(true);
+    expect(second.isDisposed()).toBe(false);
+    expect(lifecycle.activeController()).toBe(second);
+    expect(snapshots.at(-1)).toEqual(initialCodeEmptyState(null));
+  });
+
+  it("ignores in-flight completion from a replaced controller", async () => {
+    let resolveSelect: ((value: ZoraiWorkspaceSelection) => void) | null = null;
+    let oldRootSelections = 0;
+    const first = createCodeEmptyStateController(
+      createDeps({
+        selectFolder: () => new Promise((resolve) => { resolveSelect = resolve; }),
+        onRootSelected: () => { oldRootSelections += 1; },
+      }),
+    );
+    const second = createCodeEmptyStateController(createDeps());
+    const lifecycle = createCodeEmptyStateLifecycle();
+    const snapshots: Array<ReturnType<typeof first.getState>> = [];
+
+    lifecycle.activate(first, (state) => snapshots.push(state));
+    const pending = first.openFolder();
+    lifecycle.activate(second, (state) => snapshots.push(state));
+    resolveSelect?.({ canceled: false, root: sampleRoot });
+    await pending;
+
+    expect(first.isDisposed()).toBe(true);
+    expect(oldRootSelections).toBe(0);
+    expect(snapshots.at(-1)).toEqual(initialCodeEmptyState(null));
+  });
+
+  it("explicit lifecycle disposal suppresses active controller callbacks", async () => {
+    let resolveSelect: ((value: ZoraiWorkspaceSelection) => void) | null = null;
+    let rootSelections = 0;
+    const controller = createCodeEmptyStateController(
+      createDeps({
+        selectFolder: () => new Promise((resolve) => { resolveSelect = resolve; }),
+        onRootSelected: () => { rootSelections += 1; },
+      }),
+    );
+    const lifecycle = createCodeEmptyStateLifecycle();
+    lifecycle.activate(controller, () => {});
+
+    const pending = controller.openFolder();
+    lifecycle.dispose();
+    resolveSelect?.({ canceled: false, root: sampleRoot });
+    await pending;
+
+    expect(controller.isDisposed()).toBe(true);
+    expect(rootSelections).toBe(0);
   });
 
   it("does not emit or select a root after dispose while the picker is in flight", async () => {

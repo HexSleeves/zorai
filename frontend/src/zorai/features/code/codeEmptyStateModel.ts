@@ -59,6 +59,7 @@ export function displayRootName(root: string | null): string {
 export function createCodeEmptyStateController(deps: CodeEmptyStateDeps) {
   let state = initialCodeEmptyState(null);
   let disposed = false;
+  let callbacksSuspended = false;
   const listeners = new Set<() => void>();
 
   const emit = () => {
@@ -75,7 +76,7 @@ export function createCodeEmptyStateController(deps: CodeEmptyStateDeps) {
   const reportFailure = (message: string) => {
     if (disposed) return;
     setState({ ...state, busy: false, error: message });
-    deps.onError?.(message);
+    if (!callbacksSuspended) deps.onError?.(message);
   };
 
   return {
@@ -104,7 +105,7 @@ export function createCodeEmptyStateController(deps: CodeEmptyStateDeps) {
         }
         setState({ ...state, busy: false, lastRoot: selection.root.root });
         if (disposed) return;
-        deps.onRootSelected(selection.root, "picker");
+        if (!callbacksSuspended) deps.onRootSelected(selection.root, "picker");
       } catch (error) {
         reportFailure(normalizeInvokeError(error));
       }
@@ -139,7 +140,7 @@ export function createCodeEmptyStateController(deps: CodeEmptyStateDeps) {
           lastRoot: root.root,
         });
         if (disposed) return;
-        deps.onRootSelected(root, "manual");
+        if (!callbacksSuspended) deps.onRootSelected(root, "manual");
       } catch (error) {
         reportFailure(normalizeInvokeError(error));
       }
@@ -150,8 +151,17 @@ export function createCodeEmptyStateController(deps: CodeEmptyStateDeps) {
       setState({ ...state, error: null });
     },
 
+    suspendCallbacks() {
+      callbacksSuspended = true;
+    },
+
+    resumeCallbacks() {
+      if (!disposed) callbacksSuspended = false;
+    },
+
     dispose() {
       disposed = true;
+      callbacksSuspended = true;
       listeners.clear();
     },
 
@@ -162,6 +172,73 @@ export function createCodeEmptyStateController(deps: CodeEmptyStateDeps) {
 }
 
 export type CodeEmptyStateController = ReturnType<typeof createCodeEmptyStateController>;
+
+export type CodeEmptyStateLifecycle = ReturnType<typeof createCodeEmptyStateLifecycle>;
+
+/**
+ * Owns the imperative controller subscription outside React's effect replay.
+ * `deactivate` only detaches listeners, so React StrictMode's development
+ * setup -> cleanup -> setup replay cannot poison the controller. Activating a
+ * different controller disposes the abandoned instance and synchronizes the
+ * new snapshot before subscribing. `dispose` is available to explicit owners;
+ * component unmounts use `deactivate`, which is sufficient to suppress stale
+ * async callbacks through the active/mounted guards below.
+ */
+export function createCodeEmptyStateLifecycle() {
+  let activeController: CodeEmptyStateController | null = null;
+  let unsubscribe: (() => void) | null = null;
+  let mounted = false;
+  let generation = 0;
+
+  const deactivate = () => {
+    mounted = false;
+    generation += 1;
+    unsubscribe?.();
+    unsubscribe = null;
+    activeController?.suspendCallbacks();
+  };
+
+  return {
+    activate(
+      controller: CodeEmptyStateController,
+      publish: (state: CodeEmptyStateModelState) => void,
+    ) {
+      unsubscribe?.();
+      unsubscribe = null;
+
+      if (activeController && activeController !== controller) {
+        activeController.dispose();
+      }
+      activeController = controller;
+      controller.resumeCallbacks();
+      mounted = true;
+      generation += 1;
+      const activation = generation;
+
+      publish(controller.getState());
+      unsubscribe = controller.subscribe(() => {
+        if (!mounted || generation !== activation || activeController !== controller) return;
+        publish(controller.getState());
+      });
+    },
+
+    deactivate,
+
+    dispose() {
+      deactivate();
+      activeController?.dispose();
+      activeController = null;
+    },
+
+    isActive(controller: CodeEmptyStateController) {
+      return mounted && activeController === controller;
+    },
+
+    activeController() {
+      return activeController;
+    },
+  };
+}
 
 /**
  * Memoization seam for the component-level controller lifecycle. A controller

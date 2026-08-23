@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useCodeWorkspaceBindingStore } from "./codeWorkspaceBindingStore";
 import {
+  createCodeEmptyStateLifecycle,
   createMemoizedCodeEmptyStateController,
   type CodeEmptyStateController,
   type CodeEmptyStateControllerMemo,
@@ -52,6 +53,9 @@ export function CodeEmptyState({
     controllerMemoRef.current = memo;
     return memo.controller;
   }, [selectFolder, openPath, onRootSelected, onError]);
+  const lifecycleRef = useRef<ReturnType<typeof createCodeEmptyStateLifecycle> | null>(null);
+  if (!lifecycleRef.current) lifecycleRef.current = createCodeEmptyStateLifecycle();
+  const lifecycle = lifecycleRef.current;
   const [state, setState] = useState(controller.getState);
 
   useEffect(() => {
@@ -59,12 +63,14 @@ export function CodeEmptyState({
   }, [controller, lastRoot]);
 
   useEffect(() => {
-    const unsubscribe = controller.subscribe(() => setState(controller.getState()));
+    lifecycle.activate(controller, setState);
     return () => {
-      unsubscribe();
-      controller.dispose();
+      // StrictMode intentionally replays effect cleanup/setup. Only detach the
+      // subscription here; disposing the controller would kill the replayed
+      // setup. Controller replacement is disposed by lifecycle.activate.
+      lifecycle.deactivate();
     };
-  }, [controller]);
+  }, [controller, lifecycle]);
 
   return (
     <div className="zorai-code-empty">
