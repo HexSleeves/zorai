@@ -422,6 +422,32 @@ describe("codeEmptyState model", () => {
     expect(snapshots.at(-1)).toEqual(initialCodeEmptyState(null));
   });
 
+  it("suppresses in-flight callbacks while deactivated without disposing the controller", async () => {
+    let resolveSelect: ((value: ZoraiWorkspaceSelection) => void) | null = null;
+    let rootSelections = 0;
+    const controller = createCodeEmptyStateController(
+      createDeps({
+        selectFolder: () => new Promise((resolve) => { resolveSelect = resolve; }),
+        onRootSelected: () => { rootSelections += 1; },
+      }),
+    );
+    const lifecycle = createCodeEmptyStateLifecycle();
+    const snapshots: Array<ReturnType<typeof controller.getState>> = [];
+
+    lifecycle.activate(controller, (state) => snapshots.push(state));
+    const pending = controller.openFolder();
+    lifecycle.deactivate();
+    resolveSelect?.({ canceled: false, root: sampleRoot });
+    await pending;
+
+    expect(controller.isDisposed()).toBe(false);
+    expect(rootSelections).toBe(0);
+
+    lifecycle.activate(controller, (state) => snapshots.push(state));
+    controller.toggleManual();
+    expect(snapshots.at(-1)?.manualOpen).toBe(true);
+  });
+
   it("explicit lifecycle disposal suppresses active controller callbacks", async () => {
     let resolveSelect: ((value: ZoraiWorkspaceSelection) => void) | null = null;
     let rootSelections = 0;
