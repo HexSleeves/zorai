@@ -2,13 +2,12 @@ import { describe, expect, it } from "vitest";
 import { getDefaultZoraiTool, zoraiTools } from "./tools";
 
 describe("Zorai tools", () => {
-  it("opens the thread-bound workspace as the default operator tool", () => {
-    expect(getDefaultZoraiTool()).toBe("workspace");
+  it("opens the terminal as the default operator tool", () => {
+    expect(getDefaultZoraiTool()).toBe("terminal");
   });
 
-  it("exposes runtime-backed tool destinations", () => {
+  it("exposes runtime-backed tool destinations without the duplicate Workspace entry", () => {
     expect(zoraiTools.map((tool) => tool.id)).toEqual([
-      "workspace",
       "terminal",
       "canvas",
       "files",

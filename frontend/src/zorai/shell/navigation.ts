@@ -1,4 +1,7 @@
+import { zoraiTools, type ZoraiToolId } from "../features/tools/tools";
+
 export type ZoraiViewId =
+  | "code"
   | "threads"
   | "goals"
   | "workspaces"
@@ -16,6 +19,7 @@ export type ZoraiNavItem = {
 };
 
 export type ZoraiNavIconId =
+  | "code"
   | "threads"
   | "goals"
   | "workspaces"
@@ -25,6 +29,13 @@ export type ZoraiNavIconId =
   | "settings";
 
 export const zoraiNavItems: ZoraiNavItem[] = [
+  {
+    id: "code",
+    label: "Code",
+    railLabel: "Code Agent",
+    icon: "code",
+    description: "Explore repository files and work with the code agent.",
+  },
   {
     id: "threads",
     label: "Threads",
@@ -78,4 +89,46 @@ export const zoraiNavItems: ZoraiNavItem[] = [
 
 export function getDefaultZoraiView(): ZoraiViewId {
   return "threads";
+}
+
+export type ZoraiContextPanelLabels = {
+  title: string;
+  collapsed: string;
+};
+
+export function contextPanelLabels(view: ZoraiViewId): ZoraiContextPanelLabels {
+  if (view === "code") {
+    return { title: "Code Agent", collapsed: "Agent" };
+  }
+  return { title: "Orchestration Context", collapsed: "Context" };
+}
+
+export type ZoraiToolNavigationInput = {
+  view?: string | null;
+  tool?: string | null;
+};
+
+export function isZoraiViewId(value: string): value is ZoraiViewId {
+  return zoraiNavItems.some((item) => item.id === value);
+}
+
+export function isZoraiToolId(value: string): value is ZoraiToolId {
+  return zoraiTools.some((tool) => tool.id === value);
+}
+
+export function normalizeZoraiToolNavigation(input: ZoraiToolNavigationInput): {
+  view?: ZoraiViewId;
+  tool?: ZoraiToolId;
+} {
+  if (input.tool === "workspace") {
+    return { view: "code" };
+  }
+  const normalized: { view?: ZoraiViewId; tool?: ZoraiToolId } = {};
+  if (input.view && isZoraiViewId(input.view)) {
+    normalized.view = input.view;
+  }
+  if (input.tool && isZoraiToolId(input.tool)) {
+    normalized.tool = input.tool;
+  }
+  return normalized;
 }

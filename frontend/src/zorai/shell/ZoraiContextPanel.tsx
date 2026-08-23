@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 type ZoraiContextPanelProps = {
   title: string;
   subtitle?: string;
+  collapsedLabel?: string;
   open: boolean;
   onToggle: () => void;
   children: ReactNode;
@@ -11,6 +12,7 @@ type ZoraiContextPanelProps = {
 export function ZoraiContextPanel({
   title,
   subtitle,
+  collapsedLabel = "Context",
   open,
   onToggle,
   children,
@@ -21,9 +23,9 @@ export function ZoraiContextPanel({
         type="button"
         className="zorai-context-tab"
         onClick={onToggle}
-        title="Open context"
+        title={collapsedLabel}
       >
-        Context
+        {collapsedLabel}
       </button>
     );
   }

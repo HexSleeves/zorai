@@ -3,7 +3,6 @@ import { CommandLogPanel } from "@/components/CommandLogPanel";
 import { FileManagerPanel } from "@/components/FileManagerPanel";
 import { InfiniteCanvasSurface } from "@/components/InfiniteCanvasSurface";
 import { LayoutContainer } from "@/components/LayoutContainer";
-import { WorkspaceWorkbench } from "@/components/WorkspaceWorkbench";
 import { SessionVaultPanel } from "@/components/SessionVaultPanel";
 import { SystemMonitorPanel } from "@/components/SystemMonitorPanel";
 import { WebBrowserPanel } from "@/components/WebBrowserPanel";
@@ -157,7 +156,6 @@ export function ToolsContext({ activeTool, onSelectTool }: ToolsProps) {
 function ToolSurface({ activeTool }: { activeTool: ZoraiToolId }) {
   useEmbeddedToolState(activeTool);
 
-  if (activeTool === "workspace") return <WorkspaceWorkbench />;
   if (activeTool === "terminal") return <TerminalTool />;
   if (activeTool === "canvas") return <CanvasTool />;
   if (activeTool === "files") return <FileManagerPanel style={embeddedPanelStyle} className="zorai-embedded-tool-panel" />;

@@ -41,6 +41,16 @@ export function ZoraiHamburgerIcon() {
 }
 
 function renderIconPath(icon: ZoraiNavIconId) {
+  if (icon === "code") {
+    return (
+      <>
+        <path d="m8 7-5 5 5 5" />
+        <path d="m16 7 5 5-5 5" />
+        <path d="m13.5 4-3 16" />
+      </>
+    );
+  }
+
   if (icon === "threads") {
     return (
       <>

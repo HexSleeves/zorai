@@ -1,10 +1,5 @@
 export const zoraiTools = [
   {
-    id: "workspace",
-    title: "Workspace",
-    description: "Explore, edit, diff, and attach repository files to the active agent thread.",
-  },
-  {
     id: "terminal",
     title: "Terminal",
     description: "Open managed terminal sessions as a secondary operator surface.",
@@ -44,5 +39,5 @@ export const zoraiTools = [
 export type ZoraiToolId = (typeof zoraiTools)[number]["id"];
 
 export function getDefaultZoraiTool(): ZoraiToolId {
-  return "workspace";
+  return "terminal";
 }

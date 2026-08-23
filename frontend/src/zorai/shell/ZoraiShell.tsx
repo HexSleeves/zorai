@@ -9,10 +9,11 @@ import { ThreadsContext } from "../features/threads/ThreadsContextPanel";
 import { ThreadFilePreviewProvider } from "../features/threads/ThreadFilePreviewProvider";
 import { ThreadsView } from "../features/threads/ThreadsView";
 import { ThreadsRail } from "../features/threads/ThreadsRail";
+import { CodeAgentPane, CodeRail, CodeView } from "../features/code/CodeView";
 import { ToolsContext, ToolsRail, ToolsView } from "../features/tools/ToolsView";
 import { getDefaultZoraiTool, type ZoraiToolId } from "../features/tools/tools";
 import { WorkspacesRail, WorkspacesView } from "../features/workspaces/WorkspacesView";
-import { getDefaultZoraiView, zoraiNavItems, type ZoraiViewId } from "./navigation";
+import { contextPanelLabels, getDefaultZoraiView, normalizeZoraiToolNavigation, zoraiNavItems, type ZoraiViewId } from "./navigation";
 import { ZoraiContextPanel } from "./ZoraiContextPanel";
 import { ZoraiBrandMark, ZoraiHamburgerIcon, ZoraiNavIcon } from "./ZoraiIcons";
 import { ZORAI_NAVIGATE_EVENT, type ZoraiNavigateDetail, type ZoraiReturnTarget } from "./zoraiNavigationEvents";
@@ -35,12 +36,14 @@ export function ZoraiShell() {
     () => zoraiNavItems.find((item) => item.id === activeView) ?? zoraiNavItems[0],
     [activeView],
   );
+  const contextLabels = contextPanelLabels(activeView);
 
   useEffect(() => {
     const onNavigate = (event: Event) => {
       const detail = (event as CustomEvent<ZoraiNavigateDetail>).detail;
-      if (detail.view) setActiveView(detail.view);
-      if (detail.tool) setActiveTool(detail.tool);
+      const normalized = normalizeZoraiToolNavigation(detail);
+      if (normalized.view) setActiveView(normalized.view);
+      if (normalized.tool) setActiveTool(normalized.tool);
       if (detail.settingsTab) {
         setActiveSettingsTab(detail.settingsTab);
         if (!detail.view) setActiveView("settings");
@@ -126,8 +129,9 @@ export function ZoraiShell() {
         </main>
 
         <ZoraiContextPanel
-          title="Orchestration Context"
+          title={contextLabels.title}
           subtitle={activeItem.railLabel}
+          collapsedLabel={contextLabels.collapsed}
           open={contextOpen}
           onToggle={() => setContextOpen((current) => !current)}
         >
@@ -147,6 +151,7 @@ function renderRail(
   activeDatabaseTable: string | null,
   setActiveDatabaseTable: (tableName: string) => void,
 ) {
+  if (view === "code") return <CodeRail />;
   if (view === "threads") return <ThreadsRail />;
   if (view === "goals") return <GoalsRail />;
   if (view === "workspaces") return <WorkspacesRail />;
@@ -168,6 +173,7 @@ function renderMain(
   returnTarget: ZoraiReturnTarget | null,
   onReturnTarget: () => void,
 ) {
+  if (view === "code") return <CodeView />;
   if (view === "threads") return <ThreadsView returnTarget={returnTarget} onReturnTarget={onReturnTarget} />;
   if (view === "goals") return <GoalsView openGoalRunRequest={goalOpenRequest} returnTarget={returnTarget} onReturnTarget={onReturnTarget} />;
   if (view === "workspaces") return <WorkspacesView />;
@@ -182,6 +188,7 @@ function renderContext(
   activeTool: ZoraiToolId,
   setActiveTool: (toolId: ZoraiToolId) => void,
 ) {
+  if (view === "code") return <CodeAgentPane />;
   if (view === "threads") return <ThreadsContext />;
   if (view === "goals") return <GoalsContext />;
   if (view === "tools") return <ToolsContext activeTool={activeTool} onSelectTool={setActiveTool} />;
