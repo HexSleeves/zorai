@@ -40,7 +40,20 @@ export function CodeTabs({ tabs, onActivate, onClose, onTogglePin, onMove }: Cod
       <div ref={hostRef} className="zorai-workspace-tabs zorai-code-tabs" role="tablist" aria-label="Open files" onWheel={handleWheel}>
         {visible.map((tab, index) => (
           <button type="button" role="tab" aria-selected={tab.active} key={tab.path} className={tab.active ? "active" : ""} onClick={() => onActivate(tab.path)} title={tab.path}>
-            <span className="zorai-workspace-tab-pin" onClick={(event) => { event.stopPropagation(); onTogglePin(tab.path); }}>{tab.pinned ? "●" : "○"}</span>
+            <span
+              className={tab.pinned ? "zorai-workspace-tab-pin is-pinned" : "zorai-workspace-tab-pin"}
+              role="button"
+              aria-label={tab.pinned ? "Unpin file" : "Pin file"}
+              aria-pressed={tab.pinned}
+              onClick={(event) => { event.stopPropagation(); onTogglePin(tab.path); }}
+            >
+              <svg viewBox="0 0 16 16" width="12" height="12" aria-hidden="true">
+                <path
+                  fill="currentColor"
+                  d="M9.7 1.4H6.3l-.7 1.2.9.6v3.2L4.3 8.7v1.1h3.1V15h1.2V9.8h3.1V8.7L9.5 6.4V3.2l.9-.6-.7-1.2z"
+                />
+              </svg>
+            </span>
             <span className="zorai-code-tab-label">{tab.label}{tab.dirty ? " ●" : ""}</span>
             <span className="zorai-workspace-tab-move" onClick={(event) => { event.stopPropagation(); onMove(tab.path, index > 0 ? -1 : 1); }}>↔</span>
             {!tab.pinned ? <span onClick={(event) => { event.stopPropagation(); onClose(tab.path); }}>×</span> : null}

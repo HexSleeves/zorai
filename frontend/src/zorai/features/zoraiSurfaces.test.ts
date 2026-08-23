@@ -27,6 +27,16 @@ describe("Zorai feature surfaces", () => {
     expect(threadsSource).toContain('variant?: "full" | "compact"');
     expect(threadsSource).toContain('<ThreadComposer showTargetSelector={variant === "compact"} compact={variant === "compact"} />');
     expect(threadsSource).not.toContain("<ThreadComposer />");
+    expect(threadsSource).toContain("ThreadCompactSessionBar");
+    expect(threadsSource).toContain("canGoBackThread");
+    expect(threadsSource).toContain("goBackThread");
+    expect(threadsSource).toContain("Back to parent");
+    expect(readFeature("../styles/zorai.css")).toContain(".zorai-code-agent-thread-back");
+    expect(readFeature("./threads/ThreadCompactSessionBar.tsx")).toContain("Keep");
+    expect(readFeature("./threads/ThreadCompactSessionBar.tsx")).toContain("Reject");
+    expect(readFeature("./threads/ThreadCompactSessionBar.tsx")).toContain("Todos");
+    expect(readFeature("./threads/ThreadCompactSessionBar.tsx")).toContain("Agents");
+    expect(readFeature("../styles/zorai.css")).toContain(".zorai-compact-session");
     expect(threadsSource).toContain("actualThreadResponderLabel(activeThread)");
     expect(threadsSource).toContain("responderStack");
     expect(threadsSource).toContain("useThreadReadStateStore");
@@ -57,6 +67,20 @@ describe("Zorai feature surfaces", () => {
     expect(shellSource).toContain('activeView === "code" ? "Explorer" : activeItem.label');
     expect(styleSource).toContain(".zorai-shell.zorai-shell--code");
     expect(styleSource).toContain(".zorai-code-explorer-scroll");
+    expect(workbenchSource).toContain('<details className="zorai-code-files" open>');
+    expect(workbenchSource).not.toContain('<details className="zorai-code-open-editors" open>');
+    expect(workbenchSource).not.toContain('<details className="zorai-workspace-isolated-reviews" open>');
+    expect(workbenchSource).not.toContain('<details className="zorai-workspace-problems" open>');
+    expect(workbenchSource).not.toContain('<details className="zorai-workspace-conflicts" open>');
+    expect(workbenchSource).not.toContain('<details className="zorai-workspace-operation-changes" open>');
+    expect(workbenchSource).not.toContain('<details className="zorai-workspace-agent-changes" open>');
+    expect(workbenchSource).toContain("shouldRestoreWorkspaceDocument");
+    expect(workbenchSource).toContain("onActivate={(filePath) => void openFile(filePath)}");
+    expect(readFeature("./code/CodeTabs.tsx")).toContain("Unpin file");
+    expect(readFeature("./code/CodeTabs.tsx")).toContain("Pin file");
+    expect(styleSource).toContain(".zorai-workspace-editor .minimap");
+    expect(styleSource).toContain(".zorai-security-shield");
+    expect(styleSource).toContain(".zorai-effort-gauge");
     expect(codeSource).not.toContain("zorai-view-header");
     expect(codeSource).not.toContain("zorai-tool-tab-strip");
   });
@@ -566,6 +590,7 @@ describe("Zorai feature surfaces", () => {
     // The thread header no longer embeds the runtime bar; it only summarizes it.
     expect(viewSource).not.toContain("ThreadRuntimeBar");
     expect(viewSource).toContain("ThreadRuntimeSummary");
+    expect(viewSource).not.toContain("ThreadEffortGauge");
 
     // The editable controls live in the context panel ("Show Context").
     expect(contextSource).toContain("ThreadRuntimeBar");
@@ -594,8 +619,14 @@ describe("Zorai feature surfaces", () => {
     expect(speechSource).toContain("loadingMessageId");
     expect(viewSource).toContain("onSpeak");
     expect(readFeature("./threads/NativeThreadMessageBubble.tsx")).toContain("Read aloud");
-    expect(source).toContain("applyManagedSecurityLevel");
-    expect(source).toContain("Managed security mode");
+    expect(source).toContain("ManagedSecurityShield");
+    expect(source).toContain("ThreadEffortGauge");
+    expect(readFeature("./threads/ThreadEffortGauge.tsx")).toContain("createPortal");
+    expect(readFeature("./threads/ThreadEffortGauge.tsx")).toContain("document.body");
+    expect(readFeature("./threads/ManagedSecurityShield.tsx")).toContain("applyManagedSecurityLevel");
+    expect(readFeature("./threads/ManagedSecurityShield.tsx")).toContain("Managed security mode");
+    expect(readFeature("./threads/ManagedSecurityShield.tsx")).toContain("createPortal");
+    expect(readFeature("./threads/ManagedSecurityShield.tsx")).toContain("document.body");
     expect(readFeature("./threads/threadRuntimeActions.ts")).toContain("/managed_execution/security_level");
   });
 

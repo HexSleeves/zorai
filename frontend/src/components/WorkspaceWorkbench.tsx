@@ -7,11 +7,13 @@ import { useWorkspaceContextStore } from "@/lib/workspaceContextStore";
 import { extractWorkspaceSymbols } from "@/lib/workspaceSymbols";
 import type { editor as MonacoEditorApi } from "monaco-editor";
 import { CodeTabs } from "@/zorai/features/code/CodeTabs";
+import { shouldRestoreWorkspaceDocument } from "@/zorai/features/code/workspaceDocumentRestore";
+import { useWorkspaceEditorRequestStore } from "@/lib/workspaceEditorRequestStore";
 
 const WorkspaceCodeEditor = lazy(() => import("@/components/WorkspaceCodeEditor").then((module) => ({ default: module.WorkspaceCodeEditor })));
 const WorkspaceDiffEditor = lazy(() => import("@/components/WorkspaceCodeEditor").then((module) => ({ default: module.WorkspaceDiffEditor })));
 
-type OpenDocument = ZoraiWorkspaceFile & { original: string; dirty: boolean; externalContent?: string; externalHash?: string };
+type OpenDocument = ZoraiWorkspaceFile & { original: string; dirty: boolean; gitBaseContent?: string; externalContent?: string; externalHash?: string };
 
 type TreeNodeProps = {
   root: string;
@@ -113,6 +115,8 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const monacoEditorRef = useRef<MonacoEditorApi.IStandaloneCodeEditor | null>(null);
   const pendingNavigationRef = useRef<{ path: string; line: number; column: number } | null>(null);
+  const handledEditorRequestTokenRef = useRef(0);
+  const editorRequest = useWorkspaceEditorRequestStore((state) => state.request);
   const activeDocument = context?.activeFile ? documents[context.activeFile] : undefined;
   const isolatedTaskWorktrees = useMemo(() => gitWorktrees.filter((worktree) => /\/zorai\/(?:goal|task)-/.test(worktree.branch ?? "")), [gitWorktrees]);
   const operationGroups = useMemo(() => {
@@ -147,6 +151,21 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
   }, [bridge, context?.root]);
 
   useEffect(() => { void useWorkspaceContextStore.getState().hydrate(); }, []);
+  useEffect(() => {
+    const path = context?.activeFile;
+    const root = context?.root;
+    if (!path || !root || !bridge?.workspaceReadFile || !shouldRestoreWorkspaceDocument(path, documents)) return;
+    let cancelled = false;
+    void bridge.workspaceReadFile(root, path).then((file) => {
+      if (cancelled) return;
+      setDocuments((current) => current[path]
+        ? current
+        : { ...current, [path]: { ...file, original: file.content, dirty: false } });
+    }).catch((reason: any) => {
+      if (!cancelled) setError(reason?.message ?? String(reason));
+    });
+    return () => { cancelled = true; };
+  }, [bridge, context?.activeFile, context?.root, documents]);
   useEffect(() => {
     if (!activeThreadId || !activeDaemonThreadId || daemonContextLoadedFor === activeDaemonThreadId || !bridge?.agentGetThreadWorkspaceContext) return;
     setDaemonContextLoadedFor(activeDaemonThreadId);
@@ -376,18 +395,24 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     } catch (reason: any) { setError(reason?.message ?? String(reason)); }
   };
 
-  const openFile = async (filePath: string, location?: { line: number; column: number }) => {
+  const openFile = async (filePath: string, location?: { line: number; column: number }, view: "edit" | "diff" = "edit") => {
     if (!activeThreadId || !context?.root || !bridge?.workspaceReadFile) return;
     try {
       setError(null);
       if (location) pendingNavigationRef.current = { path: filePath, ...location };
-      if (!documents[filePath]) {
+      let nextDocument = documents[filePath];
+      if (!nextDocument) {
         const file = await bridge.workspaceReadFile(context.root, filePath);
-        setDocuments((current) => ({ ...current, [filePath]: { ...file, original: file.content, dirty: false } }));
+        nextDocument = { ...file, original: file.content, dirty: false };
+        setDocuments((current) => current[filePath] ? current : { ...current, [filePath]: nextDocument! });
       }
       setActiveFile(activeThreadId, filePath);
+      if (view === "diff") {
+        await enterDiffView(filePath, nextDocument);
+        return;
+      }
       setMode("edit");
-      if (location && documents[filePath]) {
+      if (location && nextDocument) {
         requestAnimationFrame(() => {
           const monacoEditor = monacoEditorRef.current;
           if (monacoEditor) {
@@ -410,6 +435,34 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     } catch (reason: any) { setError(reason?.message ?? String(reason)); }
   };
 
+  const enterDiffView = async (filePath: string, document: OpenDocument) => {
+    if (!context?.root) return;
+    const gitBase = bridge?.workspaceGitShow
+      ? await bridge.workspaceGitShow(context.root, filePath).catch(() => "")
+      : "";
+    const patch = bridge?.workspaceGitDiff
+      ? await bridge.workspaceGitDiff(context.root, filePath, { againstHead: true, includeUntracked: true }).catch(() => "")
+      : "";
+    setDocuments((current) => ({
+      ...current,
+      [filePath]: { ...(current[filePath] ?? document), gitBaseContent: gitBase },
+    }));
+    setDiff(patch);
+    setMode("diff");
+  };
+
+  const showDiff = async () => {
+    if (!activeDocument) return;
+    await enterDiffView(activeDocument.path, activeDocument);
+  };
+
+  useEffect(() => {
+    if (!editorRequest || editorRequest.threadId !== activeThreadId) return;
+    if (editorRequest.token === handledEditorRequestTokenRef.current) return;
+    handledEditorRequestTokenRef.current = editorRequest.token;
+    void openFile(editorRequest.path, undefined, editorRequest.view);
+  }, [activeThreadId, editorRequest]);
+
   const save = async () => {
     if (!activeThreadId || !context?.root || !activeDocument || !bridge?.workspaceWriteFile) return;
     setSaving(true);
@@ -423,12 +476,6 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
         ? "Save conflict: the file changed on disk. Review or reopen it before overwriting."
         : reason?.message ?? String(reason));
     } finally { setSaving(false); }
-  };
-
-  const showDiff = async () => {
-    if (!context?.root || !activeDocument || !bridge?.workspaceGitDiff) return;
-    setDiff(await bridge.workspaceGitDiff(context.root, activeDocument.path));
-    setMode("diff");
   };
 
   useEffect(() => {
@@ -691,10 +738,10 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
             {!explorerPortalHost ? (
               <div className="zorai-workspace-explorer-heading"><strong>{context.root.split(/[\\/]/).slice(-1)[0]}</strong><button type="button" onClick={() => void refreshRoot()}>↻</button></div>
             ) : null}
-            <details className="zorai-code-open-editors" open>
+            <details className="zorai-code-open-editors">
               <summary>Open Editors ({context.openFiles.length})</summary>
               {context.openFiles.map((filePath) => (
-                <button type="button" key={filePath} className={filePath === context.activeFile ? "active" : ""} onClick={() => setActiveFile(activeThreadId, filePath)}>{filePath.split(/[\\/]/).slice(-1)[0]}</button>
+                <button type="button" key={filePath} className={filePath === context.activeFile ? "active" : ""} onClick={() => void openFile(filePath)}>{filePath.split(/[\\/]/).slice(-1)[0]}</button>
               ))}
             </details>
             <details className="zorai-code-files" open>
@@ -738,7 +785,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
               </details>
             ) : null}
             {isolatedTaskWorktrees.length > 0 ? (
-              <details className="zorai-workspace-isolated-reviews" open>
+              <details className="zorai-workspace-isolated-reviews">
                 <summary>Awaiting isolated review ({isolatedTaskWorktrees.length})</summary>
                 {isolatedTaskWorktrees.map((worktree) => {
                   const review = worktreeReviews[worktree.path];
@@ -760,7 +807,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
               </details>
             ) : null}
             {testProblems.length > 0 ? (
-              <details className="zorai-workspace-problems" open>
+              <details className="zorai-workspace-problems">
                 <summary>Test failures ({testProblems.length})</summary>
                 {testProblems.map((result, index) => (
                   <button type="button" key={`${result.name}:${index}`} onClick={() => result.location && void openFile(result.location.path, { line: result.location.line, column: result.location.column })}>
@@ -770,7 +817,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
               </details>
             ) : null}
             {workspaceDiagnostics.length > 0 ? (
-              <details className="zorai-workspace-problems" open>
+              <details className="zorai-workspace-problems">
                 <summary>Problems ({workspaceDiagnostics.length})</summary>
                 {workspaceDiagnostics.slice(0, 500).map((diagnostic, index) => (
                   <button type="button" key={`${diagnostic.path}:${diagnostic.startLine}:${diagnostic.startColumn}:${diagnostic.code ?? index}`} onClick={() => void openFile(diagnostic.path, { line: diagnostic.startLine, column: diagnostic.startColumn })}>
@@ -782,7 +829,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
               </details>
             ) : null}
             {gitConflicts.length > 0 ? (
-              <details className="zorai-workspace-conflicts" open>
+              <details className="zorai-workspace-conflicts">
                 <summary>Merge conflicts ({gitConflicts.length})</summary>
                 {gitConflicts.map((conflict) => <button type="button" key={conflict.path} onClick={() => void openFile(conflict.path)}>{conflict.path}</button>)}
                 <span>Resolve in the editor, then stage the file explicitly.</span>
@@ -864,7 +911,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
               </div>
             ) : null}
             {operationGroups.length > 0 ? (
-              <details className="zorai-workspace-operation-changes" open>
+              <details className="zorai-workspace-operation-changes">
                 <summary>Agent operations ({operationGroups.length})</summary>
                 {operationGroups.slice(0, 30).map(([operationId, entries]) => (
                   <article key={operationId}>
@@ -884,7 +931,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
               </details>
             ) : null}
             {agentChanges.length > 0 ? (
-              <details className="zorai-workspace-agent-changes" open>
+              <details className="zorai-workspace-agent-changes">
                 <summary>Agent changes ({agentChanges.length})</summary>
                 {agentChanges.slice(0, 40).map((entry) => (
                   <button type="button" key={`${entry.path}:${entry.updated_at}:${entry.source}`} onClick={() => void openFile(entry.path)}>
@@ -910,7 +957,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
             pinned: Boolean(context?.pinnedFiles.includes(filePath)),
             active: filePath === context?.activeFile,
           }))}
-          onActivate={(filePath) => setActiveFile(activeThreadId, filePath)}
+          onActivate={(filePath) => void openFile(filePath)}
           onClose={(filePath) => closeFile(activeThreadId, filePath)}
           onTogglePin={(filePath) => togglePinnedFile(activeThreadId, filePath)}
           onMove={(filePath, direction) => moveOpenFile(activeThreadId, filePath, direction)}
@@ -940,8 +987,8 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
             ) : null}
             <div className="zorai-workspace-editor">
               {mode === "diff" ? (
-                <Suspense fallback={<div className="zorai-workspace-diff-grid"><pre>{activeDocument.original}</pre><pre>{activeDocument.content}</pre></div>}>
-                  <WorkspaceDiffEditor original={activeDocument.original} modified={activeDocument.content} language={activeDocument.language} />
+                <Suspense fallback={<div className="zorai-workspace-diff-grid"><pre>{activeDocument.gitBaseContent ?? activeDocument.original}</pre><pre>{activeDocument.content}</pre></div>}>
+                  <WorkspaceDiffEditor original={activeDocument.gitBaseContent ?? activeDocument.original} modified={activeDocument.content} language={activeDocument.language} />
                 </Suspense>
               ) : mode === "external" ? (
                 <Suspense fallback={<div className="zorai-workspace-diff-grid"><pre>{activeDocument.content}</pre><pre>{activeDocument.externalContent}</pre></div>}>

@@ -644,19 +644,52 @@ async function workspaceGitApplyHunk(rootPath, relativePath, hunkId, action) {
     };
 }
 
+function gitPathFromWorkspace(gitRoot, absolutePath) {
+    return path.relative(gitRoot, absolutePath).split(path.sep).join('/');
+}
+
+async function gitStdout(args, cwd) {
+    const { stdout } = await execFileAsync('git', args, {
+        cwd, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER,
+    }).catch((error) => ({ stdout: typeof error?.stdout === 'string' ? error.stdout : '' }));
+    return stdout;
+}
+
+async function workspaceGitShow(rootPath, relativePath, revision = 'HEAD') {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot || !relativePath) return '';
+    const resolved = resolveWorkspacePath(root, relativePath, { allowMissing: true });
+    return gitStdout(['show', `${revision}:${gitPathFromWorkspace(gitRoot, resolved.absolutePath)}`], gitRoot);
+}
+
 async function workspaceGitDiff(rootPath, relativePath = null, options = {}) {
     const root = canonicalWorkspaceRoot(rootPath);
     const gitRoot = await resolveGitRoot(root);
     if (!gitRoot) return '';
     const args = ['diff', '--no-ext-diff', '--no-color'];
-    if (options.staged === true) args.push('--cached');
+    if (options.againstHead === true || options.againstHead === true) args.push('HEAD');
+    else if (options.staged === true) args.push('--cached');
     if (relativePath) {
         const resolved = resolveWorkspacePath(root, relativePath, { allowMissing: true });
-        args.push('--', path.relative(gitRoot, resolved.absolutePath));
+        args.push('--', gitPathFromWorkspace(gitRoot, resolved.absolutePath));
     }
-    const { stdout } = await execFileAsync('git', args, {
-        cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER,
-    }).catch((error) => ({ stdout: typeof error?.stdout === 'string' ? error.stdout : '' }));
+    let stdout = await gitStdout(args, gitRoot);
+    if (!stdout && relativePath && (options.includeUntracked === true || options.includeUntracked === true)) {
+        const statuses = await workspaceGitStatus(root);
+        const resolved = resolveWorkspacePath(root, relativePath, { allowMissing: true });
+        const relative = gitPathFromWorkspace(root, resolved.absolutePath);
+        const match = statuses.find((entry) => {
+            const statusPath = String(entry.path || '').split(path.sep).join('/');
+            return statusPath === relative || statusPath.endsWith(`/${relative}`) || relative.endsWith(`/${statusPath}`);
+        });
+        if (match && (match.worktreeStatus === '?' || match.indexStatus === '?')) {
+            stdout = await gitStdout(
+                ['diff', '--no-index', '--no-ext-diff', '--no-color', '--', '/dev/null', resolved.absolutePath],
+                gitRoot,
+            );
+        }
+    }
     return stdout;
 }
 
@@ -681,6 +714,7 @@ module.exports = {
     workspaceGitCreateWorktree,
     workspaceGitDiff,
     workspaceGitDiscard,
+    workspaceGitShow,
     workspaceGitHunks,
     workspaceGitHistory,
     workspaceGitIntegrateWorktree,

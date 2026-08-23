@@ -86,6 +86,18 @@ export function WorkspaceCodeEditor({
   const handleMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
+    monaco.editor.defineTheme("zorai-dark", {
+      base: "vs-dark",
+      inherit: true,
+      rules: [],
+      colors: {
+        "minimap.background": "#00000000",
+        "minimapSlider.background": "#ffffff1f",
+        "minimapSlider.hoverBackground": "#ffffff33",
+        "minimapSlider.activeBackground": "#ffffff47",
+      },
+    });
+    monaco.editor.setTheme("zorai-dark");
     providerDisposablesRef.current.forEach((disposable) => disposable.dispose());
     providerDisposablesRef.current = [];
     const bridge = getBridge();
@@ -186,7 +198,7 @@ export function WorkspaceCodeEditor({
           onChange={(next) => onChange(next ?? "")}
           options={{
             automaticLayout: true,
-            minimap: { enabled: true },
+            minimap: { enabled: true, renderCharacters: true, maxColumn: 72, showSlider: "mouseover", side: "right", size: "proportional" },
             fontSize: 13,
             lineHeight: 20,
             wordWrap: "off",

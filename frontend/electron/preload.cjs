@@ -176,6 +176,7 @@ const bridgeApi = {
     workspaceGitApplyHunk: (rootPath, relativePath, hunkId, action) => ipcRenderer.invoke('workspace-git-apply-hunk', rootPath, relativePath, hunkId, action),
     workspaceSearch: (rootPath, query, options) => ipcRenderer.invoke('workspace-search', rootPath, query, options),
     workspaceGitDiff: (rootPath, relativePath, options) => ipcRenderer.invoke('workspace-git-diff', rootPath, relativePath, options),
+    workspaceGitShow: (rootPath, relativePath, revision) => ipcRenderer.invoke('workspace-git-show', rootPath, relativePath, revision),
     workspaceWatchStart: (rootPath, options) => ipcRenderer.invoke('workspace-watch-start', rootPath, options),
     workspaceWatchStop: (subscriptionId) => ipcRenderer.invoke('workspace-watch-stop', subscriptionId),
     onWorkspaceFilesChanged: (cb) => {

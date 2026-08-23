@@ -25,7 +25,8 @@ import {
 import { getBridge } from "@/lib/bridge";
 import { pushToast } from "@/lib/toastStore";
 import { activeThreadBudgetExceededNotice } from "./threadBudgetNotice";
-import { applyManagedSecurityLevel, managedSecurityLevels } from "./threadRuntimeActions";
+import { ManagedSecurityShield } from "./ManagedSecurityShield";
+import { ThreadEffortGauge } from "./ThreadEffortGauge";
 import { AttachmentTiles, composerAttachmentToTile } from "./attachmentTiles";
 import { buildHandoffDefaults, buildThreadAgentOptions } from "./threadHandoffModel";
 import { composerTargetValue, parseComposerTarget, targetAfterAcceptedDispatch, type ComposerTarget } from "./composerTargetModel";
@@ -475,21 +476,10 @@ export function ThreadComposer({
                 </select>
               </label>
             ) : null}
-            <label className="zorai-composer-mode">
-              <select
-                className="zorai-input"
-                value={agentSettings.managed_security_level}
-                title="Managed security mode"
-                aria-label="Managed security mode"
-                onChange={(event) => {
-                  void applyManagedSecurityLevel(event.target.value as typeof agentSettings.managed_security_level);
-                }}
-              >
-                {managedSecurityLevels().map((level) => (
-                  <option key={level} value={level}>{level}</option>
-                ))}
-              </select>
-            </label>
+            <div className="zorai-composer-mode">
+              {runtime.activeThread ? <ThreadEffortGauge thread={runtime.activeThread} /> : null}
+              <ManagedSecurityShield />
+            </div>
             <input
               ref={fileInputRef}
               type="file"

@@ -13,6 +13,7 @@ import { useAgentStore, type AgentThread } from "@/lib/agentStore";
 import { fetchAgentTasks, type AgentQueueTask } from "@/lib/agentTaskQueue";
 import { ThreadFilePreviewOverlay } from "./ThreadFilePreviewOverlay";
 import { ThreadComposer } from "./ThreadComposer";
+import { ThreadCompactSessionBar } from "./ThreadCompactSessionBar";
 import { ThreadActivityRow } from "./ThreadActivityRow";
 import { classifyThreadActivityMessage } from "./threadActivityModel";
 import { ThreadHandoffControl } from "./ThreadHandoffControl";
@@ -242,6 +243,7 @@ export function ThreadsView({
       });
     }
   };
+  const profile = resolveThreadOwnerRuntimeProfile(activeThread, subAgents, useAgentStore.getState().agentSettings, useAgentStore.getState().conciergeConfig);
   return (
     <section className={["zorai-thread-surface", "zorai-native-thread-surface", variant === "compact" ? "zorai-thread-surface--compact" : ""].filter(Boolean).join(" ")}>
       {variant === "full" ? (
@@ -267,12 +269,22 @@ export function ThreadsView({
         </>
       ) : (
         <header className="zorai-code-agent-thread-header">
-          <div>
+          {runtime.canGoBackThread ? (
+            <button
+              type="button"
+              className="zorai-code-agent-thread-back"
+              title={runtime.backThreadTitle ? `Back to ${runtime.backThreadTitle}` : "Back to parent"}
+              onClick={runtime.goBackThread}
+            >
+              <span aria-hidden="true">←</span>
+              <span>{runtime.backThreadTitle ? `Back to ${runtime.backThreadTitle}` : "Back to parent"}</span>
+            </button>
+          ) : null}
+          <div className="zorai-code-agent-thread-header__meta">
             <strong>{activeThread.title}</strong>
-            <span>Responder · {actualThreadResponderLabel(activeThread)}</span>
+            <span>Responder · {actualThreadResponderLabel(activeThread)} · {profile.model} · {profile.provider}</span>
           </div>
           <div className="zorai-code-agent-thread-actions">
-            <ThreadRuntimeSummary thread={activeThread} />
             {compactHeaderActions}
           </div>
         </header>
@@ -362,7 +374,10 @@ export function ThreadsView({
         <ThreadScrollToBottomButton hidden={pinnedToBottom} onClick={scrollThreadToLatest} />
       </div>
 
-      <ThreadComposer showTargetSelector={variant === "compact"} compact={variant === "compact"} />
+      <div className="zorai-thread-composer-stack">
+        {variant === "compact" ? <ThreadCompactSessionBar /> : null}
+        <ThreadComposer showTargetSelector={variant === "compact"} compact={variant === "compact"} />
+      </div>
 
       {variant === "full" && pinLimitResult ? (
         <PinLimitModal result={pinLimitResult} onClose={() => setPinLimitResult(null)} />
@@ -378,7 +393,7 @@ export function ThreadsView({
           onDismissSuggestion={runtime.dismissParticipantSuggestion}
         />
       ) : null}
-      {variant === "full" ? <ThreadFilePreviewOverlay /> : null}
+      <ThreadFilePreviewOverlay />
     </section>
   );
 }

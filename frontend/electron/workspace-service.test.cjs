@@ -22,6 +22,8 @@ const {
     workspaceGitReviewWorktree,
     workspaceGitStage,
     workspaceGitUnstage,
+    workspaceGitDiff,
+    workspaceGitShow,
     writeWorkspaceFile,
 } = require('./main/workspace-service.cjs');
 
@@ -357,5 +359,28 @@ test('binary and oversized files are rejected from text context', async () => {
     fs.writeFileSync(path.join(root, 'large.txt'), 'abcdef');
     await assert.rejects(readWorkspaceFile(root, 'binary.bin'), { code: 'WORKSPACE_BINARY_FILE' });
     await assert.rejects(readWorkspaceFile(root, 'large.txt', { maxBytes: 3 }), { code: 'WORKSPACE_FILE_TOO_LARGE' });
+    fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('workspace git diff includes untracked files when requested and show returns HEAD for tracked files', async () => {
+    const root = tempWorkspace();
+    const runGit = (...args) => require('node:child_process').execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+    runGit('init', '-b', 'main');
+    runGit('config', 'user.email', 'workspace-test@zorai.local');
+    runGit('config', 'user.name', 'Workspace Test');
+    fs.writeFileSync(path.join(root, 'tracked.txt'), 'base\n');
+    runGit('add', 'tracked.txt');
+    runGit('commit', '-m', 'base');
+    fs.writeFileSync(path.join(root, 'tracked.txt'), 'changed\n');
+    fs.writeFileSync(path.join(root, 'new.txt'), 'alpha\nbeta\n');
+    assert.equal(await workspaceGitDiff(root, 'new.txt'), '');
+    const untracked = await workspaceGitDiff(root, 'new.txt', { againstHead: true, includeUntracked: true });
+    assert.match(untracked, /\+alpha/);
+    assert.match(untracked, /\+beta/);
+    const tracked = await workspaceGitDiff(root, 'tracked.txt', { againstHead: true });
+    assert.match(tracked, /-base/);
+    assert.match(tracked, /\+changed/);
+    assert.equal(await workspaceGitShow(root, 'tracked.txt'), 'base\n');
+    assert.equal(await workspaceGitShow(root, 'new.txt'), '');
     fs.rmSync(root, { recursive: true, force: true });
 });
