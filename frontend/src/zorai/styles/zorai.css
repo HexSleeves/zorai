@@ -2922,6 +2922,54 @@
 .zorai-workspace-git-marker { margin-left: auto; padding-right: 8px; color: var(--zorai-accent-secondary); font-weight: 700; }
 .zorai-workspace-tree-loading, .zorai-workspace-empty { padding: 8px 12px; color: var(--zorai-muted); font-size: 11px; }
 
+.zorai-code-overlay {
+  position: absolute;
+  z-index: 100;
+  top: 44px;
+  left: 50%;
+  width: min(680px, calc(100% - 32px));
+  max-height: min(520px, calc(100% - 70px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transform: translateX(-50%);
+  border: 1px solid var(--zorai-border-strong);
+  border-radius: 9px;
+  background: var(--zorai-bg-surface);
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .65);
+}
+
+.zorai-code-overlay > input {
+  height: 42px;
+  border: 0;
+  border-bottom: 1px solid var(--zorai-border);
+  outline: 0;
+  padding: 0 12px;
+  background: var(--zorai-bg-panel);
+  color: var(--zorai-text);
+  font-size: 13px;
+}
+
+.zorai-code-overlay-list { min-height: 0; overflow: auto; padding: 5px; }
+.zorai-code-overlay-list button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  border: 0;
+  border-radius: 6px;
+  padding: 7px 9px;
+  background: transparent;
+  color: var(--zorai-text);
+  text-align: left;
+  cursor: pointer;
+}
+.zorai-code-overlay-list button.is-active,
+.zorai-code-overlay-list button:hover { background: var(--zorai-bg-active); }
+.zorai-code-overlay-list button strong,
+.zorai-code-overlay-list button span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zorai-code-overlay-list button span { color: var(--zorai-muted); font-size: 10px; }
+
 .zorai-workspace-editor-area {
   position: relative;
   display: flex;

@@ -10,6 +10,9 @@ import { CodeTabs } from "@/zorai/features/code/CodeTabs";
 import { shouldRestoreWorkspaceDocument } from "@/zorai/features/code/workspaceDocumentRestore";
 import { useWorkspaceEditorRequestStore } from "@/lib/workspaceEditorRequestStore";
 import { preloadCodeEditor } from "@/zorai/features/code/codeEditorPreload";
+import { CodeQuickOpen } from "@/zorai/features/code/CodeQuickOpen";
+import { CodeCommandPalette } from "@/zorai/features/code/CodeCommandPalette";
+import { CODE_COMMANDS, matchesCodeBinding, type CodeCommandId } from "@/zorai/features/code/codeCommands";
 import { createCodeDocumentController } from "@/zorai/features/code/codeDocumentModel";
 import { createCodeFileOpenTrace } from "@/zorai/features/code/codeEditorPerformance";
 
@@ -103,6 +106,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
   const [mode, setMode] = useState<"edit" | "diff" | "external">("edit");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [codeOverlay, setCodeOverlay] = useState<"quickOpen" | "commands" | null>(null);
   const workspaceSyncTimer = useRef<number | null>(null);
   const [daemonContextLoadedFor, setDaemonContextLoadedFor] = useState<string | null>(null);
   const [newPath, setNewPath] = useState("");
@@ -119,6 +123,8 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const monacoEditorRef = useRef<MonacoEditorApi.IStandaloneCodeEditor | null>(null);
   const pendingNavigationRef = useRef<{ path: string; line: number; column: number } | null>(null);
+  const saveCommandRef = useRef<() => Promise<void>>(async () => {});
+  const reloadCommandRef = useRef<() => Promise<void>>(async () => {});
   const handledEditorRequestTokenRef = useRef(0);
   const editorRequest = useWorkspaceEditorRequestStore((state) => state.request);
   const activeDocument = context?.activeFile ? documents[context.activeFile] : undefined;
@@ -742,6 +748,44 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     } catch (reason: any) { setError(reason?.message ?? String(reason)); }
   };
 
+  saveCommandRef.current = save;
+  reloadCommandRef.current = reloadActiveFile;
+
+  const runCodeCommand = useCallback((id: CodeCommandId) => {
+    if (id === "file.quickOpen") { setCodeOverlay("quickOpen"); return; }
+    if (id === "view.commandPalette") { setCodeOverlay("commands"); return; }
+    if (id === "file.save") { void saveCommandRef.current(); return; }
+    if (id === "file.reload") { void reloadCommandRef.current(); return; }
+    if (id === "search.project") {
+      const input = document.querySelector<HTMLInputElement>(".zorai-workspace-search-row input");
+      input?.focus();
+      return;
+    }
+    const action = monacoEditorRef.current?.getAction(id);
+    if (action) void action.run();
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const command = CODE_COMMANDS.find((item) => item.defaultKeybinding && matchesCodeBinding(item.defaultKeybinding, event));
+      if (!command) return;
+      event.preventDefault();
+      event.stopPropagation();
+      runCodeCommand(command.id);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    return () => window.removeEventListener("keydown", onKeyDown, true);
+  }, [runCodeCommand]);
+
+  const explorerFiles = useMemo(() => {
+    const paths: string[] = [];
+    const visit = (entries: ZoraiWorkspaceEntry[]) => {
+      for (const entry of entries) if (!entry.isDirectory) paths.push(entry.path);
+    };
+    visit(rootEntries);
+    return [...(context?.openFiles ?? []), ...paths];
+  }, [context?.openFiles, rootEntries]);
+
   const deleteActiveFile = async () => {
     if (!activeThreadId || !context?.root || !activeDocument || !bridge?.workspaceDeletePath) return;
     if (!window.confirm(`Delete ${activeDocument.path}?`)) return;
@@ -1094,6 +1138,16 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
             </div>
           </>
         )}
+        {codeOverlay === "quickOpen" ? (
+          <CodeQuickOpen
+            files={explorerFiles}
+            onOpen={(path, line, column) => void openFile(path, line ? { line, column: column ?? 1 } : undefined)}
+            onClose={() => setCodeOverlay(null)}
+          />
+        ) : null}
+        {codeOverlay === "commands" ? (
+          <CodeCommandPalette onRun={runCodeCommand} onClose={() => setCodeOverlay(null)} />
+        ) : null}
         {error ? <div className="zorai-workspace-error">{error}</div> : null}
       </section>
   );
