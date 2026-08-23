@@ -3211,7 +3211,49 @@ button.zorai-composer-context-chip { cursor: pointer; }
 /* First-class Code workspace geometry. The workbench owns state once and portals
    its Explorer into the contextual rail while the editor remains in main. */
 .zorai-shell.zorai-shell--code {
+  /* Code keeps the current Zorai token contract, but resolves it to a neutral
+     black hierarchy so editor chrome never inherits the shell's blue-space
+     wash. Semantic danger/warning/success colors remain global. */
+  --zorai-bg: #030405;
+  --zorai-bg-panel: #070809;
+  --zorai-bg-surface: #0a0b0d;
+  --zorai-bg-elevated: #0d0f11;
+  --zorai-bg-active: #151719;
+  --zorai-border: #1b1d20;
+  --zorai-border-strong: #2a2d31;
+  --zorai-muted: #858b94;
+  --zorai-accent: #d6d7da;
+  --zorai-accent-secondary: #9ca1a8;
+  --zorai-accent-glow: rgba(255, 255, 255, 0.08);
   grid-template-columns: 68px minmax(250px, 280px) minmax(380px, 1fr) 320px;
+  background: var(--zorai-bg);
+}
+
+.zorai-shell--code .zorai-global-rail,
+.zorai-shell--code .zorai-contextual-rail,
+.zorai-shell--code .zorai-context-panel,
+.zorai-shell--code .zorai-main,
+.zorai-shell--code .zorai-workspace-editor-area {
+  background: var(--zorai-bg);
+}
+
+.zorai-shell--code .zorai-contextual-rail,
+.zorai-shell--code .zorai-context-panel,
+.zorai-shell--code .zorai-code-tabs-shell,
+.zorai-shell--code .zorai-workspace-breadcrumbs,
+.zorai-shell--code .zorai-code-context-chips {
+  background: var(--zorai-bg-panel);
+}
+
+.zorai-shell--code .zorai-global-item--active {
+  border-color: var(--zorai-border-strong);
+  background: var(--zorai-bg-active);
+  color: var(--zorai-text);
+  box-shadow: none;
+}
+
+.zorai-shell--code .zorai-workspace-statusbar {
+  background: var(--zorai-bg-elevated);
 }
 
 .zorai-shell.zorai-shell--code.zorai-shell--rail-collapsed {

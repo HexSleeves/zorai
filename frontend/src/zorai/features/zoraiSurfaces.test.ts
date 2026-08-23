@@ -71,6 +71,31 @@ describe("Zorai feature surfaces", () => {
     expect(workbenchSource).toContain("Ready · Select a file from Explorer");
   });
 
+  it("uses a Code-scoped neutral black palette without blue or cyan surface washes", () => {
+    const styleSource = readFileSync(new URL("../styles/zorai.css", import.meta.url), "utf8");
+    const codePalette = readFunctionSource(
+      styleSource,
+      ".zorai-shell.zorai-shell--code {",
+      ".zorai-shell.zorai-shell--code.zorai-shell--rail-collapsed",
+    );
+
+    expect(codePalette).toContain("--zorai-bg: #030405");
+    expect(codePalette).toContain("--zorai-bg-panel: #070809");
+    expect(codePalette).toContain("--zorai-bg-surface: #0a0b0d");
+    expect(codePalette).toContain("--zorai-bg-elevated: #0d0f11");
+    expect(codePalette).toContain("--zorai-bg-active: #151719");
+    expect(codePalette).toContain("--zorai-border: #1b1d20");
+    expect(codePalette).toContain("--zorai-border-strong: #2a2d31");
+    expect(codePalette).toContain("--zorai-muted: #858b94");
+    expect(codePalette).toContain("background: var(--zorai-bg)");
+    expect(codePalette).not.toMatch(/radial-gradient|#(?:0a0f18|0f1520|141c28|212e3e)/i);
+
+    expect(styleSource).toContain(".zorai-shell--code .zorai-global-item--active");
+    expect(styleSource).toContain(".zorai-shell--code .zorai-workspace-statusbar");
+    expect(codePalette).not.toContain("var(--zorai-accent-secondary)");
+    expect(styleSource).toContain("background: color-mix(in srgb, var(--zorai-accent-secondary) 16%, var(--zorai-bg-panel))");
+  });
+
   it("keeps Goals native to the Zorai shell instead of embedding legacy task UI", () => {
     const source = readFeature("./goals/GoalsView.tsx");
 
