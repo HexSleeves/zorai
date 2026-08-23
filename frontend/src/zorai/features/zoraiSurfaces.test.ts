@@ -40,11 +40,35 @@ describe("Zorai feature surfaces", () => {
     expect(workbenchSource).toContain('document.getElementById("zorai-code-explorer-host")');
     expect(workbenchSource).toContain("createPortal(explorer, explorerPortalHost)");
     expect(workbenchSource).toContain(": explorer}");
+    expect(workbenchSource).toContain("{!explorerPortalHost ? (");
+    expect(workbenchSource).toContain('className="zorai-code-workspace-actions"');
+    expect(workbenchSource).toContain('className="zorai-code-source-control"');
     expect(shellSource).toContain('activeView === "code" ? "zorai-shell--code"');
+    expect(shellSource).toContain('activeView === "code" ? "Explorer" : activeItem.label');
     expect(styleSource).toContain(".zorai-shell.zorai-shell--code");
     expect(styleSource).toContain(".zorai-code-explorer-scroll");
     expect(codeSource).not.toContain("zorai-view-header");
     expect(codeSource).not.toContain("zorai-tool-tab-strip");
+  });
+
+  it("opens the Code Agent on first Code entry and preserves the shared conversation", () => {
+    const shellSource = readFeature("../shell/ZoraiShell.tsx");
+    const codeSource = readFeature("./code/CodeView.tsx");
+
+    expect(shellSource).toContain("const codeAgentOpenedRef = useRef(false)");
+    expect(shellSource).toContain('if (activeView !== "code" || codeAgentOpenedRef.current) return');
+    expect(shellSource).toContain("setContextOpen(true)");
+    expect(codeSource).toContain('className="zorai-code-context-chips"');
+    expect(codeSource).toContain('<ThreadsView variant="compact" />');
+  });
+
+  it("reserves editor hierarchy when no document is selected", () => {
+    const workbenchSource = readFeature("../../components/WorkspaceWorkbench.tsx");
+
+    expect(workbenchSource).toContain('className="zorai-workspace-breadcrumbs zorai-workspace-breadcrumbs--empty"');
+    expect(workbenchSource).toContain("No file selected");
+    expect(workbenchSource).toContain('className="zorai-workspace-statusbar"');
+    expect(workbenchSource).toContain("Ready · Select a file from Explorer");
   });
 
   it("keeps Goals native to the Zorai shell instead of embedding legacy task UI", () => {

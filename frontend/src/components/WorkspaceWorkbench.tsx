@@ -688,7 +688,9 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
         ) : null}
         {context?.root ? (
           <>
-            <div className="zorai-workspace-explorer-heading"><strong>{context.root.split(/[\\/]/).slice(-1)[0]}</strong><button type="button" onClick={() => void refreshRoot()}>↻</button></div>
+            {!explorerPortalHost ? (
+              <div className="zorai-workspace-explorer-heading"><strong>{context.root.split(/[\\/]/).slice(-1)[0]}</strong><button type="button" onClick={() => void refreshRoot()}>↻</button></div>
+            ) : null}
             <details className="zorai-code-open-editors" open>
               <summary>Open Editors ({context.openFiles.length})</summary>
               {context.openFiles.map((filePath) => (
@@ -699,16 +701,19 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
               <summary>Files</summary>
               <div className="zorai-workspace-tree" role="tree" aria-label="Workspace files">{rootEntries.map((entry) => <WorkspaceTreeNode key={entry.path} root={context.root} entry={entry} depth={0} status={statusMap} onOpen={(path) => void openFile(path)} />)}</div>
             </details>
-            <label className="zorai-workspace-isolation-toggle"><input type="checkbox" checked={context.isolateAgentTasks} onChange={(event) => setIsolateAgentTasks(activeThreadId, event.target.checked)} /><span>Isolate agent tasks in worktrees</span></label>
-            <div className="zorai-workspace-create-row">
-              <input value={newPath} onChange={(event) => setNewPath(event.target.value)} placeholder="relative/path" />
-              <button type="button" title="New file" onClick={() => void createPath("file")}>+F</button>
-              <button type="button" title="New directory" onClick={() => void createPath("directory")}>+D</button>
-            </div>
-            <div className="zorai-workspace-search-row">
-              <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search workspace" onKeyDown={(event) => { if (event.key === "Enter") void runSearch(); }} />
-              <button type="button" onClick={() => void runSearch()}>⌕</button>
-            </div>
+            <details className="zorai-code-workspace-actions">
+              <summary>Workspace Actions</summary>
+              <label className="zorai-workspace-isolation-toggle"><input type="checkbox" checked={context.isolateAgentTasks} onChange={(event) => setIsolateAgentTasks(activeThreadId, event.target.checked)} /><span>Isolate agent tasks in worktrees</span></label>
+              <div className="zorai-workspace-create-row">
+                <input value={newPath} onChange={(event) => setNewPath(event.target.value)} placeholder="relative/path" />
+                <button type="button" title="New file" onClick={() => void createPath("file")}>+F</button>
+                <button type="button" title="New directory" onClick={() => void createPath("directory")}>+D</button>
+              </div>
+              <div className="zorai-workspace-search-row">
+                <input value={searchQuery} onChange={(event) => setSearchQuery(event.target.value)} placeholder="Search workspace" onKeyDown={(event) => { if (event.key === "Enter") void runSearch(); }} />
+                <button type="button" onClick={() => void runSearch()}>⌕</button>
+              </div>
+            </details>
             {workspaceTests.length > 0 ? (
               <details className="zorai-workspace-tests">
                 <summary>Tests ({workspaceTests.length})</summary>
@@ -808,12 +813,15 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
               </details>
             ) : null}
             {gitOverview?.isRepository ? (
-              <div className="zorai-workspace-git-overview">
-                <span><strong>{gitOverview.branch || "detached HEAD"}</strong>{gitOverview.upstream ? ` · ${gitOverview.upstream}` : " · no upstream"}</span>
-                <span>↑{gitOverview.ahead} ↓{gitOverview.behind} · {gitOverview.stagedFiles} staged · {gitOverview.unstagedFiles} unstaged</span>
-                <textarea value={commitMessage} onChange={(event) => setCommitMessage(event.target.value)} placeholder="Commit message" rows={2} maxLength={4096} />
-                <button type="button" disabled={committing || !commitMessage.trim() || gitOverview.stagedFiles === 0} onClick={() => void commitStagedChanges()}>{committing ? "Committing…" : "Commit staged"}</button>
-              </div>
+              <details className="zorai-code-source-control">
+                <summary>Source Control ({gitOverview.stagedFiles + gitOverview.unstagedFiles})</summary>
+                <div className="zorai-workspace-git-overview">
+                  <span><strong>{gitOverview.branch || "detached HEAD"}</strong>{gitOverview.upstream ? ` · ${gitOverview.upstream}` : " · no upstream"}</span>
+                  <span>↑{gitOverview.ahead} ↓{gitOverview.behind} · {gitOverview.stagedFiles} staged · {gitOverview.unstagedFiles} unstaged</span>
+                  <textarea value={commitMessage} onChange={(event) => setCommitMessage(event.target.value)} placeholder="Commit message" rows={2} maxLength={4096} />
+                  <button type="button" disabled={committing || !commitMessage.trim() || gitOverview.stagedFiles === 0} onClick={() => void commitStagedChanges()}>{committing ? "Committing…" : "Commit staged"}</button>
+                </div>
+              </details>
             ) : null}
             {gitStatus.length > 0 ? (
               <details className="zorai-workspace-source-control">
@@ -968,7 +976,18 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
             </div>
             {mode === "diff" && diff !== null ? <details className="zorai-workspace-raw-diff"><summary>Git patch</summary><pre>{diff || "No working-tree diff for this file."}</pre></details> : null}
           </>
-        ) : <div className="zorai-tool-empty"><strong>Workspace editor</strong><span>Select a text file from Explorer. File contents are loaded on demand and never injected implicitly.</span></div>}
+        ) : (
+          <>
+            <nav className="zorai-workspace-breadcrumbs zorai-workspace-breadcrumbs--empty" aria-label="File breadcrumbs">
+              <span>No file selected</span>
+            </nav>
+            <div className="zorai-tool-empty zorai-code-editor-empty"><strong>Workspace editor</strong><span>Select a text file from Explorer. File contents are loaded on demand and never injected implicitly.</span></div>
+            <div className="zorai-workspace-statusbar">
+              <span>Ready · Select a file from Explorer</span>
+              <span>No language mode</span>
+            </div>
+          </>
+        )}
         {error ? <div className="zorai-workspace-error">{error}</div> : null}
       </section>
   );

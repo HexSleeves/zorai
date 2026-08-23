@@ -131,8 +131,20 @@ export function CodeView({
 }
 
 export function CodeAgentPane() {
+  const activeThreadId = useAgentStore((state) => state.activeThreadId);
+  const activeThread = useAgentStore((state) => state.threads.find((thread) => thread.id === state.activeThreadId) ?? null);
+  const workspace = useWorkspaceContextStore((state) => activeThreadId ? state.byThreadId[activeThreadId] ?? null : null);
+  const activeFile = workspace?.activeFile?.split(/[\\/]/).slice(-1)[0] ?? null;
+  const selection = workspace?.selection;
+
   return (
     <div className="zorai-code-agent-pane">
+      <div className="zorai-code-context-chips" aria-label="Code Agent context">
+        <span>{activeThread?.agent_name ? `Responder · ${activeThread.agent_name}` : "Code workspace"}</span>
+        {workspace?.root ? <span title={workspace.root}>{displayRootName(workspace.root)}</span> : null}
+        {activeFile ? <span title={workspace?.activeFile ?? undefined}>{activeFile}</span> : null}
+        {selection ? <span>Selection {selection.startLine}:{selection.startColumn}–{selection.endLine}:{selection.endColumn}</span> : null}
+      </div>
       <ThreadsView variant="compact" />
     </div>
   );

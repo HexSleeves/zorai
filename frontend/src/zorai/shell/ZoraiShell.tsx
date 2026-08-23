@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { OperatorQuestionDock } from "@/components/OperatorQuestionDock";
 import { ActivityRail, ActivityView } from "../features/activity/ActivityView";
 import { DatabaseRail, DatabaseView } from "../features/database/DatabaseView";
@@ -30,6 +30,7 @@ export function ZoraiShell() {
   const [activeDatabaseTable, setActiveDatabaseTable] = useState<string | null>(null);
   const [railOpen, setRailOpen] = useState(true);
   const [contextOpen, setContextOpen] = useState(false);
+  const codeAgentOpenedRef = useRef(false);
   const [returnTarget, setReturnTarget] = useState<ZoraiReturnTarget | null>(null);
   const [goalOpenRequest, setGoalOpenRequest] = useState<GoalOpenRequest | null>(null);
   const activeItem = useMemo(
@@ -57,6 +58,12 @@ export function ZoraiShell() {
     window.addEventListener(ZORAI_NAVIGATE_EVENT, onNavigate);
     return () => window.removeEventListener(ZORAI_NAVIGATE_EVENT, onNavigate);
   }, []);
+
+  useEffect(() => {
+    if (activeView !== "code" || codeAgentOpenedRef.current) return;
+    codeAgentOpenedRef.current = true;
+    setContextOpen(true);
+  }, [activeView]);
 
   const selectView = (view: ZoraiViewId) => {
     setActiveView(view);
@@ -120,7 +127,7 @@ export function ZoraiShell() {
             >
               <ZoraiHamburgerIcon />
             </button>
-            <div className="zorai-kicker">{activeItem.label}</div>
+            <div className="zorai-kicker">{activeView === "code" ? "Explorer" : activeItem.label}</div>
           </div>
           <div id="zorai-contextual-rail-body" className="zorai-rail-body" hidden={!railOpen}>
             {renderRail(activeView, activeTool, setActiveTool, activeSettingsTab, setActiveSettingsTab, activeDatabaseTable, selectDatabaseTable)}

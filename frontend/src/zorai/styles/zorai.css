@@ -86,7 +86,14 @@
 }
 
 .zorai-global-items {
+  flex: 1;
+  width: 100%;
+  align-items: center;
   gap: 8px;
+}
+
+.zorai-global-items .zorai-global-item:last-child {
+  margin-top: auto;
 }
 
 .zorai-global-item {
@@ -3306,12 +3313,16 @@ button.zorai-composer-context-chip { cursor: pointer; }
 }
 
 .zorai-code-open-editors,
-.zorai-code-files {
+.zorai-code-files,
+.zorai-code-workspace-actions,
+.zorai-code-source-control {
   border-bottom: 1px solid var(--zorai-border);
 }
 
 .zorai-code-open-editors > summary,
-.zorai-code-files > summary {
+.zorai-code-files > summary,
+.zorai-code-workspace-actions > summary,
+.zorai-code-source-control > summary {
   min-height: 30px;
   display: flex;
   align-items: center;
@@ -3341,6 +3352,17 @@ button.zorai-composer-context-chip { cursor: pointer; }
 .zorai-code-open-editors > button:hover {
   background: var(--zorai-bg-active);
   color: var(--zorai-text);
+}
+
+.zorai-code-workspace-actions > summary,
+.zorai-code-source-control > summary {
+  color: var(--zorai-muted);
+  font-weight: 600;
+}
+
+.zorai-code-workspace-actions[open],
+.zorai-code-source-control[open] {
+  background: var(--zorai-bg-panel);
 }
 
 .zorai-code-tabs-shell {
@@ -3451,7 +3473,48 @@ button.zorai-composer-context-chip { cursor: pointer; }
   height: 100%;
   min-width: 0;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
+}
+
+.zorai-code-agent-pane > .zorai-thread-surface--compact {
+  flex: 1;
+  height: auto;
+}
+
+.zorai-code-context-chips {
+  min-height: 38px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow-x: auto;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--zorai-border);
+  background: var(--zorai-bg-panel);
+}
+
+.zorai-code-context-chips > span {
+  flex: 0 0 auto;
+  max-width: 180px;
+  overflow: hidden;
+  padding: 3px 6px;
+  border: 1px solid var(--zorai-border-strong);
+  border-radius: 4px;
+  color: var(--zorai-muted);
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zorai-code-editor-empty {
+  flex: 1;
+  height: auto;
+  min-height: 0;
+}
+
+.zorai-workspace-breadcrumbs--empty {
+  color: var(--zorai-muted);
 }
 
 .zorai-thread-surface--compact {
