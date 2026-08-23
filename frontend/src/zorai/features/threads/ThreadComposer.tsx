@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from "react";
 import { useAgentChatPanelRuntime } from "@/components/agent-chat-panel/runtime/context";
 import {
   blobToBase64,
@@ -46,7 +46,7 @@ export function ThreadComposer({
   const [contextPreviewOpen, setContextPreviewOpen] = useState(false);
   const subAgents = useAgentStore((state) => state.subAgents);
   const activeResponderId = runtime.activeThread?.threadHandoffState?.activeAgentId ?? runtime.activeThread?.agent_name ?? "swarog";
-  const handoffAgents = buildThreadAgentOptions(
+  const handoffAgents = useMemo(() => buildThreadAgentOptions(
     [
       { id: "swarog", name: "Svarog" },
       { id: "rarog", name: "Rarog" },
@@ -54,12 +54,12 @@ export function ThreadComposer({
     ],
     [],
     activeResponderId,
-  );
-  const composerTargets: ComposerTarget[] = [
+  ), [activeResponderId]);
+  const composerTargets: ComposerTarget[] = useMemo(() => [
     { kind: "current", id: "current", label: runtime.activeThread?.agent_name || "Current responder" },
     ...handoffAgents.map((agent) => ({ kind: "agent" as const, id: agent.id, label: agent.name })),
     ...subAgents.filter((agent) => agent.enabled).map((agent) => ({ kind: "subagent" as const, id: agent.id, label: agent.name })),
-  ];
+  ], [handoffAgents, runtime.activeThread?.agent_name, subAgents]);
   const [composerTarget, setComposerTarget] = useState<ComposerTarget>(composerTargets[0]);
   const [targetPending, setTargetPending] = useState(false);
   const [targetError, setTargetError] = useState<string | null>(null);
@@ -94,6 +94,13 @@ export function ThreadComposer({
     && typeof MediaRecorder !== "undefined"
     && Boolean(navigator.mediaDevices?.getUserMedia)
     && Boolean(getBridge()?.agentSpeechToText);
+
+  useEffect(() => {
+    if (!showTargetSelector) return;
+    setComposerTarget(composerTargets[0]);
+    setTargetError(null);
+    setTargetPending(false);
+  }, [activeThreadId, composerTargets, showTargetSelector]);
 
   useEffect(() => {
     return () => {

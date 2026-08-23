@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
 import { ToolEventRow } from "@/components/agent-chat-panel/chat-view/ToolEventRow";
 import { buildDisplayItems } from "@/components/agent-chat-panel/chat-view/helpers";
 import { useAgentChatPanelRuntime } from "@/components/agent-chat-panel/runtime/context";
@@ -27,6 +27,7 @@ import { ThreadRetryStatusBanner } from "./ThreadRetryStatusBanner";
 import { useThreadRetryStatus } from "./threadRetryStatus";
 import { resolveThreadOwnerRuntimeProfile } from "./threadOwnerRuntime";
 import type { ZoraiReturnTarget } from "../../shell/zoraiNavigationEvents";
+import { threadReadKey, useThreadReadStateStore } from "./threadReadStateStore";
 
 export { ThreadsRail } from "./ThreadsRail";
 
@@ -34,10 +35,12 @@ export function ThreadsView({
   returnTarget = null,
   onReturnTarget,
   variant = "full",
+  compactHeaderActions = null,
 }: {
   returnTarget?: ZoraiReturnTarget | null;
   onReturnTarget?: () => void;
   variant?: "full" | "compact";
+  compactHeaderActions?: ReactNode;
 } = {}) {
   const runtime = useAgentChatPanelRuntime();
   const [pinLimitResult, setPinLimitResult] = useState<ZoraiThreadMessagePinResult | null>(null);
@@ -107,6 +110,28 @@ export function ThreadsView({
   }, [speech]);
 
   const activeThreadId = runtime.activeThread?.id ?? null;
+  const activeReadThread = runtime.activeThread;
+  const activeReadMessages = runtime.messages;
+
+  useEffect(() => {
+    if (!activeReadThread) return;
+    const store = useThreadReadStateStore.getState();
+    const localKey = `local:${activeReadThread.id}`;
+    const daemonKey = activeReadThread.daemonThreadId?.trim()
+      ? `daemon:${activeReadThread.daemonThreadId.trim()}`
+      : null;
+    if (daemonKey) store.migrateThreadKey(localKey, daemonKey);
+    const key = threadReadKey(activeReadThread);
+    const newestDisplayedAt = activeReadMessages.reduce(
+      (latest, message) => Math.max(latest, message.createdAt ?? 0),
+      0,
+    );
+    if (!key || newestDisplayedAt <= 0) return;
+    const frame = requestAnimationFrame(() => {
+      useThreadReadStateStore.getState().markRead(key, newestDisplayedAt);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeReadMessages, activeReadThread]);
 
   useEffect(() => {
     setFollowThreadHistoryBottom(true);
@@ -217,7 +242,10 @@ export function ThreadsView({
             <strong>{activeThread.title}</strong>
             <span>Responder · {activeThread.agent_name}</span>
           </div>
-          <ThreadRuntimeSummary thread={activeThread} />
+          <div className="zorai-code-agent-thread-actions">
+            <ThreadRuntimeSummary thread={activeThread} />
+            {compactHeaderActions}
+          </div>
         </header>
       )}
 

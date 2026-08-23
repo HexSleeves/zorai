@@ -78,10 +78,10 @@ export function projectThreadsForRoot({
     .sort((left, right) => right.thread.updatedAt - left.thread.updatedAt);
 }
 
-export function filterCodeProjectThreads(
-  entries: CodeProjectThreadEntry[],
+export function filterCodeProjectThreads<T extends CodeProjectThreadEntry>(
+  entries: T[],
   query: string,
-): CodeProjectThreadEntry[] {
+): T[] {
   const needle = query.trim().toLowerCase();
   if (!needle) return entries;
   return entries.filter(({ thread, responder }) =>
