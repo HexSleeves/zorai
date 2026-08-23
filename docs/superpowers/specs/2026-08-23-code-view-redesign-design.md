@@ -14,7 +14,7 @@ Turn the existing workspace/file-editor implementation into a first-class **Code
 The approved interactive mockup is a normative visual reference, not a loose wireframe:
 
 ```text
-/home/mkurman/.zorai/threads/thread_11440/artifacts/previews/code-layout-v1.html
+docs/superpowers/specs/assets/code-layout-v1.html
 ```
 
 The production Electron view must look almost exactly like that composition while using the current Zorai design system rather than inventing a parallel theme. A technically functional implementation that materially differs from the reference layout is not accepted.
