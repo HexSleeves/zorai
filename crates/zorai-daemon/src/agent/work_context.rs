@@ -1438,6 +1438,13 @@ mod tests {
                 &snapshots,
             )
             .await;
+        let status = engine
+            .file_operation_snapshot_status("operation-restore")
+            .await;
+        assert!(status.available);
+        assert!(status.revertible);
+        assert_eq!(status.retained_bytes, 6);
+        assert!(status.stale_paths.is_empty());
         let reverted = engine
             .revert_file_operation("operation-restore")
             .await
@@ -1463,6 +1470,12 @@ mod tests {
             )
             .await;
         std::fs::write(&file, b"later edit").expect("write later edit");
+        let status = engine
+            .file_operation_snapshot_status("operation-stale")
+            .await;
+        assert!(status.available);
+        assert!(!status.revertible);
+        assert_eq!(status.stale_paths, vec![file.to_string_lossy()]);
         let error = engine
             .revert_file_operation("operation-stale")
             .await
