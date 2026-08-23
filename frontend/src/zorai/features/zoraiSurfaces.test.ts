@@ -155,6 +155,8 @@ describe("Zorai feature surfaces", () => {
     expect(agentPaneSource).toContain("bindRoot(localId, root)");
     expect(agentPaneSource).toContain("runtime.openThread(localId)");
     expect(agentPaneSource).not.toContain("updateAgentSetting");
+    expect(composerSource).toContain("previousTargetThreadRef.current === activeThreadId");
+    expect(composerSource).toContain("previousTargetThreadRef.current = activeThreadId");
     expect(composerSource).toContain("setComposerTarget(composerTargets[0])");
     expect(composerSource).toContain("[activeThreadId, composerTargets, showTargetSelector]");
     expect(composerSource).toContain("runtime.pushHandoff");

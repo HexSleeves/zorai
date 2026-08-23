@@ -95,8 +95,10 @@ export function ThreadComposer({
     && Boolean(navigator.mediaDevices?.getUserMedia)
     && Boolean(getBridge()?.agentSpeechToText);
 
+  const previousTargetThreadRef = useRef<string | null | undefined>(undefined);
   useEffect(() => {
-    if (!showTargetSelector) return;
+    if (!showTargetSelector || previousTargetThreadRef.current === activeThreadId) return;
+    previousTargetThreadRef.current = activeThreadId;
     setComposerTarget(composerTargets[0]);
     setTargetError(null);
     setTargetPending(false);
