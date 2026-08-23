@@ -18,6 +18,7 @@ export type ThreadWorkspaceContext = {
   openFiles: string[];
   updatedAt: number;
   isolateAgentTasks: boolean;
+  isolatedWorktreeStates: Record<string, "awaiting_review" | "retained" | "integrated" | "rejected">;
   pinnedFiles: string[];
 };
 
@@ -33,6 +34,7 @@ type WorkspaceContextState = {
   togglePinnedFile: (threadId: string, filePath: string) => void;
   moveOpenFile: (threadId: string, filePath: string, direction: -1 | 1) => void;
   setIsolateAgentTasks: (threadId: string, enabled: boolean) => void;
+  setIsolatedWorktreeState: (threadId: string, worktreePath: string, state: "awaiting_review" | "retained" | "integrated" | "rejected") => void;
 };
 
 function persist(byThreadId: Record<string, ThreadWorkspaceContext>) {
@@ -60,6 +62,7 @@ export const useWorkspaceContextStore = create<WorkspaceContextState>((set, get)
     const byThreadId = Object.fromEntries(Object.entries(saved?.byThreadId ?? {}).map(([threadId, context]) => [threadId, {
       ...context,
       isolateAgentTasks: context.isolateAgentTasks ?? false,
+      isolatedWorktreeStates: context.isolatedWorktreeStates ?? {},
       pinnedFiles: context.pinnedFiles ?? [],
     }]));
     set({ hydrated: true, byThreadId });
@@ -78,6 +81,7 @@ export const useWorkspaceContextStore = create<WorkspaceContextState>((set, get)
           openFiles: [],
           updatedAt: Date.now(),
           isolateAgentTasks: true,
+          isolatedWorktreeStates: {},
           pinnedFiles: [],
         },
     };
@@ -118,6 +122,11 @@ export const useWorkspaceContextStore = create<WorkspaceContextState>((set, get)
     [openFiles[index], openFiles[target]] = [openFiles[target], openFiles[index]];
     return { ...current, openFiles, updatedAt: Date.now() };
   })),
+  setIsolatedWorktreeState: (threadId, worktreePath, lifecycle) => set((state) => updateContext(state, threadId, (current) => ({
+    ...current,
+    isolatedWorktreeStates: { ...current.isolatedWorktreeStates, [worktreePath]: lifecycle },
+    updatedAt: Date.now(),
+  }))),
   setIsolateAgentTasks: (threadId, enabled) => set((state) => updateContext(state, threadId, (current) => ({
     ...current,
     isolateAgentTasks: enabled,

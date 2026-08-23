@@ -74,6 +74,7 @@ export function WorkspaceWorkbench() {
   const togglePinnedFile = useWorkspaceContextStore((state) => state.togglePinnedFile);
   const moveOpenFile = useWorkspaceContextStore((state) => state.moveOpenFile);
   const setIsolateAgentTasks = useWorkspaceContextStore((state) => state.setIsolateAgentTasks);
+  const setIsolatedWorktreeState = useWorkspaceContextStore((state) => state.setIsolatedWorktreeState);
   const [rootInput, setRootInput] = useState(context?.root ?? activeWorkspace?.cwd ?? "");
   const [rootEntries, setRootEntries] = useState<ZoraiWorkspaceEntry[]>([]);
   const [gitStatus, setGitStatus] = useState<ZoraiWorkspaceGitStatus[]>([]);
@@ -166,6 +167,7 @@ export function WorkspaceWorkbench() {
             openFiles: daemonContext.open_files ?? [],
             updatedAt: daemonContext.updated_at ?? Date.now(),
             isolateAgentTasks: daemonContext.isolate_agent_tasks ?? false,
+            isolatedWorktreeStates: daemonContext.isolated_worktree_states ?? current?.isolatedWorktreeStates ?? {},
             pinnedFiles: current?.pinnedFiles ?? [],
           } },
         }));
@@ -189,6 +191,7 @@ export function WorkspaceWorkbench() {
         open_files: context.openFiles,
         updated_at: context.updatedAt,
         isolate_agent_tasks: context.isolateAgentTasks,
+        isolated_worktree_states: context.isolatedWorktreeStates,
       }).catch(() => {});
     }, 350);
     return () => {
@@ -442,7 +445,7 @@ export function WorkspaceWorkbench() {
   }, [bridge, context?.root, isolatedTaskWorktrees]);
 
   const integrateIsolatedWorktree = async (worktreePath: string) => {
-    if (!context?.root || !bridge?.workspaceGitIntegrateWorktree) return;
+    if (!activeThreadId || !context?.root || !bridge?.workspaceGitIntegrateWorktree) return;
     const review = worktreeReviews[worktreePath];
     if (!review?.canIntegrate) return;
     if (!window.confirm(`Integrate ${review.commits.length} reviewed commit(s) into the current worktree? Conflicts will be aborted automatically.`)) return;
@@ -451,6 +454,7 @@ export function WorkspaceWorkbench() {
       setGitOverview(result.overview);
       setGitStatus(result.status);
       setWorktreeReviews((current) => ({ ...current, [worktreePath]: result.review }));
+      setIsolatedWorktreeState(activeThreadId, worktreePath, "integrated");
       await refreshRoot();
       setError(null);
     } catch (reason: any) { setError(reason?.message ?? String(reason)); }
@@ -703,12 +707,18 @@ export function WorkspaceWorkbench() {
                 <summary>Awaiting isolated review ({isolatedTaskWorktrees.length})</summary>
                 {isolatedTaskWorktrees.map((worktree) => {
                   const review = worktreeReviews[worktree.path];
+                  const lifecycle = context.isolatedWorktreeStates[worktree.path] ?? (review?.commits.length === 0 ? "integrated" : "awaiting_review");
                   return (
                     <div key={worktree.path}>
                       <button type="button" onClick={() => switchThreadWorktree(worktree.path)}><strong>{worktree.branch}</strong><span>{worktree.path}</span></button>
-                      <em>{review ? `${review.commits.length} commit(s) · ${review.files.length} file(s) · source ${review.source.clean ? "clean" : "dirty"} · target ${review.target.clean ? "clean" : "dirty"}` : "Loading review…"}</em>
+                      <em>{lifecycle.replace("_", " ")} · {review ? `${review.commits.length} commit(s) · ${review.files.length} file(s) · source ${review.source.clean ? "clean" : "dirty"} · target ${review.target.clean ? "clean" : "dirty"}` : "Loading review…"}</em>
                       {review?.commits.map((commit) => <code key={commit.hash}>{commit.hash.slice(0, 8)} · {commit.subject}</code>)}
-                      {review?.canIntegrate ? <button type="button" className="zorai-workspace-integrate-button" onClick={() => void integrateIsolatedWorktree(worktree.path)}>Integrate reviewed commits</button> : null}
+                      {review?.canIntegrate && lifecycle === "awaiting_review" ? <button type="button" className="zorai-workspace-integrate-button" onClick={() => void integrateIsolatedWorktree(worktree.path)}>Integrate reviewed commits</button> : null}
+                      <span className="zorai-workspace-lifecycle-actions">
+                        <button type="button" onClick={() => setIsolatedWorktreeState(activeThreadId, worktree.path, "retained")}>Retain</button>
+                        <button type="button" onClick={() => setIsolatedWorktreeState(activeThreadId, worktree.path, "rejected")}>Reject</button>
+                        <button type="button" onClick={() => setIsolatedWorktreeState(activeThreadId, worktree.path, "awaiting_review")}>Review</button>
+                      </span>
                     </div>
                   );
                 })}

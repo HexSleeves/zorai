@@ -26,6 +26,8 @@ pub struct ThreadWorkspaceContext {
     pub updated_at: u64,
     #[serde(default)]
     pub isolate_agent_tasks: bool,
+    #[serde(default)]
+    pub isolated_worktree_states: std::collections::BTreeMap<String, String>,
 }
 
 impl ThreadWorkspaceContext {
@@ -182,6 +184,7 @@ mod workspace_context_tests {
             open_files: vec!["src/main.rs".to_string(), "Cargo.toml".to_string()],
             updated_at: 42,
             isolate_agent_tasks: false,
+            isolated_worktree_states: std::collections::BTreeMap::new(),
         };
 
         let prompt = context.prompt_block().expect("workspace prompt");

@@ -5,6 +5,9 @@ use std::path::{Path, PathBuf};
 
 use super::*;
 
+const OPERATION_SNAPSHOT_MAX_AGE_MS: u64 = 30 * 24 * 60 * 60 * 1000;
+const OPERATION_SNAPSHOT_MAX_COUNT: usize = 250;
+const OPERATION_SNAPSHOT_MAX_TOTAL_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_OPERATION_SNAPSHOT_BYTES: u64 = 2 * 1024 * 1024;
 const RAPID_REVERT_WINDOW_MS: u64 = 30_000;
 
@@ -571,6 +574,68 @@ impl AgentEngine {
             Err(error) => {
                 tracing::warn!(%error, operation_id, "failed to serialize operation snapshot manifest")
             }
+        }
+        self.prune_operation_snapshots(Some(operation_id)).await;
+    }
+
+    async fn prune_operation_snapshots(&self, protected_operation_id: Option<&str>) {
+        let root = self.data_dir.join("operation-snapshots");
+        let protected = protected_operation_id.map(operation_snapshot_component);
+        let now = now_millis();
+        let result = tokio::task::spawn_blocking(move || -> std::io::Result<()> {
+            let mut snapshots = Vec::new();
+            let entries = match std::fs::read_dir(&root) {
+                Ok(entries) => entries,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+                Err(error) => return Err(error),
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if !path.is_dir() {
+                    continue;
+                }
+                let manifest_path = path.join("manifest.json");
+                let manifest = std::fs::read(&manifest_path)
+                    .ok()
+                    .and_then(|bytes| serde_json::from_slice::<OperationSnapshotManifest>(&bytes).ok());
+                let created_at = manifest.as_ref().map(|value| value.created_at).unwrap_or(0);
+                let size = std::fs::read_dir(&path)
+                    .ok()
+                    .into_iter()
+                    .flatten()
+                    .flatten()
+                    .filter_map(|entry| entry.metadata().ok())
+                    .map(|metadata| metadata.len())
+                    .sum::<u64>();
+                let component = path
+                    .file_name()
+                    .and_then(|value| value.to_str())
+                    .unwrap_or_default()
+                    .to_string();
+                snapshots.push((path, component, created_at, size));
+            }
+            snapshots.sort_by(|left, right| right.2.cmp(&left.2));
+            let mut retained_count = 0usize;
+            let mut retained_bytes = 0u64;
+            for (path, component, created_at, size) in snapshots {
+                let is_protected = protected.as_deref() == Some(component.as_str());
+                let expired = now.saturating_sub(created_at) > OPERATION_SNAPSHOT_MAX_AGE_MS;
+                let over_count = retained_count >= OPERATION_SNAPSHOT_MAX_COUNT;
+                let over_bytes = retained_bytes.saturating_add(size) > OPERATION_SNAPSHOT_MAX_TOTAL_BYTES;
+                if !is_protected && (expired || over_count || over_bytes) {
+                    let _ = std::fs::remove_dir_all(path);
+                } else {
+                    retained_count += 1;
+                    retained_bytes = retained_bytes.saturating_add(size);
+                }
+            }
+            Ok(())
+        })
+        .await;
+        if let Err(error) = result {
+            tracing::warn!(%error, "operation snapshot pruning task failed");
+        } else if let Ok(Err(error)) = result {
+            tracing::warn!(%error, "operation snapshot pruning failed");
         }
     }
 
