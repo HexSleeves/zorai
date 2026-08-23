@@ -54,7 +54,7 @@ describe("CodeView controller stability contract", () => {
 
   it("keeps the secure nested picker envelope by passing through only validated roots", () => {
     expect(source).toContain("setLastRoot(root.root)");
-    expect(source).toContain("setBoundRoot(root)");
+    expect(source).toContain("setBoundRoot(root.root)");
     expect(emptyStateSource).toContain("onRootSelected");
     expect(emptyStateSource).toContain("createMemoizedCodeEmptyStateController");
     expect(emptyStateSource).toContain("NOOP_ROOT_SELECTED");

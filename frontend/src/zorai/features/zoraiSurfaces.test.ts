@@ -16,6 +16,26 @@ function readFunctionSource(source: string, start: string, end: string): string 
 }
 
 describe("Zorai feature surfaces", () => {
+  it("portals the workspace Explorer into the Code rail while keeping one workbench owner", () => {
+    const codeSource = readFeature("./code/CodeView.tsx");
+    const workbenchSource = readFeature("../../components/WorkspaceWorkbench.tsx");
+    const shellSource = readFeature("../shell/ZoraiShell.tsx");
+    const styleSource = readFileSync(new URL("../styles/zorai.css", import.meta.url), "utf8");
+
+    expect(codeSource).toContain('id="zorai-code-explorer-host"');
+    expect(codeSource).toContain("<WorkspaceWorkbench openedRoot={boundRoot} />");
+    expect((codeSource.match(/<WorkspaceWorkbench/g) ?? [])).toHaveLength(1);
+    expect(workbenchSource).toContain('import { createPortal } from "react-dom"');
+    expect(workbenchSource).toContain('document.getElementById("zorai-code-explorer-host")');
+    expect(workbenchSource).toContain("createPortal(explorer, explorerPortalHost)");
+    expect(workbenchSource).toContain(": explorer}");
+    expect(shellSource).toContain('activeView === "code" ? "zorai-shell--code"');
+    expect(styleSource).toContain(".zorai-shell.zorai-shell--code");
+    expect(styleSource).toContain(".zorai-code-explorer-scroll");
+    expect(codeSource).not.toContain("zorai-view-header");
+    expect(codeSource).not.toContain("zorai-tool-tab-strip");
+  });
+
   it("keeps Goals native to the Zorai shell instead of embedding legacy task UI", () => {
     const source = readFeature("./goals/GoalsView.tsx");
 

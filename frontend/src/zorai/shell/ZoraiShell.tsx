@@ -76,7 +76,11 @@ export function ZoraiShell() {
 
   return (
     <ThreadFilePreviewProvider>
-      <div className={["zorai-shell", railOpen ? "" : "zorai-shell--rail-collapsed"].filter(Boolean).join(" ")}>
+      <div className={[
+        "zorai-shell",
+        activeView === "code" ? "zorai-shell--code" : "",
+        railOpen ? "" : "zorai-shell--rail-collapsed",
+      ].filter(Boolean).join(" ")}>
         <nav className="zorai-global-rail" aria-label="Zorai navigation">
           <div className="zorai-brand" title="Zorai">
             <ZoraiBrandMark />

@@ -3200,3 +3200,95 @@ button.zorai-composer-context-chip { cursor: pointer; }
 
 .zorai-workspace-lifecycle-actions { display: flex; gap: 4px; margin-top: 4px; }
 .zorai-workspace-lifecycle-actions button { padding: 2px 5px; border: 1px solid var(--zorai-border); border-radius: 3px; background: transparent; color: var(--zorai-muted); font-size: 8px; cursor: pointer; }
+
+/* First-class Code workspace geometry. The workbench owns state once and portals
+   its Explorer into the contextual rail while the editor remains in main. */
+.zorai-shell.zorai-shell--code {
+  grid-template-columns: 68px minmax(250px, 280px) minmax(380px, 1fr) 320px;
+}
+
+.zorai-shell.zorai-shell--code.zorai-shell--rail-collapsed {
+  grid-template-columns: 68px 48px minmax(380px, 1fr) 320px;
+}
+
+.zorai-code-explorer {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.zorai-code-explorer-header,
+.zorai-shell--code .zorai-context-header {
+  min-height: 58px;
+  height: 58px;
+  box-sizing: border-box;
+}
+
+.zorai-code-explorer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 12px;
+  border-bottom: 1px solid var(--zorai-border);
+  color: var(--zorai-text);
+  font-size: var(--text-xs);
+  text-transform: uppercase;
+  letter-spacing: .12em;
+}
+
+.zorai-code-explorer-header span {
+  overflow: hidden;
+  color: var(--zorai-muted);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zorai-code-explorer-scroll {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+}
+
+.zorai-code-explorer-scroll > .zorai-workspace-explorer {
+  min-height: 100%;
+  border-right: 0;
+}
+
+.zorai-code-explorer-scroll .zorai-workspace-tree,
+.zorai-code-explorer-scroll .zorai-workspace-search-results,
+.zorai-code-explorer-scroll .zorai-workspace-agent-changes,
+.zorai-code-explorer-scroll .zorai-workspace-source-control,
+.zorai-code-explorer-scroll .zorai-workspace-hunk-review,
+.zorai-code-explorer-scroll .zorai-workspace-operation-changes,
+.zorai-code-explorer-scroll .zorai-workspace-symbols,
+.zorai-code-explorer-scroll .zorai-workspace-worktrees,
+.zorai-code-explorer-scroll .zorai-workspace-problems,
+.zorai-code-explorer-scroll .zorai-workspace-isolated-reviews,
+.zorai-code-explorer-scroll .zorai-workspace-tests,
+.zorai-code-explorer-scroll .zorai-workspace-conflicts,
+.zorai-code-explorer-scroll .zorai-workspace-history {
+  max-height: none;
+  overflow: visible;
+}
+
+.zorai-workspace-workbench--portaled {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.zorai-code-surface {
+  width: 100%;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.zorai-code-surface--empty {
+  display: grid;
+  place-items: center;
+}

@@ -1,4 +1,5 @@
 import { useCallback, useState } from "react";
+import { WorkspaceWorkbench } from "@/components/WorkspaceWorkbench";
 import { CodeEmptyState } from "./CodeEmptyState";
 import { useCodeWorkspaceBindingStore } from "./codeWorkspaceBindingStore";
 import {
@@ -6,12 +7,6 @@ import {
   type ZoraiWorkspaceSelection,
   type ZoraiWorkspaceValidatedRoot,
 } from "./codeEmptyStateModel";
-
-const codeRailSections = [
-  { id: "explorer", label: "Explorer" },
-  { id: "search", label: "Search" },
-  { id: "scm", label: "Source Control" },
-] as const;
 
 /**
  * Typed callback boundary for the GLM lifecycle task. The GLM task owns
@@ -41,20 +36,12 @@ export function CodeRail() {
   const lastRoot = useCodeWorkspaceBindingStore((state) => state.lastRoot);
 
   return (
-    <div className="zorai-rail-stack">
-      <div className="zorai-section-label">Code</div>
-      {codeRailSections.map((section) => (
-        <div key={section.id} className="zorai-rail-card">
-          <strong>{section.label}</strong>
-          <span>
-            {lastRoot
-              ? section.id === "explorer"
-                ? displayRootName(lastRoot)
-                : "Available after root bind."
-              : "No repository open."}
-          </span>
-        </div>
-      ))}
+    <div className="zorai-code-explorer">
+      <div className="zorai-code-explorer-header">
+        <strong>Explorer</strong>
+        <span>{lastRoot ? displayRootName(lastRoot) : "No folder"}</span>
+      </div>
+      <div id="zorai-code-explorer-host" className="zorai-code-explorer-scroll" aria-label="Code Explorer" />
     </div>
   );
 }
@@ -64,57 +51,27 @@ export function CodeView({
   selectFolder,
   openPath,
 }: CodeViewProps) {
-  const [boundRoot, setBoundRoot] = useState<ZoraiWorkspaceValidatedRoot | null>(null);
+  const lastRoot = useCodeWorkspaceBindingStore((state) => state.lastRoot);
+  const [boundRoot, setBoundRoot] = useState<string | null>(lastRoot);
 
   const handleRootSelected = useCallback<CodeOpenWorkspaceBoundary>(
     (root, source) => {
       useCodeWorkspaceBindingStore.getState().setLastRoot(root.root);
-      setBoundRoot(root);
+      setBoundRoot(root.root);
       onOpenWorkspace(root, source);
     },
     [onOpenWorkspace],
   );
 
-  const handleCloseFolder = useCallback(() => {
-    if (!boundRoot) return;
-    useCodeWorkspaceBindingStore.getState().closeRoot(boundRoot.root);
-    setBoundRoot(null);
-  }, [boundRoot]);
-
-  return (
-    <section className="zorai-feature-surface zorai-code-surface">
-      <div className="zorai-view-header">
-        <div>
-          <div className="zorai-kicker">Code</div>
-          <h1>Code Agent</h1>
-          {!boundRoot && (
-            <p>
-              The Code surface is where repository files, diffs, and editor views
-              will live as a first-class Zorai destination.
-            </p>
-          )}
-        </div>
-      </div>
-      {boundRoot ? (
-        <div className="zorai-code-bound">
-          <div className="zorai-code-bound-name">{boundRoot.name}</div>
-          <div className="zorai-code-bound-path">{boundRoot.root}</div>
-          {boundRoot.isGitRepository && boundRoot.gitRoot ? (
-            <div className="zorai-code-bound-git">Git root: {boundRoot.gitRoot}</div>
-          ) : (
-            <div className="zorai-code-bound-git">Not a Git repository.</div>
-          )}
-          <button type="button" className="zorai-code-close-folder" onClick={handleCloseFolder}>
-            Close folder
-          </button>
-        </div>
-      ) : (
-        <CodeEmptyState
-          selectFolder={selectFolder}
-          openPath={openPath}
-          onRootSelected={handleRootSelected}
-        />
-      )}
+  return boundRoot ? (
+    <WorkspaceWorkbench openedRoot={boundRoot} />
+  ) : (
+    <section className="zorai-code-surface zorai-code-surface--empty">
+      <CodeEmptyState
+        selectFolder={selectFolder}
+        openPath={openPath}
+        onRootSelected={handleRootSelected}
+      />
     </section>
   );
 }

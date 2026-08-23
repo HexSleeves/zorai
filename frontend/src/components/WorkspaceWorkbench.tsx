@@ -1,4 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { getBridge } from "@/lib/bridge";
 import { useAgentStore } from "@/lib/agentStore";
 import { useWorkspaceStore } from "@/lib/workspaceStore";
@@ -60,7 +61,7 @@ function WorkspaceTreeNode({ root, entry, depth, status, onOpen }: TreeNodeProps
   );
 }
 
-export function WorkspaceWorkbench() {
+export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null } = {}) {
   const bridge = getBridge();
   const activeThreadId = useAgentStore((state) => state.activeThreadId);
   const activeDaemonThreadId = useAgentStore((state) => state.threads.find((thread) => thread.id === state.activeThreadId)?.daemonThreadId ?? state.activeThreadId);
@@ -657,10 +658,26 @@ export function WorkspaceWorkbench() {
     setSelection(activeThreadId, { startLine, startColumn, endLine, endColumn });
   };
 
+  useEffect(() => {
+    const root = openedRoot?.trim();
+    if (!root || root === context?.root) return;
+    setRootInput(root);
+    if (!activeThreadId || !bridge?.workspaceOpen) return;
+    void bridge.workspaceOpen(root).then(async (opened) => {
+      bindRoot(activeThreadId, opened.root);
+      setRootInput(opened.root);
+      await refreshRoot(opened.root);
+    }).catch((reason: any) => setError(reason?.message ?? String(reason)));
+  }, [activeThreadId, bindRoot, bridge, context?.root, openedRoot, refreshRoot]);
+
+  const [explorerPortalHost, setExplorerPortalHost] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    setExplorerPortalHost(document.getElementById("zorai-code-explorer-host"));
+  }, []);
+
   if (!activeThreadId) return <div className="zorai-tool-empty"><strong>Select a thread</strong><span>Workspace roots and editor context are bound to an agent thread.</span></div>;
 
-  return (
-    <div className="zorai-workspace-workbench">
+  const explorer = (
       <aside className="zorai-workspace-explorer">
         <div className="zorai-workspace-root-form">
           <input value={rootInput} onChange={(event) => setRootInput(event.target.value)} placeholder="/path/to/repository" onKeyDown={(event) => { if (event.key === "Enter") void openRoot(); }} />
@@ -860,7 +877,9 @@ export function WorkspaceWorkbench() {
           </>
         ) : <div className="zorai-workspace-empty">Open a folder to bind it to this thread.</div>}
       </aside>
+  );
 
+  const editor = (
       <section className="zorai-workspace-editor-area">
         <div className="zorai-workspace-tabs">
           {(context?.openFiles ?? []).map((filePath, index) => {
@@ -934,6 +953,12 @@ export function WorkspaceWorkbench() {
         ) : <div className="zorai-tool-empty"><strong>Workspace editor</strong><span>Select a text file from Explorer. File contents are loaded on demand and never injected implicitly.</span></div>}
         {error ? <div className="zorai-workspace-error">{error}</div> : null}
       </section>
+  );
+
+  return (
+    <div className={explorerPortalHost ? "zorai-workspace-workbench zorai-workspace-workbench--portaled" : "zorai-workspace-workbench"}>
+      {explorerPortalHost ? createPortal(explorer, explorerPortalHost) : explorer}
+      {editor}
     </div>
   );
 }
