@@ -250,6 +250,10 @@ class LspSession {
         return this.requestDocument(relativePath, 'textDocument/references', { position, context: { includeDeclaration: true } });
     }
 
+    async completion(relativePath, position) {
+        return this.requestDocument(relativePath, 'textDocument/completion', { position, context: { triggerKind: 1 } });
+    }
+
     closeDocument(relativePath) {
         const resolved = resolveWorkspacePath(this.root, relativePath);
         const document = this.documents.get(resolved.relativePath);
@@ -314,7 +318,7 @@ function createLspRuntime() {
         async request(webContents, rootPath, relativePath, language, method, position) {
             const resolved = await getSession(webContents, rootPath, language);
             if (!resolved.available) return resolved;
-            if (!['hover', 'definition', 'references'].includes(method)) throw new Error(`Unsupported LSP request: ${method}`);
+            if (!['hover', 'definition', 'references', 'completion'].includes(method)) throw new Error(`Unsupported LSP request: ${method}`);
             const result = await resolved.session[method](relativePath, {
                 line: Math.max(0, Number(position?.line) || 0),
                 character: Math.max(0, Number(position?.character) || 0),

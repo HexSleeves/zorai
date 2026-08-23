@@ -737,7 +737,7 @@ export function WorkspaceWorkbench() {
             {workspaceDiagnostics.length > 0 ? (
               <details className="zorai-workspace-problems" open>
                 <summary>Problems ({workspaceDiagnostics.length})</summary>
-                {workspaceDiagnostics.map((diagnostic, index) => (
+                {workspaceDiagnostics.slice(0, 500).map((diagnostic, index) => (
                   <button type="button" key={`${diagnostic.path}:${diagnostic.startLine}:${diagnostic.startColumn}:${diagnostic.code ?? index}`} onClick={() => void openFile(diagnostic.path, { line: diagnostic.startLine, column: diagnostic.startColumn })}>
                     <span className={`severity-${diagnostic.severity}`}>{diagnostic.severity === 1 ? "E" : diagnostic.severity === 2 ? "W" : "I"}</span>
                     <strong>{diagnostic.message}</strong>
@@ -756,7 +756,7 @@ export function WorkspaceWorkbench() {
             {gitHistory.length > 0 ? (
               <details className="zorai-workspace-history">
                 <summary>History ({gitHistory.length})</summary>
-                {gitHistory.map((commit) => <button type="button" key={commit.hash} onClick={() => void inspectCommit(commit.hash)}><code>{commit.shortHash}</code><strong>{commit.subject}</strong><span>{commit.author}</span></button>)}
+                {gitHistory.slice(0, 100).map((commit) => <button type="button" key={commit.hash} onClick={() => void inspectCommit(commit.hash)}><code>{commit.shortHash}</code><strong>{commit.subject}</strong><span>{commit.author}</span></button>)}
                 {commitDetail ? <article><header>{commitDetail.subject}</header><span>{commitDetail.hash} · {commitDetail.author} · {commitDetail.date}</span>{commitDetail.body ? <pre>{commitDetail.body}</pre> : null}{commitDetail.files.map((file) => <button type="button" key={`${file.status}:${file.path}`} onClick={() => void openFile(file.path)}>{file.status} {file.path}</button>)}</article> : null}
               </details>
             ) : null}
@@ -769,7 +769,7 @@ export function WorkspaceWorkbench() {
                   <input value={worktreeBaseRef} onChange={(event) => setWorktreeBaseRef(event.target.value)} placeholder="base ref" />
                   <button type="button" disabled={!worktreeName.trim() || !worktreeBranch.trim()} onClick={() => void createManagedWorktree()}>Create</button>
                 </div>
-                {gitWorktrees.map((worktree) => (
+                {gitWorktrees.slice(0, 200).map((worktree) => (
                   <div key={worktree.path} className={worktree.path === context.root ? "active" : ""}>
                     <button type="button" className="zorai-workspace-worktree-path" onClick={() => switchThreadWorktree(worktree.path)}><strong>{worktree.branch || "detached"}</strong><span>{worktree.path}</span></button>
                     {worktree.path !== context.root && worktree.path.includes("-worktrees") ? <button type="button" onClick={() => void removeManagedWorktree(worktree.path)}>Remove</button> : null}
@@ -788,7 +788,7 @@ export function WorkspaceWorkbench() {
             {gitStatus.length > 0 ? (
               <details className="zorai-workspace-source-control">
                 <summary>Source Control ({gitStatus.length})</summary>
-                {gitStatus.map((entry) => (
+                {gitStatus.slice(0, 500).map((entry) => (
                   <div key={`${entry.path}:${entry.indexStatus}:${entry.worktreeStatus}`}>
                     <button type="button" className="zorai-workspace-change-path" onClick={() => void openFile(entry.path)}>
                       <strong>{entry.path}</strong><span>{entry.indexStatus}{entry.worktreeStatus}</span>

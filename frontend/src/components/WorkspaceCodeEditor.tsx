@@ -90,7 +90,7 @@ export function WorkspaceCodeEditor({
     providerDisposablesRef.current = [];
     const bridge = getBridge();
     if (lsp?.available && bridge?.workspaceLspRequest) {
-      const request = (method: "hover" | "definition" | "references", position: { lineNumber: number; column: number }) => bridge.workspaceLspRequest!(
+      const request = (method: "hover" | "definition" | "references" | "completion", position: { lineNumber: number; column: number }) => bridge.workspaceLspRequest!(
         lsp.root,
         lsp.path,
         lsp.language,
@@ -98,7 +98,8 @@ export function WorkspaceCodeEditor({
         { line: position.lineNumber - 1, character: position.column - 1 },
       );
       providerDisposablesRef.current.push(monaco.languages.registerHoverProvider(language, {
-        provideHover: async (_model, position) => {
+        provideHover: async (model, position) => {
+          if (model.uri.toString() !== editor.getModel()?.uri.toString()) return null;
           const response = await request("hover", position).catch(() => null);
           const hover = response?.result as any;
           if (!hover?.contents) return null;
@@ -129,10 +130,35 @@ export function WorkspaceCodeEditor({
         return null;
       };
       providerDisposablesRef.current.push(monaco.languages.registerDefinitionProvider(language, {
-        provideDefinition: async (_model, position) => locations((await request("definition", position).catch(() => null))?.result).map(convertLocation).filter((location): location is MonacoLanguagesApi.Location => location !== null),
+        provideDefinition: async (model, position) => model.uri.toString() === editor.getModel()?.uri.toString()
+          ? locations((await request("definition", position).catch(() => null))?.result).map(convertLocation).filter((location): location is MonacoLanguagesApi.Location => location !== null)
+          : null,
       }));
       providerDisposablesRef.current.push(monaco.languages.registerReferenceProvider(language, {
-        provideReferences: async (_model, position) => locations((await request("references", position).catch(() => null))?.result).map(convertLocation).filter((location): location is MonacoLanguagesApi.Location => location !== null),
+        provideReferences: async (model, position) => model.uri.toString() === editor.getModel()?.uri.toString()
+          ? locations((await request("references", position).catch(() => null))?.result).map(convertLocation).filter((location): location is MonacoLanguagesApi.Location => location !== null)
+          : null,
+      }));
+      providerDisposablesRef.current.push(monaco.languages.registerCompletionItemProvider(language, {
+        triggerCharacters: ['.', ':'],
+        provideCompletionItems: async (model, position) => {
+          if (model.uri.toString() !== editor.getModel()?.uri.toString()) return { suggestions: [] };
+          const response = await request("completion", position).catch(() => null);
+          const raw: any = response?.result;
+          const items: any[] = Array.isArray(raw) ? raw : Array.isArray(raw?.items) ? raw.items : [];
+          const word = model.getWordUntilPosition(position);
+          const range = new monaco.Range(position.lineNumber, word.startColumn, position.lineNumber, word.endColumn);
+          return {
+            suggestions: items.slice(0, 500).map((item) => ({
+              label: typeof item.label === "string" ? item.label : item.label?.label ?? "completion",
+              kind: Math.max(0, Math.min(27, Number(item.kind) || 1)),
+              detail: item.detail,
+              documentation: typeof item.documentation === "string" ? item.documentation : item.documentation?.value,
+              insertText: typeof item.insertText === "string" ? item.insertText : typeof item.textEdit?.newText === "string" ? item.textEdit.newText : typeof item.label === "string" ? item.label : item.label?.label ?? "",
+              range,
+            })),
+          };
+        },
       }));
     }
     editor.onDidDispose(() => {
