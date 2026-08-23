@@ -5,6 +5,7 @@ import { useAgentStore } from "@/lib/agentStore";
 import { useWorkspaceContextStore } from "@/lib/workspaceContextStore";
 import { openThreadTarget } from "../threads/openThreadTarget";
 import { CodeEmptyState } from "./CodeEmptyState";
+import { preloadCodeEditor } from "./codeEditorPreload";
 export { CodeAgentPane } from "./CodeAgentPane";
 import { useCodeWorkspaceBindingStore } from "./codeWorkspaceBindingStore";
 import {
@@ -93,6 +94,10 @@ export function CodeView({
       restoringRootRef.current = null;
     }
   }, [bindRoot]);
+
+  useEffect(() => {
+    void preloadCodeEditor().catch(() => {});
+  }, []);
 
   useEffect(() => {
     const localId = codeThreadLocalIdRef.current;

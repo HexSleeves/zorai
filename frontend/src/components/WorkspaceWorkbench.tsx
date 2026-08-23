@@ -9,6 +9,7 @@ import type { editor as MonacoEditorApi } from "monaco-editor";
 import { CodeTabs } from "@/zorai/features/code/CodeTabs";
 import { shouldRestoreWorkspaceDocument } from "@/zorai/features/code/workspaceDocumentRestore";
 import { useWorkspaceEditorRequestStore } from "@/lib/workspaceEditorRequestStore";
+import { preloadCodeEditor } from "@/zorai/features/code/codeEditorPreload";
 
 const WorkspaceCodeEditor = lazy(() => import("@/components/WorkspaceCodeEditor").then((module) => ({ default: module.WorkspaceCodeEditor })));
 const WorkspaceDiffEditor = lazy(() => import("@/components/WorkspaceCodeEditor").then((module) => ({ default: module.WorkspaceDiffEditor })));
@@ -50,7 +51,7 @@ function WorkspaceTreeNode({ root, entry, depth, status, onOpen }: TreeNodeProps
 
   return (
     <div>
-      <button type="button" className="zorai-workspace-tree-row" style={{ paddingLeft: 8 + depth * 14 }} onClick={() => void activate()}>
+      <button type="button" className="zorai-workspace-tree-row" style={{ paddingLeft: 8 + depth * 14 }} onPointerEnter={() => void preloadCodeEditor()} onFocus={() => void preloadCodeEditor()} onClick={() => void activate()}>
         <span className="zorai-workspace-chevron">{entry.isDirectory ? (expanded ? "⌄" : "›") : ""}</span>
         <span className="zorai-workspace-file-icon">{entry.isDirectory ? "▰" : "·"}</span>
         <span className="zorai-workspace-tree-name">{entry.name}</span>
