@@ -27,6 +27,7 @@ export function CodeResizeHandle({
   const label = panel === "explorer" ? "Resize Explorer" : "Resize Code Agent";
 
   const onPointerDown = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
     dragRef.current = {
       pointerId: event.pointerId,
       startX: event.clientX,

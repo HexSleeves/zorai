@@ -95,6 +95,7 @@ describe("Zorai feature surfaces", () => {
     expect(shellSource).toContain('contextOpen ? "zorai-shell--context-open"');
     expect(handleSource).toContain('role="separator"');
     expect(handleSource).toContain('aria-orientation="vertical"');
+    expect(handleSource).toContain("event.button !== 0");
     expect(handleSource).toContain("setPointerCapture");
     expect(handleSource).toContain('event.key === "Home"');
     expect(handleSource).toContain('event.key === "End"');
