@@ -206,6 +206,9 @@ pub(super) enum AgentBridgeCommand {
     GetWorkContext {
         thread_id: String,
     },
+    GetFileOperationSnapshot {
+        operation_id: String,
+    },
     RevertFileOperation {
         operation_id: String,
     },

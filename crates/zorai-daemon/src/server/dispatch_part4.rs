@@ -38,6 +38,7 @@ pub(crate) async fn dispatch_part4(
             | ClientMessage::AgentListTodos
             | ClientMessage::AgentGetTodos { .. }
             | ClientMessage::AgentGetWorkContext { .. }
+            | ClientMessage::AgentGetFileOperationSnapshot { .. }
             | ClientMessage::AgentRevertFileOperation { .. }
             | ClientMessage::AgentGetThreadWorkspaceContext { .. }
             | ClientMessage::AgentSetThreadWorkspaceContext { .. }
@@ -542,6 +543,16 @@ pub(crate) async fn dispatch_part4(
                 .send(DaemonMessage::AgentWorkContextDetail {
                     thread_id,
                     context_json: json,
+                })
+                .await?;
+        }
+
+        ClientMessage::AgentGetFileOperationSnapshot { operation_id } => {
+            let status = agent.file_operation_snapshot_status(&operation_id).await;
+            framed
+                .send(DaemonMessage::AgentFileOperationSnapshot {
+                    operation_id,
+                    status_json: serde_json::to_string(&status).unwrap_or_default(),
                 })
                 .await?;
         }

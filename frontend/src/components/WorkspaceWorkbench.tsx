@@ -95,6 +95,7 @@ export function WorkspaceWorkbench() {
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<Array<{ path: string; line: number; column: number; preview: string }>>([]);
   const [agentChanges, setAgentChanges] = useState<ZoraiWorkContextEntry[]>([]);
+  const [operationSnapshots, setOperationSnapshots] = useState<Record<string, { available: boolean; revertible: boolean; stale_paths: string[]; retained_bytes: number; reason: string | null }>>({});
   const [lspStatus, setLspStatus] = useState<{ available: boolean; command?: string | null; reason?: string } | null>(null);
   const [diagnosticsByPath, setDiagnosticsByPath] = useState<Record<string, ZoraiLspDiagnostic[]>>({});
   const [workspaceTests, setWorkspaceTests] = useState<ZoraiWorkspaceTest[]>([]);
@@ -441,6 +442,23 @@ export function WorkspaceWorkbench() {
     } catch (reason: any) { setError(reason?.message ?? String(reason)); }
   };
 
+  useEffect(() => {
+    if (!bridge?.agentGetFileOperationSnapshot || operationGroups.length === 0) {
+      setOperationSnapshots({});
+      return;
+    }
+    let cancelled = false;
+    void Promise.all(operationGroups.slice(0, 50).map(async ([operationId]) => {
+      try {
+        const response = await bridge.agentGetFileOperationSnapshot!(operationId);
+        return [operationId, response.status] as const;
+      } catch { return null; }
+    })).then((results) => {
+      if (!cancelled) setOperationSnapshots(Object.fromEntries(results.filter((result): result is readonly [string, any] => result !== null)));
+    });
+    return () => { cancelled = true; };
+  }, [bridge, operationGroups]);
+
   const revertAgentOperation = async (operationId: string) => {
     if (!bridge?.agentRevertFileOperation) return;
     if (!window.confirm(`Revert every file change from operation ${operationId}? This is allowed only if no later edit changed those files.`)) return;
@@ -775,7 +793,10 @@ export function WorkspaceWorkbench() {
                         <span>{entry.before_hash ? entry.before_hash.slice(0, 8) : "∅"} → {entry.after_hash ? entry.after_hash.slice(0, 8) : "∅"}{entry.task_id ? ` · task ${entry.task_id}` : ""}{entry.goal_run_id ? ` · goal ${entry.goal_run_id}` : ""}</span>
                       </button>
                     ))}
-                    <footer><button type="button" onClick={() => void revertAgentOperation(operationId)}>Revert operation</button></footer>
+                    <footer>
+                      {operationSnapshots[operationId]?.available ? <span>{Math.round(operationSnapshots[operationId].retained_bytes / 1024)} KiB retained{operationSnapshots[operationId].reason ? ` · ${operationSnapshots[operationId].reason}` : ""}</span> : <span>Snapshot unavailable</span>}
+                      <button type="button" disabled={!operationSnapshots[operationId]?.revertible} onClick={() => void revertAgentOperation(operationId)}>Revert operation</button>
+                    </footer>
                   </article>
                 ))}
               </details>

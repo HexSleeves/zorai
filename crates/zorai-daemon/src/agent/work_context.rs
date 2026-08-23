@@ -9,7 +9,7 @@ const MAX_OPERATION_SNAPSHOT_BYTES: u64 = 2 * 1024 * 1024;
 const RAPID_REVERT_WINDOW_MS: u64 = 30_000;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub(crate) struct OperationSnapshotEntry {
+pub struct OperationSnapshotEntry {
     pub path: String,
     pub before_hash: Option<String>,
     pub after_hash: Option<String>,
@@ -25,6 +25,17 @@ pub(crate) struct OperationSnapshotManifest {
     pub task_id: Option<String>,
     pub created_at: u64,
     pub entries: Vec<OperationSnapshotEntry>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct OperationSnapshotStatus {
+    pub operation_id: String,
+    pub available: bool,
+    pub revertible: bool,
+    pub stale_paths: Vec<String>,
+    pub retained_bytes: u64,
+    pub entries: Vec<OperationSnapshotEntry>,
+    pub reason: Option<String>,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -560,6 +571,80 @@ impl AgentEngine {
             Err(error) => {
                 tracing::warn!(%error, operation_id, "failed to serialize operation snapshot manifest")
             }
+        }
+    }
+
+    pub async fn file_operation_snapshot_status(
+        &self,
+        operation_id: &str,
+    ) -> OperationSnapshotStatus {
+        let operation_dir = self
+            .data_dir
+            .join("operation-snapshots")
+            .join(operation_snapshot_component(operation_id));
+        let manifest_bytes = match tokio::fs::read(operation_dir.join("manifest.json")).await {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                return OperationSnapshotStatus {
+                    operation_id: operation_id.to_string(),
+                    available: false,
+                    revertible: false,
+                    stale_paths: Vec::new(),
+                    retained_bytes: 0,
+                    entries: Vec::new(),
+                    reason: Some("No retained snapshot exists for this operation.".to_string()),
+                };
+            }
+        };
+        let manifest: OperationSnapshotManifest = match serde_json::from_slice(&manifest_bytes) {
+            Ok(manifest) => manifest,
+            Err(error) => {
+                return OperationSnapshotStatus {
+                    operation_id: operation_id.to_string(),
+                    available: false,
+                    revertible: false,
+                    stale_paths: Vec::new(),
+                    retained_bytes: 0,
+                    entries: Vec::new(),
+                    reason: Some(format!("Invalid operation snapshot manifest: {error}")),
+                };
+            }
+        };
+        let stale_paths = manifest
+            .entries
+            .iter()
+            .filter(|entry| file_sha256(&entry.path) != entry.after_hash)
+            .map(|entry| entry.path.clone())
+            .collect::<Vec<_>>();
+        let missing_retained = manifest
+            .entries
+            .iter()
+            .any(|entry| entry.before_existed && entry.snapshot_file.is_none());
+        let retained_bytes = manifest
+            .entries
+            .iter()
+            .filter_map(|entry| entry.snapshot_file.as_deref())
+            .filter_map(|filename| std::fs::metadata(operation_dir.join(filename)).ok())
+            .map(|metadata| metadata.len())
+            .sum();
+        let reason = if !stale_paths.is_empty() {
+            Some("One or more files changed after this operation.".to_string())
+        } else if missing_retained {
+            Some(
+                "Pre-operation bytes were not retained for a sensitive or oversized file."
+                    .to_string(),
+            )
+        } else {
+            None
+        };
+        OperationSnapshotStatus {
+            operation_id: operation_id.to_string(),
+            available: true,
+            revertible: stale_paths.is_empty() && !missing_retained,
+            stale_paths,
+            retained_bytes,
+            entries: manifest.entries,
+            reason,
         }
     }
 

@@ -3171,3 +3171,7 @@ button.zorai-composer-context-chip { cursor: pointer; }
 
 .zorai-workspace-operation-changes article footer { padding: 4px 12px 7px; }
 .zorai-workspace-operation-changes article footer button { padding: 3px 6px; border: 1px solid var(--danger); border-radius: 3px; background: transparent; color: var(--danger); font-size: 9px; cursor: pointer; }
+
+.zorai-workspace-operation-changes article footer { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.zorai-workspace-operation-changes article footer span { color: var(--zorai-muted); font-size: 8px; }
+.zorai-workspace-operation-changes article footer button:disabled { opacity: .4; cursor: default; }
