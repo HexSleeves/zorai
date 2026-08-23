@@ -9,6 +9,32 @@
 
 Turn the existing workspace/file-editor implementation into a first-class **Code** surface that follows the current VS Code information architecture while remaining native to the Zorai shell. Code must reuse the existing Threads conversation/runtime stack directly, not implement or synchronize a second chat system.
 
+## Visual acceptance baseline
+
+The approved interactive mockup is a normative visual reference, not a loose wireframe:
+
+```text
+/home/mkurman/.zorai/threads/thread_11440/artifacts/previews/code-layout-v1.html
+```
+
+The production Electron view must look almost exactly like that composition while using the current Zorai design system rather than inventing a parallel theme. A technically functional implementation that materially differs from the reference layout is not accepted.
+
+Required visual invariants at the standard desktop review viewport:
+
+- Four contiguous columns in this order: current Zorai global rail, Explorer rail, editor, Code Agent pane.
+- Reuse the current global-rail width and interaction styling. Code is the first item below the Zorai brand and directly above Threads.
+- Explorer targets approximately `250–280px` at normal width; Code Agent targets approximately `300–340px`; the editor receives all remaining width with a practical `380px` minimum.
+- Explorer and Code Agent backgrounds, borders, muted text, active states, cyan accent, typography, controls, radii, and scrollbar treatment use existing `--zorai-*`, font, spacing, button, chip, and thread-surface tokens.
+- Do not reproduce the standalone mockup page’s outer rounded frame, page heading, explanatory legend, or hard-coded colors. Those framed the concept only. The in-app content fills the existing Zorai shell exactly as Threads does.
+- Explorer header height aligns with the Code Agent header. The editor starts with the file-tab strip, followed immediately by breadcrumbs and Monaco—there is no large marketing/page header.
+- File rows retain the compact VS Code-like `24–26px` density shown in the mockup. Section headers stay compact and visually subordinate to the file tree.
+- Tabs are about `34–36px` high, single-line, truncated, and separated by subtle existing Zorai borders. Active tabs use the existing accent and editor background hierarchy shown in the reference.
+- The Code Agent pane visually derives from the existing Threads view: compact responder/runtime header, context chips, message timeline, then the shared composer fixed at the bottom. It must not look like a generic context inspector or a newly themed chat widget.
+- No duplicated Tools header, secondary tool-tab strip, free-form path field, wrapped file tabs, stacked nested scroll boxes, or wide toolbar that displaces Monaco.
+- Empty state preserves the same spatial hierarchy: Explorer-side primary Open Folder action, quiet editor placeholder, available Code Agent pane.
+
+Visual review is performed against the saved mockup side-by-side. Material differences in column order, proportions, density, scroll behavior, header hierarchy, tab treatment, or Agent-pane placement are defects even when automated functional tests pass.
+
 ## Product contract
 
 - Add **Code** above **Threads** in the Zorai global rail.
@@ -194,6 +220,17 @@ The React layer does not create child tasks itself and does not duplicate daemon
 - Tab overflow remains keyboard accessible and indicates dirty files.
 
 ## Verification
+
+### Visual acceptance
+
+Capture the real Electron Code view at a representative desktop viewport with:
+
+1. an opened Zorai repository and several nested Explorer rows;
+2. at least six open files to exercise tab compression/overflow;
+3. visible diagnostics or Source Control state;
+4. the Code Agent pane open with workspace chips, messages, and composer.
+
+Compare it side-by-side with `code-layout-v1.html`. Acceptance requires the same structural silhouette and hierarchy: rail widths/proportions, single-line tab bar, breadcrumb/editor placement, independently scrollable Explorer body, and right-side Agent conversation. Use current Zorai tokens in place of mockup-only literal colors. Record the final screenshot or short capture in the thread artifacts for operator inspection.
 
 ### Automated frontend coverage
 
