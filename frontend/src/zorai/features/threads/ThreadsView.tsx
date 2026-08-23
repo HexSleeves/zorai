@@ -10,6 +10,7 @@ import {
   shouldFollowThreadHistoryBottom,
 } from "@/components/agent-chat-panel/runtime/threadHistoryScroll";
 import { useAgentStore, type AgentThread } from "@/lib/agentStore";
+import { fetchAgentTasks, type AgentQueueTask } from "@/lib/agentTaskQueue";
 import { ThreadFilePreviewOverlay } from "./ThreadFilePreviewOverlay";
 import { ThreadComposer } from "./ThreadComposer";
 import { ThreadActivityRow } from "./ThreadActivityRow";
@@ -46,6 +47,7 @@ export function ThreadsView({
   const [pinLimitResult, setPinLimitResult] = useState<ZoraiThreadMessagePinResult | null>(null);
   const [participantsOpen, setParticipantsOpen] = useState(false);
   const [pinnedToBottom, setPinnedToBottom] = useState(true);
+  const [readTasks, setReadTasks] = useState<AgentQueueTask[]>([]);
   const subAgents = useAgentStore((state) => state.subAgents);
   const viewMountedAtRef = useRef(Date.now());
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -111,7 +113,21 @@ export function ThreadsView({
 
   const activeThreadId = runtime.activeThread?.id ?? null;
   const activeReadThread = runtime.activeThread;
+  const activeReadThreadId = activeReadThread?.id ?? null;
+  const activeReadDaemonThreadId = activeReadThread?.daemonThreadId ?? null;
   const activeReadMessages = runtime.messages;
+
+  useEffect(() => {
+    if (!activeReadThreadId) {
+      setReadTasks([]);
+      return;
+    }
+    let active = true;
+    void fetchAgentTasks().then((tasks) => {
+      if (active) setReadTasks(tasks);
+    });
+    return () => { active = false; };
+  }, [activeReadDaemonThreadId, activeReadThreadId]);
 
   useEffect(() => {
     if (!activeReadThread) return;
@@ -126,12 +142,25 @@ export function ThreadsView({
       (latest, message) => Math.max(latest, message.createdAt ?? 0),
       0,
     );
-    if (!key || newestDisplayedAt <= 0) return;
+    const identities = new Set([activeReadThread.id, activeReadThread.daemonThreadId].filter(Boolean));
+    const newestTaskCompletionAt = readTasks.reduce((latest, task) => {
+      const matches = [task.thread_id, task.parent_thread_id].some((id) => id && identities.has(id));
+      const terminal = ["completed", "failed", "cancelled", "budget_exceeded"].includes(task.status);
+      return matches && terminal ? Math.max(latest, task.completed_at ?? 0) : latest;
+    }, 0);
+    const newestGoalCompletionAt = runtime.goalRunsForTrace.reduce((latest, goal) => {
+      const goalThreads = [goal.thread_id, goal.root_thread_id, goal.active_thread_id, ...(goal.execution_thread_ids ?? [])];
+      const matches = goalThreads.some((id) => id && identities.has(id));
+      const terminal = ["completed", "failed", "cancelled"].includes(goal.status);
+      return matches && terminal ? Math.max(latest, goal.completed_at ?? 0) : latest;
+    }, 0);
+    const newestReadAt = Math.max(newestDisplayedAt, newestTaskCompletionAt, newestGoalCompletionAt);
+    if (!key || newestReadAt <= 0) return;
     const frame = requestAnimationFrame(() => {
-      useThreadReadStateStore.getState().markRead(key, newestDisplayedAt);
+      useThreadReadStateStore.getState().markRead(key, newestReadAt);
     });
     return () => cancelAnimationFrame(frame);
-  }, [activeReadMessages, activeReadThread]);
+  }, [activeReadMessages, activeReadThread, readTasks, runtime.goalRunsForTrace]);
 
   useEffect(() => {
     setFollowThreadHistoryBottom(true);

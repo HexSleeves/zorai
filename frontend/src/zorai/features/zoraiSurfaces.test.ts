@@ -29,6 +29,10 @@ describe("Zorai feature surfaces", () => {
     expect(threadsSource).not.toContain("<ThreadComposer />");
     expect(threadsSource).toContain("actualThreadResponderLabel(activeThread)");
     expect(threadsSource).toContain("responderStack");
+    expect(threadsSource).toContain("useThreadReadStateStore");
+    expect(threadsSource).toContain("fetchAgentTasks");
+    expect(threadsSource).toContain("newestTaskCompletionAt");
+    expect(threadsSource).toContain("newestGoalCompletionAt");
     expect(threadsSource).toContain("<ThreadComposer");
     expect(threadsSource).toContain("buildDisplayItems(runtime.messages)");
   });
