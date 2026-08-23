@@ -33,9 +33,11 @@ export { ThreadsRail } from "./ThreadsRail";
 export function ThreadsView({
   returnTarget = null,
   onReturnTarget,
+  variant = "full",
 }: {
   returnTarget?: ZoraiReturnTarget | null;
   onReturnTarget?: () => void;
+  variant?: "full" | "compact";
 } = {}) {
   const runtime = useAgentChatPanelRuntime();
   const [pinLimitResult, setPinLimitResult] = useState<ZoraiThreadMessagePinResult | null>(null);
@@ -187,8 +189,10 @@ export function ThreadsView({
     }
   };
   return (
-    <section className="zorai-thread-surface zorai-native-thread-surface">
-      <ThreadHeader
+    <section className={["zorai-thread-surface", "zorai-native-thread-surface", variant === "compact" ? "zorai-thread-surface--compact" : ""].filter(Boolean).join(" ")}>
+      {variant === "full" ? (
+        <>
+          <ThreadHeader
         thread={runtime.activeThread}
         messageCount={runtime.messages.length}
         agentOptions={agentOptions}
@@ -198,14 +202,24 @@ export function ThreadsView({
         onReturnHandoff={runtime.returnHandoff}
         onOpenParticipants={() => setParticipantsOpen(true)}
         activeOperationCount={activeOperations.length}
-        onOpenOperations={() => {
-          const latest = activeOperations[activeOperations.length - 1];
-          if (latest && latest.operationId !== "unknown") {
-            document.getElementById(`zorai-operation-${latest.operationId}`)?.scrollIntoView({ block: "center" });
-          }
-        }}
-      />
-      <ParticipantStrip thread={runtime.activeThread} onOpen={() => setParticipantsOpen(true)} />
+            onOpenOperations={() => {
+              const latest = activeOperations[activeOperations.length - 1];
+              if (latest && latest.operationId !== "unknown") {
+                document.getElementById(`zorai-operation-${latest.operationId}`)?.scrollIntoView({ block: "center" });
+              }
+            }}
+          />
+          <ParticipantStrip thread={runtime.activeThread} onOpen={() => setParticipantsOpen(true)} />
+        </>
+      ) : (
+        <header className="zorai-code-agent-thread-header">
+          <div>
+            <strong>{activeThread.title}</strong>
+            <span>Responder · {activeThread.agent_name}</span>
+          </div>
+          <ThreadRuntimeSummary thread={activeThread} />
+        </header>
+      )}
 
       <div className="zorai-thread-chat">
         <div ref={scrollerRef} className="zorai-thread-chat-scroll" onScroll={(event) => void handleThreadScroll(event)}>
@@ -293,10 +307,10 @@ export function ThreadsView({
 
       <ThreadComposer />
 
-      {pinLimitResult ? (
+      {variant === "full" && pinLimitResult ? (
         <PinLimitModal result={pinLimitResult} onClose={() => setPinLimitResult(null)} />
       ) : null}
-      {participantsOpen ? (
+      {variant === "full" && participantsOpen ? (
         <ThreadParticipantsDrawer
           thread={runtime.activeThread}
           agentOptions={agentOptions}
@@ -307,7 +321,7 @@ export function ThreadsView({
           onDismissSuggestion={runtime.dismissParticipantSuggestion}
         />
       ) : null}
-      <ThreadFilePreviewOverlay />
+      {variant === "full" ? <ThreadFilePreviewOverlay /> : null}
     </section>
   );
 }

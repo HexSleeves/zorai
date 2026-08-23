@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import { WorkspaceWorkbench } from "@/components/WorkspaceWorkbench";
+import { ThreadsView } from "../threads/ThreadsView";
 import { CodeEmptyState } from "./CodeEmptyState";
 import { useCodeWorkspaceBindingStore } from "./codeWorkspaceBindingStore";
 import {
@@ -77,14 +78,8 @@ export function CodeView({
 
 export function CodeAgentPane() {
   return (
-    <div className="zorai-context-summary">
-      <div className="zorai-section-label">Code Agent</div>
-      <div className="zorai-context-block">
-        <strong>Agent</strong>
-        <span>
-          Code-aware agent context will render here once a repository is open.
-        </span>
-      </div>
+    <div className="zorai-code-agent-pane">
+      <ThreadsView variant="compact" />
     </div>
   );
 }

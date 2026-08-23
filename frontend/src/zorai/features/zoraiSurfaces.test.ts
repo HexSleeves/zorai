@@ -16,6 +16,17 @@ function readFunctionSource(source: string, start: string, end: string): string 
 }
 
 describe("Zorai feature surfaces", () => {
+  it("reuses the native Threads conversation in the Code Agent pane", () => {
+    const codeSource = readFeature("./code/CodeView.tsx");
+    const threadsSource = readFeature("./threads/ThreadsView.tsx");
+
+    expect(codeSource).toContain('<ThreadsView variant="compact" />');
+    expect(codeSource).not.toContain("AgentChatPanelProvider");
+    expect(threadsSource).toContain('variant?: "full" | "compact"');
+    expect(threadsSource).toContain("<ThreadComposer />");
+    expect(threadsSource).toContain("buildDisplayItems(runtime.messages)");
+  });
+
   it("portals the workspace Explorer into the Code rail while keeping one workbench owner", () => {
     const codeSource = readFeature("./code/CodeView.tsx");
     const workbenchSource = readFeature("../../components/WorkspaceWorkbench.tsx");
