@@ -110,15 +110,9 @@ Expected: failure because `code` is not a `ZoraiViewId`, Workspace still lives u
 
 Add `code` to `ZoraiViewId`/`ZoraiNavIconId`, insert it before Threads, preserve `getDefaultZoraiView() === "threads"`, add the Code icon, remove Workspace from `zoraiTools`, and make Tools default to Terminal.
 
-Add a `contextPanelLabels(view)` helper and pass both title and collapsed label to `ZoraiContextPanel`. Add temporary Code route containers with semantic class names only:
+Add a `contextPanelLabels(view)` helper and pass both title and collapsed label to `ZoraiContextPanel`. Mount one real Code component in each distinct shell renderer—`<CodeRail />` in `renderRail`, `<CodeView />` in `renderMain`, and `<CodeAgentPane />` in `renderContext`—rather than placing three returns in one renderer. The temporary components may render explicit empty states but must be real components, not TODO placeholders.
 
-```tsx
-if (view === "code") return <CodeView />;
-if (view === "code") return <CodeRail />;
-if (view === "code") return <CodeAgentPane />;
-```
-
-The temporary components may render explicit empty states but must be real components, not TODO placeholders.
+Normalize legacy/persisted/deep-link tool navigation before applying it: any `ZORAI_NAVIGATE_EVENT` or restored tool id equal to `"workspace"` redirects to `{ view: "code" }`; it must never leave `activeTool` set to an invalid removed value.
 
 - [ ] **Step 4: Run the focused test and verify GREEN**
 
@@ -148,15 +142,17 @@ git add frontend/src/zorai/shell frontend/src/zorai/features/tools frontend/src/
 
 - [ ] **Step 1: Write failing store and picker tests**
 
-Define a versioned persisted state:
+Define a versioned persisted state whose key space is explicitly daemon-owned:
 
 ```ts
 type CodeWorkspaceBindingState = {
   version: 1;
   lastRoot: string | null;
-  threadByRoot: Record<string, string>;
+  threadByRoot: Record<string, string>; // canonical root -> daemonThreadId
 };
 ```
+
+`codeWorkspaceBindingStore.threadByRoot` stores daemon thread IDs. `workspaceContextStore.byThreadId` and `bindRoot(...)` are keyed by renderer-local thread IDs. Tests must fail if a daemon ID is passed directly to `bindRoot`.
 
 Test canonical replacement, restore, stale thread removal, and closing a mapping without deleting the thread. In the component test assert the initial UI contains `Open Folder…`, does not contain a textbox, and reveals `Open Path Manually` only after the overflow action.
 
@@ -189,11 +185,14 @@ The main process owns `dialog`; renderer receives only a validated workspace res
 
 On successful selection:
 
-1. look up `threadByRoot[opened.root]`;
-2. call existing `runtime.openThread` when mapped and valid;
-3. otherwise call existing `runtime.createThread` with Code title/active workspace;
-4. store the real daemon thread ID after creation/open;
-5. call existing workspace-context `bindRoot` for that local thread.
+1. await hydration of both the Code binding store and `workspaceContextStore` before resolving or binding anything;
+2. read the mapped daemon thread ID from `threadByRoot[opened.root]`;
+3. resolve daemon ID to a renderer-local thread with `runtime.threads.find(thread => thread.daemonThreadId === mappedId)`;
+4. if absent, call `runtime.refreshThreadList()`/the existing bounded list fetch, repeat the daemon-to-local lookup, and only then classify the mapping as stale/deleted;
+5. call `runtime.openThread(localThread.id)`, never `runtime.openThread(mappedDaemonId)`;
+6. otherwise call existing `runtime.createThread` with Code title/active workspace and wait until its real daemon thread ID is known;
+7. persist `canonical root -> daemonThreadId` in the Code binding store;
+8. call `workspaceContextStore.bindRoot(localThread.id, opened.root)` using the renderer-local ID only. Because hydration ran first, its existing same-root guard preserves open files, active file, and attachments instead of resetting a restored workspace.
 
 Keep manual path flow hidden until explicitly opened; pass it through existing `workspaceOpen`.
 
@@ -226,9 +225,12 @@ Render CodeRail with files plus Source Control, Problems, Tests, Outline, Worktr
 expect(container.querySelectorAll(".zorai-code-explorer-scroll")).toHaveLength(1);
 expect(container.querySelectorAll('[data-scroll-owner="nested"]')).toHaveLength(0);
 expect(screen.getByRole("tree", { name: "Workspace files" })).toBeVisible();
+for (const section of container.querySelectorAll(".zorai-code-explorer-section")) {
+  expect(getComputedStyle(section).overflowY).toBe("visible");
+}
 ```
 
-Assert compact section names and the root heading exist. Test that every secondary section is a native/details or accessible disclosure inside the same scroll body.
+Assert compact section names and the root heading exist. Test that every secondary section is a native/details or accessible disclosure inside the same scroll body. Add a wheel test with enough section content to prove wheel events advance `.zorai-code-explorer-scroll` rather than a child section.
 
 - [ ] **Step 2: Run focused test and verify RED**
 
@@ -241,7 +243,7 @@ Expected: missing CodeRail and current nested max-height scroll composition.
 
 - [ ] **Step 3: Extract a shared workspace controller**
 
-Move state/effects/actions from `WorkspaceWorkbench` behind a focused hook or controller object consumed by CodeRail and CodeView. Keep secure filesystem, Git, LSP, tests, watchers, worktrees, operation snapshots, save/conflict, and editor behavior unchanged.
+Move state/effects/actions from `WorkspaceWorkbench` behind a focused hook or controller object consumed by CodeRail and CodeView. Move both directions of daemon workspace-context synchronization into that controller: initial/load-on-thread context hydration and the debounced renderer-to-daemon push for root, active file, selection, attachments, open files, isolation, and worktree state. Keep secure filesystem, Git, LSP, tests, watchers, worktrees, operation snapshots, save/conflict, and editor behavior unchanged.
 
 Do not exceed the repository’s 500-line limit for newly created files. Split section renderers into focused files if required, for example `CodeExplorerSections.tsx` and `CodeEditorActions.tsx`.
 
@@ -316,24 +318,26 @@ Expected: missing CodeTabs/overflow behavior.
 
 - [ ] **Step 3: Implement CodeTabs with a real measurement/overflow model**
 
-Use a ResizeObserver and measured available width. Keep active tab visible. Use a trailing menu button rather than wrapping. Tabs target 34–36px height and a bounded min/max width; preserve existing pin/close/reorder state.
+Use a ResizeObserver and measured available width. Keep active tab visible. Use a trailing menu button rather than wrapping. Tabs target 34–36px height and a bounded min/max width; preserve existing pin/close/reorder state. Convert vertical wheel delta to horizontal tab movement only when `scrollWidth > clientWidth`; in that case call `preventDefault()` and `stopPropagation()`. When the strip cannot scroll horizontally, do not consume the event so normal editor/page scrolling remains available.
 
 - [ ] **Step 4: Implement the normative CSS geometry**
 
-Translate the mockup into current Zorai tokens:
+Use the existing shell dimensions and add a per-view modifier; do not invent a nonexistent global-rail token:
 
 ```css
-.zorai-shell--code {
-  grid-template-columns: var(--zorai-global-rail-width) minmax(250px, 280px) minmax(380px, 1fr) minmax(300px, 340px);
+.zorai-shell.zorai-shell--code {
+  grid-template-columns: 68px minmax(250px, 280px) minmax(380px, 1fr) 320px;
 }
 .zorai-code-explorer { min-width: 0; min-height: 0; }
 .zorai-code-explorer-scroll { flex: 1; min-height: 0; overflow: auto; }
 .zorai-code-tabs { height: 36px; flex-wrap: nowrap; overflow: hidden; }
 .zorai-code-editor { min-width: 0; min-height: 0; }
 .zorai-code-agent { width: 100%; min-width: 0; min-height: 0; }
+.zorai-code-explorer-header,
+.zorai-code-agent-header { height: 58px; min-height: 58px; }
 ```
 
-Use actual existing shell custom properties where names differ. Do not hard-code a new palette. Align Explorer/Agent header heights, 24–26px file rows, 30px section headers, 31px breadcrumbs, and compact status bar with `code-layout-v1.html`.
+The collapsed Code state continues using the existing fourth-column `.zorai-context-tab` with label Agent; do not replace the context-panel container. Use actual existing shell custom properties only where they already exist. Split the current 38px action bar into a 31px breadcrumb row plus a 25px bottom status bar. Set Code’s Monaco flex host to `min-height: 0` so status remains pinned. Replace Code-path hard-coded `#0d1117` editor backgrounds with existing Zorai surface/editor tokens. Align 24–26px file rows and 30px section headers with `code-layout-v1.html`.
 
 - [ ] **Step 5: Add static visual-contract assertions**
 
@@ -383,7 +387,7 @@ Expected: missing shared primitive/Code pane.
 
 - [ ] **Step 3: Extract timeline behavior from ThreadsView**
 
-Move display-item building, history scrolling, tool/activity rows, retry/stream status, message actions, and composer mounting into `ThreadConversation`. Give it explicit presentation props:
+Move display-item building, history scrolling, tool/activity rows, retry/stream status, speech via `useThreadSpeech`, message actions, and composer mounting into `ThreadConversation`. Keep the participant drawer, pin-limit modal, and return-target/full header controls in Threads-only chrome unless the compact pane explicitly requests them. Give the shared surface explicit presentation props:
 
 ```ts
 type ThreadConversationProps = {
@@ -407,7 +411,7 @@ Compose:
 </aside>
 ```
 
-The shared composer stays pinned at the bottom; message timeline owns the remaining vertical space. Use existing thread visual tokens and bubble components.
+The shared composer stays pinned at the bottom; message timeline owns the remaining vertical space. Use existing thread visual tokens and bubble components. Preserve the current application-level contract that `ZoraiApp` force-enables `workspaceStore.agentPanelOpen` before the single `AgentChatPanelProvider` renders; either remove provider subtree gating safely or test that this initialization remains true so Code cannot unmount its runtime.
 
 - [ ] **Step 5: Run focused and existing thread tests**
 
@@ -514,7 +518,7 @@ ClientMessage::AgentSpawnSubagent {
 }
 ```
 
-Add a server/engine test that submits a normal parent thread plus the existing spawn arguments and asserts the accepted response contains the task ID and reserved child thread ID. Add validation tests proving unknown/disabled/protected subagents and invalid budgets return the same errors as tool-originated spawn.
+Add a server/engine test that submits a normal parent thread plus the existing spawn arguments and asserts the accepted response contains the task ID and reserved child thread ID. Add validation tests proving unknown/disabled/protected subagents and invalid budgets return the same errors as tool-originated spawn. Mirror the existing capacity-limit and terminal/session-allocation failure cases from `tool_executor/tests/part6.rs`; the direct client wrapper must not bypass or reinterpret them.
 
 - [ ] **Step 2: Run narrow Rust tests and verify RED**
 
@@ -585,12 +589,13 @@ git add crates/zorai-protocol crates/zorai-daemon frontend/electron frontend/src
 
 Mock one daemon thread and one canonical root. Assert:
 
-- restoring Code opens that exact thread;
+- restoring Code resolves the daemon mapping to and opens that exact renderer-local thread after bounded refresh;
 - sending in Code appends through the same runtime message array used by Threads;
 - renamed thread title appears in Code Agent header;
 - inaccessible root disables file actions but conversation remains;
 - stale/deleted thread mapping is replaceable on explicit Create Code Thread/first send;
-- closing root mapping does not call thread deletion.
+- closing root mapping does not call thread deletion;
+- opening/inspecting a spawned child from Code never changes `threadByRoot[root]`, never calls `bindRoot` for the child, and either stays read-only in the parent pane or explicitly switches to Threads for child navigation.
 
 - [ ] **Step 2: Run focused test and verify RED**
 
