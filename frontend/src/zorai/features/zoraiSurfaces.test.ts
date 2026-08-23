@@ -197,6 +197,15 @@ describe("Zorai feature surfaces", () => {
     expect(composerSource).toContain("runtime.pushHandoff");
   });
 
+  it("integrates the read-through document cache and file-open trace", () => {
+    const source = readFeature("../../components/WorkspaceWorkbench.tsx");
+    expect(source).toContain("createCodeDocumentController");
+    expect(source).toContain("createCodeFileOpenTrace");
+    expect(source).toContain("controller.open(context.root, filePath");
+    expect(source).toContain("const cacheHit = Boolean(controller.get(context.root, filePath))");
+    expect(source).toContain('trace.mark("interactive")');
+  });
+
   it("keeps Goals native to the Zorai shell instead of embedding legacy task UI", () => {
     const source = readFeature("./goals/GoalsView.tsx");
 

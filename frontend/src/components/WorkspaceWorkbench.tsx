@@ -10,6 +10,8 @@ import { CodeTabs } from "@/zorai/features/code/CodeTabs";
 import { shouldRestoreWorkspaceDocument } from "@/zorai/features/code/workspaceDocumentRestore";
 import { useWorkspaceEditorRequestStore } from "@/lib/workspaceEditorRequestStore";
 import { preloadCodeEditor } from "@/zorai/features/code/codeEditorPreload";
+import { createCodeDocumentController } from "@/zorai/features/code/codeDocumentModel";
+import { createCodeFileOpenTrace } from "@/zorai/features/code/codeEditorPerformance";
 
 const WorkspaceCodeEditor = lazy(() => import("@/components/WorkspaceCodeEditor").then((module) => ({ default: module.WorkspaceCodeEditor })));
 const WorkspaceDiffEditor = lazy(() => import("@/components/WorkspaceCodeEditor").then((module) => ({ default: module.WorkspaceDiffEditor })));
@@ -96,6 +98,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
   const [committing, setCommitting] = useState(false);
   const [reviewedChange, setReviewedChange] = useState<{ path: string; staged: boolean; hunks: ZoraiWorkspaceGitHunk[] } | null>(null);
   const [documents, setDocuments] = useState<Record<string, OpenDocument>>({});
+  const documentControllerRef = useRef(createCodeDocumentController({ maxCachedDocuments: 32 }));
   const [diff, setDiff] = useState<string | null>(null);
   const [mode, setMode] = useState<"edit" | "diff" | "external">("edit");
   const [error, setError] = useState<string | null>(null);
@@ -398,16 +401,47 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
 
   const openFile = async (filePath: string, location?: { line: number; column: number }, view: "edit" | "diff" = "edit") => {
     if (!activeThreadId || !context?.root || !bridge?.workspaceReadFile) return;
+    const controller = documentControllerRef.current;
+    const cacheHit = Boolean(controller.get(context.root, filePath));
+    const trace = createCodeFileOpenTrace({ root: context.root, path: filePath, cacheHit });
+    trace.mark("start");
+    setActiveFile(activeThreadId, filePath);
+    trace.mark("tab-active");
     try {
       setError(null);
       if (location) pendingNavigationRef.current = { path: filePath, ...location };
       let nextDocument = documents[filePath];
       if (!nextDocument) {
-        const file = await bridge.workspaceReadFile(context.root, filePath);
-        nextDocument = { ...file, original: file.content, dirty: false };
+        trace.mark("ipc-start");
+        const entry = await controller.open(context.root, filePath, async () => {
+          const file = await bridge.workspaceReadFile!(context.root, filePath);
+          trace.mark("ipc-complete");
+          return {
+            root: context.root,
+            path: file.path,
+            content: file.content,
+            original: file.content,
+            hash: file.hash,
+            language: file.language,
+            byteSize: file.sizeBytes,
+            modifiedAt: file.modifiedAt,
+            lineCount: file.content.split("\n").length,
+          };
+        });
+        if (!entry) return;
+        nextDocument = {
+          path: entry.path,
+          content: entry.content,
+          hash: entry.hash,
+          language: entry.language,
+          sizeBytes: entry.byteSize,
+          modifiedAt: entry.modifiedAt,
+          original: entry.original,
+          dirty: entry.dirty,
+        };
         setDocuments((current) => current[filePath] ? current : { ...current, [filePath]: nextDocument! });
       }
-      setActiveFile(activeThreadId, filePath);
+      trace.mark("model-ready");
       if (view === "diff") {
         await enterDiffView(filePath, nextDocument);
         return;
@@ -415,6 +449,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
       setMode("edit");
       if (location && nextDocument) {
         requestAnimationFrame(() => {
+          trace.mark("paint");
           const monacoEditor = monacoEditorRef.current;
           if (monacoEditor) {
             monacoEditor.focus();
@@ -431,6 +466,14 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
           textarea.focus();
           textarea.setSelectionRange(offset, offset);
           pendingNavigationRef.current = null;
+          trace.mark("interactive");
+          trace.finish({ byteSize: new TextEncoder().encode(nextDocument!.content).byteLength, lineCount: nextDocument!.content.split("\n").length, language: nextDocument!.language });
+        });
+      } else {
+        requestAnimationFrame(() => {
+          trace.mark("paint");
+          trace.mark("interactive");
+          trace.finish({ byteSize: new TextEncoder().encode(nextDocument!.content).byteLength, lineCount: nextDocument!.content.split("\n").length, language: nextDocument!.language });
         });
       }
     } catch (reason: any) { setError(reason?.message ?? String(reason)); }
@@ -470,6 +513,18 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     try {
       const saved = await bridge.workspaceWriteFile(context.root, activeDocument.path, activeDocument.content, activeDocument.hash);
       setDocuments((current) => ({ ...current, [saved.path]: { ...saved, original: saved.content, dirty: false } }));
+      documentControllerRef.current.invalidate(context.root, activeDocument.path);
+      await documentControllerRef.current.open(context.root, saved.path, async () => ({
+        root: context.root,
+        path: saved.path,
+        content: saved.content,
+        original: saved.content,
+        hash: saved.hash,
+        language: saved.language,
+        byteSize: saved.sizeBytes,
+        modifiedAt: saved.modifiedAt,
+        lineCount: saved.content.split("\n").length,
+      }));
       await refreshRoot();
       setError(null);
     } catch (reason: any) {
@@ -1013,7 +1068,10 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
                     lsp={context?.root && lspStatus ? { root: context.root, path: activeDocument.path, language: activeDocument.language, available: lspStatus.available } : undefined}
                     onNavigateLocation={(targetPath, line, column) => void openFile(targetPath, { line, column })}
                     onSelect={recordEditorSelection}
-                    onChange={(value) => setDocuments((current) => ({ ...current, [activeDocument.path]: { ...activeDocument, content: value, dirty: value !== activeDocument.original } }))}
+                    onChange={(value) => {
+                      if (context?.root) documentControllerRef.current.updateContent(context.root, activeDocument.path, value);
+                      setDocuments((current) => ({ ...current, [activeDocument.path]: { ...activeDocument, content: value, dirty: value !== activeDocument.original } }));
+                    }}
                   />
                 </Suspense>
               )}
