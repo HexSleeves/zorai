@@ -4,6 +4,7 @@ import { filterCodeProjectThreads, statusPresentation } from "./codeProjectThrea
 
 export type CodeThreadHistoryEntry = CodeProjectThreadEntry & {
   status: CodeProjectThreadStatus;
+  latestCompletionAt: number | null;
 };
 
 type CodeThreadHistoryMenuProps = {
@@ -13,6 +14,7 @@ type CodeThreadHistoryMenuProps = {
   loading: boolean;
   error: string | null;
   onCreate: () => void;
+  onOpen: () => void;
   onSelect: (entry: CodeThreadHistoryEntry) => void;
   onRetry: () => void;
 };
@@ -24,6 +26,7 @@ export function CodeThreadHistoryMenu({
   loading,
   error,
   onCreate,
+  onOpen,
   onSelect,
   onRetry,
 }: CodeThreadHistoryMenuProps) {
@@ -99,7 +102,11 @@ export function CodeThreadHistoryMenu({
         aria-label="Project thread history"
         aria-expanded={open}
         aria-haspopup="dialog"
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setOpen((value) => {
+          const next = !value;
+          if (next) onOpen();
+          return next;
+        })}
       >
         <ClockIcon />
       </button>

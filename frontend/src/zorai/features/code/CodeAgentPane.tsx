@@ -75,11 +75,23 @@ export function CodeAgentPane() {
       localThreads,
       daemonThreads,
       contextsByLocalThreadId: contextsByThreadId,
-    }).map((entry): CodeThreadHistoryEntry => ({
-      ...entry,
-      status: statusForEntry(entry, runtime, operatorQuestion?.threadId ?? null, readState, tasks),
-    }));
+    }).map((entry): CodeThreadHistoryEntry => {
+      const evidence = evidenceForEntry(entry, runtime, operatorQuestion?.threadId ?? null, readState, tasks);
+      return {
+        ...entry,
+        latestCompletionAt: evidence.latestCompletionAt,
+        status: resolveCodeProjectThreadStatus(evidence),
+      };
+    });
   }, [contextsByThreadId, daemonThreads, hydrated, localThreads, operatorQuestion?.threadId, readState, root, runtime, tasks]);
+
+  useEffect(() => {
+    if (!activeThread) return;
+    const entry = entries.find((candidate) => candidate.localThread.id === activeThread.id);
+    if (!entry?.latestCompletionAt) return;
+    const key = threadReadKey(entry.thread);
+    if (key) useThreadReadStateStore.getState().markRead(key, entry.latestCompletionAt);
+  }, [activeThread, entries]);
 
   const createProjectThread = () => {
     if (!root) return;
@@ -135,6 +147,7 @@ export function CodeAgentPane() {
             loading={loading}
             error={error}
             onCreate={createProjectThread}
+            onOpen={() => void refresh()}
             onSelect={(entry) => void selectProjectThread(entry)}
             onRetry={() => void refresh()}
           />
@@ -144,7 +157,7 @@ export function CodeAgentPane() {
   );
 }
 
-function statusForEntry(
+function evidenceForEntry(
   entry: CodeProjectThreadEntry,
   runtime: ReturnType<typeof useAgentChatPanelRuntime>,
   questionThreadId: string | null,
@@ -188,10 +201,10 @@ function statusForEntry(
   }
 
   const key = threadReadKey(entry.thread);
-  return resolveCodeProjectThreadStatus({
+  return {
     needsOperatorAction,
     working,
     latestCompletionAt,
     lastReadAt: key ? readState[key] ?? null : null,
-  });
+  };
 }
