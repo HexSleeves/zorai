@@ -1,4 +1,4 @@
-const { app, BrowserWindow, Menu, clipboard, ipcMain, nativeImage, screen, shell, session } = require('electron');
+const { app, BrowserWindow, Menu, clipboard, dialog, ipcMain, nativeImage, screen, shell, session } = require('electron');
 const { spawn, spawnSync } = require('child_process');
 const path = require('path');
 const net = require('net');
@@ -430,6 +430,7 @@ function registerIpcHandlers() {
         createFsDirectory,
         deleteDataPath,
         deleteFsPath,
+        dialog,
         discordSendMessage: sendDiscordMessage,
         ensureZoraiDataDir,
         getAvailableShells,

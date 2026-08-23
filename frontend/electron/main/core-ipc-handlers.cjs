@@ -9,6 +9,7 @@ function registerCoreIpcHandlers(ipcMain, options) {
         createFsDirectory,
         deleteDataPath,
         deleteFsPath,
+        dialog,
         discordSendMessage,
         ensureZoraiDataDir,
         getAvailableShells,
@@ -95,6 +96,17 @@ function registerCoreIpcHandlers(ipcMain, options) {
     ipcMain.handle('git-status', (_event, targetPath) => gitStatus(targetPath));
     ipcMain.handle('git-diff', (_event, targetPath, filePath) => gitDiff(targetPath, filePath));
     ipcMain.handle('workspace-open', (_event, rootPath) => workspaceService.openWorkspace(rootPath));
+    ipcMain.handle('workspace-select-folder', async () => {
+        const selection = await dialog.showOpenDialog({
+            title: 'Open Folder',
+            properties: ['openDirectory'],
+        });
+        if (!selection || selection.canceled !== false || !Array.isArray(selection.filePaths) || selection.filePaths.length === 0) {
+            return { canceled: true, root: null };
+        }
+        const validated = await workspaceService.openWorkspace(selection.filePaths[0]);
+        return { canceled: false, root: validated };
+    });
     ipcMain.handle('workspace-list-directory', (_event, rootPath, relativePath, runtimeOptions) => workspaceService.listWorkspaceDirectory(rootPath, relativePath, runtimeOptions));
     ipcMain.handle('workspace-read-file', (_event, rootPath, relativePath, runtimeOptions) => workspaceService.readWorkspaceFile(rootPath, relativePath, runtimeOptions));
     ipcMain.handle('workspace-write-file', (_event, rootPath, relativePath, content, expectedHash) => workspaceService.writeWorkspaceFile(rootPath, relativePath, content, expectedHash));

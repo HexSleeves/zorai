@@ -151,6 +151,7 @@ const bridgeApi = {
     gitStatus: (targetPath) => ipcRenderer.invoke('git-status', targetPath),
     gitDiff: (targetPath, filePath) => ipcRenderer.invoke('git-diff', targetPath, filePath),
     workspaceOpen: (rootPath) => ipcRenderer.invoke('workspace-open', rootPath),
+    workspaceSelectFolder: () => ipcRenderer.invoke('workspace-select-folder'),
     workspaceListDirectory: (rootPath, relativePath, options) => ipcRenderer.invoke('workspace-list-directory', rootPath, relativePath, options),
     workspaceReadFile: (rootPath, relativePath, options) => ipcRenderer.invoke('workspace-read-file', rootPath, relativePath, options),
     workspaceWriteFile: (rootPath, relativePath, content, expectedHash) => ipcRenderer.invoke('workspace-write-file', rootPath, relativePath, content, expectedHash),

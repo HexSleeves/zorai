@@ -46,7 +46,7 @@ export function ZoraiShell() {
       if (normalized.tool) setActiveTool(normalized.tool);
       if (detail.settingsTab) {
         setActiveSettingsTab(detail.settingsTab);
-        if (!detail.view) setActiveView("settings");
+        if (!normalized.view) setActiveView("settings");
       }
       if (detail.toggleContext) setContextOpen((current) => !current);
       if (detail.returnTarget !== undefined) setReturnTarget(detail.returnTarget);
@@ -130,7 +130,7 @@ export function ZoraiShell() {
 
         <ZoraiContextPanel
           title={contextLabels.title}
-          subtitle={activeItem.railLabel}
+          subtitle={contextLabels.title === activeItem.railLabel ? undefined : activeItem.railLabel}
           collapsedLabel={contextLabels.collapsed}
           open={contextOpen}
           onToggle={() => setContextOpen((current) => !current)}

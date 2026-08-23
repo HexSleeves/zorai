@@ -1,43 +1,109 @@
+import { useState } from "react";
+import { CodeEmptyState } from "./CodeEmptyState";
+import { useCodeWorkspaceBindingStore } from "./codeWorkspaceBindingStore";
+import {
+  displayRootName,
+  type ZoraiWorkspaceSelection,
+  type ZoraiWorkspaceValidatedRoot,
+} from "./codeEmptyStateModel";
+
 const codeRailSections = [
   { id: "explorer", label: "Explorer" },
   { id: "search", label: "Search" },
   { id: "scm", label: "Source Control" },
 ] as const;
 
+/**
+ * Typed callback boundary for the GLM lifecycle task. The GLM task owns
+ * daemon-to-local thread resolution and thread creation for a selected root;
+ * this slice only surfaces the validated root through the callback.
+ */
+export type CodeOpenWorkspaceBoundary = (
+  root: ZoraiWorkspaceValidatedRoot,
+  source: "picker" | "manual",
+) => void;
+
+export type CodeViewProps = {
+  onOpenWorkspace?: CodeOpenWorkspaceBoundary;
+  selectFolder?: () => Promise<ZoraiWorkspaceSelection>;
+  openPath?: (rootPath: string) => Promise<ZoraiWorkspaceValidatedRoot>;
+};
+
 export function CodeRail() {
+  const lastRoot = useCodeWorkspaceBindingStore((state) => state.lastRoot);
+
   return (
     <div className="zorai-rail-stack">
       <div className="zorai-section-label">Code</div>
       {codeRailSections.map((section) => (
         <div key={section.id} className="zorai-rail-card">
           <strong>{section.label}</strong>
-          <span>No repository open.</span>
+          <span>
+            {lastRoot
+              ? section.id === "explorer"
+                ? displayRootName(lastRoot)
+                : "Available after root bind."
+              : "No repository open."}
+          </span>
         </div>
       ))}
     </div>
   );
 }
 
-export function CodeView() {
+export function CodeView({
+  onOpenWorkspace = () => {},
+  selectFolder,
+  openPath,
+}: CodeViewProps) {
+  const [boundRoot, setBoundRoot] = useState<ZoraiWorkspaceValidatedRoot | null>(null);
+
+  const handleRootSelected: CodeOpenWorkspaceBoundary = (root, source) => {
+    useCodeWorkspaceBindingStore.getState().setLastRoot(root.root);
+    setBoundRoot(root);
+    onOpenWorkspace(root, source);
+  };
+
+  const handleCloseFolder = () => {
+    if (!boundRoot) return;
+    useCodeWorkspaceBindingStore.getState().closeRoot(boundRoot.root);
+    setBoundRoot(null);
+  };
+
   return (
     <section className="zorai-feature-surface zorai-code-surface">
       <div className="zorai-view-header">
         <div>
           <div className="zorai-kicker">Code</div>
           <h1>Code Agent</h1>
-          <p>
-            The Code surface is where repository files, diffs, and editor views
-            will live as a first-class Zorai destination.
-          </p>
+          {!boundRoot && (
+            <p>
+              The Code surface is where repository files, diffs, and editor views
+              will live as a first-class Zorai destination.
+            </p>
+          )}
         </div>
       </div>
-      <div className="zorai-code-empty">
-        <strong>No repository open</strong>
-        <span>
-          Open a folder to start exploring files. Explorer, search, and source
-          control views will render here once a repository root is bound.
-        </span>
-      </div>
+      {boundRoot ? (
+        <div className="zorai-code-bound">
+          <div className="zorai-code-bound-name">{boundRoot.name}</div>
+          <div className="zorai-code-bound-path">{boundRoot.root}</div>
+          {boundRoot.isGitRepository && boundRoot.gitRoot ? (
+            <div className="zorai-code-bound-git">Git root: {boundRoot.gitRoot}</div>
+          ) : (
+            <div className="zorai-code-bound-git">Not a Git repository.</div>
+          )}
+          <button type="button" className="zorai-code-close-folder" onClick={handleCloseFolder}>
+            Close folder
+          </button>
+        </div>
+      ) : (
+        <CodeEmptyState
+          selectFolder={selectFolder}
+          openPath={openPath}
+          onRootSelected={handleRootSelected}
+        />
+      )}
     </section>
   );
 }

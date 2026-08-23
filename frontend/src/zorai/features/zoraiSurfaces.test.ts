@@ -661,4 +661,21 @@ describe("Zorai feature surfaces", () => {
     expect(composerSource).toContain("if (budgetNotice || isStreamingResponse) return");
     expect(composerSource).not.toContain("{budgetNotice ??");
   });
+
+  it("keeps shell hygiene: normalized settings fallback, accessible context toggle, and no duplicate code subtitle", () => {
+    const shellSource = readFeature("../shell/ZoraiShell.tsx");
+    const contextSource = readFeature("../shell/ZoraiContextPanel.tsx");
+
+    // Settings navigation falls back to the normalized view instead of the raw detail.
+    expect(shellSource).toContain('if (!normalized.view) setActiveView("settings")');
+    // Context toggle is accessible in both collapsed and open states.
+    expect(contextSource).toContain("aria-expanded={false}");
+    expect(contextSource).toContain("aria-expanded={true}");
+    expect(contextSource).toContain('aria-controls="zorai-context-panel"');
+    expect(contextSource).toContain("aria-label={collapsedLabel}");
+    expect(contextSource).toContain('aria-label="Collapse context"');
+    // The Code Agent rail label no longer duplicates the context panel title.
+    expect(shellSource).toContain("subtitle={contextLabels.title === activeItem.railLabel ? undefined : activeItem.railLabel}");
+    expect(contextSource).toContain("subtitle !== title");
+  });
 });

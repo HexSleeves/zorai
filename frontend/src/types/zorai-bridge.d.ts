@@ -561,6 +561,7 @@ declare global {
         gitStatus?: (targetPath: string) => Promise<string>;
         gitDiff?: (targetPath: string, filePath?: string | null) => Promise<string>;
         workspaceOpen?: (rootPath: string) => Promise<{ root: string; name: string; gitRoot: string | null; isGitRepository: boolean }>;
+        workspaceSelectFolder?: () => Promise<{ canceled: boolean; root: { root: string; name: string; gitRoot: string | null; isGitRepository: boolean } | null }>;
         workspaceListDirectory?: (rootPath: string, relativePath?: string, options?: { includeIgnored?: boolean }) => Promise<ZoraiWorkspaceEntry[]>;
         workspaceReadFile?: (rootPath: string, relativePath: string, options?: { maxBytes?: number }) => Promise<ZoraiWorkspaceFile>;
         workspaceWriteFile?: (rootPath: string, relativePath: string, content: string, expectedHash?: string | null) => Promise<ZoraiWorkspaceFile>;

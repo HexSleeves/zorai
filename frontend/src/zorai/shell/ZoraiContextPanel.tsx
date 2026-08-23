@@ -24,6 +24,9 @@ export function ZoraiContextPanel({
         className="zorai-context-tab"
         onClick={onToggle}
         title={collapsedLabel}
+        aria-expanded={false}
+        aria-controls="zorai-context-panel"
+        aria-label={collapsedLabel}
       >
         {collapsedLabel}
       </button>
@@ -31,17 +34,20 @@ export function ZoraiContextPanel({
   }
 
   return (
-    <aside className="zorai-context-panel" aria-label={title}>
+    <aside id="zorai-context-panel" className="zorai-context-panel" aria-label={title}>
       <div className="zorai-context-header">
         <div>
           <div className="zorai-context-title">{title}</div>
-          {subtitle && <div className="zorai-context-subtitle">{subtitle}</div>}
+          {subtitle && subtitle !== title && <div className="zorai-context-subtitle">{subtitle}</div>}
         </div>
         <button
           type="button"
           className="zorai-icon-button"
           onClick={onToggle}
           title="Collapse context"
+          aria-expanded={true}
+          aria-controls="zorai-context-panel"
+          aria-label="Collapse context"
         >
           x
         </button>
