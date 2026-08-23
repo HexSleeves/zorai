@@ -8,7 +8,7 @@ const handlerPath = path.join(__dirname, "main", "agent-ipc-handlers.cjs");
 const preloadSrc = fs.readFileSync(preloadPath, "utf8");
 const { registerAgentIpcHandlers } = require(handlerPath);
 
-function createHandlerHarness() {
+function createHandlerHarness(queryImpl = async () => ({ ok: true })) {
   const handlers = new Map();
   const commands = [];
   const ipcMain = {
@@ -21,7 +21,7 @@ function createHandlerHarness() {
     ipcMain,
     {
       sendAgentCommand: (command) => commands.push(command),
-      sendAgentQuery: async () => ({ ok: true }),
+      sendAgentQuery: queryImpl,
     },
     {
       logToFile: () => {},
@@ -41,6 +41,27 @@ test("preload forwards an optional target agent when sending a message", () => {
     preloadSrc,
     /agentSendMessage:\s*\(threadId, content, sessionId, contextMessages, contentBlocksJson, targetAgentId\)\s*=>\s*ipcRenderer\.invoke\('agent-send-message', threadId, content, sessionId, contextMessages, contentBlocksJson, targetAgentId\)/,
   );
+});
+
+test("preload exposes typed subagent delegation", () => {
+  assert.match(preloadSrc, /agentSpawnSubagent:\s*\(threadId, request\)\s*=>\s*ipcRenderer\.invoke\('agent-spawn-subagent', threadId, request\)/);
+});
+
+test("agent spawn-subagent IPC preserves parent thread and request", async () => {
+  const queries = [];
+  const { handlers } = createHandlerHarness(async (command, responseType) => {
+    queries.push({ command, responseType });
+    return { result: { ok: true, content: "spawned" } };
+  });
+  const request = { title: "Reviewer", description: "Review this", cwd: "/repo" };
+
+  const result = await handlers.get("agent-spawn-subagent")(null, "daemon-thread-1", request);
+
+  assert.deepEqual(queries, [{
+    command: { type: "spawn-subagent", thread_id: "daemon-thread-1", args: request },
+    responseType: "subagent-spawned",
+  }]);
+  assert.deepEqual(result, { ok: true, content: "spawned" });
 });
 
 test("agent send-message IPC forwards the selected agent to the daemon", async () => {
