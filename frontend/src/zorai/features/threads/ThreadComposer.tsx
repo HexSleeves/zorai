@@ -35,6 +35,11 @@ export function ThreadComposer() {
   const workspaceContext = useWorkspaceContextStore((state) => activeThreadId ? state.byThreadId[activeThreadId] : undefined);
   const toggleAttachedFile = useWorkspaceContextStore((state) => state.toggleAttachedFile);
   const [contextPreviewOpen, setContextPreviewOpen] = useState(false);
+  const inputRef = runtime.inputRef;
+  const sendMessage = runtime.sendMessage;
+  const isStreamingResponse = runtime.isStreamingResponse;
+  const activeRuntimeThreadId = runtime.activeThreadId;
+  const stopStreaming = runtime.stopStreaming;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
   const [dropActive, setDropActive] = useState(false);
@@ -76,9 +81,9 @@ export function ThreadComposer() {
   }, []);
 
   useEffect(() => {
-    const el = runtime.inputRef.current;
+    const el = inputRef.current;
     if (el) applyComposerTextareaSize(el);
-  }, [runtime.input]);
+  }, [inputRef, runtime.input]);
 
   const appendFiles = async (files: File[]) => {
     if (files.length === 0) return;
@@ -87,11 +92,11 @@ export function ThreadComposer() {
   };
 
   const sendCurrentInput = () => {
-    if (budgetNotice || runtime.isStreamingResponse) return;
+    if (budgetNotice || isStreamingResponse) return;
     const payload = buildAttachmentSendPayload(runtime.input, attachments);
     if (!payload.text && !payload.contentBlocksJson) return;
     history.remember(payload.text);
-    runtime.sendMessage(payload);
+    sendMessage(payload);
     runtime.setInput("");
     setAttachments([]);
   };
@@ -115,23 +120,23 @@ export function ThreadComposer() {
     const queued = queuedMessages[index];
     if (!queued) return;
     setQueuedMessages((current) => current.filter((_, i) => i !== index));
-    if (runtime.isStreamingResponse) {
+    if (isStreamingResponse) {
       setSendNowMessage(queued);
-      runtime.stopStreaming(runtime.activeThreadId);
+      stopStreaming(activeRuntimeThreadId);
       return;
     }
     awaitingStreamStartRef.current = true;
-    runtime.sendMessage(queued);
+    sendMessage(queued);
   };
 
   useEffect(() => {
     if (budgetNotice) return;
-    if (runtime.isStreamingResponse) {
+    if (isStreamingResponse) {
       awaitingStreamStartRef.current = false;
       return;
     }
     if (!shouldDispatchQueuedFollowUp({
-      isStreaming: runtime.isStreamingResponse,
+      isStreaming: isStreamingResponse,
       awaitingStreamStart: awaitingStreamStartRef.current,
       hasSendNow: Boolean(sendNowMessage),
       queueLength: queuedMessages.length,
@@ -142,7 +147,7 @@ export function ThreadComposer() {
     if (sendNowMessage) {
       const payload = sendNowMessage;
       setSendNowMessage(null);
-      runtime.sendMessage(payload);
+      sendMessage(payload);
       return;
     }
     const [next, ...rest] = queuedMessages;
@@ -151,8 +156,8 @@ export function ThreadComposer() {
       return;
     }
     setQueuedMessages(rest);
-    runtime.sendMessage(next);
-  }, [budgetNotice, queuedMessages, runtime.isStreamingResponse, runtime.sendMessage, sendNowMessage]);
+    sendMessage(next);
+  }, [budgetNotice, isStreamingResponse, queuedMessages, sendMessage, sendNowMessage]);
 
   // Ctrl+M toggles voice recording from anywhere in the thread surface
   // (including while typing in the textarea — that's where you want it most).
@@ -173,7 +178,7 @@ export function ThreadComposer() {
     if (history.handleKeyDown(event)) return;
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      if (runtime.isStreamingResponse) {
+      if (isStreamingResponse) {
         queueCurrentInput();
       } else {
         sendCurrentInput();
@@ -356,7 +361,7 @@ export function ThreadComposer() {
 
       <div className="zorai-composer-box">
         <textarea
-          ref={runtime.inputRef}
+          ref={inputRef}
           value={runtime.input}
           onChange={(event) => {
             history.commit();
@@ -365,7 +370,7 @@ export function ThreadComposer() {
           }}
           onClick={() => history.commit()}
           onKeyDown={handleKeyDown}
-          placeholder={isTranscribing ? "Transcribing..." : isRecording ? "Recording..." : runtime.isStreamingResponse ? "Queue a follow-up…" : "Message Zorai..."}
+          placeholder={isTranscribing ? "Transcribing..." : isRecording ? "Recording..." : isStreamingResponse ? "Queue a follow-up…" : "Message Zorai..."}
           rows={3}
         />
 
@@ -444,7 +449,7 @@ export function ThreadComposer() {
           </div>
 
           <div className="zorai-composer-actions__right">
-            {runtime.isStreamingResponse ? (
+            {isStreamingResponse ? (
               <>
                 <button
                   type="button"
@@ -461,7 +466,7 @@ export function ThreadComposer() {
                   className="zorai-composer-icon-button zorai-composer-icon-button--stop"
                   title="Stop generating"
                   aria-label="Stop generating"
-                  onClick={() => runtime.stopStreaming(runtime.activeThreadId)}
+                  onClick={() => stopStreaming(activeRuntimeThreadId)}
                 >
                   <ComposerIcon kind="stop" />
                 </button>

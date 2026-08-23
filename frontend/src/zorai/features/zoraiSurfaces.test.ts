@@ -371,8 +371,8 @@ describe("Zorai feature surfaces", () => {
     const actionsStart = source.indexOf("zorai-composer-actions");
     const actionsSource = source.slice(actionsStart);
 
-    expect(actionsSource).toContain("runtime.isStreamingResponse");
-    expect(actionsSource).toContain("runtime.stopStreaming(runtime.activeThreadId)");
+    expect(actionsSource).toContain("isStreamingResponse");
+    expect(actionsSource).toContain("stopStreaming(activeRuntimeThreadId)");
     expect(actionsSource.indexOf("Stop generating")).toBeGreaterThan(-1);
     expect(actionsSource.indexOf("Send message")).toBeGreaterThan(-1);
   });
@@ -658,7 +658,7 @@ describe("Zorai feature surfaces", () => {
     expect(noticeSource).toContain("continue from the parent thread");
     expect(composerSource).toContain("activeThreadBudgetExceededNotice");
     expect(composerSource).toContain("zorai-composer-budget-notice");
-    expect(composerSource).toContain("if (budgetNotice || runtime.isStreamingResponse) return");
+    expect(composerSource).toContain("if (budgetNotice || isStreamingResponse) return");
     expect(composerSource).not.toContain("{budgetNotice ??");
   });
 });
