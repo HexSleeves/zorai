@@ -27,6 +27,8 @@ describe("Zorai feature surfaces", () => {
     expect(threadsSource).toContain('variant?: "full" | "compact"');
     expect(threadsSource).toContain('<ThreadComposer showTargetSelector={variant === "compact"} compact={variant === "compact"} />');
     expect(threadsSource).not.toContain("<ThreadComposer />");
+    expect(threadsSource).toContain("actualThreadResponderLabel(activeThread)");
+    expect(threadsSource).toContain("responderStack");
     expect(threadsSource).toContain("<ThreadComposer");
     expect(threadsSource).toContain("buildDisplayItems(runtime.messages)");
   });
@@ -99,6 +101,8 @@ describe("Zorai feature surfaces", () => {
     expect(handleSource).toContain("onDoubleClick={onReset}");
     expect(styleSource).toContain("--zorai-code-explorer-width");
     expect(shellSource).toContain("--zorai-code-agent-width");
+    expect(styleSource).toContain(".zorai-shell--code .zorai-context-panel");
+    expect(styleSource).toContain("width: 100%");
     expect(styleSource).toContain(".zorai-code-thread-history");
     expect(styleSource).toContain(".zorai-code-thread-status.is-amber");
   });

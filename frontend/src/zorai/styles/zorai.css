@@ -3246,6 +3246,10 @@ button.zorai-composer-context-chip { cursor: pointer; }
   background: var(--zorai-bg);
 }
 
+.zorai-shell--code .zorai-context-panel {
+  width: 100%;
+}
+
 .zorai-shell--code .zorai-contextual-rail,
 .zorai-shell--code .zorai-context-panel,
 .zorai-shell--code .zorai-code-tabs-shell,

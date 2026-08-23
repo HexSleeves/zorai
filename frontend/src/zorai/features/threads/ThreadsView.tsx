@@ -240,7 +240,7 @@ export function ThreadsView({
         <header className="zorai-code-agent-thread-header">
           <div>
             <strong>{activeThread.title}</strong>
-            <span>Responder · {activeThread.agent_name}</span>
+            <span>Responder · {actualThreadResponderLabel(activeThread)}</span>
           </div>
           <div className="zorai-code-agent-thread-actions">
             <ThreadRuntimeSummary thread={activeThread} />
@@ -352,6 +352,11 @@ export function ThreadsView({
       {variant === "full" ? <ThreadFilePreviewOverlay /> : null}
     </section>
   );
+}
+
+function actualThreadResponderLabel(thread: AgentThread): string {
+  const stack = thread.threadHandoffState?.responderStack ?? [];
+  return stack[stack.length - 1]?.agentName ?? thread.agent_name;
 }
 
 function ThreadHeader({
