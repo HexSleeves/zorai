@@ -3,6 +3,7 @@ import { getBridge } from "@/lib/bridge";
 import "@/lib/monacoEnvironment";
 import type { OnMount } from "@monaco-editor/react";
 import type { languages as MonacoLanguagesApi } from "monaco-editor";
+import { registerCodeEditorActions } from "@/zorai/features/code/codeEditorActions";
 
 const MonacoEditor = lazy(() => import("@monaco-editor/react").then((module) => ({ default: module.default })));
 const MonacoDiffEditor = lazy(() => import("@monaco-editor/react").then((module) => ({ default: module.DiffEditor })));
@@ -47,6 +48,7 @@ export function WorkspaceCodeEditor({
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const monacoRef = useRef<Parameters<OnMount>[1] | null>(null);
   const providerDisposablesRef = useRef<Array<{ dispose: () => void }>>([]);
+  const actionDisposablesRef = useRef<Array<{ dispose: () => void }>>([]);
   const fallback = <FallbackEditor value={value} path={path} onChange={onChange} onSelect={onSelect} onSave={onSave} textareaRef={textareaRef} />;
   useEffect(() => {
     const monacoEditor = editorRef.current;
@@ -98,6 +100,8 @@ export function WorkspaceCodeEditor({
       },
     });
     monaco.editor.setTheme("zorai-dark");
+    actionDisposablesRef.current.forEach((disposable) => disposable.dispose());
+    actionDisposablesRef.current = registerCodeEditorActions(editor, { onSave });
     providerDisposablesRef.current.forEach((disposable) => disposable.dispose());
     providerDisposablesRef.current = [];
     const bridge = getBridge();
@@ -176,6 +180,8 @@ export function WorkspaceCodeEditor({
     editor.onDidDispose(() => {
       providerDisposablesRef.current.forEach((disposable) => disposable.dispose());
       providerDisposablesRef.current = [];
+      actionDisposablesRef.current.forEach((disposable) => disposable.dispose());
+      actionDisposablesRef.current = [];
     });
     editor.onDidChangeCursorSelection((event) => onSelect(
       event.selection.startLineNumber,
