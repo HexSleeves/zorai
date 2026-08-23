@@ -570,6 +570,9 @@ declare global {
         workspaceGitStatus?: (rootPath: string) => Promise<ZoraiWorkspaceGitStatus[]>;
         workspaceGitOverview?: (rootPath: string) => Promise<ZoraiWorkspaceGitOverview>;
         workspaceGitCommit?: (rootPath: string, message: string) => Promise<{ commit: string; subject: string; overview: ZoraiWorkspaceGitOverview; status: ZoraiWorkspaceGitStatus[] }>;
+        workspaceGitHistory?: (rootPath: string, options?: { limit?: number }) => Promise<Array<{ hash: string; shortHash: string; author: string; date: string; subject: string }>>;
+        workspaceGitCommitDetail?: (rootPath: string, commitHash: string) => Promise<{ hash: string; author: string; date: string; subject: string; body: string; files: Array<{ status: string; path: string }> }>;
+        workspaceGitConflicts?: (rootPath: string) => Promise<Array<{ path: string }>>;
         workspaceGitListWorktrees?: (rootPath: string) => Promise<ZoraiGitWorktree[]>;
         workspaceGitCreateWorktree?: (rootPath: string, options: { name: string; branch: string; baseRef?: string }) => Promise<{ root: string; branch: string; baseRef: string; worktrees: ZoraiGitWorktree[] }>;
         workspaceGitRemoveWorktree?: (rootPath: string, worktreePath: string) => Promise<ZoraiGitWorktree[]>;

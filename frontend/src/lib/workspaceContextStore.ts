@@ -18,6 +18,7 @@ export type ThreadWorkspaceContext = {
   openFiles: string[];
   updatedAt: number;
   isolateAgentTasks: boolean;
+  pinnedFiles: string[];
 };
 
 type WorkspaceContextState = {
@@ -29,6 +30,8 @@ type WorkspaceContextState = {
   setSelection: (threadId: string, selection: WorkspaceSelection | null) => void;
   toggleAttachedFile: (threadId: string, filePath: string) => void;
   closeFile: (threadId: string, filePath: string) => void;
+  togglePinnedFile: (threadId: string, filePath: string) => void;
+  moveOpenFile: (threadId: string, filePath: string, direction: -1 | 1) => void;
   setIsolateAgentTasks: (threadId: string, enabled: boolean) => void;
 };
 
@@ -57,6 +60,7 @@ export const useWorkspaceContextStore = create<WorkspaceContextState>((set, get)
     const byThreadId = Object.fromEntries(Object.entries(saved?.byThreadId ?? {}).map(([threadId, context]) => [threadId, {
       ...context,
       isolateAgentTasks: context.isolateAgentTasks ?? false,
+      pinnedFiles: context.pinnedFiles ?? [],
     }]));
     set({ hydrated: true, byThreadId });
   },
@@ -74,6 +78,7 @@ export const useWorkspaceContextStore = create<WorkspaceContextState>((set, get)
           openFiles: [],
           updatedAt: Date.now(),
           isolateAgentTasks: true,
+          pinnedFiles: [],
         },
     };
     persist(byThreadId);
@@ -97,18 +102,36 @@ export const useWorkspaceContextStore = create<WorkspaceContextState>((set, get)
       : [...current.attachedFiles, filePath],
     updatedAt: Date.now(),
   }))),
+  togglePinnedFile: (threadId, filePath) => set((state) => updateContext(state, threadId, (current) => ({
+    ...current,
+    pinnedFiles: current.pinnedFiles.includes(filePath)
+      ? current.pinnedFiles.filter((entry) => entry !== filePath)
+      : [...current.pinnedFiles, filePath],
+    updatedAt: Date.now(),
+  }))),
+  moveOpenFile: (threadId, filePath, direction) => set((state) => updateContext(state, threadId, (current) => {
+    const index = current.openFiles.indexOf(filePath);
+    if (index < 0) return current;
+    const target = Math.max(0, Math.min(current.openFiles.length - 1, index + direction));
+    if (target === index) return current;
+    const openFiles = [...current.openFiles];
+    [openFiles[index], openFiles[target]] = [openFiles[target], openFiles[index]];
+    return { ...current, openFiles, updatedAt: Date.now() };
+  })),
   setIsolateAgentTasks: (threadId, enabled) => set((state) => updateContext(state, threadId, (current) => ({
     ...current,
     isolateAgentTasks: enabled,
     updatedAt: Date.now(),
   }))),
   closeFile: (threadId, filePath) => set((state) => updateContext(state, threadId, (current) => {
+    if (current.pinnedFiles.includes(filePath)) return current;
     const openFiles = current.openFiles.filter((entry) => entry !== filePath);
     return {
       ...current,
       openFiles,
       activeFile: current.activeFile === filePath ? openFiles[openFiles.length - 1] ?? null : current.activeFile,
       selection: current.activeFile === filePath ? null : current.selection,
+      pinnedFiles: current.pinnedFiles.filter((entry) => entry !== filePath),
       updatedAt: Date.now(),
     };
   })),

@@ -416,6 +416,42 @@ async function workspaceGitRemoveWorktree(rootPath, worktreePath) {
     return workspaceGitListWorktrees(gitRoot);
 }
 
+async function workspaceGitHistory(rootPath, options = {}) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) return [];
+    const limit = Math.max(1, Math.min(Number(options.limit) || 50, 200));
+    const { stdout } = await execFileAsync('git', ['log', `-${limit}`, '--date=iso-strict', '--format=%H%x00%h%x00%an%x00%ad%x00%s'], { cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER });
+    return stdout.split(/\r?\n/).filter(Boolean).map((line) => {
+        const [hash, shortHash, author, date, subject] = line.split('\0');
+        return { hash, shortHash, author, date, subject };
+    });
+}
+
+async function workspaceGitCommitDetail(rootPath, commitHash) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) throw workspaceError('WORKSPACE_NOT_GIT_REPOSITORY', 'Workspace is not inside a Git repository.');
+    const normalized = typeof commitHash === 'string' ? commitHash.trim() : '';
+    if (!/^[0-9a-fA-F]{7,64}$/.test(normalized)) throw workspaceError('WORKSPACE_COMMIT_INVALID', 'Invalid commit hash.');
+    const { stdout: metadata } = await execFileAsync('git', ['show', '-s', '--date=iso-strict', '--format=%H%x00%an%x00%ad%x00%B', normalized], { cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER });
+    const firstLineEnd = metadata.indexOf('\n');
+    const header = firstLineEnd >= 0 ? metadata.slice(0, firstLineEnd) : metadata;
+    const body = firstLineEnd >= 0 ? metadata.slice(firstLineEnd + 1).trim() : '';
+    const [hash, author, date, subject] = header.split('\0');
+    const { stdout: filesRaw } = await execFileAsync('git', ['show', '--name-status', '--format=', normalized], { cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER });
+    const files = filesRaw.split(/\r?\n/).filter(Boolean).map((line) => { const [status, ...parts] = line.split('\t'); return { status, path: parts[parts.length - 1] || '' }; });
+    return { hash, author, date, subject, body, files };
+}
+
+async function workspaceGitConflicts(rootPath) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) return [];
+    const { stdout } = await execFileAsync('git', ['diff', '--name-only', '--diff-filter=U'], { cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER });
+    return stdout.split(/\r?\n/).filter(Boolean).map((filePath) => ({ path: filePath }));
+}
+
 async function workspaceGitOverview(rootPath) {
     const root = canonicalWorkspaceRoot(rootPath);
     const gitRoot = await resolveGitRoot(root);
@@ -640,10 +676,13 @@ module.exports = {
     parseUnifiedDiffHunks,
     workspaceGitApplyHunk,
     workspaceGitCommit,
+    workspaceGitCommitDetail,
+    workspaceGitConflicts,
     workspaceGitCreateWorktree,
     workspaceGitDiff,
     workspaceGitDiscard,
     workspaceGitHunks,
+    workspaceGitHistory,
     workspaceGitIntegrateWorktree,
     workspaceGitListWorktrees,
     workspaceGitOverview,

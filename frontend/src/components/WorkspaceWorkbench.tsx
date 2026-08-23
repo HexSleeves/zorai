@@ -71,11 +71,16 @@ export function WorkspaceWorkbench() {
   const setSelection = useWorkspaceContextStore((state) => state.setSelection);
   const toggleAttachedFile = useWorkspaceContextStore((state) => state.toggleAttachedFile);
   const closeFile = useWorkspaceContextStore((state) => state.closeFile);
+  const togglePinnedFile = useWorkspaceContextStore((state) => state.togglePinnedFile);
+  const moveOpenFile = useWorkspaceContextStore((state) => state.moveOpenFile);
   const setIsolateAgentTasks = useWorkspaceContextStore((state) => state.setIsolateAgentTasks);
   const [rootInput, setRootInput] = useState(context?.root ?? activeWorkspace?.cwd ?? "");
   const [rootEntries, setRootEntries] = useState<ZoraiWorkspaceEntry[]>([]);
   const [gitStatus, setGitStatus] = useState<ZoraiWorkspaceGitStatus[]>([]);
   const [gitOverview, setGitOverview] = useState<ZoraiWorkspaceGitOverview | null>(null);
+  const [gitHistory, setGitHistory] = useState<Array<{ hash: string; shortHash: string; author: string; date: string; subject: string }>>([]);
+  const [commitDetail, setCommitDetail] = useState<{ hash: string; author: string; date: string; subject: string; body: string; files: Array<{ status: string; path: string }> } | null>(null);
+  const [gitConflicts, setGitConflicts] = useState<Array<{ path: string }>>([]);
   const [gitWorktrees, setGitWorktrees] = useState<ZoraiGitWorktree[]>([]);
   const [worktreeReviews, setWorktreeReviews] = useState<Record<string, ZoraiWorktreeReview>>({});
   const [worktreeName, setWorktreeName] = useState("");
@@ -122,16 +127,20 @@ export function WorkspaceWorkbench() {
 
   const refreshRoot = useCallback(async (root = context?.root) => {
     if (!root || !bridge?.workspaceListDirectory) return;
-    const [entries, statuses, overview, worktrees] = await Promise.all([
+    const [entries, statuses, overview, worktrees, history, conflicts] = await Promise.all([
       bridge.workspaceListDirectory(root, ""),
       bridge.workspaceGitStatus?.(root) ?? Promise.resolve([]),
       bridge.workspaceGitOverview?.(root) ?? Promise.resolve(null),
       bridge.workspaceGitListWorktrees?.(root) ?? Promise.resolve([]),
+      bridge.workspaceGitHistory?.(root, { limit: 50 }) ?? Promise.resolve([]),
+      bridge.workspaceGitConflicts?.(root) ?? Promise.resolve([]),
     ]);
     setRootEntries(entries);
     setGitStatus(statuses);
     setGitOverview(overview);
     setGitWorktrees(worktrees);
+    setGitHistory(history);
+    setGitConflicts(conflicts);
   }, [bridge, context?.root]);
 
   useEffect(() => { void useWorkspaceContextStore.getState().hydrate(); }, []);
@@ -157,6 +166,7 @@ export function WorkspaceWorkbench() {
             openFiles: daemonContext.open_files ?? [],
             updatedAt: daemonContext.updated_at ?? Date.now(),
             isolateAgentTasks: daemonContext.isolate_agent_tasks ?? false,
+            pinnedFiles: current?.pinnedFiles ?? [],
           } },
         }));
       }
@@ -480,6 +490,12 @@ export function WorkspaceWorkbench() {
     } catch (reason: any) { setError(reason?.message ?? String(reason)); }
   };
 
+  const inspectCommit = async (hash: string) => {
+    if (!context?.root || !bridge?.workspaceGitCommitDetail) return;
+    try { setCommitDetail(await bridge.workspaceGitCommitDetail(context.root, hash)); }
+    catch (reason: any) { setError(reason?.message ?? String(reason)); }
+  };
+
   const createManagedWorktree = async () => {
     if (!activeThreadId || !context?.root || !bridge?.workspaceGitCreateWorktree) return;
     try {
@@ -720,6 +736,20 @@ export function WorkspaceWorkbench() {
                 ))}
               </details>
             ) : null}
+            {gitConflicts.length > 0 ? (
+              <details className="zorai-workspace-conflicts" open>
+                <summary>Merge conflicts ({gitConflicts.length})</summary>
+                {gitConflicts.map((conflict) => <button type="button" key={conflict.path} onClick={() => void openFile(conflict.path)}>{conflict.path}</button>)}
+                <span>Resolve in the editor, then stage the file explicitly.</span>
+              </details>
+            ) : null}
+            {gitHistory.length > 0 ? (
+              <details className="zorai-workspace-history">
+                <summary>History ({gitHistory.length})</summary>
+                {gitHistory.map((commit) => <button type="button" key={commit.hash} onClick={() => void inspectCommit(commit.hash)}><code>{commit.shortHash}</code><strong>{commit.subject}</strong><span>{commit.author}</span></button>)}
+                {commitDetail ? <article><header>{commitDetail.subject}</header><span>{commitDetail.hash} · {commitDetail.author} · {commitDetail.date}</span>{commitDetail.body ? <pre>{commitDetail.body}</pre> : null}{commitDetail.files.map((file) => <button type="button" key={`${file.status}:${file.path}`} onClick={() => void openFile(file.path)}>{file.status} {file.path}</button>)}</article> : null}
+              </details>
+            ) : null}
             {gitOverview?.isRepository ? (
               <details className="zorai-workspace-worktrees">
                 <summary>Worktrees ({gitWorktrees.length})</summary>
@@ -823,13 +853,22 @@ export function WorkspaceWorkbench() {
 
       <section className="zorai-workspace-editor-area">
         <div className="zorai-workspace-tabs">
-          {(context?.openFiles ?? []).map((filePath) => {
+          {(context?.openFiles ?? []).map((filePath, index) => {
             const document = documents[filePath];
-            return <button type="button" key={filePath} className={filePath === context?.activeFile ? "active" : ""} onClick={() => setActiveFile(activeThreadId, filePath)}>{filePath.split(/[\\/]/).slice(-1)[0]}{document?.dirty ? " ●" : ""}<span onClick={(event) => { event.stopPropagation(); closeFile(activeThreadId, filePath); }}>×</span></button>;
+            const pinned = context?.pinnedFiles.includes(filePath);
+            return <button type="button" key={filePath} className={filePath === context?.activeFile ? "active" : ""} onClick={() => setActiveFile(activeThreadId, filePath)} title={filePath}>
+              <span className="zorai-workspace-tab-pin" onClick={(event) => { event.stopPropagation(); togglePinnedFile(activeThreadId, filePath); }}>{pinned ? "●" : "○"}</span>
+              {filePath.split(/[\\/]/).slice(-1)[0]}{document?.dirty ? " ●" : ""}
+              <span className="zorai-workspace-tab-move" onClick={(event) => { event.stopPropagation(); moveOpenFile(activeThreadId, filePath, index > 0 ? -1 : 1); }}>↔</span>
+              <span onClick={(event) => { event.stopPropagation(); closeFile(activeThreadId, filePath); }}>{pinned ? "" : "×"}</span>
+            </button>;
           })}
         </div>
         {activeDocument ? (
           <>
+            <nav className="zorai-workspace-breadcrumbs" aria-label="File breadcrumbs">
+              {activeDocument.path.split(/[\\/]/).map((part, index, parts) => <span key={`${index}:${part}`}>{part}{index < parts.length - 1 ? " › " : ""}</span>)}
+            </nav>
             <div className="zorai-workspace-actionbar">
               <span>{activeDocument.path}{lspStatus ? ` · LSP ${lspStatus.available ? lspStatus.command ?? "ready" : "unavailable"}` : ""}</span>
               <div>
@@ -867,6 +906,11 @@ export function WorkspaceWorkbench() {
                     onMount={(editor) => { monacoEditorRef.current = editor; }}
                     onSave={() => void save()}
                     diagnostics={diagnosticsByPath[activeDocument.path] ?? []}
+                    testResults={(testRun?.evidence?.results ?? []).map((result) => {
+                      const known = workspaceTests.find((test) => test.name === result.name || result.name.endsWith(test.name));
+                      const location = result.location?.path === activeDocument.path ? result.location : known?.path === activeDocument.path ? { line: known.line } : null;
+                      return location ? { line: location.line, status: result.status, message: result.message } : null;
+                    }).filter((result): result is { line: number; status: "passed" | "failed" | "skipped"; message: string | null } => result !== null)}
                     lsp={context?.root && lspStatus ? { root: context.root, path: activeDocument.path, language: activeDocument.language, available: lspStatus.available } : undefined}
                     onNavigateLocation={(targetPath, line, column) => void openFile(targetPath, { line, column })}
                     onSelect={recordEditorSelection}

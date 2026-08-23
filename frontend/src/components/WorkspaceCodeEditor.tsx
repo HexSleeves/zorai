@@ -31,6 +31,7 @@ export function WorkspaceCodeEditor({
   onSelect,
   onSave,
   diagnostics = [],
+  testResults = [],
   lsp,
   onNavigateLocation,
   onMount,
@@ -38,6 +39,7 @@ export function WorkspaceCodeEditor({
 }: FallbackEditorProps & {
   language: string;
   diagnostics?: ZoraiLspDiagnostic[];
+  testResults?: Array<{ line: number; status: "passed" | "failed" | "skipped"; message?: string | null }>;
   lsp?: { root: string; path: string; language: string; available: boolean };
   onNavigateLocation?: (path: string, line: number, column: number) => void;
   onMount?: OnMount;
@@ -67,8 +69,20 @@ export function WorkspaceCodeEditor({
       endLineNumber: diagnostic.endLine,
       endColumn: diagnostic.endColumn,
     })));
-    return () => monaco.editor.setModelMarkers(model, "zorai-lsp", []);
-  }, [diagnostics, path]);
+    const testDecorations = testResults.map((result) => ({
+      range: new monaco.Range(result.line, 1, result.line, 1),
+      options: {
+        isWholeLine: false,
+        glyphMarginClassName: `zorai-test-glyph zorai-test-glyph--${result.status}`,
+        glyphMarginHoverMessage: { value: result.message ?? `Test ${result.status}` },
+      },
+    }));
+    const decorationCollection = monacoEditor.createDecorationsCollection(testDecorations);
+    return () => {
+      monaco.editor.setModelMarkers(model, "zorai-lsp", []);
+      decorationCollection.clear();
+    };
+  }, [diagnostics, path, testResults]);
   const handleMount: OnMount = (editor, monaco) => {
     editorRef.current = editor;
     monacoRef.current = monaco;
@@ -157,6 +171,7 @@ export function WorkspaceCodeEditor({
             smoothScrolling: true,
             scrollBeyondLastLine: false,
             stickyScroll: { enabled: true },
+            glyphMargin: true,
             formatOnPaste: false,
           }}
         />
