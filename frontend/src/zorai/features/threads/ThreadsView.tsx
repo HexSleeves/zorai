@@ -305,7 +305,7 @@ export function ThreadsView({
         <ThreadScrollToBottomButton hidden={pinnedToBottom} onClick={scrollThreadToLatest} />
       </div>
 
-      <ThreadComposer />
+      <ThreadComposer showTargetSelector={variant === "compact"} compact={variant === "compact"} />
 
       {variant === "full" && pinLimitResult ? (
         <PinLimitModal result={pinLimitResult} onClose={() => setPinLimitResult(null)} />

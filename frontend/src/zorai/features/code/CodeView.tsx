@@ -56,6 +56,8 @@ export function CodeView({
   openPath,
 }: CodeViewProps) {
   const runtime = useAgentChatPanelRuntime();
+  const runtimeRef = useRef(runtime);
+  runtimeRef.current = runtime;
   const bindRoot = useWorkspaceContextStore((state) => state.bindRoot);
   const lastRoot = useCodeWorkspaceBindingStore((state) => state.lastRoot);
   const [boundRoot, setBoundRoot] = useState<string | null>(lastRoot);
@@ -66,10 +68,11 @@ export function CodeView({
     if (restoringRootRef.current === root.root) return;
     restoringRootRef.current = root.root;
     try {
+      const activeRuntime = runtimeRef.current;
       await useWorkspaceContextStore.getState().hydrate();
       const bindings = useCodeWorkspaceBindingStore.getState();
       const mappedDaemonThreadId = bindings.threadForRoot(root.root);
-      if (mappedDaemonThreadId && await openThreadTarget(runtime, mappedDaemonThreadId)) {
+      if (mappedDaemonThreadId && await openThreadTarget(activeRuntime, mappedDaemonThreadId)) {
         const local = useAgentStore.getState().threads.find((thread) => thread.daemonThreadId === mappedDaemonThreadId);
         if (local) {
           codeThreadLocalIdRef.current = local.id;
@@ -79,17 +82,17 @@ export function CodeView({
       }
 
       if (mappedDaemonThreadId) bindings.removeRootBinding(root.root);
-      const localId = runtime.createThread({
-        workspaceId: runtime.activeWorkspace?.id ?? null,
+      const localId = activeRuntime.createThread({
+        workspaceId: activeRuntime.activeWorkspace?.id ?? null,
         title: `Code · ${root.name}`,
       });
       codeThreadLocalIdRef.current = localId;
-      runtime.openThread(localId);
+      activeRuntime.openThread(localId);
       bindRoot(localId, root.root);
     } finally {
       restoringRootRef.current = null;
     }
-  }, [bindRoot, runtime]);
+  }, [bindRoot]);
 
   useEffect(() => {
     const localId = codeThreadLocalIdRef.current;

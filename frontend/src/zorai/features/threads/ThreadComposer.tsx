@@ -31,7 +31,13 @@ import { buildHandoffDefaults, buildThreadAgentOptions } from "./threadHandoffMo
 import { composerTargetValue, parseComposerTarget, targetAfterAcceptedDispatch, type ComposerTarget } from "./composerTargetModel";
 import { BUILTIN_WORKSPACE_PERSONAS } from "../workspaces/workspaceActorPicker";
 
-export function ThreadComposer() {
+export function ThreadComposer({
+  showTargetSelector = false,
+  compact = false,
+}: {
+  showTargetSelector?: boolean;
+  compact?: boolean;
+} = {}) {
   const runtime = useAgentChatPanelRuntime();
   const agentSettings = useAgentStore((state) => state.agentSettings);
   const activeThreadId = useAgentStore((state) => state.activeThreadId);
@@ -344,7 +350,11 @@ export function ThreadComposer() {
 
   return (
     <div
-      className={["zorai-thread-composer", dropActive ? "zorai-thread-composer--drop" : ""].filter(Boolean).join(" ")}
+      className={[
+        "zorai-thread-composer",
+        compact ? "zorai-thread-composer--compact" : "",
+        dropActive ? "zorai-thread-composer--drop" : "",
+      ].filter(Boolean).join(" ")}
       onDragOver={(event) => {
         event.preventDefault();
         setDropActive(true);
@@ -435,26 +445,27 @@ export function ThreadComposer() {
 
         <div className="zorai-composer-actions">
           <div className="zorai-composer-actions__left">
-            <label className="zorai-composer-target">
-              <span className="sr-only">Message target</span>
-              <select
-                className="zorai-input"
-                aria-label="Message target"
-                value={composerTargetValue(composerTarget)}
-                disabled={targetPending || isStreamingResponse}
-                onChange={(event) => setComposerTarget(parseComposerTarget(event.target.value, composerTargets))}
-              >
-                <optgroup label="Responder">
-                  {composerTargets.filter((target) => target.kind === "current").map((target) => <option key={composerTargetValue(target)} value={composerTargetValue(target)}>{target.label}</option>)}
-                </optgroup>
-                <optgroup label="Agents">
-                  {composerTargets.filter((target) => target.kind === "agent").map((target) => <option key={composerTargetValue(target)} value={composerTargetValue(target)}>{target.label}</option>)}
-                </optgroup>
-                <optgroup label="Delegate to subagent">
-                  {composerTargets.filter((target) => target.kind === "subagent").map((target) => <option key={composerTargetValue(target)} value={composerTargetValue(target)}>{target.label}</option>)}
-                </optgroup>
-              </select>
-            </label>
+            {showTargetSelector ? (
+              <label className="zorai-composer-target">
+                <select
+                  className="zorai-input"
+                  aria-label="Choose agent or subagent"
+                  value={composerTargetValue(composerTarget)}
+                  disabled={targetPending || isStreamingResponse}
+                  onChange={(event) => setComposerTarget(parseComposerTarget(event.target.value, composerTargets))}
+                >
+                  <optgroup label="Responder">
+                    {composerTargets.filter((target) => target.kind === "current").map((target) => <option key={composerTargetValue(target)} value={composerTargetValue(target)}>{target.label}</option>)}
+                  </optgroup>
+                  <optgroup label="Agents">
+                    {composerTargets.filter((target) => target.kind === "agent").map((target) => <option key={composerTargetValue(target)} value={composerTargetValue(target)}>{target.label}</option>)}
+                  </optgroup>
+                  <optgroup label="Delegate to subagent">
+                    {composerTargets.filter((target) => target.kind === "subagent").map((target) => <option key={composerTargetValue(target)} value={composerTargetValue(target)}>{target.label}</option>)}
+                  </optgroup>
+                </select>
+              </label>
+            ) : null}
             <label className="zorai-composer-mode">
               <select
                 className="zorai-input"

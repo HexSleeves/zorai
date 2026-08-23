@@ -3521,8 +3521,11 @@ button.zorai-composer-context-chip { cursor: pointer; }
 }
 
 .zorai-code-agent-pane > .zorai-thread-surface--compact {
-  flex: 1;
+  flex: 1 1 auto;
+  width: 100%;
   height: auto;
+  min-width: 0;
+  min-height: 0;
 }
 
 .zorai-code-context-chips {
@@ -3560,13 +3563,25 @@ button.zorai-composer-context-chip { cursor: pointer; }
 }
 
 .zorai-thread-surface--compact {
+  width: 100%;
   height: 100%;
+  min-width: 0;
   min-height: 0;
   border: 0;
   background: transparent;
 }
 
+.zorai-thread-surface--compact.zorai-native-thread-surface {
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  grid-template-areas:
+    "header"
+    "messages"
+    "composer";
+}
+
 .zorai-code-agent-thread-header {
+  grid-area: header;
+  min-width: 0;
   min-height: 58px;
   height: 58px;
   display: flex;
@@ -3600,7 +3615,68 @@ button.zorai-composer-context-chip { cursor: pointer; }
 }
 
 .zorai-thread-surface--compact .zorai-thread-composer {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
   padding: 8px;
+}
+
+.zorai-thread-composer--compact .zorai-composer-box,
+.zorai-thread-composer--compact .zorai-composer-actions,
+.zorai-thread-composer--compact .zorai-composer-actions__left,
+.zorai-thread-composer--compact .zorai-composer-actions__right {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.zorai-thread-composer--compact .zorai-composer-actions {
+  gap: 4px;
+  padding-inline: 4px;
+}
+
+.zorai-thread-composer--compact .zorai-composer-actions__left {
+  flex: 1 1 auto;
+  gap: 4px;
+  overflow: hidden;
+  padding: 0;
+}
+
+.zorai-thread-composer--compact .zorai-composer-actions__right {
+  flex: 0 0 auto;
+  gap: 4px;
+  padding: 0;
+}
+
+.zorai-thread-composer--compact .zorai-composer-target {
+  flex: 0 1 112px;
+  min-width: 0;
+  max-width: 112px;
+}
+
+.zorai-thread-composer--compact .zorai-composer-target .zorai-input {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 3px 22px 3px 7px;
+  border-radius: 6px;
+  font-size: 10px;
+  text-overflow: ellipsis;
+}
+
+.zorai-thread-composer--compact .zorai-composer-mode {
+  flex: 0 1 70px;
+  min-width: 0;
+}
+
+.zorai-thread-composer--compact .zorai-composer-mode select {
+  width: 100%;
+  min-width: 0;
+  height: 28px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  font-size: 10px;
 }
 
 .zorai-thread-surface--compact .zorai-thread-composer__footer {

@@ -23,7 +23,9 @@ describe("Zorai feature surfaces", () => {
     expect(codeSource).toContain('<ThreadsView variant="compact" />');
     expect(codeSource).not.toContain("AgentChatPanelProvider");
     expect(threadsSource).toContain('variant?: "full" | "compact"');
-    expect(threadsSource).toContain("<ThreadComposer />");
+    expect(threadsSource).toContain('<ThreadComposer showTargetSelector={variant === "compact"} compact={variant === "compact"} />');
+    expect(threadsSource).not.toContain("<ThreadComposer />");
+    expect(threadsSource).toContain("<ThreadComposer");
     expect(threadsSource).toContain("buildDisplayItems(runtime.messages)");
   });
 
@@ -94,6 +96,23 @@ describe("Zorai feature surfaces", () => {
     expect(styleSource).toContain(".zorai-shell--code .zorai-workspace-statusbar");
     expect(codePalette).not.toContain("var(--zorai-accent-secondary)");
     expect(styleSource).toContain("background: color-mix(in srgb, var(--zorai-accent-secondary) 16%, var(--zorai-bg-panel))");
+  });
+
+  it("scopes the compact target selector to Code and keeps it pane-sized", () => {
+    const threadsSource = readFeature("./threads/ThreadsView.tsx");
+    const composerSource = readFeature("./threads/ThreadComposer.tsx");
+    const styleSource = readFileSync(new URL("../styles/zorai.css", import.meta.url), "utf8");
+
+    expect(composerSource).toContain("showTargetSelector = false");
+    expect(composerSource).toContain("compact = false");
+    expect(composerSource).toContain("showTargetSelector ? (");
+    expect(composerSource).not.toContain('<span className="sr-only">Message target</span>');
+    expect(composerSource).toContain('aria-label="Choose agent or subagent"');
+    expect(composerSource).toContain('compact ? "zorai-thread-composer--compact" : ""');
+    expect(threadsSource).toContain('<ThreadComposer showTargetSelector={variant === "compact"} compact={variant === "compact"} />');
+    expect(styleSource).toContain(".zorai-thread-surface--compact.zorai-native-thread-surface");
+    expect(styleSource).toContain("grid-template-rows: auto minmax(0, 1fr) auto");
+    expect(styleSource).toContain(".zorai-thread-composer--compact .zorai-composer-target");
   });
 
   it("keeps Goals native to the Zorai shell instead of embedding legacy task UI", () => {

@@ -52,6 +52,15 @@ describe("CodeView controller stability contract", () => {
     expect(source).toContain("onOpenWorkspace(root, source)");
   });
 
+  it("keeps an in-flight native picker bound across runtime provider rerenders", () => {
+    expect(source).toContain("const runtimeRef = useRef(runtime)");
+    expect(source).toContain("runtimeRef.current = runtime");
+    expect(source).toContain("const activeRuntime = runtimeRef.current");
+    expect(source).toContain("openThreadTarget(activeRuntime, mappedDaemonThreadId)");
+    expect(source).toContain("[bindRoot]");
+    expect(source).not.toContain("[bindRoot, runtime]");
+  });
+
   it("keeps the secure nested picker envelope by passing through only validated roots", () => {
     expect(source).toContain("setLastRoot(root.root)");
     expect(source).toContain("setBoundRoot(root.root)");
