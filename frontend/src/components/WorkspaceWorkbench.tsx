@@ -6,6 +6,7 @@ import { useWorkspaceStore } from "@/lib/workspaceStore";
 import { useWorkspaceContextStore } from "@/lib/workspaceContextStore";
 import { extractWorkspaceSymbols } from "@/lib/workspaceSymbols";
 import type { editor as MonacoEditorApi } from "monaco-editor";
+import { CodeTabs } from "@/zorai/features/code/CodeTabs";
 
 const WorkspaceCodeEditor = lazy(() => import("@/components/WorkspaceCodeEditor").then((module) => ({ default: module.WorkspaceCodeEditor })));
 const WorkspaceDiffEditor = lazy(() => import("@/components/WorkspaceCodeEditor").then((module) => ({ default: module.WorkspaceDiffEditor })));
@@ -893,18 +894,19 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
 
   const editor = (
       <section className="zorai-workspace-editor-area">
-        <div className="zorai-workspace-tabs">
-          {(context?.openFiles ?? []).map((filePath, index) => {
-            const document = documents[filePath];
-            const pinned = context?.pinnedFiles.includes(filePath);
-            return <button type="button" key={filePath} className={filePath === context?.activeFile ? "active" : ""} onClick={() => setActiveFile(activeThreadId, filePath)} title={filePath}>
-              <span className="zorai-workspace-tab-pin" onClick={(event) => { event.stopPropagation(); togglePinnedFile(activeThreadId, filePath); }}>{pinned ? "●" : "○"}</span>
-              {filePath.split(/[\\/]/).slice(-1)[0]}{document?.dirty ? " ●" : ""}
-              <span className="zorai-workspace-tab-move" onClick={(event) => { event.stopPropagation(); moveOpenFile(activeThreadId, filePath, index > 0 ? -1 : 1); }}>↔</span>
-              <span onClick={(event) => { event.stopPropagation(); closeFile(activeThreadId, filePath); }}>{pinned ? "" : "×"}</span>
-            </button>;
-          })}
-        </div>
+        <CodeTabs
+          tabs={(context?.openFiles ?? []).map((filePath) => ({
+            path: filePath,
+            label: filePath.split(/[\\/]/).slice(-1)[0],
+            dirty: Boolean(documents[filePath]?.dirty),
+            pinned: Boolean(context?.pinnedFiles.includes(filePath)),
+            active: filePath === context?.activeFile,
+          }))}
+          onActivate={(filePath) => setActiveFile(activeThreadId, filePath)}
+          onClose={(filePath) => closeFile(activeThreadId, filePath)}
+          onTogglePin={(filePath) => togglePinnedFile(activeThreadId, filePath)}
+          onMove={(filePath, direction) => moveOpenFile(activeThreadId, filePath, direction)}
+        />
         {activeDocument ? (
           <>
             <nav className="zorai-workspace-breadcrumbs" aria-label="File breadcrumbs">
@@ -959,6 +961,10 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
                   />
                 </Suspense>
               )}
+            </div>
+            <div className="zorai-workspace-statusbar">
+              <span>{activeDocument.path}</span>
+              <span>{activeDocument.language}{lspStatus ? ` · LSP ${lspStatus.available ? lspStatus.command ?? "ready" : "unavailable"}` : ""}</span>
             </div>
             {mode === "diff" && diff !== null ? <details className="zorai-workspace-raw-diff"><summary>Git patch</summary><pre>{diff || "No working-tree diff for this file."}</pre></details> : null}
           </>

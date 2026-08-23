@@ -1,0 +1,58 @@
+import { useEffect, useMemo, useRef, useState, type WheelEvent } from "react";
+import { selectVisibleCodeTabs, shouldConsumeCodeTabWheel, type CodeTabDescriptor } from "./codeTabsModel";
+
+type CodeTabsProps = {
+  tabs: CodeTabDescriptor[];
+  onActivate: (path: string) => void;
+  onClose: (path: string) => void;
+  onTogglePin: (path: string) => void;
+  onMove: (path: string, direction: -1 | 1) => void;
+};
+
+export function CodeTabs({ tabs, onActivate, onClose, onTogglePin, onMove }: CodeTabsProps) {
+  const hostRef = useRef<HTMLDivElement | null>(null);
+  const [width, setWidth] = useState(1200);
+  const [overflowOpen, setOverflowOpen] = useState(false);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    setWidth(host.clientWidth || 1200);
+    if (typeof ResizeObserver === "undefined") return;
+    const observer = new ResizeObserver((entries) => {
+      setWidth(entries[0]?.contentRect.width ?? host.clientWidth);
+    });
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, []);
+
+  const { visible, hidden } = useMemo(() => selectVisibleCodeTabs(tabs, width), [tabs, width]);
+  const handleWheel = (event: WheelEvent<HTMLDivElement>) => {
+    const host = hostRef.current;
+    if (!host || !shouldConsumeCodeTabWheel(host.scrollWidth, host.clientWidth)) return;
+    event.preventDefault();
+    event.stopPropagation();
+    host.scrollLeft += event.deltaY || event.deltaX;
+  };
+
+  return (
+    <div className="zorai-code-tabs-shell">
+      <div ref={hostRef} className="zorai-workspace-tabs zorai-code-tabs" role="tablist" aria-label="Open files" onWheel={handleWheel}>
+        {visible.map((tab, index) => (
+          <button type="button" role="tab" aria-selected={tab.active} key={tab.path} className={tab.active ? "active" : ""} onClick={() => onActivate(tab.path)} title={tab.path}>
+            <span className="zorai-workspace-tab-pin" onClick={(event) => { event.stopPropagation(); onTogglePin(tab.path); }}>{tab.pinned ? "●" : "○"}</span>
+            <span className="zorai-code-tab-label">{tab.label}{tab.dirty ? " ●" : ""}</span>
+            <span className="zorai-workspace-tab-move" onClick={(event) => { event.stopPropagation(); onMove(tab.path, index > 0 ? -1 : 1); }}>↔</span>
+            {!tab.pinned ? <span onClick={(event) => { event.stopPropagation(); onClose(tab.path); }}>×</span> : null}
+          </button>
+        ))}
+      </div>
+      {hidden.length > 0 ? (
+        <div className="zorai-code-tabs-overflow">
+          <button type="button" aria-label={`${hidden.length} more open files`} aria-expanded={overflowOpen} onClick={() => setOverflowOpen((open) => !open)}>⌄</button>
+          {overflowOpen ? <div role="menu">{hidden.map((tab) => <button type="button" role="menuitem" key={tab.path} onClick={() => { onActivate(tab.path); setOverflowOpen(false); }}>{tab.label}{tab.dirty ? " ●" : ""}</button>)}</div> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
