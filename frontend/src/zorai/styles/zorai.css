@@ -4388,3 +4388,34 @@ button.zorai-composer-context-chip { cursor: pointer; }
   border-top: 0;
   padding-top: 8px;
 }
+
+.zorai-code-settings {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 24px clamp(18px, 4vw, 52px) 48px;
+  background: var(--zorai-bg);
+  color: var(--zorai-text);
+}
+.zorai-code-settings > header { display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; max-width: 980px; margin: 0 auto 24px; }
+.zorai-code-settings h2 { margin: 0 0 6px; font-size: 24px; }
+.zorai-code-settings h3 { margin: 0 0 4px; font-size: 15px; }
+.zorai-code-settings p { margin: 0; color: var(--zorai-muted); font-size: 12px; line-height: 1.5; }
+.zorai-code-settings > header button,
+.zorai-code-settings-grid button { border: 1px solid var(--zorai-border); border-radius: 5px; padding: 6px 10px; background: var(--zorai-bg-elevated); color: var(--zorai-text); cursor: pointer; }
+.zorai-code-settings section { max-width: 980px; margin: 0 auto 16px; padding: 18px; border: 1px solid var(--zorai-border); border-radius: 8px; background: var(--zorai-bg-panel); }
+.zorai-code-settings-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 20px; margin-top: 14px; }
+.zorai-code-settings-grid > label { min-height: 34px; display: flex; align-items: center; justify-content: space-between; gap: 12px; font-size: 12px; }
+.zorai-code-settings input:not([type="checkbox"]), .zorai-code-settings select { width: min(220px, 55%); box-sizing: border-box; border: 1px solid var(--zorai-border); border-radius: 5px; padding: 6px 8px; background: var(--zorai-bg-surface); color: var(--zorai-text); }
+.zorai-code-settings input:focus-visible, .zorai-code-settings select:focus-visible, .zorai-code-settings button:focus-visible { outline: 2px solid var(--zorai-accent); outline-offset: 1px; }
+.zorai-code-settings-search { grid-column: 1 / -1; width: 100% !important; }
+.zorai-code-shortcuts { grid-column: 1 / -1; display: grid; gap: 4px; max-height: 360px; overflow: auto; }
+.zorai-code-shortcuts > div { display: grid; grid-template-columns: minmax(190px, 1fr) 150px auto 90px; align-items: center; gap: 8px; padding: 7px 4px; border-bottom: 1px solid var(--zorai-border); }
+.zorai-code-shortcuts span { display: flex; flex-direction: column; gap: 2px; }
+.zorai-code-shortcuts small { color: var(--zorai-muted); }
+.zorai-code-shortcuts code { color: var(--zorai-muted); text-align: right; }
+@media (max-width: 800px) {
+  .zorai-code-settings-grid { grid-template-columns: 1fr; }
+  .zorai-code-shortcuts > div { grid-template-columns: 1fr 130px auto; }
+  .zorai-code-shortcuts code { display: none; }
+}

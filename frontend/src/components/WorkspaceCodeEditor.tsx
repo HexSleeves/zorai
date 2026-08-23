@@ -2,6 +2,7 @@ import { Component, Suspense, lazy, useEffect, useRef, type ErrorInfo, type Reac
 import { getBridge } from "@/lib/bridge";
 import "@/lib/monacoEnvironment";
 import type { OnMount } from "@monaco-editor/react";
+import type { CodeEditorSettings } from "@/zorai/features/code/codeEditorSettingsStore";
 import type { languages as MonacoLanguagesApi } from "monaco-editor";
 import { registerCodeEditorActions } from "@/zorai/features/code/codeEditorActions";
 
@@ -37,6 +38,7 @@ export function WorkspaceCodeEditor({
   onNavigateLocation,
   onMount,
   textareaRef,
+  settings,
 }: FallbackEditorProps & {
   language: string;
   diagnostics?: ZoraiLspDiagnostic[];
@@ -44,6 +46,7 @@ export function WorkspaceCodeEditor({
   lsp?: { root: string; path: string; language: string; available: boolean };
   onNavigateLocation?: (path: string, line: number, column: number) => void;
   onMount?: OnMount;
+  settings: CodeEditorSettings;
 }) {
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const monacoRef = useRef<Parameters<OnMount>[1] | null>(null);
@@ -204,19 +207,25 @@ export function WorkspaceCodeEditor({
           onChange={(next) => onChange(next ?? "")}
           options={{
             automaticLayout: true,
-            minimap: { enabled: true, renderCharacters: true, maxColumn: 72, showSlider: "mouseover", side: "right", size: "proportional" },
-            fontSize: 13,
-            lineHeight: 20,
-            wordWrap: "off",
-            renderWhitespace: "selection",
-            bracketPairColorization: { enabled: true },
-            guides: { bracketPairs: true, indentation: true },
+            minimap: { enabled: settings.minimap, renderCharacters: true, maxColumn: 72, showSlider: "mouseover", side: "right", size: "proportional" },
+            fontFamily: settings.fontFamily,
+            fontSize: settings.fontSize,
+            lineHeight: settings.lineHeight,
+            tabSize: settings.tabSize,
+            insertSpaces: settings.insertSpaces,
+            wordWrap: settings.wordWrap === "off" ? "off" : settings.wordWrap === "viewport" ? "on" : "bounded",
+            wordWrapColumn: settings.wordWrapColumn,
+            renderWhitespace: settings.renderWhitespace,
+            lineNumbers: settings.lineNumbers,
+            bracketPairColorization: { enabled: settings.bracketGuides },
+            guides: { bracketPairs: settings.bracketGuides, indentation: settings.bracketGuides },
             multiCursorModifier: "alt",
-            smoothScrolling: true,
+            smoothScrolling: settings.smoothScrolling,
             scrollBeyondLastLine: false,
-            stickyScroll: { enabled: true },
-            glyphMargin: true,
-            formatOnPaste: false,
+            stickyScroll: { enabled: settings.stickyScroll },
+            glyphMargin: settings.glyphMargin,
+            formatOnPaste: settings.formatOnPaste,
+            formatOnType: settings.formatOnType,
           }}
         />
       </Suspense>

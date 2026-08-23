@@ -16,6 +16,9 @@ import { CODE_COMMANDS, matchesCodeBinding, type CodeCommandId } from "@/zorai/f
 import { CodeIconButton } from "@/zorai/features/code/CodeIconButton";
 import { createCodeDocumentController } from "@/zorai/features/code/codeDocumentModel";
 import { createCodeFileOpenTrace } from "@/zorai/features/code/codeEditorPerformance";
+import { CodeSettingsView } from "@/zorai/features/code/CodeSettingsView";
+import { useCodeEditorSettingsStore } from "@/zorai/features/code/codeEditorSettingsStore";
+import { createFileTab } from "@/zorai/features/code/codeEditorTabs";
 
 const WorkspaceCodeEditor = lazy(() => import("@/components/WorkspaceCodeEditor").then((module) => ({ default: module.WorkspaceCodeEditor })));
 const WorkspaceDiffEditor = lazy(() => import("@/components/WorkspaceCodeEditor").then((module) => ({ default: module.WorkspaceDiffEditor })));
@@ -108,6 +111,11 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [codeOverlay, setCodeOverlay] = useState<"quickOpen" | "commands" | null>(null);
+  const [settingsTabOpen, setSettingsTabOpen] = useState(false);
+  const [settingsTabPinned, setSettingsTabPinned] = useState(false);
+  const [activeEditorTabId, setActiveEditorTabId] = useState<string | null>(null);
+  const previousFileTabIdRef = useRef<string | null>(null);
+  const editorSettings = useCodeEditorSettingsStore((state) => state.settings);
   const workspaceSyncTimer = useRef<number | null>(null);
   const [daemonContextLoadedFor, setDaemonContextLoadedFor] = useState<string | null>(null);
   const [newPath, setNewPath] = useState("");
@@ -336,7 +344,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     return () => { if (typeof unsubscribe === "function") unsubscribe(); };
   }, [bridge, context?.root]);
   useEffect(() => {
-    if (!context?.root || !activeDocument || !bridge?.workspaceLspOpen) {
+    if (!editorSettings.lspEnabled || !context?.root || !activeDocument || !bridge?.workspaceLspOpen) {
       setLspStatus(null);
       return;
     }
@@ -352,19 +360,19 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     };
   // Document open/close follows identity; incremental content changes use the debounced effect below.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDocument?.language, activeDocument?.path, bridge, context?.root]);
+  }, [activeDocument?.language, activeDocument?.path, bridge, context?.root, editorSettings.lspEnabled]);
   useEffect(() => {
-    if (!context?.root || !activeDocument || !lspStatus?.available || !bridge?.workspaceLspChange) return;
+    if (!editorSettings.lspEnabled || !context?.root || !activeDocument || !lspStatus?.available || !bridge?.workspaceLspChange) return;
     if (lspChangeTimer.current !== null) window.clearTimeout(lspChangeTimer.current);
     lspChangeTimer.current = window.setTimeout(() => {
       const version = (lspVersionRef.current[activeDocument.path] ?? 0) + 1;
       lspVersionRef.current[activeDocument.path] = version;
       void bridge.workspaceLspChange!(context.root, activeDocument.path, activeDocument.language, activeDocument.content, version).catch(() => {});
-    }, 250);
+    }, editorSettings.diagnosticsDelayMs);
     return () => { if (lspChangeTimer.current !== null) window.clearTimeout(lspChangeTimer.current); };
   // Primitive document fields intentionally drive incremental synchronization.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDocument?.content, activeDocument?.language, activeDocument?.path, bridge, context?.root, lspStatus?.available]);
+  }, [activeDocument?.content, activeDocument?.language, activeDocument?.path, bridge, context?.root, editorSettings.diagnosticsDelayMs, editorSettings.lspEnabled, lspStatus?.available]);
 
   useEffect(() => {
     if (!context?.root || !bridge?.workspaceTestsDiscover) {
@@ -414,6 +422,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     const trace = createCodeFileOpenTrace({ root: context.root, path: filePath, cacheHit });
     trace.mark("start");
     setActiveFile(activeThreadId, filePath);
+    setActiveEditorTabId(`file:${filePath}`);
     trace.mark("tab-active");
     try {
       setError(null);
@@ -754,7 +763,21 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
   reloadCommandRef.current = reloadActiveFile;
   activeFileTargetRef.current = context?.root && activeDocument ? { root: context.root, path: activeDocument.path } : null;
 
+  const openSettingsTab = useCallback(() => {
+    const currentFileId = activeFileTargetRef.current ? `file:${activeFileTargetRef.current.path}` : null;
+    if (currentFileId) previousFileTabIdRef.current = currentFileId;
+    setSettingsTabOpen(true);
+    setActiveEditorTabId("code-settings");
+  }, []);
+
+  const closeSettingsTab = useCallback(() => {
+    if (settingsTabPinned) return;
+    setSettingsTabOpen(false);
+    setActiveEditorTabId(previousFileTabIdRef.current);
+  }, [settingsTabPinned]);
+
   const runCodeCommand = useCallback((id: CodeCommandId) => {
+    if (id === "view.settings") { openSettingsTab(); return; }
     if (id === "file.quickOpen") { setCodeOverlay("quickOpen"); return; }
     if (id === "view.commandPalette") { setCodeOverlay("commands"); return; }
     if (id === "file.save") { void saveCommandRef.current(); return; }
@@ -774,11 +797,14 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     }
     const action = monacoEditorRef.current?.getAction(id);
     if (action) void action.run();
-  }, []);
+  }, [openSettingsTab]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      const command = CODE_COMMANDS.find((item) => item.defaultKeybinding && matchesCodeBinding(item.defaultKeybinding, event));
+      const command = CODE_COMMANDS.find((item) => {
+        const binding = editorSettings.keybindings[item.id] === undefined ? item.defaultKeybinding : editorSettings.keybindings[item.id];
+        return binding && matchesCodeBinding(binding, event);
+      });
       if (!command) return;
       event.preventDefault();
       event.stopPropagation();
@@ -786,7 +812,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     };
     window.addEventListener("keydown", onKeyDown, true);
     return () => window.removeEventListener("keydown", onKeyDown, true);
-  }, [runCodeCommand]);
+  }, [editorSettings.keybindings, runCodeCommand]);
 
   const explorerFiles = useMemo(() => {
     const paths: string[] = [];
@@ -1061,19 +1087,33 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
   const editor = (
       <section className="zorai-workspace-editor-area">
         <CodeTabs
-          tabs={(context?.openFiles ?? []).map((filePath) => ({
-            path: filePath,
-            label: filePath.split(/[\\/]/).slice(-1)[0],
-            dirty: Boolean(documents[filePath]?.dirty),
-            pinned: Boolean(context?.pinnedFiles.includes(filePath)),
-            active: filePath === context?.activeFile,
-          }))}
-          onActivate={(filePath) => void openFile(filePath)}
-          onClose={(filePath) => closeFile(activeThreadId, filePath)}
-          onTogglePin={(filePath) => togglePinnedFile(activeThreadId, filePath)}
-          onMove={(filePath, direction) => moveOpenFile(activeThreadId, filePath, direction)}
+          tabs={[
+            ...(context?.openFiles ?? []).map((filePath) => ({
+              path: createFileTab(filePath, Boolean(context?.pinnedFiles.includes(filePath)), Boolean(documents[filePath]?.dirty)).id,
+              label: filePath.split(/[\\/]/).slice(-1)[0],
+              dirty: Boolean(documents[filePath]?.dirty),
+              pinned: Boolean(context?.pinnedFiles.includes(filePath)),
+              active: activeEditorTabId ? activeEditorTabId === `file:${filePath}` : filePath === context?.activeFile && !settingsTabOpen,
+            })),
+            ...(settingsTabOpen ? [{ path: "code-settings", label: "Code Settings", dirty: false, pinned: settingsTabPinned, active: activeEditorTabId === "code-settings" }] : []),
+          ]}
+          onActivate={(tabId) => {
+            if (tabId === "code-settings") { setActiveEditorTabId(tabId); return; }
+            const filePath = tabId.replace(/^file:/, "");
+            setActiveEditorTabId(tabId);
+            void openFile(filePath);
+          }}
+          onClose={(tabId) => {
+            if (tabId === "code-settings") { closeSettingsTab(); return; }
+            closeFile(activeThreadId, tabId.replace(/^file:/, ""));
+          }}
+          onTogglePin={(tabId) => {
+            if (tabId === "code-settings") { setSettingsTabPinned((pinned) => !pinned); return; }
+            togglePinnedFile(activeThreadId, tabId.replace(/^file:/, ""));
+          }}
+          onMove={(tabId, direction) => { if (tabId !== "code-settings") moveOpenFile(activeThreadId, tabId.replace(/^file:/, ""), direction); }}
         />
-        {activeDocument ? (
+        {settingsTabOpen && activeEditorTabId === "code-settings" ? <CodeSettingsView /> : activeDocument ? (
           <>
             {/* <nav className="zorai-workspace-breadcrumbs" aria-label="File breadcrumbs">
               {activeDocument.path.split(/[\\/]/).map((part, index, parts) => <span key={`${index}:${part}`}>{part}{index < parts.length - 1 ? " › " : ""}</span>)}
@@ -1126,6 +1166,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
               ) : (
                 <Suspense fallback={<div className="zorai-workspace-editor-loading">Loading Monaco editor…</div>}>
                   <WorkspaceCodeEditor
+                    settings={editorSettings}
                     path={activeDocument.path}
                     value={activeDocument.content}
                     language={activeDocument.language}
@@ -1138,7 +1179,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
                       const location = result.location?.path === activeDocument.path ? result.location : known?.path === activeDocument.path ? { line: known.line } : null;
                       return location ? { line: location.line, status: result.status, message: result.message } : null;
                     }).filter((result): result is { line: number; status: "passed" | "failed" | "skipped"; message: string | null } => result !== null)}
-                    lsp={context?.root && lspStatus ? { root: context.root, path: activeDocument.path, language: activeDocument.language, available: lspStatus.available } : undefined}
+                    lsp={context?.root && lspStatus ? { root: context.root, path: activeDocument.path, language: activeDocument.language, available: editorSettings.lspEnabled && lspStatus.available } : undefined}
                     onNavigateLocation={(targetPath, line, column) => void openFile(targetPath, { line, column })}
                     onSelect={recordEditorSelection}
                     onChange={(value) => {

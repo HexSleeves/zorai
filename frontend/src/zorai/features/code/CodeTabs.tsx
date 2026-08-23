@@ -37,13 +37,13 @@ export function CodeTabs({ tabs, onActivate, onClose, onTogglePin, onMove }: Cod
 
   return (
     <div className="zorai-code-tabs-shell">
-      <div ref={hostRef} className="zorai-workspace-tabs zorai-code-tabs" role="tablist" aria-label="Open files" onWheel={handleWheel}>
+      <div ref={hostRef} className="zorai-workspace-tabs zorai-code-tabs" role="tablist" aria-label="Open editors" onWheel={handleWheel}>
         {visible.map((tab, index) => (
           <button type="button" role="tab" aria-selected={tab.active} key={tab.path} className={tab.active ? "active" : ""} onClick={() => onActivate(tab.path)} title={tab.path}>
             <span
               className={tab.pinned ? "zorai-workspace-tab-pin is-pinned" : "zorai-workspace-tab-pin"}
               role="button"
-              aria-label={tab.pinned ? "Unpin file" : "Pin file"}
+              aria-label={tab.pinned ? "Unpin editor" : "Pin editor"}
               aria-pressed={tab.pinned}
               onClick={(event) => { event.stopPropagation(); onTogglePin(tab.path); }}
             >
@@ -62,7 +62,7 @@ export function CodeTabs({ tabs, onActivate, onClose, onTogglePin, onMove }: Cod
       </div>
       {hidden.length > 0 ? (
         <div className="zorai-code-tabs-overflow">
-          <button type="button" aria-label={`${hidden.length} more open files`} aria-expanded={overflowOpen} onClick={() => setOverflowOpen((open) => !open)}>⌄</button>
+          <button type="button" aria-label={`${hidden.length} more open editors`} aria-expanded={overflowOpen} onClick={() => setOverflowOpen((open) => !open)}>⌄</button>
           {overflowOpen ? <div role="menu">{hidden.map((tab) => <button type="button" role="menuitem" key={tab.path} onClick={() => { onActivate(tab.path); setOverflowOpen(false); }}>{tab.label}{tab.dirty ? " ●" : ""}</button>)}</div> : null}
         </div>
       ) : null}
