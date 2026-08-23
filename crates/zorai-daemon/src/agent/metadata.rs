@@ -495,6 +495,7 @@ pub(super) fn build_thread_metadata_json(
     thread_participant_suggestions: &[ThreadParticipantSuggestion],
     latest_skill_discovery_state: Option<&LatestSkillDiscoveryState>,
     prompt_memory_injection_state: Option<&PromptMemoryInjectionState>,
+    workspace_context: Option<&ThreadWorkspaceContext>,
 ) -> Option<String> {
     serde_json::to_string(&serde_json::json!({
         "identity": identity,
@@ -515,6 +516,7 @@ pub(super) fn build_thread_metadata_json(
         "reservedAt": identity.and_then(|identity| identity.reserved_at),
         "client_surface": client_surface,
         "clientSurface": client_surface,
+        "workspace_context": workspace_context,
         "execution_profile": execution_profile,
         "thread_profile": execution_profile,
         "pinned": thread.pinned,
@@ -676,6 +678,52 @@ mod workspace_context_tests {
             }
         });
         let parsed = parse_thread_metadata(Some(&metadata.to_string()));
-        assert_eq!(parsed.workspace_context.expect("workspace context").root, "/legacy");
+        assert_eq!(
+            parsed.workspace_context.expect("workspace context").root,
+            "/legacy"
+        );
+    }
+
+    #[test]
+    fn snapshot_metadata_builder_preserves_workspace_context() {
+        let thread = AgentThread {
+            id: "thread-1".to_string(),
+            agent_name: None,
+            title: "Thread".to_string(),
+            messages: Vec::new(),
+            pinned: false,
+            upstream_thread_id: None,
+            upstream_transport: None,
+            upstream_provider: None,
+            upstream_model: None,
+            upstream_assistant_id: None,
+            created_at: 1,
+            updated_at: 2,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
+        };
+        let context = ThreadWorkspaceContext {
+            root: "/repo".to_string(),
+            isolate_agent_tasks: true,
+            updated_at: 42,
+            ..ThreadWorkspaceContext::default()
+        };
+
+        let metadata = build_thread_metadata_json(
+            &thread,
+            None,
+            None,
+            None,
+            None,
+            &[],
+            &[],
+            None,
+            None,
+            Some(&context),
+        )
+        .expect("metadata should serialize");
+        let parsed = parse_thread_metadata(Some(&metadata));
+
+        assert_eq!(parsed.workspace_context, Some(context));
     }
 }

@@ -1,6 +1,7 @@
 use super::*;
 use crate::agent::llm_client::CopilotInitiator;
 use crate::agent::provider_resolution::apply_provider_model_override;
+use crate::agent::task_worktree::{select_isolated_task_session, IsolatedTaskSessionPlan};
 use std::path::Path;
 use zorai_protocol::SecurityLevel;
 
@@ -757,71 +758,90 @@ impl<'a> SendMessageRunner<'a> {
         };
         let mut preferred_session_id =
             resolve_preferred_session_id(&engine.session_manager, preferred_session_hint).await;
-        if preferred_session_id.is_none() && current_task_for_setup.is_some() {
-            preferred_session_id = engine
-                .session_manager
-                .list()
-                .await
-                .into_iter()
-                .find(|session| session.workspace_id.is_some())
-                .map(|session| session.id);
-        }
-        if let (Some(task), Some(source_session_id)) =
-            (current_task_for_setup.as_ref(), preferred_session_id)
-        {
+        if let Some(task) = current_task_for_setup.as_ref() {
             match engine.ensure_isolated_task_workspace(&tid, task).await {
                 Ok(Some(isolated)) => {
-                    let source_session = engine
-                        .session_manager
-                        .list()
-                        .await
-                        .into_iter()
-                        .find(|session| session.id == source_session_id);
-                    if source_session
-                        .as_ref()
-                        .and_then(|session| session.cwd.as_deref())
-                        == Some(isolated.root.as_str())
-                    {
-                        preferred_session_id = Some(source_session_id);
-                    } else {
-                        let workspace_id = source_session.and_then(|session| session.workspace_id);
-                        match engine
-                            .session_manager
-                            .clone_session(
-                                source_session_id,
-                                workspace_id,
-                                None,
-                                None,
-                                false,
-                                Some(isolated.root.clone()),
-                            )
-                            .await
-                        {
-                            Ok((isolated_session_id, _, _)) => {
-                                preferred_session_id = Some(isolated_session_id);
-                                let _ = engine.event_tx.send(AgentEvent::WorkspaceCommand {
-                                    command: "attach_agent_terminal".to_string(),
-                                    args: serde_json::json!({
-                                        "session_id": isolated_session_id.to_string(),
-                                        "pane_name": format!("Isolated {}", task.title),
-                                        "cwd": isolated.root,
-                                        "task_id": task.id,
-                                        "goal_run_id": task.goal_run_id,
-                                        "branch": isolated.branch,
-                                        "worktree_created": isolated.created,
-                                    }),
-                                });
+                    let sessions = engine.session_manager.list().await;
+                    match select_isolated_task_session(
+                        &sessions,
+                        task.session_id.as_deref(),
+                        preferred_session_hint,
+                        &isolated.workspace_root,
+                        &isolated.root,
+                    ) {
+                        IsolatedTaskSessionPlan::Reuse(isolated_session) => {
+                            preferred_session_id = Some(isolated_session.id);
+                            let isolated_session_id = isolated_session.id.to_string();
+                            if task.session_id.as_deref() != Some(isolated_session_id.as_str()) {
+                                let _ = engine
+                                    .bind_task_isolated_session(task, isolated_session.id)
+                                    .await;
                             }
-                            Err(error) => tracing::warn!(
+                        }
+                        IsolatedTaskSessionPlan::CloneFrom(source_session) => {
+                            match engine
+                                .session_manager
+                                .clone_session(
+                                    source_session.id,
+                                    source_session.workspace_id.clone(),
+                                    None,
+                                    None,
+                                    false,
+                                    Some(isolated.root.clone()),
+                                )
+                                .await
+                            {
+                                Ok((isolated_session_id, _, _)) => {
+                                    preferred_session_id = Some(isolated_session_id);
+                                    let _ = engine
+                                        .bind_task_isolated_session(task, isolated_session_id)
+                                        .await;
+                                    let _ = engine.event_tx.send(AgentEvent::WorkspaceCommand {
+                                        command: "attach_agent_terminal".to_string(),
+                                        args: serde_json::json!({
+                                            "session_id": isolated_session_id.to_string(),
+                                            "pane_name": format!("Isolated {}", task.title),
+                                            "cwd": isolated.root,
+                                            "task_id": task.id,
+                                            "goal_run_id": task.goal_run_id,
+                                            "branch": isolated.branch,
+                                            "worktree_created": isolated.created,
+                                        }),
+                                    });
+                                }
+                                Err(error) => {
+                                    preferred_session_id = None;
+                                    tracing::warn!(
+                                        thread_id = %tid,
+                                        task_id = %task.id,
+                                        %error,
+                                        "failed to clone isolated task terminal"
+                                    );
+                                }
+                            }
+                        }
+                        IsolatedTaskSessionPlan::Unavailable => {
+                            preferred_session_id = None;
+                            tracing::warn!(
                                 thread_id = %tid,
                                 task_id = %task.id,
-                                %error,
-                                "failed to clone isolated task terminal"
-                            ),
+                                workspace_root = %isolated.workspace_root,
+                                "no project-compatible terminal is available for isolated task"
+                            );
                         }
                     }
                 }
-                Ok(None) => {}
+                Ok(None) => {
+                    if preferred_session_id.is_none() {
+                        preferred_session_id = engine
+                            .session_manager
+                            .list()
+                            .await
+                            .into_iter()
+                            .find(|session| session.workspace_id.is_some())
+                            .map(|session| session.id);
+                    }
+                }
                 Err(error) => tracing::warn!(
                     thread_id = %tid,
                     task_id = %task.id,
