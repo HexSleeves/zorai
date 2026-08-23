@@ -29,13 +29,14 @@ export type ProjectThreadsForRootInput = {
 };
 
 export function actualThreadResponder(thread: AgentThread): { id: string; name: string } {
+  const fallbackName = typeof thread.agent_name === "string" ? thread.agent_name.trim() : "";
   const stack = thread.threadHandoffState?.responderStack ?? [];
   const active = stack[stack.length - 1];
   if (active?.agentId?.trim()) {
     return { id: active.agentId.trim(), name: active.agentName?.trim() || active.agentId.trim() };
   }
-  const id = thread.targetAgentId?.trim() || thread.threadHandoffState?.activeAgentId?.trim() || thread.agent_name.trim();
-  return { id, name: thread.agent_name.trim() || id };
+  const id = thread.targetAgentId?.trim() || thread.threadHandoffState?.activeAgentId?.trim() || fallbackName || "swarog";
+  return { id, name: fallbackName || id };
 }
 
 export function authoritativeThreadIdentity(thread: AgentThread): string {
@@ -85,8 +86,8 @@ export function filterCodeProjectThreads<T extends CodeProjectThreadEntry>(
   const needle = query.trim().toLowerCase();
   if (!needle) return entries;
   return entries.filter(({ thread, responder }) =>
-    thread.title.toLowerCase().includes(needle)
-    || thread.lastMessagePreview.toLowerCase().includes(needle)
+    (typeof thread.title === "string" ? thread.title : "").toLowerCase().includes(needle)
+    || (typeof thread.lastMessagePreview === "string" ? thread.lastMessagePreview : "").toLowerCase().includes(needle)
     || responder.name.toLowerCase().includes(needle));
 }
 

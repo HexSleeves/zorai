@@ -58,6 +58,11 @@ describe("actualThreadResponder", () => {
     expect(actualThreadResponder(value)).toEqual({ id: "perun", name: "Perun" });
   });
 
+  it("defensively handles malformed remote owner strings", () => {
+    const malformed = thread({ id: "a", agent_name: undefined as unknown as string });
+    expect(actualThreadResponder(malformed)).toEqual({ id: "swarog", name: "swarog" });
+  });
+
   it("falls back to the persisted thread owner", () => {
     expect(actualThreadResponder(thread({ id: "a", agent_name: "Rarog", targetAgentId: "rarog" })))
       .toEqual({ id: "rarog", name: "Rarog" });
@@ -101,6 +106,16 @@ describe("projectThreadsForRoot", () => {
 });
 
 describe("filterCodeProjectThreads", () => {
+  it("defensively searches entries with malformed remote display fields", () => {
+    const entries = projectThreadsForRoot({
+      root: "/work/a",
+      localThreads: [thread({ id: "a", title: undefined as unknown as string, lastMessagePreview: undefined as unknown as string })],
+      daemonThreads: [],
+      contextsByLocalThreadId: { a: context("/work/a") },
+    });
+    expect(filterCodeProjectThreads(entries, "missing")).toEqual([]);
+  });
+
   it("searches title, responder and preview without changing newest-first order", () => {
     const entries = projectThreadsForRoot({
       root: "/work/a",
