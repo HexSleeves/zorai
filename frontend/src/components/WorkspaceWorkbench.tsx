@@ -679,13 +679,25 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
 
   const explorer = (
       <aside className="zorai-workspace-explorer">
-        <div className="zorai-workspace-root-form">
-          <input value={rootInput} onChange={(event) => setRootInput(event.target.value)} placeholder="/path/to/repository" onKeyDown={(event) => { if (event.key === "Enter") void openRoot(); }} />
-          <button type="button" onClick={() => void openRoot()}>Open</button>
-        </div>
+        {!explorerPortalHost ? (
+          <div className="zorai-workspace-root-form">
+            <input value={rootInput} onChange={(event) => setRootInput(event.target.value)} placeholder="/path/to/repository" onKeyDown={(event) => { if (event.key === "Enter") void openRoot(); }} />
+            <button type="button" onClick={() => void openRoot()}>Open</button>
+          </div>
+        ) : null}
         {context?.root ? (
           <>
             <div className="zorai-workspace-explorer-heading"><strong>{context.root.split(/[\\/]/).slice(-1)[0]}</strong><button type="button" onClick={() => void refreshRoot()}>↻</button></div>
+            <details className="zorai-code-open-editors" open>
+              <summary>Open Editors ({context.openFiles.length})</summary>
+              {context.openFiles.map((filePath) => (
+                <button type="button" key={filePath} className={filePath === context.activeFile ? "active" : ""} onClick={() => setActiveFile(activeThreadId, filePath)}>{filePath.split(/[\\/]/).slice(-1)[0]}</button>
+              ))}
+            </details>
+            <details className="zorai-code-files" open>
+              <summary>Files</summary>
+              <div className="zorai-workspace-tree" role="tree" aria-label="Workspace files">{rootEntries.map((entry) => <WorkspaceTreeNode key={entry.path} root={context.root} entry={entry} depth={0} status={statusMap} onOpen={(path) => void openFile(path)} />)}</div>
+            </details>
             <label className="zorai-workspace-isolation-toggle"><input type="checkbox" checked={context.isolateAgentTasks} onChange={(event) => setIsolateAgentTasks(activeThreadId, event.target.checked)} /><span>Isolate agent tasks in worktrees</span></label>
             <div className="zorai-workspace-create-row">
               <input value={newPath} onChange={(event) => setNewPath(event.target.value)} placeholder="relative/path" />
@@ -873,7 +885,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
                 ))}
               </details>
             ) : null}
-            <div className="zorai-workspace-tree">{rootEntries.map((entry) => <WorkspaceTreeNode key={entry.path} root={context.root} entry={entry} depth={0} status={statusMap} onOpen={(path) => void openFile(path)} />)}</div>
+
           </>
         ) : <div className="zorai-workspace-empty">Open a folder to bind it to this thread.</div>}
       </aside>

@@ -37,9 +37,8 @@ export function CodeRail() {
 
   return (
     <div className="zorai-code-explorer">
-      <div className="zorai-code-explorer-header">
-        <strong>Explorer</strong>
-        <span>{lastRoot ? displayRootName(lastRoot) : "No folder"}</span>
+      <div className="zorai-code-project" title={lastRoot ?? undefined}>
+        <strong>{lastRoot ? displayRootName(lastRoot) : "No folder open"}</strong>
       </div>
       <div id="zorai-code-explorer-host" className="zorai-code-explorer-scroll" aria-label="Code Explorer" />
     </div>
