@@ -14,6 +14,9 @@ const {
     workspaceGitCommit,
     workspaceGitCreateWorktree,
     workspaceGitDiscard,
+    workspaceGitHistory,
+    workspaceGitCommitDetail,
+    workspaceGitConflicts,
     workspaceGitIntegrateWorktree,
     workspaceGitRemoveWorktree,
     workspaceGitReviewWorktree,
@@ -307,6 +310,45 @@ test('reviewed integration refuses a dirty target worktree', async () => {
     runGit(root, 'restore', 'file.txt');
     runGit(root, 'worktree', 'remove', created.root);
     fs.rmSync(parent, { recursive: true, force: true });
+});
+
+test('workspace Git history and commit detail remain read-only and structured', async () => {
+    const root = tempWorkspace();
+    const runGit = (...args) => require('node:child_process').execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+    runGit('init', '-b', 'main');
+    runGit('config', 'user.email', 'workspace-test@zorai.local');
+    runGit('config', 'user.name', 'Workspace Test');
+    fs.writeFileSync(path.join(root, 'history.txt'), 'history\n');
+    runGit('add', 'history.txt');
+    runGit('commit', '-m', 'history commit');
+    const history = await workspaceGitHistory(root, { limit: 10 });
+    assert.equal(history[0].subject, 'history commit');
+    const detail = await workspaceGitCommitDetail(root, history[0].hash);
+    assert.equal(detail.subject, 'history commit');
+    assert.deepEqual(detail.files, [{ status: 'A', path: 'history.txt' }]);
+    assert.equal(runGit('status', '--porcelain'), '');
+    fs.rmSync(root, { recursive: true, force: true });
+});
+
+test('workspace conflict detection reports unresolved paths', async () => {
+    const root = tempWorkspace();
+    const runGit = (...args) => require('node:child_process').execFileSync('git', args, { cwd: root, encoding: 'utf8' });
+    runGit('init', '-b', 'main');
+    runGit('config', 'user.email', 'workspace-test@zorai.local');
+    runGit('config', 'user.name', 'Workspace Test');
+    fs.writeFileSync(path.join(root, 'conflict.txt'), 'base\n');
+    runGit('add', 'conflict.txt');
+    runGit('commit', '-m', 'base');
+    runGit('checkout', '-b', 'other');
+    fs.writeFileSync(path.join(root, 'conflict.txt'), 'other\n');
+    runGit('commit', '-am', 'other');
+    runGit('checkout', 'main');
+    fs.writeFileSync(path.join(root, 'conflict.txt'), 'main\n');
+    runGit('commit', '-am', 'main');
+    try { runGit('merge', 'other'); } catch {}
+    assert.deepEqual(await workspaceGitConflicts(root), [{ path: 'conflict.txt' }]);
+    runGit('merge', '--abort');
+    fs.rmSync(root, { recursive: true, force: true });
 });
 
 test('binary and oversized files are rejected from text context', async () => {
