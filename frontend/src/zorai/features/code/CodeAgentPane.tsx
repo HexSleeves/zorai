@@ -3,6 +3,7 @@ import { useAgentChatPanelRuntime } from "@/components/agent-chat-panel/runtime/
 import type { AgentThread } from "@/lib/agentStore";
 import { useAgentStore } from "@/lib/agentStore";
 import { useOperatorQuestionStore } from "@/lib/operatorQuestionStore";
+import { fetchAgentTasks, type AgentQueueTask } from "@/lib/agentTaskQueue";
 import { useWorkspaceContextStore } from "@/lib/workspaceContextStore";
 import { ThreadsView } from "../threads/ThreadsView";
 import { classifyThreadActivityMessage } from "../threads/threadActivityModel";
@@ -34,6 +35,7 @@ export function CodeAgentPane() {
   const operatorQuestion = useOperatorQuestionStore((state) => state.question);
   const fetchThreadList = runtime.fetchThreadList;
   const [daemonThreads, setDaemonThreads] = useState<AgentThread[]>([]);
+  const [tasks, setTasks] = useState<AgentQueueTask[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -42,7 +44,12 @@ export function CodeAgentPane() {
     setError(null);
     try {
       await useWorkspaceContextStore.getState().hydrate();
-      setDaemonThreads(await fetchThreadList({ includeInternal: true }));
+      const [nextThreads, nextTasks] = await Promise.all([
+        fetchThreadList({ includeInternal: true }),
+        fetchAgentTasks(),
+      ]);
+      setDaemonThreads(nextThreads);
+      setTasks(nextTasks);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not load project threads.");
     } finally {
@@ -70,9 +77,9 @@ export function CodeAgentPane() {
       contextsByLocalThreadId: contextsByThreadId,
     }).map((entry): CodeThreadHistoryEntry => ({
       ...entry,
-      status: statusForEntry(entry, runtime, operatorQuestion?.threadId ?? null, readState),
+      status: statusForEntry(entry, runtime, operatorQuestion?.threadId ?? null, readState, tasks),
     }));
-  }, [contextsByThreadId, daemonThreads, hydrated, localThreads, operatorQuestion?.threadId, readState, root, runtime]);
+  }, [contextsByThreadId, daemonThreads, hydrated, localThreads, operatorQuestion?.threadId, readState, root, runtime, tasks]);
 
   const createProjectThread = () => {
     if (!root) return;
@@ -142,6 +149,7 @@ function statusForEntry(
   runtime: ReturnType<typeof useAgentChatPanelRuntime>,
   questionThreadId: string | null,
   readState: Record<string, number>,
+  tasks: AgentQueueTask[],
 ) {
   const identities = new Set([entry.localThread.id, entry.thread.daemonThreadId, entry.localThread.daemonThreadId].filter(Boolean));
   const messages = runtime.allMessagesByThread[entry.localThread.id] ?? [];
@@ -162,6 +170,15 @@ function statusForEntry(
   }
 
   let needsOperatorAction = Boolean(questionThreadId && identities.has(questionThreadId));
+  for (const task of tasks) {
+    const associated = [task.thread_id, task.parent_thread_id].some((threadId) => threadId && identities.has(threadId));
+    if (!associated) continue;
+    if (task.status === "awaiting_approval") needsOperatorAction = true;
+    if (["queued", "in_progress", "failed_analyzing"].includes(task.status)) working = true;
+    if (["completed", "failed", "cancelled", "budget_exceeded"].includes(task.status) && task.completed_at) {
+      latestCompletionAt = Math.max(latestCompletionAt ?? 0, task.completed_at);
+    }
+  }
   for (const goal of runtime.goalRunsForTrace) {
     const goalThreads = [goal.thread_id, goal.root_thread_id, goal.active_thread_id, ...(goal.execution_thread_ids ?? [])];
     if (!goalThreads.some((threadId) => threadId && identities.has(threadId))) continue;
