@@ -304,6 +304,8 @@ export function WorkspaceWorkbench() {
       disposed = true;
       void bridge.workspaceLspClose?.(context.root, activeDocument.path, activeDocument.language);
     };
+  // Document open/close follows identity; incremental content changes use the debounced effect below.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDocument?.language, activeDocument?.path, bridge, context?.root]);
   useEffect(() => {
     if (!context?.root || !activeDocument || !lspStatus?.available || !bridge?.workspaceLspChange) return;
@@ -314,6 +316,8 @@ export function WorkspaceWorkbench() {
       void bridge.workspaceLspChange!(context.root, activeDocument.path, activeDocument.language, activeDocument.content, version).catch(() => {});
     }, 250);
     return () => { if (lspChangeTimer.current !== null) window.clearTimeout(lspChangeTimer.current); };
+  // Primitive document fields intentionally drive incremental synchronization.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDocument?.content, activeDocument?.language, activeDocument?.path, bridge, context?.root, lspStatus?.available]);
 
   useEffect(() => {
