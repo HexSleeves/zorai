@@ -917,9 +917,9 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
         />
         {activeDocument ? (
           <>
-            <nav className="zorai-workspace-breadcrumbs" aria-label="File breadcrumbs">
+            {/* <nav className="zorai-workspace-breadcrumbs" aria-label="File breadcrumbs">
               {activeDocument.path.split(/[\\/]/).map((part, index, parts) => <span key={`${index}:${part}`}>{part}{index < parts.length - 1 ? " › " : ""}</span>)}
-            </nav>
+            </nav> */}
             <div className="zorai-workspace-actionbar">
               <span>{activeDocument.path}{lspStatus ? ` · LSP ${lspStatus.available ? lspStatus.command ?? "ready" : "unavailable"}` : ""}</span>
               <div>

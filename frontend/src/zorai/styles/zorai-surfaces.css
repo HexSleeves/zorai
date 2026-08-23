@@ -314,6 +314,17 @@
   font-size: 16px;
 }
 
+select.zorai-input {
+  cursor: pointer;
+}
+select.zorai-input:disabled {
+  cursor: default;
+}
+
+select.zorai-input:disabled option {
+  color: var(--zorai-muted);
+}
+
 .zorai-input,
 .zorai-textarea {
   width: 100%;
