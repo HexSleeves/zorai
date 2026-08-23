@@ -1376,16 +1376,17 @@ impl HistoryStore {
         &self,
         id: &str,
         metadata_json: Option<String>,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let id_owned = id.to_string();
         self.caches.thread_metadata_json.invalidate(&id_owned);
-        self.conn_db
+        let affected = self
+            .conn_db
             .execute(
                 "UPDATE agent_threads SET metadata_json = ?2 WHERE id = ?1 AND deleted_at IS NULL",
                 db::db_params![id_owned, metadata_json],
             )
             .await?;
-        Ok(())
+        Ok(affected > 0)
     }
 
     pub async fn add_message(&self, message: &AgentDbMessage) -> Result<()> {

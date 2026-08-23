@@ -234,16 +234,31 @@ impl AgentEngine {
         Some(parse_thread_metadata(metadata_json.as_deref()))
     }
 
-    async fn persist_thread_metadata_patch(&self, thread_id: &str, patch: ThreadMetadataPatch) {
+    async fn persist_thread_metadata_patch(
+        &self,
+        thread_id: &str,
+        patch: ThreadMetadataPatch,
+    ) -> bool {
         let metadata_json = match self.history.thread_metadata_json(thread_id).await {
             Ok(Some(metadata_json)) => Some(metadata_json),
             Ok(None) => match self.history.has_thread_id(thread_id).await {
                 Ok(true) => None,
                 Ok(false) => {
-                    if self.threads.read().await.contains_key(thread_id) {
-                        self.persist_thread_by_id(thread_id).await;
+                    if !self.threads.read().await.contains_key(thread_id) {
+                        return false;
                     }
-                    return;
+                    self.persist_thread_by_id(thread_id).await;
+                    match self.history.thread_metadata_json(thread_id).await {
+                        Ok(metadata_json) => metadata_json,
+                        Err(error) => {
+                            tracing::warn!(
+                                thread_id = %thread_id,
+                                %error,
+                                "failed to read thread metadata after initial persistence"
+                            );
+                            return false;
+                        }
+                    }
                 }
                 Err(error) => {
                     tracing::warn!(
@@ -251,7 +266,7 @@ impl AgentEngine {
                         %error,
                         "failed to check persisted thread existence"
                     );
-                    return;
+                    return false;
                 }
             },
             Err(error) => {
@@ -260,7 +275,7 @@ impl AgentEngine {
                     %error,
                     "failed to read persisted thread metadata"
                 );
-                return;
+                return false;
             }
         };
 
@@ -282,20 +297,31 @@ impl AgentEngine {
                     %error,
                     "failed to serialize persisted thread metadata"
                 );
-                return;
+                return false;
             }
         };
 
-        if let Err(error) = self
+        match self
             .history
             .update_thread_metadata_json(thread_id, metadata_json)
             .await
         {
-            tracing::warn!(
-                thread_id = %thread_id,
-                %error,
-                "failed to update persisted thread metadata"
-            );
+            Ok(true) => true,
+            Ok(false) => {
+                tracing::warn!(
+                    thread_id = %thread_id,
+                    "thread disappeared before persisted metadata update"
+                );
+                false
+            }
+            Err(error) => {
+                tracing::warn!(
+                    thread_id = %thread_id,
+                    %error,
+                    "failed to update persisted thread metadata"
+                );
+                false
+            }
         }
     }
 
@@ -322,8 +348,7 @@ impl AgentEngine {
             thread_id,
             ThreadMetadataPatch::WorkspaceContext(context),
         )
-        .await;
-        true
+        .await
     }
 
     pub(super) async fn append_system_thread_message(

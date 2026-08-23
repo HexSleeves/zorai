@@ -406,6 +406,15 @@ fn spawn_background_community_scout(
     });
 }
 
+fn retain_resolved_session(
+    resolved_session_id: Option<zorai_protocol::SessionId>,
+    compatible_source: Option<&zorai_protocol::SessionInfo>,
+) -> Option<zorai_protocol::SessionId> {
+    compatible_source
+        .map(|session| session.id)
+        .or(resolved_session_id)
+}
+
 impl<'a> SendMessageRunner<'a> {
     pub(super) async fn initialize(
         engine: &'a AgentEngine,
@@ -810,7 +819,10 @@ impl<'a> SendMessageRunner<'a> {
                                     });
                                 }
                                 Err(error) => {
-                                    preferred_session_id = None;
+                                    preferred_session_id = retain_resolved_session(
+                                        preferred_session_id,
+                                        Some(&source_session),
+                                    );
                                     tracing::warn!(
                                         thread_id = %tid,
                                         task_id = %task.id,
@@ -821,7 +833,8 @@ impl<'a> SendMessageRunner<'a> {
                             }
                         }
                         IsolatedTaskSessionPlan::Unavailable => {
-                            preferred_session_id = None;
+                            preferred_session_id =
+                                retain_resolved_session(preferred_session_id, None);
                             tracing::warn!(
                                 thread_id = %tid,
                                 task_id = %task.id,
@@ -1475,6 +1488,39 @@ mod tests {
     use crate::agent::types::{ApiTransport, AuthSource, ProviderConfig};
     use crate::session_manager::SessionManager;
     use tempfile::tempdir;
+
+    fn session(id: &str, cwd: &str) -> zorai_protocol::SessionInfo {
+        zorai_protocol::SessionInfo {
+            id: uuid::Uuid::parse_str(id).expect("valid session id"),
+            title: Some("Agent lane".to_string()),
+            cwd: Some(cwd.to_string()),
+            cols: 120,
+            rows: 40,
+            created_at: 1,
+            workspace_id: Some("workspace".to_string()),
+            exit_code: None,
+            is_alive: true,
+            active_command: None,
+        }
+    }
+
+    #[test]
+    fn unavailable_isolation_keeps_resolved_turn_session() {
+        let turn = session("11111111-1111-1111-1111-111111111111", "/unrelated");
+
+        assert_eq!(retain_resolved_session(Some(turn.id), None), Some(turn.id));
+    }
+
+    #[test]
+    fn clone_failure_prefers_compatible_source_over_unrelated_turn_session() {
+        let turn = session("11111111-1111-1111-1111-111111111111", "/unrelated");
+        let source = session("22222222-2222-2222-2222-222222222222", "/repo");
+
+        assert_eq!(
+            retain_resolved_session(Some(turn.id), Some(&source)),
+            Some(source.id)
+        );
+    }
 
     #[tokio::test]
     async fn active_participant_responder_cannot_use_agent_fanout_tools() {

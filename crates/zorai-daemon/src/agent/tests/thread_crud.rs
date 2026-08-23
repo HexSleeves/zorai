@@ -53,6 +53,48 @@ fn list_ids(threads: &[AgentThread]) -> Vec<&str> {
 }
 
 #[tokio::test]
+async fn first_workspace_context_write_persists_for_memory_only_thread() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let thread_id = "workspace-context-first-write";
+    let context = ThreadWorkspaceContext {
+        root: "/repo".to_string(),
+        isolate_agent_tasks: true,
+        updated_at: 42,
+        ..ThreadWorkspaceContext::default()
+    };
+
+    engine.threads.write().await.insert(
+        thread_id.to_string(),
+        make_thread(
+            thread_id,
+            Some(crate::agent::agent_identity::MAIN_AGENT_NAME),
+            "Workspace context",
+            false,
+            1,
+            2,
+            Vec::new(),
+        ),
+    );
+    assert!(!engine
+        .history
+        .has_thread_id(thread_id)
+        .await
+        .expect("thread existence query"));
+
+    assert!(
+        engine
+            .set_thread_workspace_context(thread_id, Some(context.clone()))
+            .await
+    );
+    assert_eq!(
+        engine.get_thread_workspace_context(thread_id).await,
+        Some(context)
+    );
+}
+
+#[tokio::test]
 async fn message_feedback_resolves_stale_id_by_absolute_index() {
     let root = tempdir().expect("temp dir");
     let manager = SessionManager::new_test(root.path()).await;
