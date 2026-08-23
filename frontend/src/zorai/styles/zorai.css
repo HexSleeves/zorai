@@ -3319,6 +3319,19 @@ button.zorai-composer-context-chip { cursor: pointer; }
   outline-offset: -1px;
 }
 
+@media (max-width: 900px) {
+  .zorai-shell.zorai-shell--code,
+  .zorai-shell.zorai-shell--code.zorai-shell--rail-collapsed,
+  .zorai-shell.zorai-shell--code.zorai-shell--context-open,
+  .zorai-shell.zorai-shell--code.zorai-shell--rail-collapsed.zorai-shell--context-open {
+    grid-template-columns: 56px minmax(0, 1fr);
+  }
+
+  .zorai-shell--code .zorai-main {
+    grid-column: 2;
+  }
+}
+
 .zorai-code-explorer {
   display: flex;
   flex: 1;

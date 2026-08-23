@@ -108,6 +108,8 @@ describe("Zorai feature surfaces", () => {
     expect(shellSource).toContain("--zorai-code-agent-width");
     expect(styleSource).toContain(".zorai-shell--code .zorai-context-panel");
     expect(styleSource).toContain("width: 100%");
+    expect(styleSource).toContain(".zorai-shell.zorai-shell--code.zorai-shell--rail-collapsed.zorai-shell--context-open");
+    expect(styleSource).toContain("grid-template-columns: 56px minmax(0, 1fr)");
     expect(styleSource).toContain(".zorai-code-thread-history");
     expect(styleSource).toContain(".zorai-code-thread-status.is-amber");
   });
