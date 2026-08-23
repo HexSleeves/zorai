@@ -324,6 +324,7 @@ const bridgeApi = {
     agentRevertFileOperation: (operationId) => ipcRenderer.invoke('agent-revert-file-operation', operationId),
     agentGetThreadWorkspaceContext: (threadId) => ipcRenderer.invoke('agent-get-thread-workspace-context', threadId),
     agentSetThreadWorkspaceContext: (threadId, context) => ipcRenderer.invoke('agent-set-thread-workspace-context', threadId, context),
+    agentSpawnSubagent: (threadId, request) => ipcRenderer.invoke('agent-spawn-subagent', threadId, request),
     agentGetGitDiff: (repoPath, filePath) => ipcRenderer.invoke('agent-get-git-diff', repoPath, filePath),
     agentGetFilePreview: (filePath, maxBytes) => ipcRenderer.invoke('agent-get-file-preview', filePath, maxBytes),
     agentStartGoalRun: (payload) => ipcRenderer.invoke('agent-start-goal-run', payload),

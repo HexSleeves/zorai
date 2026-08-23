@@ -949,6 +949,19 @@ export function useAgentChatPanelProviderValue(): {
     sendMessageLegacy(payload.text);
   }, [agentSettings.agent_backend, sendDaemonMessage, sendMessageLegacy]);
 
+  const spawnSubagent = useCallback(async (request: { title: string; description: string; cwd?: string | null }) => {
+    const thread = useAgentStore.getState().threads.find((entry) => entry.id === activeThreadId);
+    const daemonThreadId = thread?.daemonThreadId ?? daemonThreadIdRef.current;
+    const bridge = getAgentBridge();
+    if (!daemonThreadId) return { ok: false, error: "Send the first message before delegating to a subagent." };
+    if (!bridge?.agentSpawnSubagent) return { ok: false, error: "Subagent delegation bridge is unavailable." };
+    try {
+      return await bridge.agentSpawnSubagent(daemonThreadId, request);
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : "Subagent delegation failed." };
+    }
+  }, [activeThreadId]);
+
   const collaborationActions = useMemo(() => createThreadCollaborationActions({
     getActiveDaemonThread: () => {
       const state = useAgentStore.getState();
@@ -1165,6 +1178,7 @@ export function useAgentChatPanelProviderValue(): {
     messagesEndRef,
     inputRef,
     sendMessage,
+    spawnSubagent,
     pushHandoff,
     returnHandoff,
     upsertParticipant,
@@ -1263,6 +1277,7 @@ export function useAgentChatPanelProviderValue(): {
     welesHealth,
     createThread,
     sendMessage,
+    spawnSubagent,
     pushHandoff,
     returnHandoff,
     upsertParticipant,

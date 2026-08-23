@@ -101,6 +101,7 @@ export type AgentChatPanelRuntimeValue = {
   messagesEndRef: React.RefObject<HTMLDivElement | null>;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
   sendMessage: (payload: { text: string; contentBlocksJson?: string | null; localContentBlocks?: AgentContentBlock[] }) => void;
+  spawnSubagent: (request: { title: string; description: string; cwd?: string | null }) => Promise<{ ok: boolean; content?: string; error?: string }>;
   pushHandoff: (request: { targetAgentId: string; reason: string; summary: string }) => Promise<ThreadMutationResult>;
   returnHandoff: (request: { reason: string; summary: string }) => Promise<ThreadMutationResult>;
   upsertParticipant: (request: { targetAgentId: string; instruction: string }) => Promise<ThreadMutationResult>;

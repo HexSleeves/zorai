@@ -415,6 +415,14 @@ where
                 })
                 .await?;
         }
+        AgentBridgeCommand::SpawnSubagent { thread_id, args } => {
+            framed
+                .send(ClientMessage::AgentSpawnSubagent {
+                    thread_id,
+                    args_json: serde_json::to_string(&args)?,
+                })
+                .await?;
+        }
         AgentBridgeCommand::GetGitDiff {
             repo_path,
             file_path,

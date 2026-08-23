@@ -42,6 +42,7 @@ pub(crate) async fn dispatch_part4(
             | ClientMessage::AgentRevertFileOperation { .. }
             | ClientMessage::AgentGetThreadWorkspaceContext { .. }
             | ClientMessage::AgentSetThreadWorkspaceContext { .. }
+            | ClientMessage::AgentSpawnSubagent { .. }
             | ClientMessage::AgentListTools { .. }
             | ClientMessage::AgentSearchTools { .. }
             | ClientMessage::AgentGetConfig
@@ -615,6 +616,46 @@ pub(crate) async fn dispatch_part4(
                     framed
                         .send(DaemonMessage::Error {
                             message: format!("invalid thread workspace context: {error}"),
+                        })
+                        .await?;
+                }
+            }
+        }
+
+        ClientMessage::AgentSpawnSubagent {
+            thread_id,
+            args_json,
+        } => {
+            client_agent_threads.insert(thread_id.clone());
+            let args = serde_json::from_str::<serde_json::Value>(&args_json)
+                .map_err(|error| anyhow::anyhow!("invalid spawn subagent arguments: {error}"))?;
+            match crate::agent::tool_executor::execute_spawn_subagent(
+                &args,
+                agent,
+                &thread_id,
+                None,
+                &agent.session_manager,
+                None,
+                &agent.event_tx,
+            )
+            .await
+            {
+                Ok(content) => {
+                    framed
+                        .send(DaemonMessage::AgentSubagentSpawned {
+                            thread_id,
+                            result_json: serde_json::json!({ "ok": true, "content": content })
+                                .to_string(),
+                        })
+                        .await?;
+                }
+                Err(error) => {
+                    framed
+                        .send(DaemonMessage::AgentSubagentSpawned {
+                            thread_id,
+                            result_json:
+                                serde_json::json!({ "ok": false, "error": error.to_string() })
+                                    .to_string(),
                         })
                         .await?;
                 }

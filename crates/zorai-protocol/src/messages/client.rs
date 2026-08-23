@@ -103,6 +103,7 @@ pub enum ClientMessage {
     AgentRevertFileOperation { operation_id: String },
     AgentGetThreadWorkspaceContext { thread_id: String },
     AgentSetThreadWorkspaceContext { thread_id: String, context_json: String },
+    AgentSpawnSubagent { thread_id: String, args_json: String },
     AgentGetConfig,
     AgentGetEffectiveConfigState,
     AgentExternalRuntimeMigrationStatus,

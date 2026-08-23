@@ -28,7 +28,7 @@ import { activeThreadBudgetExceededNotice } from "./threadBudgetNotice";
 import { applyManagedSecurityLevel, managedSecurityLevels } from "./threadRuntimeActions";
 import { AttachmentTiles, composerAttachmentToTile } from "./attachmentTiles";
 import { buildHandoffDefaults, buildThreadAgentOptions } from "./threadHandoffModel";
-import { composerTargetValue, parseComposerTarget, type ComposerTarget } from "./composerTargetModel";
+import { composerTargetValue, parseComposerTarget, targetAfterAcceptedDispatch, type ComposerTarget } from "./composerTargetModel";
 import { BUILTIN_WORKSPACE_PERSONAS } from "../workspaces/workspaceActorPicker";
 
 export function ThreadComposer() {
@@ -120,7 +120,21 @@ export function ThreadComposer() {
     setTargetError(null);
 
     if (composerTarget.kind === "subagent") {
-      setTargetError("Subagent delegation bridge is not available yet.");
+      setTargetPending(true);
+      const result = await runtime.spawnSubagent({
+        title: composerTarget.label,
+        description: payload.text,
+        cwd: workspaceContext?.root ?? null,
+      });
+      setTargetPending(false);
+      if (!result.ok) {
+        setTargetError(result.error ?? "Subagent delegation failed.");
+        return;
+      }
+      history.remember(payload.text);
+      runtime.setInput("");
+      setAttachments([]);
+      setComposerTarget(targetAfterAcceptedDispatch(composerTarget));
       return;
     }
 

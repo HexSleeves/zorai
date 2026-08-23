@@ -219,6 +219,10 @@ pub(super) enum AgentBridgeCommand {
         thread_id: String,
         context: serde_json::Value,
     },
+    SpawnSubagent {
+        thread_id: String,
+        args: serde_json::Value,
+    },
     GetGitDiff {
         repo_path: String,
         file_path: Option<String>,

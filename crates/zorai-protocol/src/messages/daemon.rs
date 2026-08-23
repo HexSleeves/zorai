@@ -80,6 +80,7 @@ pub enum DaemonMessage {
     AgentFileOperationSnapshot { operation_id: String, status_json: String },
     AgentFileOperationReverted { operation_id: String, result_json: String },
     AgentThreadWorkspaceContext { thread_id: String, context_json: String, updated: bool },
+    AgentSubagentSpawned { thread_id: String, result_json: String },
     AgentTaskApprovalRules { rules: Vec<TaskApprovalRule> },
     AgentConfigResponse { config_json: String },
     AgentEffectiveConfigState { state_json: String },
