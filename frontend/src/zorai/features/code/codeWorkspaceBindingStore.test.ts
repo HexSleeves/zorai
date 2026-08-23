@@ -132,4 +132,71 @@ describe("codeWorkspaceBindingStore", () => {
 
     expect(store.getState().threadByRoot).toEqual({});
   });
+
+  it("isolates the factory storage when no explicit storage is given", async () => {
+    const first = createCodeWorkspaceBindingStore();
+    first.getState().setLastRoot("/work/a");
+
+    // A second factory instance must not see the first instance's state:
+    // without explicit storage each factory gets its own in-memory storage
+    // instead of falling through to renderer localStorage.
+    const second = createCodeWorkspaceBindingStore();
+    await second.persist.rehydrate();
+
+    expect(second.getState().lastRoot).toBeNull();
+    expect(second.getState().threadByRoot).toEqual({});
+  });
+
+  it("migrates older persisted payloads through normalization and rewrites the version", async () => {
+    const storage = createMemoryStorage();
+    storage.setItem(
+      CODE_WORKSPACE_BINDING_STORE_NAME,
+      JSON.stringify({
+        state: {
+          lastRoot: "  /work/old  ",
+          threadByRoot: {
+            " /work/old ": "thread-old",
+            "/work/empty": "   ",
+            "/work/bad": 42,
+          },
+          extraFutureField: "ignored",
+        },
+        version: 0,
+      }),
+    );
+
+    const store = createCodeWorkspaceBindingStore(storage);
+    await store.persist.rehydrate();
+
+    expect(store.getState().lastRoot).toBe("/work/old");
+    expect(store.getState().threadByRoot).toEqual({ "/work/old": "thread-old" });
+
+    const persisted = readPersistedJson(storage);
+    expect(persisted.version).toBe(CODE_WORKSPACE_BINDING_STORE_VERSION);
+    expect(persisted.state).toEqual({
+      lastRoot: "/work/old",
+      threadByRoot: { "/work/old": "thread-old" },
+    });
+  });
+
+  it("keeps renderer normalization trim-only and drops unknown persisted fields on rehydrate", async () => {
+    const storage = createMemoryStorage();
+    storage.setItem(
+      CODE_WORKSPACE_BINDING_STORE_NAME,
+      JSON.stringify({
+        state: {
+          lastRoot: "  /work/a  ",
+          threadByRoot: { " /work/a ": "thread-1" },
+          legacyField: "must not survive",
+        },
+        version: CODE_WORKSPACE_BINDING_STORE_VERSION,
+      }),
+    );
+
+    const store = createCodeWorkspaceBindingStore(storage);
+    await store.persist.rehydrate();
+
+    expect(store.getState().lastRoot).toBe("/work/a");
+    expect(store.getState().threadByRoot).toEqual({ "/work/a": "thread-1" });
+  });
 });

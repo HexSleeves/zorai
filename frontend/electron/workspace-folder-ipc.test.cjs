@@ -7,7 +7,7 @@ const path = require("node:path");
 const { registerCoreIpcHandlers } = require("./main/core-ipc-handlers.cjs");
 const workspaceService = require("./main/workspace-service.cjs");
 
-function createHarness({ dialogResult, useRealWorkspaceService = false } = {}) {
+function createHarness({ dialogResult, useRealWorkspaceService = false, openWorkspaceImpl } = {}) {
   const handlers = new Map();
   const dialogCalls = [];
   const openWorkspaceCalls = [];
@@ -31,6 +31,7 @@ function createHarness({ dialogResult, useRealWorkspaceService = false } = {}) {
           workspaceService: {
             async openWorkspace(rootPath) {
               openWorkspaceCalls.push(rootPath);
+              if (openWorkspaceImpl) return openWorkspaceImpl(rootPath);
               return {
                 root: rootPath,
                 name: path.basename(rootPath),
@@ -146,6 +147,41 @@ test("workspace-select-folder passes the picked path through workspaceService.op
   assert.deepEqual(openWorkspaceCalls, ["/tmp/example"]);
   assert.equal(result.canceled, false);
   assert.equal(result.root.root, "/tmp/example");
+});
+
+test("workspace-open rejects and propagates the workspaceService.openWorkspace failure", async () => {
+  const failure = new Error("Workspace root does not exist: /missing");
+  failure.code = "WORKSPACE_ROOT_NOT_FOUND";
+  const { handlers, openWorkspaceCalls } = createHarness({
+    openWorkspaceImpl: () => {
+      throw failure;
+    },
+  });
+
+  await assert.rejects(handlers.get("workspace-open")({}, "/missing"), (error) => {
+    assert.equal(error, failure);
+    assert.equal(error.code, "WORKSPACE_ROOT_NOT_FOUND");
+    return true;
+  });
+  assert.deepEqual(openWorkspaceCalls, ["/missing"]);
+});
+
+test("workspace-select-folder propagates openWorkspace failures from a picked path", async () => {
+  const failure = new Error("Workspace root does not exist: /tmp/example");
+  failure.code = "WORKSPACE_ROOT_NOT_FOUND";
+  const { handlers, dialogCalls } = createHarness({
+    dialogResult: { canceled: false, filePaths: ["/tmp/example"], bookmarks: [] },
+    openWorkspaceImpl: () => {
+      throw failure;
+    },
+  });
+
+  await assert.rejects(handlers.get("workspace-select-folder")({}), (error) => {
+    assert.equal(error, failure);
+    assert.equal(error.code, "WORKSPACE_ROOT_NOT_FOUND");
+    return true;
+  });
+  assert.equal(dialogCalls.length, 1);
 });
 
 test("workspace-select-folder returns validated canonical metadata for a real directory", async () => {

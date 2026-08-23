@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import { CodeEmptyState } from "./CodeEmptyState";
 import { useCodeWorkspaceBindingStore } from "./codeWorkspaceBindingStore";
 import {
@@ -29,6 +29,14 @@ export type CodeViewProps = {
   openPath?: (rootPath: string) => Promise<ZoraiWorkspaceValidatedRoot>;
 };
 
+/**
+ * Stable module-level default. An inline `() => {}` default would recreate
+ * `handleRootSelected` below on every CodeView render, which in turn recreates
+ * CodeEmptyState's memoized controller and wipes `manualOpen`/`pathValue` on
+ * unrelated ZoraiShell rerenders (Context/Agent toggles).
+ */
+const NOOP_OPEN_WORKSPACE: CodeOpenWorkspaceBoundary = () => {};
+
 export function CodeRail() {
   const lastRoot = useCodeWorkspaceBindingStore((state) => state.lastRoot);
 
@@ -52,23 +60,26 @@ export function CodeRail() {
 }
 
 export function CodeView({
-  onOpenWorkspace = () => {},
+  onOpenWorkspace = NOOP_OPEN_WORKSPACE,
   selectFolder,
   openPath,
 }: CodeViewProps) {
   const [boundRoot, setBoundRoot] = useState<ZoraiWorkspaceValidatedRoot | null>(null);
 
-  const handleRootSelected: CodeOpenWorkspaceBoundary = (root, source) => {
-    useCodeWorkspaceBindingStore.getState().setLastRoot(root.root);
-    setBoundRoot(root);
-    onOpenWorkspace(root, source);
-  };
+  const handleRootSelected = useCallback<CodeOpenWorkspaceBoundary>(
+    (root, source) => {
+      useCodeWorkspaceBindingStore.getState().setLastRoot(root.root);
+      setBoundRoot(root);
+      onOpenWorkspace(root, source);
+    },
+    [onOpenWorkspace],
+  );
 
-  const handleCloseFolder = () => {
+  const handleCloseFolder = useCallback(() => {
     if (!boundRoot) return;
     useCodeWorkspaceBindingStore.getState().closeRoot(boundRoot.root);
     setBoundRoot(null);
-  };
+  }, [boundRoot]);
 
   return (
     <section className="zorai-feature-surface zorai-code-surface">

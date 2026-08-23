@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useCodeWorkspaceBindingStore } from "./codeWorkspaceBindingStore";
 import {
-  createCodeEmptyStateController,
+  createMemoizedCodeEmptyStateController,
   type CodeEmptyStateController,
+  type CodeEmptyStateControllerMemo,
   type ZoraiWorkspaceSelection,
   type ZoraiWorkspaceValidatedRoot,
 } from "./codeEmptyStateModel";
@@ -13,6 +14,9 @@ export type CodeEmptyStateProps = {
   onRootSelected?: (root: ZoraiWorkspaceValidatedRoot, source: "picker" | "manual") => void;
   onError?: (message: string) => void;
 };
+
+/** Stable no-op so an absent `onRootSelected` never changes identity across renders. */
+const NOOP_ROOT_SELECTED = (_root: ZoraiWorkspaceValidatedRoot, _source: "picker" | "manual") => {};
 
 function defaultSelectFolder(): Promise<ZoraiWorkspaceSelection> {
   const bridge = window.zorai;
@@ -37,18 +41,17 @@ export function CodeEmptyState({
   onError,
 }: CodeEmptyStateProps) {
   const lastRoot = useCodeWorkspaceBindingStore((state) => state.lastRoot);
-  const controller = useMemo<CodeEmptyStateController>(
-    () =>
-      createCodeEmptyStateController({
-        selectFolder,
-        openPath,
-        onRootSelected: (root, source) => {
-          onRootSelected?.(root, source);
-        },
-        onError,
-      }),
-    [selectFolder, openPath, onRootSelected, onError],
-  );
+  const controllerMemoRef = useRef<CodeEmptyStateControllerMemo | null>(null);
+  const controller = useMemo<CodeEmptyStateController>(() => {
+    const memo = createMemoizedCodeEmptyStateController(controllerMemoRef.current, {
+      selectFolder,
+      openPath,
+      onRootSelected: onRootSelected ?? NOOP_ROOT_SELECTED,
+      onError,
+    });
+    controllerMemoRef.current = memo;
+    return memo.controller;
+  }, [selectFolder, openPath, onRootSelected, onError]);
   const [state, setState] = useState(controller.getState);
 
   useEffect(() => {
