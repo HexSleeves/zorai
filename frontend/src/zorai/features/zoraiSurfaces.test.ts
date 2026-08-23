@@ -689,7 +689,7 @@ describe("Zorai feature surfaces", () => {
     expect(noticeSource).toContain("continue from the parent thread");
     expect(composerSource).toContain("activeThreadBudgetExceededNotice");
     expect(composerSource).toContain("zorai-composer-budget-notice");
-    expect(composerSource).toContain("if (budgetNotice || isStreamingResponse) return");
+    expect(composerSource).toContain("if (budgetNotice || isStreamingResponse || targetPending) return");
     expect(composerSource).not.toContain("{budgetNotice ??");
   });
 

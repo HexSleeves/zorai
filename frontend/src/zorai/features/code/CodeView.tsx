@@ -1,5 +1,9 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { WorkspaceWorkbench } from "@/components/WorkspaceWorkbench";
+import { useAgentChatPanelRuntime } from "@/components/agent-chat-panel/runtime/context";
+import { useAgentStore } from "@/lib/agentStore";
+import { useWorkspaceContextStore } from "@/lib/workspaceContextStore";
+import { openThreadTarget } from "../threads/openThreadTarget";
 import { ThreadsView } from "../threads/ThreadsView";
 import { CodeEmptyState } from "./CodeEmptyState";
 import { useCodeWorkspaceBindingStore } from "./codeWorkspaceBindingStore";
@@ -51,17 +55,67 @@ export function CodeView({
   selectFolder,
   openPath,
 }: CodeViewProps) {
+  const runtime = useAgentChatPanelRuntime();
+  const bindRoot = useWorkspaceContextStore((state) => state.bindRoot);
   const lastRoot = useCodeWorkspaceBindingStore((state) => state.lastRoot);
   const [boundRoot, setBoundRoot] = useState<string | null>(lastRoot);
+  const codeThreadLocalIdRef = useRef<string | null>(null);
+  const restoringRootRef = useRef<string | null>(null);
+
+  const activateRootThread = useCallback(async (root: ZoraiWorkspaceValidatedRoot) => {
+    if (restoringRootRef.current === root.root) return;
+    restoringRootRef.current = root.root;
+    try {
+      await useWorkspaceContextStore.getState().hydrate();
+      const bindings = useCodeWorkspaceBindingStore.getState();
+      const mappedDaemonThreadId = bindings.threadForRoot(root.root);
+      if (mappedDaemonThreadId && await openThreadTarget(runtime, mappedDaemonThreadId)) {
+        const local = useAgentStore.getState().threads.find((thread) => thread.daemonThreadId === mappedDaemonThreadId);
+        if (local) {
+          codeThreadLocalIdRef.current = local.id;
+          bindRoot(local.id, root.root);
+          return;
+        }
+      }
+
+      if (mappedDaemonThreadId) bindings.removeRootBinding(root.root);
+      const localId = runtime.createThread({
+        workspaceId: runtime.activeWorkspace?.id ?? null,
+        title: `Code · ${root.name}`,
+      });
+      codeThreadLocalIdRef.current = localId;
+      runtime.openThread(localId);
+      bindRoot(localId, root.root);
+    } finally {
+      restoringRootRef.current = null;
+    }
+  }, [bindRoot, runtime]);
+
+  useEffect(() => {
+    const localId = codeThreadLocalIdRef.current;
+    if (!boundRoot || !localId) return;
+    const local = runtime.threads.find((thread) => thread.id === localId);
+    if (!local?.daemonThreadId) return;
+    const localContext = useWorkspaceContextStore.getState().byThreadId[localId];
+    if (localContext?.root !== boundRoot) return;
+    useCodeWorkspaceBindingStore.getState().bindThreadToRoot(boundRoot, local.daemonThreadId);
+  }, [boundRoot, runtime.threads]);
 
   const handleRootSelected = useCallback<CodeOpenWorkspaceBoundary>(
     (root, source) => {
       useCodeWorkspaceBindingStore.getState().setLastRoot(root.root);
       setBoundRoot(root.root);
+      void activateRootThread(root);
       onOpenWorkspace(root, source);
     },
-    [onOpenWorkspace],
+    [activateRootThread, onOpenWorkspace],
   );
+
+  useEffect(() => {
+    if (!boundRoot || codeThreadLocalIdRef.current) return;
+    const name = displayRootName(boundRoot);
+    void activateRootThread({ root: boundRoot, name, gitRoot: null, isGitRepository: false });
+  }, [activateRootThread, boundRoot]);
 
   return boundRoot ? (
     <WorkspaceWorkbench openedRoot={boundRoot} />
