@@ -2873,7 +2873,7 @@
 }
 
 .zorai-workspace-root-form button,
-.zorai-workspace-actionbar button,
+.zorai-workspace-actionbar button:not(.zorai-code-icon-button),
 .zorai-workspace-explorer-heading button {
   border: 1px solid var(--zorai-border);
   border-radius: 5px;
@@ -3013,9 +3013,48 @@
   color: var(--zorai-muted);
   font: 11px var(--font-mono);
 }
-.zorai-workspace-actionbar > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.zorai-workspace-actionbar > div { display: flex; gap: 6px; }
-.zorai-workspace-actionbar button:disabled { opacity: .45; cursor: default; }
+.zorai-workspace-actionbar > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zorai-code-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.zorai-code-toolbar::-webkit-scrollbar { display: none; }
+.zorai-code-toolbar-group { display: flex; align-items: center; gap: 2px; }
+.zorai-code-toolbar-group + .zorai-code-toolbar-group {
+  border-left: 1px solid var(--zorai-border);
+  padding-left: 5px;
+}
+.zorai-code-toolbar-group--secondary { margin-left: 1px; }
+.zorai-workspace-actionbar .zorai-code-icon-button {
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  flex: 0 0 auto;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--zorai-muted);
+}
+.zorai-code-icon-button svg {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.zorai-code-icon-button:not(:disabled):hover { border-color: var(--zorai-border); background: var(--zorai-bg-elevated); color: var(--zorai-text); }
+.zorai-code-icon-button:focus-visible { outline: 2px solid var(--zorai-accent); outline-offset: 1px; }
+.zorai-code-icon-button.is-danger:not(:disabled):hover { border-color: color-mix(in srgb, var(--danger) 60%, transparent); color: var(--danger); }
+.zorai-workspace-actionbar .zorai-code-icon-button:disabled { opacity: .38; cursor: default; }
 
 .zorai-workspace-editor { flex: 1; min-height: 160px; }
 .zorai-workspace-editor .minimap,

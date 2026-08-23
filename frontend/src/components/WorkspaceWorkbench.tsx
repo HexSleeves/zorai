@@ -13,6 +13,7 @@ import { preloadCodeEditor } from "@/zorai/features/code/codeEditorPreload";
 import { CodeQuickOpen } from "@/zorai/features/code/CodeQuickOpen";
 import { CodeCommandPalette } from "@/zorai/features/code/CodeCommandPalette";
 import { CODE_COMMANDS, matchesCodeBinding, type CodeCommandId } from "@/zorai/features/code/codeCommands";
+import { CodeIconButton } from "@/zorai/features/code/CodeIconButton";
 import { createCodeDocumentController } from "@/zorai/features/code/codeDocumentModel";
 import { createCodeFileOpenTrace } from "@/zorai/features/code/codeEditorPerformance";
 
@@ -125,6 +126,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
   const pendingNavigationRef = useRef<{ path: string; line: number; column: number } | null>(null);
   const saveCommandRef = useRef<() => Promise<void>>(async () => {});
   const reloadCommandRef = useRef<() => Promise<void>>(async () => {});
+  const activeFileTargetRef = useRef<{ root: string; path: string } | null>(null);
   const handledEditorRequestTokenRef = useRef(0);
   const editorRequest = useWorkspaceEditorRequestStore((state) => state.request);
   const activeDocument = context?.activeFile ? documents[context.activeFile] : undefined;
@@ -750,6 +752,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
 
   saveCommandRef.current = save;
   reloadCommandRef.current = reloadActiveFile;
+  activeFileTargetRef.current = context?.root && activeDocument ? { root: context.root, path: activeDocument.path } : null;
 
   const runCodeCommand = useCallback((id: CodeCommandId) => {
     if (id === "file.quickOpen") { setCodeOverlay("quickOpen"); return; }
@@ -759,6 +762,14 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     if (id === "search.project") {
       const input = document.querySelector<HTMLInputElement>(".zorai-workspace-search-row input");
       input?.focus();
+      return;
+    }
+    if (id === "file.openExternal" || id === "file.reveal") {
+      const target = activeFileTargetRef.current;
+      if (!target) return;
+      const targetPath = `${target.root.replace(/[\\/]$/, "")}/${target.path}`;
+      if (id === "file.openExternal") void getBridge()?.openFsPath?.(targetPath);
+      else void getBridge()?.revealFsPath?.(targetPath);
       return;
     }
     const action = monacoEditorRef.current?.getAction(id);
@@ -1069,14 +1080,32 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
             </nav> */}
             <div className="zorai-workspace-actionbar">
               <span>{activeDocument.path}{lspStatus ? ` · LSP ${lspStatus.available ? lspStatus.command ?? "ready" : "unavailable"}` : ""}</span>
-              <div>
-                <button type="button" onClick={() => toggleAttachedFile(activeThreadId, activeDocument.path)}>{context?.attachedFiles.includes(activeDocument.path) ? "Detach context" : "Attach context"}</button>
-                <button type="button" onClick={() => void showDiff()}>Diff</button>
-                {activeDocument.externalContent !== undefined ? <button type="button" onClick={() => setMode("external")}>External diff</button> : null}
-                <button type="button" onClick={() => void reloadActiveFile()}>Reload</button>
-                <button type="button" onClick={() => void renameActiveFile()}>Rename</button>
-                <button type="button" onClick={() => void deleteActiveFile()}>Delete</button>
-                <button type="button" disabled={!activeDocument.dirty || saving} onClick={() => void save()}>{saving ? "Saving…" : "Save"}</button>
+              <div className="zorai-code-toolbar" role="toolbar" aria-label="Editor actions">
+                <div className="zorai-code-toolbar-group" role="group" aria-label="File actions">
+                  <CodeIconButton commandId="file.save" disabled={!activeDocument.dirty || saving} disabledReason={saving ? "Save in progress" : "No unsaved changes"} onClick={() => runCodeCommand("file.save")} />
+                  <CodeIconButton commandId="file.reload" onClick={() => runCodeCommand("file.reload")} />
+                  <CodeIconButton icon="edit" label="Show diff" onClick={() => void showDiff()} />
+                  {activeDocument.externalContent !== undefined ? <CodeIconButton icon="external" label="Show external changes" onClick={() => setMode("external")} /> : null}
+                  <CodeIconButton commandId="file.openExternal" onClick={() => runCodeCommand("file.openExternal")} />
+                  <CodeIconButton commandId="file.reveal" onClick={() => runCodeCommand("file.reveal")} />
+                </div>
+                <div className="zorai-code-toolbar-group" role="group" aria-label="Navigation actions">
+                  <CodeIconButton commandId="file.quickOpen" onClick={() => runCodeCommand("file.quickOpen")} />
+                  <CodeIconButton commandId="search.file" onClick={() => runCodeCommand("search.file")} />
+                  <CodeIconButton commandId="search.project" onClick={() => runCodeCommand("search.project")} />
+                  <CodeIconButton commandId="edit.formatDocument" onClick={() => runCodeCommand("edit.formatDocument")} />
+                  <CodeIconButton commandId="view.commandPalette" onClick={() => runCodeCommand("view.commandPalette")} />
+                </div>
+                <div className="zorai-code-toolbar-group" role="group" aria-label="View actions">
+                  <CodeIconButton commandId="view.settings" onClick={() => runCodeCommand("view.settings")} />
+                  <CodeIconButton commandId="view.toggleWrap" onClick={() => runCodeCommand("view.toggleWrap")} />
+                  <CodeIconButton commandId="view.toggleMinimap" onClick={() => runCodeCommand("view.toggleMinimap")} />
+                </div>
+                <div className="zorai-code-toolbar-group zorai-code-toolbar-group--secondary" role="group" aria-label="File management actions">
+                  <CodeIconButton icon="pin" label={context?.attachedFiles.includes(activeDocument.path) ? "Detach from Agent context" : "Attach to Agent context"} onClick={() => toggleAttachedFile(activeThreadId, activeDocument.path)} />
+                  <CodeIconButton icon="edit" label="Rename file" onClick={() => void renameActiveFile()} />
+                  <CodeIconButton icon="close" label="Delete file" danger onClick={() => void deleteActiveFile()} />
+                </div>
               </div>
             </div>
             {symbols.length > 0 ? (

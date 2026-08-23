@@ -19,6 +19,16 @@ export function registerCodeEditorActions(
 ): Array<{ dispose(): void }> {
   const disposables: Array<{ dispose(): void }> = [];
   disposables.push(editor.addAction({ id: "file.save", label: "Save", run: callbacks.onSave }));
+  disposables.push(editor.addAction({
+    id: "view.toggleMinimap",
+    label: "Toggle Minimap",
+    run: () => editor.updateOptions({ minimap: { enabled: !editor.getRawOptions().minimap?.enabled } }),
+  }));
+  disposables.push(editor.addAction({
+    id: "view.toggleWrap",
+    label: "Toggle Word Wrap",
+    run: () => editor.updateOptions({ wordWrap: editor.getRawOptions().wordWrap === "off" ? "on" : "off" }),
+  }));
   const builtins: Array<[string, string, string]> = [
     ["search.file", "Find in File", "actions.find"],
     ["search.replace", "Replace in File", "editor.action.startFindReplaceAction"],
