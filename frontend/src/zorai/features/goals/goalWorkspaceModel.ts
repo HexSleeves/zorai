@@ -26,6 +26,8 @@ export interface GoalWorkspaceRow {
   tone?: GoalWorkspaceTone;
   depth?: number;
   selected?: boolean;
+  /** Owning event for flattened dossier timeline rows. */
+  eventId?: string;
   targetThreadId?: string;
   targetFilePath?: string;
   meta?: string;
@@ -221,7 +223,10 @@ function dossierDetails(run: GoalRun, selectedStep: GoalRunStep | null, selected
   const taskRows = relatedTaskRows(run, selectedStep);
   sections.push({ title: "Related Tasks", rows: taskRows.length ? taskRows : [{ id: "no-tasks", text: "No related tasks.", tone: "muted" }] });
 
-  const selectedEvent = [...(run.events ?? [])].reverse()[selectedCenterIndex];
+  const selectedRow = timelineRows(run, selectedCenterIndex)[selectedCenterIndex];
+  const selectedEvent = selectedRow?.eventId
+    ? (run.events ?? []).find((event) => event.id === selectedRow.eventId)
+    : undefined;
   if (selectedEvent) {
     const rows: GoalWorkspaceRow[] = [{ id: selectedEvent.id, text: selectedEvent.message, tone: "active" }];
     if (selectedEvent.details) rows.push({ id: `${selectedEvent.id}-details`, text: selectedEvent.details, tone: "muted" });
@@ -269,14 +274,17 @@ function attentionDetails(run: GoalRun, selectedIndex: number): GoalWorkspaceSec
 function timelineRows(run: GoalRun, selectedIndex: number): GoalWorkspaceRow[] {
   const events = [...(run.events ?? [])].reverse();
   if (events.length === 0) return [{ id: "empty", text: "Waiting for run events.", tone: "muted" }];
-  return events.flatMap((event, index) => eventRows(event, index === selectedIndex));
+  return events.flatMap((event) => eventRows(event)).map((row, index) => ({
+    ...row,
+    selected: index === selectedIndex,
+  }));
 }
 
-function eventRows(event: GoalRunEvent, selected: boolean): GoalWorkspaceRow[] {
-  const rows: GoalWorkspaceRow[] = [{ id: event.id, text: event.message || "event", tone: eventTone(event), selected }];
-  if (event.details) rows.push({ id: `${event.id}-details`, text: event.details, tone: "muted", depth: 1, selected });
+function eventRows(event: GoalRunEvent): GoalWorkspaceRow[] {
+  const rows: GoalWorkspaceRow[] = [{ id: event.id, eventId: event.id, text: event.message || "event", tone: eventTone(event) }];
+  if (event.details) rows.push({ id: `${event.id}-details`, eventId: event.id, text: event.details, tone: "muted", depth: 1 });
   for (const todo of event.todo_snapshot ?? []) {
-    rows.push({ id: `${event.id}-${todo.id}`, text: todo.content, meta: todoStatusLabel(todo.status), tone: "muted", depth: 1, selected });
+    rows.push({ id: `${event.id}-${todo.id}`, eventId: event.id, text: todo.content, meta: todoStatusLabel(todo.status), tone: "muted", depth: 1 });
   }
   return rows;
 }

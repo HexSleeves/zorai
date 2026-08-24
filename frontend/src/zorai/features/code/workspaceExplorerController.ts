@@ -36,18 +36,35 @@ export function createWorkspaceExplorerController(
     snapshot = next;
     listeners.forEach((listener) => listener());
   };
-  const load = async (path: string) => {
-    publish({ ...snapshot, loadingPaths: new Set([...snapshot.loadingPaths, path]), errorByPath: new Map([...snapshot.errorByPath].filter(([key]) => key !== path)) });
-    try {
-      const children = await loadDirectory(path);
-      publish({ ...snapshot, childrenByPath: new Map(snapshot.childrenByPath).set(path, children) });
-    } catch (reason: any) {
-      publish({ ...snapshot, errorByPath: new Map(snapshot.errorByPath).set(path, reason?.message ?? String(reason)) });
-    } finally {
-      const loadingPaths = new Set(snapshot.loadingPaths);
-      loadingPaths.delete(path);
-      publish({ ...snapshot, loadingPaths });
-    }
+  const pendingLoads = new Map<string, Promise<void>>();
+  const loadGenerations = new Map<string, number>();
+  const load = (path: string): Promise<void> => {
+    const existing = pendingLoads.get(path);
+    if (existing) return existing;
+    const generation = (loadGenerations.get(path) ?? 0) + 1;
+    loadGenerations.set(path, generation);
+    const task = (async () => {
+      publish({ ...snapshot, loadingPaths: new Set([...snapshot.loadingPaths, path]), errorByPath: new Map([...snapshot.errorByPath].filter(([key]) => key !== path)) });
+      try {
+        const children = await loadDirectory(path);
+        if (loadGenerations.get(path) !== generation) return;
+        publish({ ...snapshot, childrenByPath: new Map(snapshot.childrenByPath).set(path, children) });
+      } catch (reason: any) {
+        if (loadGenerations.get(path) !== generation) return;
+        publish({ ...snapshot, errorByPath: new Map(snapshot.errorByPath).set(path, reason?.message ?? String(reason)) });
+      } finally {
+        if (loadGenerations.get(path) === generation) {
+          const loadingPaths = new Set(snapshot.loadingPaths);
+          loadingPaths.delete(path);
+          publish({ ...snapshot, loadingPaths });
+        }
+      }
+    })();
+    pendingLoads.set(path, task);
+    void task.finally(() => {
+      if (pendingLoads.get(path) === task) pendingLoads.delete(path);
+    });
+    return task;
   };
 
   return {
@@ -64,12 +81,16 @@ export function createWorkspaceExplorerController(
         return;
       }
       const previousChildren = snapshot.childrenByPath.get(path);
+      const expandedBefore = new Set(snapshot.expandedPaths);
       await load(path);
       if (!snapshot.childrenByPath.has(path) && previousChildren === undefined && snapshot.errorByPath.has(path)) return;
+      if (expandedBefore.has(path)) return;
+      if (snapshot.expandedPaths.has(path)) return;
       publish({ ...snapshot, expandedPaths: new Set([...snapshot.expandedPaths, path]) });
     },
     async refreshExpanded() {
-      await Promise.all([...snapshot.expandedPaths].map((path) => load(path)));
+      const expanded = [...snapshot.expandedPaths];
+      await Promise.all(expanded.map((path) => load(path)));
     },
   };
 }

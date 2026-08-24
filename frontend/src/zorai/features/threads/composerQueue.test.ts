@@ -7,7 +7,7 @@ import {
   readPromptQueueResponse,
   sameQueuedPrompts,
 } from "./composerQueue";
-import { selectThreadPromptQueue, usePromptQueueStore } from "./promptQueueStore";
+import { MAX_CACHED_PROMPT_QUEUES, selectThreadPromptQueue, usePromptQueueStore } from "./promptQueueStore";
 
 describe("queued composer follow-ups", () => {
   it("keeps media blocks on a queued payload instead of flattening to text", () => {
@@ -61,5 +61,21 @@ describe("queued composer follow-ups", () => {
     usePromptQueueStore.getState().setQueue("thread-a", []);
     expect(selectThreadPromptQueue(usePromptQueueStore.getState(), "thread-a")).toBe(EMPTY_PROMPT_QUEUE);
     expect(sameQueuedPrompts(EMPTY_PROMPT_QUEUE, queuedPromptsFromDaemon([]))).toBe(true);
+  });
+
+  it("bounds thread queues and refreshes recency when a cached thread is touched", () => {
+    usePromptQueueStore.setState({ byThreadId: {} });
+    for (let index = 0; index < MAX_CACHED_PROMPT_QUEUES; index += 1) {
+      usePromptQueueStore.getState().setQueue(`thread-${index}`, []);
+    }
+
+    usePromptQueueStore.getState().setQueue("thread-0", []);
+    usePromptQueueStore.getState().setQueue("thread-new", []);
+
+    const cachedIds = Object.keys(usePromptQueueStore.getState().byThreadId);
+    expect(cachedIds).toHaveLength(MAX_CACHED_PROMPT_QUEUES);
+    expect(cachedIds).toContain("thread-0");
+    expect(cachedIds).toContain("thread-new");
+    expect(cachedIds).not.toContain("thread-1");
   });
 });

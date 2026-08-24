@@ -127,9 +127,13 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
   const workspaceDiagnostics = useMemo(() => Object.entries(diagnosticsByPath).flatMap(([path, diagnostics]) => diagnostics.map((diagnostic) => ({ path, ...diagnostic }))), [diagnosticsByPath]);
   const statusMap = useMemo(() => new Map(gitStatus.map((entry) => [entry.path, statusLabel(entry)])), [gitStatus]);
 
+  const refreshGenRef = useRef(0);
   const refreshRoot = useCallback(async (root = context?.root) => {
     if (!root || !bridge?.workspaceListDirectory) return;
+    const generation = ++refreshGenRef.current;
     const state = await loadWorkspaceRootState({ ...bridge, workspaceListDirectory: bridge.workspaceListDirectory }, root);
+    const currentRoot = activeThreadId ? useWorkspaceContextStore.getState().byThreadId[activeThreadId]?.root : undefined;
+    if (generation !== refreshGenRef.current || (currentRoot && currentRoot !== root)) return;
     setRootEntries(state.entries);
     setGitStatus(state.statuses);
     setGitOverview(state.overview);
@@ -137,7 +141,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     setGitHistory(state.history);
     setGitConflicts(state.conflicts);
     setExplorerRefreshToken((token) => token + 1);
-  }, [bridge, context?.root]);
+  }, [bridge, context?.root, activeThreadId]);
 
   useEffect(() => { void useWorkspaceContextStore.getState().hydrate(); }, []);
   useEffect(() => {
@@ -233,19 +237,27 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     if (!context?.root || !bridge?.workspaceWatchStart || !bridge?.onWorkspaceFilesChanged) return;
     let subscriptionId: string | null = null;
     let disposed = false;
+    const watchedRoot = context.root;
     const unsubscribe = bridge.onWorkspaceFilesChanged((batch) => {
-      if (batch.root !== context.root || (subscriptionId && batch.subscriptionId !== subscriptionId)) return;
-      void refreshRoot().catch(() => {});
-      const activeChange = activeDocument && batch.changes.some((change) => change.path === activeDocument.path);
-      if (!activeChange || !activeDocument || !bridge.workspaceReadFile) return;
-      void bridge.workspaceReadFile(context.root, activeDocument.path).then((diskFile) => {
-        if (diskFile.hash === activeDocument.hash) return;
-        if (activeDocument.dirty) {
-          setDocuments((current) => ({ ...current, [activeDocument.path]: { ...activeDocument, externalContent: diskFile.content, externalHash: diskFile.hash } }));
-          setError(`External change detected in ${activeDocument.path}. Compare or reload before saving.`);
-        } else {
-          setDocuments((current) => ({ ...current, [diskFile.path]: { ...diskFile, original: diskFile.content, dirty: false } }));
-        }
+      if (batch.root !== watchedRoot || (subscriptionId && batch.subscriptionId !== subscriptionId)) return;
+      void refreshRoot(watchedRoot).catch(() => {});
+      const currentActive = activeDocument;
+      if (!currentActive) return;
+      const activeChange = batch.changes.some((change) => change.path === currentActive.path);
+      if (!activeChange || !bridge.workspaceReadFile) return;
+      const pathAtDispatch = currentActive.path;
+      void bridge.workspaceReadFile(watchedRoot, pathAtDispatch).then((diskFile) => {
+        setDocuments((prev) => {
+          const latest = prev[pathAtDispatch];
+          if (!latest) return prev;
+          if (diskFile.hash === latest.hash) return prev;
+          if (latest.dirty) {
+            // Defer toast outside setDocuments via microtask
+            queueMicrotask(() => setError(`External change detected in ${pathAtDispatch}. Compare or reload before saving.`));
+            return { ...prev, [pathAtDispatch]: { ...latest, externalContent: diskFile.content, externalHash: diskFile.hash } };
+          }
+          return { ...prev, [diskFile.path]: { ...diskFile, original: diskFile.content, dirty: false } };
+        });
       }).catch(() => {});
     });
     void bridge.workspaceWatchStart(context.root, { debounceMs: 120 }).then((subscription) => {
@@ -260,26 +272,26 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
       if (typeof unsubscribe === "function") unsubscribe();
       if (subscriptionId) void bridge.workspaceWatchStop?.(subscriptionId);
     };
-  }, [activeDocument, bridge, context?.root, refreshRoot]);
+  }, [activeDocument?.path, activeDocument?.hash, bridge, context?.root, refreshRoot]);
   useEffect(() => {
     if (!context?.root || !activeDocument || !bridge?.workspaceReadFile || bridge.workspaceWatchStart) return;
     const timer = window.setInterval(() => {
-      void bridge.workspaceReadFile!(context.root, activeDocument.path).then((diskFile) => {
-        if (diskFile.hash === activeDocument.hash || diskFile.hash === activeDocument.externalHash) return;
-        if (activeDocument.dirty) {
-          setDocuments((current) => ({ ...current, [activeDocument.path]: {
-            ...activeDocument,
-            externalContent: diskFile.content,
-            externalHash: diskFile.hash,
-          } }));
-          setError(`External change detected in ${activeDocument.path}. Compare or reload before saving.`);
-        } else {
-          setDocuments((current) => ({ ...current, [diskFile.path]: { ...diskFile, original: diskFile.content, dirty: false } }));
-        }
+      const path = activeDocument.path;
+      void bridge.workspaceReadFile!(context.root, path).then((diskFile) => {
+        setDocuments((prev) => {
+          const latest = prev[path];
+          if (!latest) return prev;
+          if (diskFile.hash === latest.hash || diskFile.hash === latest.externalHash) return prev;
+          if (latest.dirty) {
+            queueMicrotask(() => setError(`External change detected in ${path}. Compare or reload before saving.`));
+            return { ...prev, [path]: { ...latest, externalContent: diskFile.content, externalHash: diskFile.hash } };
+          }
+          return { ...prev, [diskFile.path]: { ...diskFile, original: diskFile.content, dirty: false } };
+        });
       }).catch(() => {});
     }, 2500);
     return () => window.clearInterval(timer);
-  }, [activeDocument, bridge, context?.root]);
+  }, [activeDocument?.path, activeDocument?.hash, bridge, context?.root]);
 
   useEffect(() => {
     const pending = pendingNavigationRef.current;
@@ -313,7 +325,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     return () => { if (typeof unsubscribe === "function") unsubscribe(); };
   }, [bridge, context?.root]);
   useEffect(() => {
-    if (!editorSettings.lspEnabled || !context?.root || !activeDocument || !bridge?.workspaceLspOpen) {
+    if (!editorSettings.lspEnabled || !context?.root || !activeDocument || !bridge?.workspaceLspOpen || reducedModePathsRef.current.has(activeDocument.path)) {
       setLspStatus(null);
       return;
     }
@@ -329,9 +341,9 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     };
   // Document open/close follows identity; incremental content changes use the debounced effect below.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDocument?.language, activeDocument?.path, bridge, context?.root, editorSettings.lspEnabled]);
+  }, [activeDocument?.language, activeDocument?.path, activeDocument?.hash, bridge, context?.root, editorSettings.lspEnabled]);
   useEffect(() => {
-    if (!editorSettings.lspEnabled || !context?.root || !activeDocument || !lspStatus?.available || !bridge?.workspaceLspChange) return;
+    if (!editorSettings.lspEnabled || !context?.root || !activeDocument || !lspStatus?.available || !bridge?.workspaceLspChange || reducedModePathsRef.current.has(activeDocument.path)) return;
     if (lspChangeTimer.current !== null) window.clearTimeout(lspChangeTimer.current);
     lspChangeTimer.current = window.setTimeout(() => {
       const version = (lspVersionRef.current[activeDocument.path] ?? 0) + 1;
@@ -341,7 +353,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     return () => { if (lspChangeTimer.current !== null) window.clearTimeout(lspChangeTimer.current); };
   // Primitive document fields intentionally drive incremental synchronization.
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeDocument?.content, activeDocument?.language, activeDocument?.path, bridge, context?.root, editorSettings.diagnosticsDelayMs, editorSettings.lspEnabled, lspStatus?.available]);
+  }, [activeDocument?.content, activeDocument?.language, activeDocument?.path, activeDocument?.hash, bridge, context?.root, editorSettings.diagnosticsDelayMs, editorSettings.lspEnabled, lspStatus?.available]);
 
   useEffect(() => {
     if (!context?.root || !bridge?.workspaceTestsDiscover) {
@@ -384,19 +396,27 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     } catch (reason: any) { setError(reason?.message ?? String(reason)); }
   };
 
+  const openGenRef = useRef(0);
   const openFile = async (filePath: string, location?: { line: number; column: number }, view: "edit" | "diff" = "edit", reducedOverride = false) => {
     if (!activeThreadId || !context?.root || !bridge?.workspaceReadFile) return;
+    const rootAtOpen = context.root;
+    const generation = ++openGenRef.current;
+    const isCurrentOpen = () => generation === openGenRef.current
+      && useWorkspaceContextStore.getState().byThreadId[activeThreadId]?.root === rootAtOpen;
     if (!reducedOverride && bridge.workspaceStatFile) {
-      const metadata = await bridge.workspaceStatFile(context.root, filePath).catch(() => null);
+      const metadata = await bridge.workspaceStatFile(rootAtOpen, filePath).catch(() => null);
+      if (!isCurrentOpen()) return;
       if (metadata && exceedsCodeFileLimit(metadata.sizeBytes, editorSettings.maxFileSizeMb)) {
+        setActiveFile(activeThreadId, filePath);
+        setActiveEditorTabId(`file:${filePath}`);
         setLargeFileGate({ path: filePath, sizeBytes: metadata.sizeBytes });
         return;
       }
     }
     if (reducedOverride) reducedModePathsRef.current.add(filePath);
     const controller = documentControllerRef.current;
-    const cacheHit = Boolean(controller.get(context.root, filePath));
-    const trace = createCodeFileOpenTrace({ root: context.root, path: filePath, cacheHit });
+    const cacheHit = Boolean(controller.get(context.root, filePath)); // rootAtOpen === context.root at this point
+    const trace = createCodeFileOpenTrace({ root: rootAtOpen, path: filePath, cacheHit });
     trace.mark("start");
     setActiveFile(activeThreadId, filePath);
     setActiveEditorTabId(`file:${filePath}`);
@@ -407,11 +427,12 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
       let nextDocument = documents[filePath];
       if (!nextDocument) {
         trace.mark("ipc-start");
-        const entry = await controller.open(context.root, filePath, async () => {
-          const file = await bridge.workspaceReadFile!(context.root, filePath, { maxBytes: reducedOverride ? 100 * 1024 * 1024 : editorSettings.maxFileSizeMb * 1024 * 1024 });
+        // Preserve the expected bridge contract: controller.open(context.root, filePath, ...)
+        const entry = await controller.open(rootAtOpen, filePath, async () => {
+          const file = await bridge.workspaceReadFile!(rootAtOpen, filePath, { maxBytes: reducedOverride ? 100 * 1024 * 1024 : editorSettings.maxFileSizeMb * 1024 * 1024 });
           trace.mark("ipc-complete");
           return {
-            root: context.root,
+            root: rootAtOpen,
             path: file.path,
             content: file.content,
             original: file.content,
@@ -422,7 +443,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
             lineCount: file.content.split("\n").length,
           };
         });
-        if (!entry) return;
+        if (!entry || !isCurrentOpen()) return;
         nextDocument = {
           path: entry.path,
           content: entry.content,
@@ -433,16 +454,21 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
           original: entry.original,
           dirty: entry.dirty,
         };
-        setDocuments((current) => current[filePath] ? current : { ...current, [filePath]: nextDocument! });
+        setDocuments((current) => {
+          if (!isCurrentOpen()) return current;
+          return current[filePath] ? current : { ...current, [filePath]: nextDocument! };
+        });
       }
+      if (!isCurrentOpen()) return;
       trace.mark("model-ready");
       if (view === "diff") {
-        await enterDiffView(filePath, nextDocument);
+        await enterDiffView(filePath, nextDocument, isCurrentOpen);
         return;
       }
       setMode("edit");
       if (location && nextDocument) {
         requestAnimationFrame(() => {
+          if (!isCurrentOpen()) return;
           trace.mark("paint");
           const monacoEditor = monacoEditorRef.current;
           if (monacoEditor) {
@@ -465,22 +491,27 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
         });
       } else {
         requestAnimationFrame(() => {
+          if (!isCurrentOpen()) return;
           trace.mark("paint");
           trace.mark("interactive");
           trace.finish({ byteSize: new TextEncoder().encode(nextDocument!.content).byteLength, lineCount: nextDocument!.content.split("\n").length, language: nextDocument!.language });
         });
       }
-    } catch (reason: any) { setError(reason?.message ?? String(reason)); }
+    } catch (reason: any) {
+      if (isCurrentOpen()) setError(reason?.message ?? String(reason));
+    }
   };
 
-  const enterDiffView = async (filePath: string, document: OpenDocument) => {
+  const enterDiffView = async (filePath: string, document: OpenDocument, isCurrent: () => boolean = () => true) => {
     if (!context?.root) return;
     const gitBase = bridge?.workspaceGitShow
       ? await bridge.workspaceGitShow(context.root, filePath).catch(() => "")
       : "";
+    if (!isCurrent()) return;
     const patch = bridge?.workspaceGitDiff
       ? await bridge.workspaceGitDiff(context.root, filePath, { againstHead: true, includeUntracked: true }).catch(() => "")
       : "";
+    if (!isCurrent()) return;
     setDocuments((current) => ({
       ...current,
       [filePath]: { ...(current[filePath] ?? document), gitBaseContent: gitBase },
@@ -517,10 +548,30 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
         return false;
       }
     }
+    const hashAtSave = document.hash;
+    const contentAtSave = content;
     setSaving(true);
     try {
-      const saved = await bridge.workspaceWriteFile(context.root, path, content, document.hash);
-      setDocuments((current) => ({ ...current, [saved.path]: { ...saved, original: saved.content, dirty: false } }));
+      const saved = await bridge.workspaceWriteFile(context.root, path, contentAtSave, hashAtSave);
+      setDocuments((current) => {
+        const latest = current[path];
+        if (!latest) return { ...current, [saved.path]: { ...saved, original: saved.content, dirty: false } };
+        const editedDuringSave = latest.hash !== hashAtSave || latest.content !== document.content;
+        if (editedDuringSave) {
+          return {
+            ...current,
+            [saved.path]: {
+              ...latest,
+              original: saved.content,
+              hash: saved.hash,
+              sizeBytes: saved.sizeBytes,
+              modifiedAt: saved.modifiedAt,
+              dirty: latest.content !== saved.content,
+            },
+          };
+        }
+        return { ...current, [saved.path]: { ...saved, original: saved.content, dirty: false } };
+      });
       autoSaveControllerRef.current.cancel(path);
       documentControllerRef.current.invalidate(context.root, path);
       await documentControllerRef.current.open(context.root, saved.path, async () => ({

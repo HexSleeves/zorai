@@ -9,17 +9,27 @@ import {
 } from "./composerQueue";
 import { usePromptQueueStore, selectThreadPromptQueue } from "./promptQueueStore";
 
-function applyQueueResponse(threadId: string, raw: unknown, expectedId?: string) {
+function applyQueueResponse(threadId: string, raw: unknown, expectedId?: string): { accepted: boolean; parsed: ReturnType<typeof readPromptQueueResponse> } {
   const parsed = readPromptQueueResponse(raw);
-  usePromptQueueStore.getState().setQueue(threadId, parsed.prompts);
   if (parsed.error) {
     pushToast(parsed.error);
-    return parsed;
+    return { accepted: false, parsed };
   }
   if (expectedId && !parsed.prompts.some((item) => item.id === expectedId)) {
     pushToast("Queue is full or the daemon rejected that follow-up.");
+    return { accepted: false, parsed };
   }
-  return parsed;
+  usePromptQueueStore.getState().setQueue(threadId, parsed.prompts);
+  return { accepted: true, parsed };
+}
+
+function applyQueueResponseForced(threadId: string, raw: unknown): void {
+  const parsed = readPromptQueueResponse(raw);
+  if (parsed.error) {
+    pushToast(parsed.error);
+    return;
+  }
+  usePromptQueueStore.getState().setQueue(threadId, parsed.prompts);
 }
 
 export function useDaemonPromptQueue(daemonThreadId: string | null | undefined) {
@@ -32,9 +42,10 @@ export function useDaemonPromptQueue(daemonThreadId: string | null | undefined) 
     const bridge = getBridge();
     if (!bridge?.agentListPromptQueue) return;
     let cancelled = false;
-    void bridge.agentListPromptQueue(daemonThreadId).then((raw) => {
+    const threadIdAtEffect = daemonThreadId;
+    void bridge.agentListPromptQueue(threadIdAtEffect).then((raw) => {
       if (cancelled) return;
-      applyQueueResponse(daemonThreadId, raw);
+      applyQueueResponseForced(threadIdAtEffect, raw);
     }).catch((error: unknown) => {
       if (!cancelled) {
         pushToast(error instanceof Error ? error.message : "Failed to load queued messages.");
@@ -46,15 +57,15 @@ export function useDaemonPromptQueue(daemonThreadId: string | null | undefined) 
   }, [daemonThreadId]);
 
   useEffect(() => {
+    const threadIdAtEffect = daemonThreadId;
+    if (!threadIdAtEffect) return;
     const bridge = getBridge();
     if (!bridge?.onAgentEvent) return;
     return bridge.onAgentEvent((event: { type?: string; thread_id?: string; prompts?: unknown }) => {
-      if (event?.type !== "prompt_queue_update") return;
-      const threadId = typeof event.thread_id === "string" ? event.thread_id : null;
-      if (!threadId) return;
-      usePromptQueueStore.getState().applyDaemonUpdate(threadId, event.prompts);
+      if (event?.type !== "prompt_queue_update" || event.thread_id !== threadIdAtEffect) return;
+      usePromptQueueStore.getState().applyDaemonUpdate(threadIdAtEffect, event.prompts);
     });
-  }, []);
+  }, [daemonThreadId]);
 
   const enqueue = async (payload: SendMessagePayload) => {
     if (!daemonThreadId) {
@@ -74,8 +85,8 @@ export function useDaemonPromptQueue(daemonThreadId: string | null | undefined) 
         contentBlocksJson: payload.contentBlocksJson ?? null,
         promptId,
       });
-      applyQueueResponse(daemonThreadId, raw, promptId);
-      return true;
+      const { accepted } = applyQueueResponse(daemonThreadId, raw, promptId);
+      return accepted;
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "Failed to queue message.");
       return false;
@@ -96,9 +107,9 @@ export function useDaemonPromptQueue(daemonThreadId: string | null | undefined) 
         content: payload.text,
         contentBlocksJson: payload.contentBlocksJson ?? null,
       });
-      applyQueueResponse(daemonThreadId, raw, promptId);
-      setEditingId(null);
-      return true;
+      const { accepted } = applyQueueResponse(daemonThreadId, raw, promptId);
+      if (accepted) setEditingId(null);
+      return accepted;
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "Failed to update queued message.");
       return false;
@@ -114,7 +125,7 @@ export function useDaemonPromptQueue(daemonThreadId: string | null | undefined) 
         threadId: daemonThreadId,
         promptId,
       });
-      applyQueueResponse(daemonThreadId, raw);
+      applyQueueResponseForced(daemonThreadId, raw);
       if (editingId === promptId) setEditingId(null);
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "Failed to cancel queued message.");
@@ -130,7 +141,7 @@ export function useDaemonPromptQueue(daemonThreadId: string | null | undefined) 
         threadId: daemonThreadId,
         promptId,
       });
-      applyQueueResponse(daemonThreadId, raw);
+      applyQueueResponseForced(daemonThreadId, raw);
       if (editingId === promptId) setEditingId(null);
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "Failed to send queued message.");

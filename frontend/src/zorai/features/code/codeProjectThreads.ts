@@ -87,7 +87,18 @@ export function projectThreadsForRoot({
         responder: actualThreadResponder(thread),
       };
     })
-    .sort((left, right) => right.thread.updatedAt - left.thread.updatedAt);
+    .sort((left, right) => normalizeUpdatedAt(right.thread.updatedAt) - normalizeUpdatedAt(left.thread.updatedAt));
+}
+
+function normalizeUpdatedAt(value: unknown): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const numeric = Number(value);
+    if (Number.isFinite(numeric)) return numeric;
+    const parsed = Date.parse(value);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return 0;
 }
 
 export function filterCodeProjectThreads<T extends CodeProjectThreadEntry>(

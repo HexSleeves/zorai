@@ -90,8 +90,13 @@ export function clampCodePanelWidth(panel: CodePanelName, value: number): number
 export function maxCodePanelWidth(input: MaxCodePanelWidthInput): number {
   const fixedChromeWidth = input.fixedChromeWidth
     ?? (CODE_GLOBAL_RAIL_WIDTH + (2 * CODE_RESIZE_HANDLE_WIDTH));
-  const remaining = Math.floor(input.viewportWidth - fixedChromeWidth - CODE_EDITOR_MIN_WIDTH - input.otherWidth);
-  return Math.max(codePanelMinWidth(input.panel), Math.min(codePanelMaxWidth(input.panel), remaining));
+  const available = Math.floor(
+    input.viewportWidth - fixedChromeWidth - CODE_EDITOR_MIN_WIDTH - Math.max(0, input.otherWidth),
+  );
+  return Math.max(
+    codePanelMinWidth(input.panel),
+    Math.min(codePanelMaxWidth(input.panel), available),
+  );
 }
 
 /**

@@ -143,6 +143,16 @@ describe("maxCodePanelWidth", () => {
     ).toBe(1200 - 280 - CODE_EDITOR_MIN_WIDTH - 68 - 5 - 5);
   });
 
+  it("clamps to the panel minimum when the editor and sibling leave no extra space", () => {
+    expect(
+      maxCodePanelWidth({
+        panel: "explorer",
+        viewportWidth: 320,
+        otherWidth: 500,
+      }),
+    ).toBe(CODE_EXPLORER_MIN_WIDTH);
+  });
+
   it("accounts for a collapsed sibling when computing the max", () => {
     expect(
       maxCodePanelWidth({

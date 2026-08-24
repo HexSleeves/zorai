@@ -161,6 +161,36 @@ describe("goalWorkspaceModel", () => {
     expect(model.footerActions.find((action) => action.id === "retry")?.enabled).toBe(true);
   });
 
+  it("maps a selected flattened timeline row back to its owning event", () => {
+    const run: GoalRun = {
+      ...baseRun,
+      events: [
+        ...(baseRun.events ?? []),
+        {
+          id: "event-with-hyphens",
+          timestamp: 2,
+          phase: "execution",
+          message: "newest event",
+          details: "newest event details",
+          step_index: 0,
+          todo_snapshot: [],
+        },
+      ],
+    };
+    const model = buildGoalWorkspaceModel(run, { mode: "dossier", selectedCenterIndex: 1 });
+
+    expect(model.centerRows[1]).toMatchObject({
+      id: "event-with-hyphens-details",
+      eventId: "event-with-hyphens",
+      selected: true,
+    });
+    expect(model.centerRows.filter((row) => row.selected)).toHaveLength(1);
+    expect(model.detailSections.find((section) => section.title === "Selected Timeline Item")?.rows[0]).toMatchObject({
+      id: "event-with-hyphens",
+      text: "newest event",
+    });
+  });
+
   it("switches center and detail panes by workspace mode", () => {
     expect(buildGoalWorkspaceModel(baseRun, { mode: "usage" }).centerTitle).toBe("Usage");
     expect(buildGoalWorkspaceModel(baseRun, { mode: "usage" }).detailTitle).toBe("Usage details");

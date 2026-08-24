@@ -76,9 +76,19 @@ export function ZoraiShell() {
   }, []);
 
   useEffect(() => {
-    const updateViewport = () => setViewportWidth(window.innerWidth);
+    let resizeTimer: ReturnType<typeof setTimeout> | undefined;
+    const updateViewport = () => {
+      if (resizeTimer !== undefined) clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        resizeTimer = undefined;
+        setViewportWidth(window.innerWidth);
+      }, 100);
+    };
     window.addEventListener("resize", updateViewport);
-    return () => window.removeEventListener("resize", updateViewport);
+    return () => {
+      window.removeEventListener("resize", updateViewport);
+      if (resizeTimer !== undefined) clearTimeout(resizeTimer);
+    };
   }, []);
 
   useEffect(() => {

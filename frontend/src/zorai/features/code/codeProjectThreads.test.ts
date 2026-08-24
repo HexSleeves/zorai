@@ -131,6 +131,22 @@ describe("projectThreadsForRoot", () => {
     expect(result[0]?.localThread.id).toBe("a");
   });
 
+  it("sorts parseable timestamps ahead of invalid updatedAt values", () => {
+    const result = projectThreadsForRoot({
+      root: "/work/a",
+      localThreads: [
+        thread({ id: "invalid", updatedAt: "not-a-date" as unknown as number }),
+        thread({ id: "dated", updatedAt: "2026-08-24T12:00:00Z" as unknown as number }),
+        thread({ id: "numeric", updatedAt: "100" as unknown as number }),
+      ],
+      daemonThreads: [],
+      contextsByLocalThreadId: { invalid: context("/work/a"), dated: context("/work/a"), numeric: context("/work/a") },
+      projectThreadIds: ["invalid", "dated", "numeric"],
+    });
+
+    expect(result.map((entry) => entry.localThread.id)).toEqual(["dated", "numeric", "invalid"]);
+  });
+
   it("keeps local pre-daemon project threads", () => {
     const local = thread({ id: "local", daemonThreadId: null, updatedAt: 5 });
     expect(projectThreadsForRoot({

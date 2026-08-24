@@ -63,35 +63,40 @@ export function CodeView({
   const lastRoot = useCodeWorkspaceBindingStore((state) => state.lastRoot);
   const [boundRoot, setBoundRoot] = useState<string | null>(lastRoot);
   const codeThreadLocalIdRef = useRef<string | null>(null);
-  const restoringRootRef = useRef<string | null>(null);
+  const activationGenRef = useRef(0);
 
   const activateRootThread = useCallback(async (root: ZoraiWorkspaceValidatedRoot) => {
-    if (restoringRootRef.current === root.root) return;
-    restoringRootRef.current = root.root;
+    const generation = ++activationGenRef.current;
+    const rootAtCall = root.root;
     try {
       const activeRuntime = runtimeRef.current;
       await useWorkspaceContextStore.getState().hydrate();
+      if (generation !== activationGenRef.current) return;
       const bindings = useCodeWorkspaceBindingStore.getState();
-      const mappedDaemonThreadId = bindings.threadForRoot(root.root);
+      const mappedDaemonThreadId = bindings.threadForRoot(rootAtCall);
+      if (generation !== activationGenRef.current) return;
       if (mappedDaemonThreadId && await openThreadTarget(activeRuntime, mappedDaemonThreadId)) {
+        if (generation !== activationGenRef.current) return;
         const local = useAgentStore.getState().threads.find((thread) => thread.daemonThreadId === mappedDaemonThreadId);
         if (local) {
           codeThreadLocalIdRef.current = local.id;
-          bindRoot(local.id, root.root);
+          bindRoot(local.id, rootAtCall);
           return;
         }
       }
 
-      if (mappedDaemonThreadId) bindings.forgetProjectThread(root.root, mappedDaemonThreadId);
+      if (generation !== activationGenRef.current) return;
+      if (mappedDaemonThreadId) bindings.forgetProjectThread(rootAtCall, mappedDaemonThreadId);
       const localId = activeRuntime.createThread({
         workspaceId: activeRuntime.activeWorkspace?.id ?? null,
         title: `Code · ${root.name}`,
       });
+      if (generation !== activationGenRef.current) return;
       codeThreadLocalIdRef.current = localId;
       activeRuntime.openThread(localId);
-      bindRoot(localId, root.root);
-    } finally {
-      restoringRootRef.current = null;
+      bindRoot(localId, rootAtCall);
+    } catch {
+      // Root activation is best-effort; a later selection advances the generation.
     }
   }, [bindRoot]);
 
