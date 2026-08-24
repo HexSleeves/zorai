@@ -22,6 +22,13 @@ import { CodeThreadHistoryMenu, type CodeThreadHistoryEntry } from "./CodeThread
 
 const ACTIVE_GOAL_STATUSES = new Set(["queued", "planning", "running", "paused"]);
 
+/**
+ * Module-level empty fallback so the projectThreadIds selector never returns
+ * a fresh array reference per snapshot (that re-renders forever — React
+ * error #185 — because useSyncExternalStore compares snapshots by identity).
+ */
+const NO_PROJECT_THREADS: string[] = [];
+
 export function CodeAgentPane() {
   const runtime = useAgentChatPanelRuntime();
   const activeThreadId = useAgentStore((state) => state.activeThreadId);
@@ -31,6 +38,11 @@ export function CodeAgentPane() {
   const hydrated = useWorkspaceContextStore((state) => state.hydrated);
   const bindRoot = useWorkspaceContextStore((state) => state.bindRoot);
   const root = useCodeWorkspaceBindingStore((state) => state.lastRoot);
+  const threadsByRoot = useCodeWorkspaceBindingStore((state) => state.threadsByRoot);
+  const projectThreadIds = useMemo(
+    () => (root ? threadsByRoot[root] ?? NO_PROJECT_THREADS : NO_PROJECT_THREADS),
+    [root, threadsByRoot],
+  );
   const readState = useThreadReadStateStore((state) => state.lastReadAtByThread);
   const operatorQuestion = useOperatorQuestionStore((state) => state.question);
   const fetchThreadList = runtime.fetchThreadList;
@@ -65,9 +77,13 @@ export function CodeAgentPane() {
     if (!root || !activeThread?.daemonThreadId) return;
     const context = contextsByThreadId[activeThread.id];
     if (context?.root !== root) return;
-    useCodeWorkspaceBindingStore.getState().bindThreadToRoot(root, activeThread.daemonThreadId);
+    useCodeWorkspaceBindingStore.getState().recordProjectThread(root, activeThread.daemonThreadId);
   }, [activeThread, contextsByThreadId, root]);
 
+  const allMessagesByThread = runtime.allMessagesByThread;
+  const activeRuntimeThreadId = runtime.activeThreadId;
+  const isStreamingResponse = runtime.isStreamingResponse;
+  const goalRunsForTrace = runtime.goalRunsForTrace;
   const entries = useMemo(() => {
     if (!hydrated) return [];
     return projectThreadsForRoot({
@@ -75,22 +91,51 @@ export function CodeAgentPane() {
       localThreads,
       daemonThreads,
       contextsByLocalThreadId: contextsByThreadId,
+      projectThreadIds,
     }).map((entry): CodeThreadHistoryEntry => {
-      const evidence = evidenceForEntry(entry, runtime, operatorQuestion?.threadId ?? null, readState, tasks);
+      const evidence = evidenceForEntry(
+        entry,
+        {
+          allMessagesByThread,
+          activeThreadId: activeRuntimeThreadId,
+          isStreamingResponse,
+          goalRunsForTrace,
+        },
+        operatorQuestion?.threadId ?? null,
+        readState,
+        tasks,
+      );
       return {
         ...entry,
         latestCompletionAt: evidence.latestCompletionAt,
         status: resolveCodeProjectThreadStatus(evidence),
       };
     });
-  }, [contextsByThreadId, daemonThreads, hydrated, localThreads, operatorQuestion?.threadId, readState, root, runtime, tasks]);
+  }, [
+    allMessagesByThread,
+    activeRuntimeThreadId,
+    contextsByThreadId,
+    daemonThreads,
+    goalRunsForTrace,
+    hydrated,
+    isStreamingResponse,
+    localThreads,
+    operatorQuestion?.threadId,
+    projectThreadIds,
+    readState,
+    root,
+    tasks,
+  ]);
 
   useEffect(() => {
     if (!activeThread) return;
     const entry = entries.find((candidate) => candidate.localThread.id === activeThread.id);
     if (!entry?.latestCompletionAt) return;
     const key = threadReadKey(entry.thread);
-    if (key) useThreadReadStateStore.getState().markRead(key, entry.latestCompletionAt);
+    if (!key) return;
+    const lastReadAt = useThreadReadStateStore.getState().lastReadAt(key) ?? 0;
+    if (entry.latestCompletionAt <= lastReadAt) return;
+    useThreadReadStateStore.getState().markRead(key, entry.latestCompletionAt);
   }, [activeThread, entries]);
 
   const createProjectThread = () => {
@@ -105,6 +150,7 @@ export function CodeAgentPane() {
       agentName: responder.name,
     });
     bindRoot(localId, root);
+    useCodeWorkspaceBindingStore.getState().recordProjectThread(root, localId);
     runtime.openThread(localId);
     setError(null);
   };
@@ -120,7 +166,7 @@ export function CodeAgentPane() {
       return;
     }
     if (root && target) {
-      useCodeWorkspaceBindingStore.getState().bindThreadToRoot(root, target);
+      useCodeWorkspaceBindingStore.getState().recordProjectThread(root, target);
     }
   };
 
@@ -159,7 +205,12 @@ export function CodeAgentPane() {
 
 function evidenceForEntry(
   entry: CodeProjectThreadEntry,
-  runtime: ReturnType<typeof useAgentChatPanelRuntime>,
+  runtime: {
+    allMessagesByThread: ReturnType<typeof useAgentChatPanelRuntime>["allMessagesByThread"];
+    activeThreadId: ReturnType<typeof useAgentChatPanelRuntime>["activeThreadId"];
+    isStreamingResponse: ReturnType<typeof useAgentChatPanelRuntime>["isStreamingResponse"];
+    goalRunsForTrace: ReturnType<typeof useAgentChatPanelRuntime>["goalRunsForTrace"];
+  },
   questionThreadId: string | null,
   readState: Record<string, number>,
   tasks: AgentQueueTask[],

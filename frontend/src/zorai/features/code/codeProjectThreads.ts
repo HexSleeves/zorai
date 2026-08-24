@@ -26,6 +26,8 @@ export type ProjectThreadsForRootInput = {
   localThreads: AgentThread[];
   daemonThreads: AgentThread[];
   contextsByLocalThreadId: Record<string, ThreadWorkspaceContext>;
+  /** Explicit project-thread membership for the root (daemon or local ids). */
+  projectThreadIds: string[];
 };
 
 export function actualThreadResponder(thread: AgentThread): { id: string; name: string } {
@@ -55,9 +57,17 @@ export function projectThreadsForRoot({
   localThreads,
   daemonThreads,
   contextsByLocalThreadId,
+  projectThreadIds,
 }: ProjectThreadsForRootInput): CodeProjectThreadEntry[] {
   const canonicalRoot = root?.trim();
   if (!canonicalRoot) return [];
+
+  // Membership is explicit (recorded by the Code surface), never inferred
+  // from context roots: ordinary threads that merely viewed the same folder
+  // must not appear in project history.
+  const members = new Set(projectThreadIds.map((id) => id.trim()).filter(Boolean));
+  if (members.size === 0) return [];
+
   const daemonById = new Map<string, AgentThread>();
   for (const thread of daemonThreads) {
     const id = thread.daemonThreadId?.trim() || thread.id.trim();
@@ -65,6 +75,7 @@ export function projectThreadsForRoot({
   }
 
   return localThreads
+    .filter((thread) => members.has(thread.daemonThreadId?.trim() ?? "") || members.has(thread.id))
     .filter((thread) => contextsByLocalThreadId[thread.id]?.root === canonicalRoot)
     .map((localThread) => {
       const daemonId = localThread.daemonThreadId?.trim();

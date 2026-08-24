@@ -1418,6 +1418,7 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
+  background: var(--zorai-bg-surface);
 }
 
 .zorai-thread-composer {
@@ -4184,7 +4185,9 @@ button.zorai-composer-context-chip { cursor: pointer; }
   min-width: 0;
   max-height: 36vh;
   border-top: 1px solid var(--zorai-border);
-  background: var(--zorai-bg-panel);
+  padding: 4px;
+  background: var(--zorai-panel);
+  border-radius: 16px 16px 0 0;
 }
 
 .zorai-compact-session__row {
@@ -4236,7 +4239,6 @@ button.zorai-composer-context-chip { cursor: pointer; }
 .zorai-compact-session__keep {
   height: 22px;
   padding: 0 8px;
-  border: 1px solid var(--zorai-accent);
   border-radius: 999px;
   color: var(--zorai-accent);
   font: 11px var(--font-ui);
@@ -4251,7 +4253,6 @@ button.zorai-composer-context-chip { cursor: pointer; }
 .zorai-compact-session__reject {
   height: 22px;
   padding: 0 8px;
-  border: 1px solid var(--danger);
   border-radius: 999px;
   color: var(--danger);
   font: 11px var(--font-ui);

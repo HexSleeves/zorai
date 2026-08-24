@@ -82,7 +82,7 @@ export function CodeView({
         }
       }
 
-      if (mappedDaemonThreadId) bindings.removeRootBinding(root.root);
+      if (mappedDaemonThreadId) bindings.forgetProjectThread(root.root, mappedDaemonThreadId);
       const localId = activeRuntime.createThread({
         workspaceId: activeRuntime.activeWorkspace?.id ?? null,
         title: `Code · ${root.name}`,
@@ -103,10 +103,11 @@ export function CodeView({
     const localId = codeThreadLocalIdRef.current;
     if (!boundRoot || !localId) return;
     const local = runtime.threads.find((thread) => thread.id === localId);
-    if (!local?.daemonThreadId) return;
+    if (!local) return;
     const localContext = useWorkspaceContextStore.getState().byThreadId[localId];
     if (localContext?.root !== boundRoot) return;
-    useCodeWorkspaceBindingStore.getState().bindThreadToRoot(boundRoot, local.daemonThreadId);
+    // Record explicit project-thread membership (daemon id once assigned).
+    useCodeWorkspaceBindingStore.getState().recordProjectThread(boundRoot, local.daemonThreadId ?? local.id);
   }, [boundRoot, runtime.threads]);
 
   const handleRootSelected = useCallback<CodeOpenWorkspaceBoundary>(

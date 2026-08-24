@@ -932,8 +932,13 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     const root = openedRoot?.trim();
     if (!root || root === context?.root) return;
     setRootInput(root);
-    if (!activeThreadId || !bridge?.workspaceOpen) return;
+    // The Code surface passes its bound root down; this workbench must not
+    // hijack whatever thread happens to be active (e.g. a thread opened from
+    // the global Threads surface) and rebind it to the code root. Opening a
+    // root here is only valid for a thread that has no root context yet.
+    if (context?.root || !activeThreadId || !bridge?.workspaceOpen) return;
     void bridge.workspaceOpen(root).then(async (opened) => {
+      if (useAgentStore.getState().activeThreadId !== activeThreadId) return;
       bindRoot(activeThreadId, opened.root);
       setRootInput(opened.root);
       await refreshRoot(opened.root);

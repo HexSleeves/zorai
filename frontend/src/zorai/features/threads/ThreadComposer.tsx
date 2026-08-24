@@ -25,7 +25,14 @@ import { ManagedSecurityShield } from "./ManagedSecurityShield";
 import { ThreadEffortGauge } from "./ThreadEffortGauge";
 import { AttachmentTiles, composerAttachmentToTile } from "./attachmentTiles";
 import { buildHandoffDefaults, buildThreadAgentOptions } from "./threadHandoffModel";
-import { composerTargetValue, parseComposerTarget, targetAfterAcceptedDispatch, type ComposerTarget } from "./composerTargetModel";
+import {
+  canAssignComposerOwnerDirectly,
+  composerTargetValue,
+  parseComposerTarget,
+  resolveComposerSendRoute,
+  targetAfterAcceptedDispatch,
+  type ComposerTarget,
+} from "./composerTargetModel";
 import { BUILTIN_WORKSPACE_PERSONAS } from "../workspaces/workspaceActorPicker";
 
 export function ThreadComposer({
@@ -42,7 +49,10 @@ export function ThreadComposer({
   const toggleAttachedFile = useWorkspaceContextStore((state) => state.toggleAttachedFile);
   const [contextPreviewOpen, setContextPreviewOpen] = useState(false);
   const subAgents = useAgentStore((state) => state.subAgents);
-  const activeResponderId = runtime.activeThread?.threadHandoffState?.activeAgentId ?? runtime.activeThread?.agent_name ?? "swarog";
+  const activeResponderId = runtime.activeThread?.threadHandoffState?.activeAgentId
+    ?? runtime.activeThread?.targetAgentId
+    ?? runtime.activeThread?.agent_name
+    ?? "swarog";
   const handoffAgents = useMemo(() => buildThreadAgentOptions(
     [
       { id: "swarog", name: "Svarog" },
@@ -55,8 +65,10 @@ export function ThreadComposer({
   const composerTargets: ComposerTarget[] = useMemo(() => [
     { kind: "current", id: "current", label: runtime.activeThread?.agent_name || "Current responder" },
     ...handoffAgents.map((agent) => ({ kind: "agent" as const, id: agent.id, label: agent.name })),
-    ...subAgents.filter((agent) => agent.enabled).map((agent) => ({ kind: "subagent" as const, id: agent.id, label: agent.name })),
-  ], [handoffAgents, runtime.activeThread?.agent_name, subAgents]);
+    ...subAgents
+      .filter((agent) => agent.enabled && agent.id !== activeResponderId)
+      .map((agent) => ({ kind: "subagent" as const, id: agent.id, label: agent.name })),
+  ], [activeResponderId, handoffAgents, runtime.activeThread?.agent_name, subAgents]);
   const [composerTarget, setComposerTarget] = useState<ComposerTarget>(composerTargets[0]);
   const [targetPending, setTargetPending] = useState(false);
   const [targetError, setTargetError] = useState<string | null>(null);
@@ -82,6 +94,7 @@ export function ThreadComposer({
   );
   const queue = useDaemonPromptQueue(runtime.activeThread?.daemonThreadId);
   const canSend = Boolean(runtime.input.trim() || attachments.length > 0);
+  const assignOwnerDirectly = canAssignComposerOwnerDirectly(runtime.activeThread, runtime.messages.length);
   const ttsAvailable = agentSettings.audio_tts_enabled && Boolean(getBridge()?.agentTextToSpeech);
   const updateAgentSetting = useAgentStore((state) => state.updateAgentSetting);
   const voiceCaptureAvailable = agentSettings.audio_stt_enabled
@@ -129,7 +142,14 @@ export function ThreadComposer({
     if (!payload.text && !payload.contentBlocksJson) return;
     setTargetError(null);
 
-    if (composerTarget.kind === "subagent") {
+    const sendRoute = resolveComposerSendRoute(composerTarget, assignOwnerDirectly);
+    if (sendRoute.action === "assign-owner" && runtime.activeThread) {
+      useAgentStore.getState().setThreadOwner(runtime.activeThread.id, {
+        agentId: sendRoute.agentId,
+        agentName: sendRoute.agentName,
+      });
+      setComposerTarget({ kind: "current", id: "current", label: sendRoute.agentName });
+    } else if (sendRoute.action === "spawn-subagent") {
       setTargetPending(true);
       const result = await runtime.spawnSubagent({
         title: composerTarget.label,
@@ -146,9 +166,7 @@ export function ThreadComposer({
       setAttachments([]);
       setComposerTarget(targetAfterAcceptedDispatch(composerTarget));
       return;
-    }
-
-    if (composerTarget.kind === "agent") {
+    } else if (sendRoute.action === "handoff-agent") {
       setTargetPending(true);
       const defaults = buildHandoffDefaults(composerTarget.label);
       const result = await runtime.pushHandoff({
@@ -408,10 +426,23 @@ export function ThreadComposer({
               <label className="zorai-composer-target">
                 <select
                   className="zorai-input"
-                  aria-label="Choose agent or subagent"
+                  aria-label={assignOwnerDirectly ? "Choose thread owner" : "Choose agent or subagent"}
                   value={composerTargetValue(composerTarget)}
                   disabled={targetPending || isStreamingResponse}
-                  onChange={(event) => setComposerTarget(parseComposerTarget(event.target.value, composerTargets))}
+                  onChange={(event) => {
+                    const next = parseComposerTarget(event.target.value, composerTargets);
+                    const route = resolveComposerSendRoute(next, assignOwnerDirectly);
+                    if (route.action === "assign-owner" && runtime.activeThread) {
+                      useAgentStore.getState().setThreadOwner(runtime.activeThread.id, {
+                        agentId: route.agentId,
+                        agentName: route.agentName,
+                      });
+                      setComposerTarget({ kind: "current", id: "current", label: route.agentName });
+                      setTargetError(null);
+                      return;
+                    }
+                    setComposerTarget(next);
+                  }}
                 >
                   <optgroup label="Responder">
                     {composerTargets.filter((target) => target.kind === "current").map((target) => <option key={composerTargetValue(target)} value={composerTargetValue(target)}>{target.label}</option>)}
@@ -419,7 +450,7 @@ export function ThreadComposer({
                   <optgroup label="Agents">
                     {composerTargets.filter((target) => target.kind === "agent").map((target) => <option key={composerTargetValue(target)} value={composerTargetValue(target)}>{target.label}</option>)}
                   </optgroup>
-                  <optgroup label="Delegate to subagent">
+                  <optgroup label={assignOwnerDirectly ? "Subagents" : "Delegate to subagent"}>
                     {composerTargets.filter((target) => target.kind === "subagent").map((target) => <option key={composerTargetValue(target)} value={composerTargetValue(target)}>{target.label}</option>)}
                   </optgroup>
                 </select>

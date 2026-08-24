@@ -514,6 +514,10 @@ export function serializeThread(thread: AgentThread): AgentDbThreadRecord {
       upstreamAssistantId: thread.upstreamAssistantId ?? null,
       threadParticipants: thread.threadParticipants ?? [],
       queuedParticipantSuggestions: thread.queuedParticipantSuggestions ?? [],
+      profileProvider: thread.profileProvider ?? null,
+      profileModel: thread.profileModel ?? null,
+      profileReasoningEffort: thread.profileReasoningEffort ?? null,
+      profileContextWindowTokens: thread.profileContextWindowTokens ?? null,
     }),
   };
 }
@@ -603,6 +607,12 @@ export function deserializeThread(thread: AgentDbThreadRecord): AgentThread {
     queuedParticipantSuggestions: Array.isArray(metadata.queuedParticipantSuggestions)
       ? metadata.queuedParticipantSuggestions as AgentThread["queuedParticipantSuggestions"]
       : [],
+    profileProvider: typeof metadata.profileProvider === "string" ? metadata.profileProvider : null,
+    profileModel: typeof metadata.profileModel === "string" ? metadata.profileModel : null,
+    profileReasoningEffort: typeof metadata.profileReasoningEffort === "string" ? metadata.profileReasoningEffort : null,
+    profileContextWindowTokens: typeof metadata.profileContextWindowTokens === "number" && Number.isFinite(metadata.profileContextWindowTokens)
+      ? Math.max(1, Math.trunc(metadata.profileContextWindowTokens))
+      : null,
   };
 }
 

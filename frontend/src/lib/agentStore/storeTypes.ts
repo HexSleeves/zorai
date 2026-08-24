@@ -90,6 +90,7 @@ export interface AgentState {
   setThreadTodos: (threadId: string, todos: AgentTodoItem[]) => void;
   getThreadTodos: (threadId: string) => AgentTodoItem[];
   setThreadDaemonId: (threadId: string, daemonThreadId: string | null) => void;
+  setThreadOwner: (threadId: string, owner: { agentId: string; agentName: string }) => void;
   updateThreadTitle: (threadId: string, title: string) => void;
   toggleAgentPanel: () => void;
   setSearchQuery: (query: string) => void;

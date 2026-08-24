@@ -172,10 +172,10 @@ export function ThreadCompactSessionBar() {
             </button>
             <div className="zorai-compact-session__actions">
               <button type="button" className="zorai-compact-session__keep" disabled={Boolean(busyPath)} onClick={() => void keepAll()}>
-                Keep
+                Keep All
               </button>
               <button type="button" className="zorai-compact-session__reject" disabled={Boolean(busyPath)} onClick={() => void rejectAll()}>
-                Reject
+                Reject All
               </button>
               <button type="button" className="zorai-compact-session__review" onClick={() => setOpenSection("files")}>
                 Review

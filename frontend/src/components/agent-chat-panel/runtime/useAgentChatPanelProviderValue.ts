@@ -46,6 +46,7 @@ import {
 } from "@/lib/agent-client/pinnedMessageBudget";
 
 const EMPTY_MESSAGES: ReturnType<typeof useAgentStore.getState>["messages"][string] = [];
+const EMPTY_TODOS: ReturnType<typeof useAgentStore.getState>["todos"][string] = [];
 
 type SpawnedAgentNavigationState = {
   tree: SpawnedAgentTree<AgentRun> | null;
@@ -548,9 +549,12 @@ export function useAgentChatPanelProviderValue(): {
   }, [refreshSpawnedAgentRuns]);
 
   const messages = useMemo(() => storeMessages ?? EMPTY_MESSAGES, [storeMessages]);
-  const todos = useMemo(() => storeTodos ?? [], [storeTodos]);
+  const todos = useMemo(() => storeTodos ?? EMPTY_TODOS, [storeTodos]);
   const scopePaneId = activeThread?.paneId ?? activePaneId;
-  const pendingApprovals = approvals.filter((approval) => approval.status === "pending");
+  const pendingApprovals = useMemo(
+    () => approvals.filter((approval) => approval.status === "pending"),
+    [approvals],
+  );
   const scopeController = getTerminalController(scopePaneId);
   const usageMessageCount = useMemo(
     () => Object.values(allMessagesByThread)

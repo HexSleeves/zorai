@@ -70,14 +70,50 @@ describe("actualThreadResponder", () => {
 });
 
 describe("projectThreadsForRoot", () => {
-  it("includes only exact canonical-root associations", () => {
+  it("includes only recorded project threads with an exact canonical-root association", () => {
     const result = projectThreadsForRoot({
       root: "/work/a",
       localThreads: [thread({ id: "a" }), thread({ id: "b" }), thread({ id: "none" })],
       daemonThreads: [],
       contextsByLocalThreadId: { a: context("/work/a"), b: context("/work/b") },
+      projectThreadIds: ["a"],
     });
     expect(result.map((entry) => entry.localThread.id)).toEqual(["a"]);
+  });
+
+  it("excludes ordinary threads that merely viewed the same root", () => {
+    // Regression guard: every thread the daemon listed used to appear in the
+    // Code project-thread history because context-root equality alone was
+    // treated as membership.
+    const result = projectThreadsForRoot({
+      root: "/work/a",
+      localThreads: [thread({ id: "project" }), thread({ id: "unrelated" })],
+      daemonThreads: [],
+      contextsByLocalThreadId: { project: context("/work/a"), unrelated: context("/work/a") },
+      projectThreadIds: ["project"],
+    });
+    expect(result.map((entry) => entry.localThread.id)).toEqual(["project"]);
+  });
+
+  it("matches recorded daemon ids to local threads", () => {
+    const result = projectThreadsForRoot({
+      root: "/work/a",
+      localThreads: [thread({ id: "local", daemonThreadId: "daemon-1" }), thread({ id: "other" })],
+      daemonThreads: [],
+      contextsByLocalThreadId: { local: context("/work/a"), other: context("/work/a") },
+      projectThreadIds: ["daemon-1"],
+    });
+    expect(result.map((entry) => entry.localThread.id)).toEqual(["local"]);
+  });
+
+  it("returns nothing when no project threads are recorded for the root", () => {
+    expect(projectThreadsForRoot({
+      root: "/work/a",
+      localThreads: [thread({ id: "a" })],
+      daemonThreads: [],
+      contextsByLocalThreadId: { a: context("/work/a") },
+      projectThreadIds: [],
+    })).toEqual([]);
   });
 
   it("overlays daemon metadata by daemon id and sorts newest first", () => {
@@ -89,6 +125,7 @@ describe("projectThreadsForRoot", () => {
       localThreads: [localA, localB],
       daemonThreads: [daemonA],
       contextsByLocalThreadId: { a: context("/work/a"), b: context("/work/a") },
+      projectThreadIds: ["d1", "d2"],
     });
     expect(result.map((entry) => entry.thread.title)).toEqual(["Remote A", "Local B"]);
     expect(result[0]?.localThread.id).toBe("a");
@@ -101,6 +138,7 @@ describe("projectThreadsForRoot", () => {
       localThreads: [local],
       daemonThreads: [],
       contextsByLocalThreadId: { local: context("/work/a") },
+      projectThreadIds: ["local"],
     })).toHaveLength(1);
   });
 });
@@ -112,6 +150,7 @@ describe("filterCodeProjectThreads", () => {
       localThreads: [thread({ id: "a", title: undefined as unknown as string, lastMessagePreview: undefined as unknown as string })],
       daemonThreads: [],
       contextsByLocalThreadId: { a: context("/work/a") },
+      projectThreadIds: ["a"],
     });
     expect(filterCodeProjectThreads(entries, "missing")).toEqual([]);
   });
@@ -125,6 +164,7 @@ describe("filterCodeProjectThreads", () => {
       ],
       daemonThreads: [],
       contextsByLocalThreadId: { new: context("/work/a"), old: context("/work/a") },
+      projectThreadIds: ["new", "old"],
     });
     expect(filterCodeProjectThreads(entries, "perun").map((entry) => entry.localThread.id)).toEqual(["new"]);
     expect(filterCodeProjectThreads(entries, "palette").map((entry) => entry.localThread.id)).toEqual(["old"]);

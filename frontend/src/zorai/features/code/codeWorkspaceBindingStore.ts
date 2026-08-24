@@ -8,24 +8,40 @@ import {
 } from "zustand/middleware";
 
 export const CODE_WORKSPACE_BINDING_STORE_NAME = "zorai-code-workspace-bindings";
-export const CODE_WORKSPACE_BINDING_STORE_VERSION = 1;
+export const CODE_WORKSPACE_BINDING_STORE_VERSION = 2;
+
+/**
+ * Upper bound on remembered project threads per root. The history menu is a
+ * working set, not an archive; daemon threads stay reachable through the
+ * Threads surface even after they fall off this list.
+ */
+export const CODE_PROJECT_THREADS_PER_ROOT_MAX = 40;
 
 export type CodeWorkspaceBindings = {
   /** Canonical validated workspace root that was most recently opened. */
   lastRoot: string | null;
-  /** Maps each canonical workspace root to its daemon thread id. */
-  threadByRoot: Record<string, string>;
+  /**
+   * Project thread ids per canonical workspace root, newest first. Ids may be
+   * daemon thread ids or renderer-local ids for threads that have not been
+   * promoted to daemon threads yet; the daemon id is recorded once assigned.
+   */
+  threadsByRoot: Record<string, string[]>;
 };
 
 export type CodeWorkspaceBindingActions = {
-  /** Associate a workspace root with a daemon thread id (replaces any prior mapping). */
-  bindThreadToRoot: (root: string, threadId: string) => void;
-  /** Remove the thread mapping for a root without touching the thread itself. */
+  /** Record a thread as a project thread for a root (newest first, deduped). */
+  recordProjectThread: (root: string, threadId: string) => void;
+  /** Remove one thread from a root's project-thread list without touching others. */
+  forgetProjectThread: (root: string, threadId: string) => void;
+  /** Remove the project-thread list for a root without touching the threads. */
   removeRootBinding: (root: string) => void;
-  /** Close a root: drop its thread mapping and clear lastRoot when it matches. */
+  /** Close a root: drop its project-thread list and clear lastRoot when it matches. */
   closeRoot: (root: string) => void;
   setLastRoot: (root: string | null) => void;
+  /** Most recently recorded project thread id for a root, if any. */
   threadForRoot: (root: string) => string | null;
+  /** Copy of the recorded project thread ids for a root, newest first. */
+  projectThreadIdsForRoot: (root: string) => string[];
   /** Replace persisted bindings from an explicit hydrate source. */
   hydrate: (bindings: Partial<CodeWorkspaceBindings>) => void;
 };
@@ -45,30 +61,62 @@ export function trimCodeWorkspaceRoot(root: unknown): string | null {
   return trimmed || null;
 }
 
+function normalizeThreadIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const ids: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") continue;
+    const id = entry.trim();
+    if (!id || seen.has(id)) continue;
+    seen.add(id);
+    ids.push(id);
+    if (ids.length >= CODE_PROJECT_THREADS_PER_ROOT_MAX) break;
+  }
+  return ids;
+}
+
+/**
+ * Normalize any persisted or injected binding payload into the current shape.
+ * Accepts the v2 `threadsByRoot` lists and folds the v1 single-thread
+ * `threadByRoot` mapping into them so upgraded installs keep their canonical
+ * project thread per root. Unknown fields are dropped, roots are trimmed,
+ * malformed ids are ignored, duplicates collapse, and lists cap at
+ * CODE_PROJECT_THREADS_PER_ROOT_MAX.
+ */
 export function normalizeCodeWorkspaceBindings(input: unknown): CodeWorkspaceBindings {
-  const raw = (input ?? {}) as Partial<CodeWorkspaceBindings>;
-  const threadByRoot: Record<string, string> = {};
-  const rawThreadByRoot = raw.threadByRoot;
-  if (rawThreadByRoot && typeof rawThreadByRoot === "object") {
-    for (const [root, threadId] of Object.entries(rawThreadByRoot)) {
+  const raw = (input ?? {}) as Partial<CodeWorkspaceBindings> & { threadByRoot?: unknown };
+  const threadsByRoot: Record<string, string[]> = {};
+
+  if (raw.threadsByRoot && typeof raw.threadsByRoot === "object") {
+    for (const [root, ids] of Object.entries(raw.threadsByRoot)) {
       const trimmedRoot = trimCodeWorkspaceRoot(root);
-      if (trimmedRoot && typeof threadId === "string" && threadId.trim()) {
-        threadByRoot[trimmedRoot] = threadId;
-      }
+      const normalized = normalizeThreadIds(ids);
+      if (trimmedRoot && normalized.length > 0) threadsByRoot[trimmedRoot] = normalized;
     }
   }
+
+  if (raw.threadByRoot && typeof raw.threadByRoot === "object") {
+    for (const [root, threadId] of Object.entries(raw.threadByRoot)) {
+      const trimmedRoot = trimCodeWorkspaceRoot(root);
+      if (!trimmedRoot || typeof threadId !== "string" || !threadId.trim()) continue;
+      const id = threadId.trim();
+      const existing = threadsByRoot[trimmedRoot] ?? [];
+      if (!existing.includes(id)) threadsByRoot[trimmedRoot] = [id, ...existing];
+    }
+  }
+
   return {
     lastRoot: trimCodeWorkspaceRoot(raw.lastRoot),
-    threadByRoot,
+    threadsByRoot,
   };
 }
 
 /**
- * Explicit persist migration. Zustand invokes this only when the stored
- * version differs from `CODE_WORKSPACE_BINDING_STORE_VERSION`; older and
- * unknown payloads are normalized into the current shape (unknown fields are
- * dropped, roots are trimmed, malformed thread ids are ignored). A future
- * version bump folds its own transform in here.
+ * Explicit persist migration. Zustand invokes this when the stored version
+ * differs from `CODE_WORKSPACE_BINDING_STORE_VERSION`; v1 payloads (single
+ * `threadByRoot` mapping) and older/unknown payloads are normalized into the
+ * current list shape. A future version bump folds its own transform in here.
  */
 export function migrateCodeWorkspaceBindings(
   persistedState: unknown,
@@ -82,36 +130,60 @@ function createCodeWorkspaceBindingActions(
   get: () => CodeWorkspaceBindingStore,
 ): CodeWorkspaceBindingActions {
   return {
-    bindThreadToRoot(root, threadId) {
+    recordProjectThread(root, threadId) {
       const trimmedRoot = trimCodeWorkspaceRoot(root);
       const trimmedThreadId = typeof threadId === "string" ? threadId.trim() : "";
       if (!trimmedRoot || !trimmedThreadId) return;
+      const { threadsByRoot } = get();
+      const existing = threadsByRoot[trimmedRoot] ?? [];
+      if (existing[0] === trimmedThreadId) return;
+      const next = [
+        trimmedThreadId,
+        ...existing.filter((id) => id !== trimmedThreadId),
+      ].slice(0, CODE_PROJECT_THREADS_PER_ROOT_MAX);
       set({
-        threadByRoot: {
-          ...get().threadByRoot,
-          [trimmedRoot]: trimmedThreadId,
+        threadsByRoot: {
+          ...threadsByRoot,
+          [trimmedRoot]: next,
         },
       });
+    },
+
+    forgetProjectThread(root, threadId) {
+      const trimmedRoot = trimCodeWorkspaceRoot(root);
+      const trimmedThreadId = typeof threadId === "string" ? threadId.trim() : "";
+      if (!trimmedRoot || !trimmedThreadId) return;
+      const { threadsByRoot } = get();
+      const existing = threadsByRoot[trimmedRoot];
+      if (!existing || !existing.includes(trimmedThreadId)) return;
+      const next = { ...threadsByRoot };
+      const filtered = existing.filter((id) => id !== trimmedThreadId);
+      if (filtered.length > 0) {
+        next[trimmedRoot] = filtered;
+      } else {
+        delete next[trimmedRoot];
+      }
+      set({ threadsByRoot: next });
     },
 
     removeRootBinding(root) {
       const trimmedRoot = trimCodeWorkspaceRoot(root);
       if (!trimmedRoot) return;
-      const { threadByRoot } = get();
-      if (!(trimmedRoot in threadByRoot)) return;
-      const next = { ...threadByRoot };
+      const { threadsByRoot } = get();
+      if (!(trimmedRoot in threadsByRoot)) return;
+      const next = { ...threadsByRoot };
       delete next[trimmedRoot];
-      set({ threadByRoot: next });
+      set({ threadsByRoot: next });
     },
 
     closeRoot(root) {
       const trimmedRoot = trimCodeWorkspaceRoot(root);
       if (!trimmedRoot) return;
-      const { threadByRoot, lastRoot } = get();
-      const next = { ...threadByRoot };
+      const { threadsByRoot, lastRoot } = get();
+      const next = { ...threadsByRoot };
       delete next[trimmedRoot];
       set({
-        threadByRoot: next,
+        threadsByRoot: next,
         lastRoot: lastRoot === trimmedRoot ? null : lastRoot,
       });
     },
@@ -123,21 +195,27 @@ function createCodeWorkspaceBindingActions(
     threadForRoot(root) {
       const trimmedRoot = trimCodeWorkspaceRoot(root);
       if (!trimmedRoot) return null;
-      return get().threadByRoot[trimmedRoot] ?? null;
+      return get().threadsByRoot[trimmedRoot]?.[0] ?? null;
+    },
+
+    projectThreadIdsForRoot(root) {
+      const trimmedRoot = trimCodeWorkspaceRoot(root);
+      if (!trimmedRoot) return [];
+      return [...(get().threadsByRoot[trimmedRoot] ?? [])];
     },
 
     hydrate(bindings) {
       const normalized = normalizeCodeWorkspaceBindings(bindings);
       set({
         lastRoot: normalized.lastRoot,
-        threadByRoot: normalized.threadByRoot,
+        threadsByRoot: normalized.threadsByRoot,
       });
     },
   };
 }
 
 function createInitialCodeWorkspaceBindings(): CodeWorkspaceBindings {
-  return { lastRoot: null, threadByRoot: {} };
+  return { lastRoot: null, threadsByRoot: {} };
 }
 
 /**
@@ -153,7 +231,7 @@ function createCodeWorkspaceBindingPersistConfig(
     storage: createJSONStorage<CodeWorkspaceBindings>(getStorage),
     partialize: (state: CodeWorkspaceBindingStore): CodeWorkspaceBindings => ({
       lastRoot: state.lastRoot,
-      threadByRoot: state.threadByRoot,
+      threadsByRoot: state.threadsByRoot,
     }),
     merge: (persisted: unknown, current: CodeWorkspaceBindingStore): CodeWorkspaceBindingStore => ({
       ...current,

@@ -3,6 +3,12 @@ import { useAgentStore } from "@/lib/agentStore";
 import type { AgentProviderId, AgentThread } from "@/lib/agentStore";
 import { MANAGED_SECURITY_LEVELS } from "@/lib/agentStore/settings";
 import { getBridge } from "@/lib/bridge";
+import {
+  getAgentDbApi,
+  persistDaemonThreadMap,
+  serializeThread,
+  shouldPersistHistory,
+} from "@/lib/agentStore/history";
 import { isSvarogOwner, RAROG_AGENT_ID, resolveThreadOwnerAgentId } from "./threadOwner";
 
 export const MIN_CONTEXT_WINDOW_TOKENS = 1_000;
@@ -43,9 +49,20 @@ export function patchThreadProfile(
   threadId: string,
   patch: Partial<Pick<AgentThread, "profileProvider" | "profileModel" | "profileReasoningEffort" | "profileContextWindowTokens">>,
 ): void {
-  useAgentStore.setState((state) => ({
-    threads: state.threads.map((thread) => (thread.id === threadId ? { ...thread, ...patch } : thread)),
-  }));
+  useAgentStore.setState((state) => {
+    let updatedThread = null as AgentThread | null;
+    const threads = state.threads.map((thread) => {
+      if (thread.id !== threadId) return thread;
+      updatedThread = { ...thread, ...patch };
+      return updatedThread;
+    });
+    if (!updatedThread) return state;
+    if (shouldPersistHistory(state.agentSettings.agent_backend)) {
+      persistDaemonThreadMap(threads);
+      void getAgentDbApi()?.dbCreateThread?.(serializeThread(updatedThread));
+    }
+    return { threads };
+  });
 }
 
 function daemonEffortValue(effort: string): string {
@@ -60,6 +77,7 @@ export async function applyThreadProviderModel(
   const bridge = getBridge();
   const ownerId = ownerAgentId(thread);
   const nextModel = model.trim() || getDefaultModelForProvider(providerId as AgentProviderId);
+  patchThreadProfile(thread.id, { profileProvider: providerId, profileModel: nextModel });
   if (isSvarogOwner(ownerId)) {
     await bridge?.agentSetProviderModel?.(providerId, nextModel);
     const updateAgentSetting = useAgentStore.getState().updateAgentSetting;
@@ -74,7 +92,6 @@ export async function applyThreadProviderModel(
       await useAgentStore.getState().refreshSubAgents();
     }
   }
-  patchThreadProfile(thread.id, { profileProvider: providerId, profileModel: nextModel });
 }
 
 export async function applyThreadReasoningEffort(thread: AgentThread, effort: string): Promise<void> {

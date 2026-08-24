@@ -28,6 +28,7 @@ type ThreadActionKeys =
   | "setThreadTodos"
   | "getThreadTodos"
   | "setThreadDaemonId"
+  | "setThreadOwner"
   | "updateThreadTitle"
   | "toggleAgentPanel"
   | "setSearchQuery"
@@ -309,6 +310,36 @@ export function createThreadActions(
           thread.id === threadId ? { ...thread, daemonThreadId } : thread);
         if (shouldPersistCurrentHistory(get().agentSettings)) {
           persistDaemonThreadMap(threads);
+        }
+        return { threads };
+      });
+    },
+    setThreadOwner: (threadId, owner) => {
+      const agentId = owner.agentId.trim();
+      const agentName = owner.agentName.trim() || agentId;
+      if (!agentId) {
+        return;
+      }
+      set((state) => {
+        let updatedThread = null as AgentState["threads"][number] | null;
+        const threads = state.threads.map((thread) => {
+          if (thread.id !== threadId) {
+            return thread;
+          }
+          updatedThread = {
+            ...thread,
+            agent_name: agentName,
+            targetAgentId: agentId,
+            updatedAt: Date.now(),
+          };
+          return updatedThread;
+        });
+        if (!updatedThread) {
+          return state;
+        }
+        if (shouldPersistCurrentHistory(get().agentSettings)) {
+          persistDaemonThreadMap(threads);
+          void getAgentDbApi()?.dbCreateThread?.(serializeThread(updatedThread));
         }
         return { threads };
       });

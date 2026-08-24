@@ -287,7 +287,10 @@ pub(super) fn resolve_provider_model_switch(
     } else {
         let def = get_provider_definition(provider_id)
             .ok_or_else(|| anyhow::anyhow!("unknown provider '{provider_id}'"))?;
-        if !def.models.is_empty() && !def.models.iter().any(|entry| entry.id == model) {
+        if !provider_allows_unlisted_models(provider_id)
+            && !def.models.is_empty()
+            && !def.models.iter().any(|entry| entry.id == model)
+        {
             bail!(
                 "model '{}' is not available for provider '{}'",
                 model,

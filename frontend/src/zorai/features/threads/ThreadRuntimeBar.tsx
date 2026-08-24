@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { ModelSelector } from "@/components/settings-panel/shared";
 import { useAgentStore } from "@/lib/agentStore";
 import type { AgentProviderId, AgentThread } from "@/lib/agentStore";
@@ -16,6 +16,8 @@ export function ThreadRuntimeBar({ thread }: { thread: AgentThread }) {
   const conciergeConfig = useAgentStore((state) => state.conciergeConfig);
   const subAgents = useAgentStore((state) => state.subAgents);
   const [busy, setBusy] = useState(false);
+  const busyRef = useRef(false);
+  const pendingApplyRef = useRef<(() => Promise<void>) | null>(null);
   const providers = useMemo(() => threadProviderIds(), [agentSettings]);
   const profile = resolveThreadOwnerRuntimeProfile(thread, subAgents, agentSettings, conciergeConfig);
   const ownerId = profile.ownerId;
@@ -33,11 +35,21 @@ export function ThreadRuntimeBar({ thread }: { thread: AgentThread }) {
   const contextTokens = profile.contextWindowTokens;
 
   const run = async (action: () => Promise<void>) => {
-    if (busy) return;
+    if (busyRef.current) {
+      pendingApplyRef.current = action;
+      return;
+    }
+    busyRef.current = true;
     setBusy(true);
+    let next: (() => Promise<void>) | null = action;
     try {
-      await action();
+      while (next) {
+        pendingApplyRef.current = null;
+        await next();
+        next = pendingApplyRef.current;
+      }
     } finally {
+      busyRef.current = false;
       setBusy(false);
     }
   };

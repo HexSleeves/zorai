@@ -175,7 +175,8 @@ describe("Zorai feature surfaces", () => {
     expect(composerSource).toContain("compact = false");
     expect(composerSource).toContain("showTargetSelector ? (");
     expect(composerSource).not.toContain('<span className="sr-only">Message target</span>');
-    expect(composerSource).toContain('aria-label="Choose agent or subagent"');
+    expect(composerSource).toContain("Choose thread owner");
+    expect(composerSource).toContain("Choose agent or subagent");
     expect(composerSource).toContain('compact ? "zorai-thread-composer--compact" : ""');
     expect(threadsSource).toContain('<ThreadComposer showTargetSelector={variant === "compact"} compact={variant === "compact"} />');
     expect(styleSource).toContain(".zorai-thread-surface--compact.zorai-native-thread-surface");
@@ -197,7 +198,10 @@ describe("Zorai feature surfaces", () => {
     expect(composerSource).toContain("previousTargetThreadRef.current = activeThreadId");
     expect(composerSource).toContain("setComposerTarget(composerTargets[0])");
     expect(composerSource).toContain("[activeThreadId, composerTargets, showTargetSelector]");
+    expect(composerSource).toContain("canAssignComposerOwnerDirectly");
+    expect(composerSource).toContain("setThreadOwner");
     expect(composerSource).toContain("runtime.pushHandoff");
+    expect(composerSource).toContain("runtime.spawnSubagent");
   });
 
   it("integrates the read-through document cache and file-open trace", () => {
@@ -627,6 +631,7 @@ describe("Zorai feature surfaces", () => {
     expect(runtimeSource).toContain("Effort");
     expect(runtimeSource).toContain("Context");
     expect(runtimeSource).toContain("resolveThreadOwnerRuntimeProfile");
+    expect(runtimeSource).toContain("pendingApplyRef");
     expect(actionsSource).toContain("agentSetProviderModel");
     expect(actionsSource).toContain("agentSetTargetAgentProviderModel");
     expect(actionsSource).toContain("agentSetTargetAgentReasoningEffort");

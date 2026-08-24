@@ -39,7 +39,7 @@ export function GoalWorkspacePanel({
   useEffect(() => {
     let cancelled = false;
     if (!run?.id) {
-      setProjectionFiles([]);
+      setProjectionFiles((current) => (current.length === 0 ? current : []));
       return () => {
         cancelled = true;
       };
