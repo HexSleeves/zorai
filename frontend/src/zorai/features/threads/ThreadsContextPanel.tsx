@@ -227,8 +227,11 @@ function FilesContext({ entries, activeThreadId }: { entries: WorkContextEntry[]
           const workspaceRoot = workspaceContext?.root ?? null;
           const entryWithinWorkspace = workspaceRoot !== null && entry.path
             && (!entry.repoRoot || entry.repoRoot === workspaceRoot);
-          const canOpenInEditor = Boolean(activeThreadId && entryWithinWorkspace);
-          const title = canOpenInEditor ? "Open in editor" : "Preview file";
+          const canOpenInEditor = Boolean(activeThreadId && entryWithinWorkspace && entry.isText !== false);
+          const editorView: "diff" | "edit" = entry.kind === "repo_change" || entry.changeKind !== null ? "diff" : "edit";
+          const title = canOpenInEditor
+            ? editorView === "diff" ? "Open inline diff in editor" : "Open in editor"
+            : "Preview file";
           return (
             <button
               key={entryKey}
@@ -237,9 +240,9 @@ function FilesContext({ entries, activeThreadId }: { entries: WorkContextEntry[]
               title={title}
               onClick={() => {
                 setSelectedKey(entryKey);
-                // When a Code workspace is bound, open in the editor; otherwise fall back to preview overlay.
+                // When a Code workspace is bound, open with inline git diff in the editor; otherwise fall back to preview overlay.
                 if (canOpenInEditor && activeThreadId) {
-                  requestFileView(activeThreadId, entry.path, "edit");
+                  requestFileView(activeThreadId, entry.path, editorView);
                 } else {
                   openThreadFilePreview(entry);
                 }
