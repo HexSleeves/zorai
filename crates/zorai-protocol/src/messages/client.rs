@@ -308,4 +308,6 @@ pub enum ClientMessage {
         thread_id: String,
         prompt_id: String,
     },
+    AgentGetThreadExecutionProfile { thread_id: String },
+    AgentSetThreadExecutionProfile { thread_id: String, profile_json: String },
 }

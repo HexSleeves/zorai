@@ -398,6 +398,20 @@ where
             });
             emit_agent_event(&msg.to_string())?;
         }
+        Some(Ok(DaemonMessage::AgentThreadExecutionProfile {
+            thread_id,
+            profile_json,
+        })) => {
+            let msg = serde_json::json!({
+                "type": "thread-execution-profile",
+                "data": {
+                    "thread_id": thread_id,
+                    "profile": serde_json::from_str::<serde_json::Value>(&profile_json)
+                        .unwrap_or(serde_json::Value::Null),
+                }
+            });
+            emit_agent_event(&msg.to_string())?;
+        }
         Some(Ok(DaemonMessage::AgentConfigResponse { config_json })) => {
             let msg = serde_json::json!({"type":"config","data":serde_json::from_str::<serde_json::Value>(&config_json).unwrap_or_default()});
             emit_agent_event(&msg.to_string())?;

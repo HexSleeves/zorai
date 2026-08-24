@@ -121,6 +121,16 @@ export async function reloadDaemonThreadIntoLocalState({
   });
 }
 
+export function resolveAbsoluteMessageIndex(
+  loadedMessageStart: number | null | undefined,
+  messages: AgentMessage[],
+  messageId: string,
+): number | undefined {
+  const localIndex = messages.findIndex((message) => message.id === messageId);
+  if (localIndex < 0) return undefined;
+  return Math.max(0, loadedMessageStart ?? 0) + localIndex;
+}
+
 export async function refreshDaemonThreadMetadataIntoLocalState({
   daemonThreadId,
   setThreadTodos,

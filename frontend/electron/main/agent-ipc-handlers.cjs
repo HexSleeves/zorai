@@ -208,12 +208,26 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
             return { ok: false, thread_id: threadId, message_id: messageId, error: err?.message || String(err) };
         }
     });
-    ipcMain.handle('agent-message-feedback', async (_event, threadId, messageId, reaction) => {
+    ipcMain.handle('agent-get-thread-execution-profile', async (_event, threadId) => {
+        try {
+            return await sendAgentQuery({ type: 'get-thread-execution-profile', thread_id: threadId }, 'thread-execution-profile');
+        } catch (err) { return { thread_id: threadId, profile: null, error: err?.message || String(err) }; }
+    });
+    ipcMain.handle('agent-set-thread-execution-profile', async (_event, threadId, profile) => {
+        try {
+            return await sendAgentQuery({ type: 'set-thread-execution-profile', thread_id: threadId, profile_json: typeof profile === 'string' ? profile : JSON.stringify(profile ?? null) }, 'thread-execution-profile', 15000);
+        } catch (err) { return { thread_id: threadId, profile: profile ?? null, error: err?.message || String(err) }; }
+    });
+    ipcMain.handle('agent-force-compact', async (_event, threadId) => { try { sendAgentCommand({ type: 'force-compact', thread_id: threadId }); return { ok: true }; } catch (err) { return { ok: false, error: err?.message || String(err) }; } });
+    ipcMain.handle('agent-message-feedback', async (_event, threadId, messageId, reaction, absoluteMessageIndex) => {
         try {
             sendAgentCommand({
                 type: 'message-feedback',
                 thread_id: threadId,
                 message_id: messageId,
+                absolute_message_index: Number.isInteger(absoluteMessageIndex) && absoluteMessageIndex >= 0
+                    ? absoluteMessageIndex
+                    : null,
                 reaction: reaction === 'up' || reaction === 'down' ? reaction : null,
             });
             return { ok: true };

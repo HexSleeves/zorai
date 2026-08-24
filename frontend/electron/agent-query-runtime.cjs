@@ -1,6 +1,7 @@
 const AGENT_QUERY_RESPONSE_TYPES = [
   'thread-list',
   'thread-detail',
+  'thread-execution-profile',
   'thread-message-pin-result',
   'task-list',
   'run-list',

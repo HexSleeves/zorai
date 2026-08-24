@@ -1071,6 +1071,27 @@ where
                 })
                 .await?;
         }
+        AgentBridgeCommand::GetThreadExecutionProfile { thread_id } => {
+            framed
+                .send(ClientMessage::AgentGetThreadExecutionProfile { thread_id })
+                .await?;
+        }
+        AgentBridgeCommand::SetThreadExecutionProfile {
+            thread_id,
+            profile_json,
+        } => {
+            framed
+                .send(ClientMessage::AgentSetThreadExecutionProfile {
+                    thread_id,
+                    profile_json,
+                })
+                .await?;
+        }
+        AgentBridgeCommand::ForceCompact { thread_id } => {
+            framed
+                .send(ClientMessage::AgentForceCompact { thread_id })
+                .await?;
+        }
         AgentBridgeCommand::Shutdown => {
             framed.send(ClientMessage::AgentUnsubscribe).await?;
             return Ok(false);

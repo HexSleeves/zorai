@@ -4,6 +4,7 @@ import type { AgentMessage, AgentThread } from "@/lib/agentStore";
 import {
   loadDaemonThreadPageIntoLocalState,
   refreshDaemonThreadMetadataIntoLocalState,
+  resolveAbsoluteMessageIndex,
   trimDaemonThreadMessagesToLatestWindow,
 } from "./daemonHelpers";
 
@@ -55,6 +56,22 @@ function makeMessage(index: number, threadId = "local-active"): AgentMessage {
     isCompactionSummary: false,
   };
 }
+
+describe("resolveAbsoluteMessageIndex", () => {
+  const messages = [makeMessage(0), makeMessage(1)];
+
+  it("adds the loaded page start to the message position", () => {
+    expect(resolveAbsoluteMessageIndex(70, messages, "message-1")).toBe(71);
+  });
+
+  it("uses a zero start for a fully loaded thread", () => {
+    expect(resolveAbsoluteMessageIndex(null, messages, "message-1")).toBe(1);
+  });
+
+  it("returns undefined when the message is not in the loaded page", () => {
+    expect(resolveAbsoluteMessageIndex(70, messages, "missing-row")).toBeUndefined();
+  });
+});
 
 describe("loadDaemonThreadPageIntoLocalState", () => {
   beforeEach(() => {

@@ -24,6 +24,7 @@ import {
   hydrateDaemonThreadIntoLocalState,
   loadDaemonThreadPageIntoLocalState,
   reloadDaemonThreadIntoLocalState,
+  resolveAbsoluteMessageIndex,
   trimDaemonThreadMessagesToLatestWindow,
 } from "./daemonHelpers";
 import {
@@ -1059,8 +1060,14 @@ export function useAgentChatPanelProviderValue(): {
   }, [activeThreadId, agentSettings.agent_backend, setThreadTodos]);
 
   const submitMessageFeedback = useCallback(async (threadId: string, messageId: string, reaction: "up" | "down" | null) => {
-    const thread = useAgentStore.getState().threads.find((entry) => entry.id === threadId);
+    const currentState = useAgentStore.getState();
+    const thread = currentState.threads.find((entry) => entry.id === threadId);
     const daemonThreadId = thread?.daemonThreadId ?? (threadId === activeThreadId ? daemonThreadIdRef.current : null);
+    const absoluteMessageIndex = resolveAbsoluteMessageIndex(
+      thread?.loadedMessageStart,
+      currentState.messages[threadId] ?? [],
+      messageId,
+    );
     const zorai = getAgentBridge();
 
     // Optimistic local update so the UI shows the reaction instantly. The
@@ -1076,7 +1083,7 @@ export function useAgentChatPanelProviderValue(): {
 
     if (shouldUseDaemonRuntime(agentSettings.agent_backend) && daemonThreadId && zorai?.agentMessageFeedback) {
       try {
-        await zorai.agentMessageFeedback(daemonThreadId, messageId, reaction);
+        await zorai.agentMessageFeedback(daemonThreadId, messageId, reaction, absoluteMessageIndex);
       } catch (error) {
         console.warn("agentMessageFeedback failed", error);
       }

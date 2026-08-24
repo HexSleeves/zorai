@@ -570,6 +570,13 @@ impl AgentEngine {
         .await;
     }
 
+    pub async fn get_thread_execution_profile(
+        &self,
+        thread_id: &str,
+    ) -> Option<ThreadExecutionProfile> {
+        self.thread_execution_profiles.read().await.get(thread_id).cloned()
+    }
+
     pub(super) async fn set_thread_execution_profile(
         &self,
         thread_id: &str,

@@ -98,7 +98,10 @@ describe("Zorai feature surfaces", () => {
     expect(shellSource).toContain('if (activeView !== "code" || codeAgentOpenedRef.current) return');
     expect(shellSource).toContain("setContextOpen(true)");
     expect(codeSource).toContain('export { CodeAgentPane } from "./CodeAgentPane"');
-    expect(agentPaneSource).toContain('className="zorai-code-context-chips"');
+    expect(agentPaneSource).toContain('className="zorai-code-agent-toolbar"');
+    expect(agentPaneSource).toContain('CodeThreadRuntimeSwitcher');
+    expect(agentPaneSource).toContain('CodeContextWindowMeter');
+    expect(agentPaneSource).not.toContain('className="zorai-code-context-chips"');
     expect(historyMenuSource).toContain('aria-label="New project thread"');
     expect(historyMenuSource).toContain('aria-label="Project thread history"');
   });

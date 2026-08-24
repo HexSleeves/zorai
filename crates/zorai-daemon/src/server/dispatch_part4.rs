@@ -67,6 +67,8 @@ pub(crate) async fn dispatch_part4(
             | ClientMessage::AgentSetTargetAgentProviderModel { .. }
             | ClientMessage::AgentSetTargetAgentReasoningEffort { .. }
             | ClientMessage::AgentSetTargetAgentContextWindow { .. }
+            | ClientMessage::AgentGetThreadExecutionProfile { .. }
+            | ClientMessage::AgentSetThreadExecutionProfile { .. }
             | ClientMessage::AgentFetchModels { .. }
             | ClientMessage::AgentHeartbeatGetItems
             | ClientMessage::AgentHeartbeatSetItems { .. }
@@ -1289,6 +1291,71 @@ pub(crate) async fn dispatch_part4(
                         .await?;
                 }
             }
+        }
+
+        ClientMessage::AgentGetThreadExecutionProfile { thread_id } => {
+            let profile = agent
+                .get_thread_execution_profile(&thread_id)
+                .await;
+            let profile_json =
+                serde_json::to_string(&profile).unwrap_or_else(|_| "null".to_string());
+            framed
+                .send(DaemonMessage::AgentThreadExecutionProfile {
+                    thread_id,
+                    profile_json,
+                })
+                .await?;
+        }
+
+        ClientMessage::AgentSetThreadExecutionProfile { thread_id, profile_json } => {
+            let trimmed = profile_json.trim();
+            let parsed: Option<crate::agent::types::ThreadExecutionProfile> =
+                if trimmed.is_empty() || trimmed == "null" {
+                    None
+                } else {
+                    match serde_json::from_str::<crate::agent::types::ThreadExecutionProfile>(trimmed) {
+                        Ok(profile) => Some(profile),
+                        Err(error) => {
+                            framed
+                                .send(DaemonMessage::Error {
+                                    message: format!("Invalid thread execution profile: {error}"),
+                                })
+                                .await?;
+                            return Ok(true);
+                        }
+                    }
+                };
+            // Persist + broadcast so the persisted thread row reloads with it.
+            if let Some(profile) = parsed.clone() {
+                let mut map = agent.thread_execution_profiles.write().await;
+                if profile.provider.is_none()
+                    && profile.model.is_none()
+                    && profile.reasoning_effort.is_none()
+                    && profile.context_window_tokens.is_none()
+                {
+                    map.remove(&thread_id);
+                } else {
+                    map.insert(thread_id.clone(), profile);
+                }
+                drop(map);
+            } else {
+                agent.thread_execution_profiles.write().await.remove(&thread_id);
+            }
+            // Reflect into persisted thread metadata (thread room + DB).
+            agent.persist_thread_by_id(&thread_id).await;
+            let _ = agent
+                .event_tx
+                .send(crate::agent::types::AgentEvent::ThreadReloadRequired {
+                    thread_id: thread_id.clone(),
+                });
+            let profile_json =
+                serde_json::to_string(&parsed).unwrap_or_else(|_| "null".to_string());
+            framed
+                .send(DaemonMessage::AgentThreadExecutionProfile {
+                    thread_id,
+                    profile_json,
+                })
+                .await?;
         }
 
         ClientMessage::AgentFetchModels {

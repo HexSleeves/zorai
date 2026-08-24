@@ -744,7 +744,10 @@ declare global {
         ) => Promise<unknown | null>;
         agentPinThreadMessageForCompaction?: (threadId: string, messageId: string) => Promise<ZoraiThreadMessagePinResult | unknown>;
         agentUnpinThreadMessageForCompaction?: (threadId: string, messageId: string) => Promise<ZoraiThreadMessagePinResult | unknown>;
-        agentMessageFeedback?: (threadId: string, messageId: string, reaction: "up" | "down" | null) => Promise<unknown>;
+        agentMessageFeedback?: (threadId: string, messageId: string, reaction: "up" | "down" | null, absoluteMessageIndex?: number) => Promise<unknown>;
+        agentGetThreadExecutionProfile?: (threadId: string) => Promise<{ thread_id: string; profile: unknown; error?: string } | unknown>;
+        agentSetThreadExecutionProfile?: (threadId: string, profile: unknown) => Promise<{ thread_id: string; profile: unknown; error?: string } | unknown>;
+        agentForceCompact?: (threadId: string) => Promise<{ ok: boolean; error?: string } | unknown>;
         openAICodexAuthStatus?: (options?: { refresh?: boolean }) => Promise<ZoraiOpenAICodexAuthStatus>;
         openAICodexAuthLogin?: () => Promise<ZoraiOpenAICodexAuthLogin>;
         openAICodexAuthLogout?: () => Promise<{ ok: boolean }>;

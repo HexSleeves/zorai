@@ -207,4 +207,5 @@ pub enum DaemonMessage {
         message: String,
         prompts: Vec<QueuedPromptRecord>,
     },
+    AgentThreadExecutionProfile { thread_id: String, profile_json: String },
 }

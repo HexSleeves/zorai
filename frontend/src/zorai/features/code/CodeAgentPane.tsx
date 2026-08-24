@@ -20,6 +20,8 @@ import {
 import { useCodeWorkspaceBindingStore } from "./codeWorkspaceBindingStore";
 import { CodeThreadHistoryMenu, type CodeThreadHistoryEntry } from "./CodeThreadHistoryMenu";
 import { threadTurnIsActive } from "@/components/agent-chat-panel/runtime/threadTurnState";
+import { CodeThreadRuntimeSwitcher } from "./CodeThreadRuntimeSwitcher";
+import { CodeContextWindowMeter } from "./CodeContextWindowMeter";
 
 const ACTIVE_GOAL_STATUSES = new Set(["queued", "planning", "running", "paused"]);
 
@@ -193,12 +195,14 @@ export function CodeAgentPane() {
 
   return (
     <div className="zorai-code-agent-pane">
-      {/* <div className="zorai-code-context-chips" aria-label="Code Agent context">
-        <span>{activeThread?.agent_name ? `Responder · ${actualThreadResponder(activeThread).name}` : "Code workspace"}</span>
-        {root ? <span title={root}>{displayRootName(root)}</span> : null}
-        {activeFile ? <span title={workspace?.activeFile ?? undefined}>{activeFile}</span> : null}
-        {selection ? <span>Selection {selection.startLine}:{selection.startColumn}–{selection.endLine}:{selection.endColumn}</span> : null}
-      </div> */}
+      <div className="zorai-code-agent-toolbar" role="toolbar" aria-label="Coding agent thread controls">
+        <div className="zorai-code-agent-toolbar__primary">
+          <CodeThreadRuntimeSwitcher thread={activeThread} />
+        </div>
+        <div className="zorai-code-agent-toolbar__secondary">
+          <CodeContextWindowMeter thread={activeThread} messages={runtime.messages} />
+        </div>
+      </div>
       <ThreadsView
         variant="compact"
         compactHeaderActions={

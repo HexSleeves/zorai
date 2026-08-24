@@ -540,5 +540,15 @@ pub(super) enum AgentBridgeCommand {
         thread_id: String,
         prompt_id: String,
     },
+    GetThreadExecutionProfile {
+        thread_id: String,
+    },
+    SetThreadExecutionProfile {
+        thread_id: String,
+        profile_json: String,
+    },
+    ForceCompact {
+        thread_id: String,
+    },
     Shutdown,
 }
