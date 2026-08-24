@@ -23,6 +23,7 @@ import { CodeSettingsView } from "@/zorai/features/code/CodeSettingsView";
 import { useCodeEditorSettingsStore } from "@/zorai/features/code/codeEditorSettingsStore";
 import { createFileTab } from "@/zorai/features/code/codeEditorTabs";
 import { CodeLargeFileGate, exceedsCodeFileLimit } from "@/zorai/features/code/CodeLargeFileGate";
+import { CodeFileIcon, CodeFolderChevron } from "@/zorai/features/code/CodeFileIcon";
 
 const WorkspaceCodeEditor = lazy(() => import("@/components/WorkspaceCodeEditor").then((module) => ({ default: module.WorkspaceCodeEditor })));
 const WorkspaceDiffEditor = lazy(() => import("@/components/WorkspaceCodeEditor").then((module) => ({ default: module.WorkspaceDiffEditor })));
@@ -35,6 +36,7 @@ type TreeNodeProps = {
   depth: number;
   status: Map<string, string>;
   onOpen: (path: string) => void;
+  refreshToken: number;
 };
 
 function statusLabel(entry?: ZoraiWorkspaceGitStatus) {
@@ -43,39 +45,63 @@ function statusLabel(entry?: ZoraiWorkspaceGitStatus) {
   return (entry.worktreeStatus.trim() || entry.indexStatus.trim()).slice(0, 1);
 }
 
-function WorkspaceTreeNode({ root, entry, depth, status, onOpen }: TreeNodeProps) {
+function WorkspaceTreeNode({ root, entry, depth, status, onOpen, refreshToken }: TreeNodeProps) {
   const bridge = getBridge();
   const [expanded, setExpanded] = useState(false);
   const [children, setChildren] = useState<ZoraiWorkspaceEntry[]>([]);
   const [loading, setLoading] = useState(false);
   const marker = status.get(entry.path) ?? "";
 
+  const loadChildren = useCallback(async () => {
+    if (!entry.isDirectory || !bridge?.workspaceListDirectory) return;
+    setLoading(true);
+    try { setChildren(await bridge.workspaceListDirectory(root, entry.path)); } finally { setLoading(false); }
+  }, [bridge, entry.isDirectory, entry.path, root]);
+
+  useEffect(() => { if (expanded) void loadChildren(); }, [expanded, loadChildren, refreshToken]);
+
   const activate = async () => {
     if (!entry.isDirectory) {
       onOpen(entry.path);
       return;
     }
-    if (!expanded && children.length === 0 && bridge?.workspaceListDirectory) {
-      setLoading(true);
-      try { setChildren(await bridge.workspaceListDirectory(root, entry.path)); } finally { setLoading(false); }
-    }
+    if (!expanded && children.length === 0) await loadChildren();
     setExpanded((current) => !current);
   };
 
   return (
     <div>
       <button type="button" className="zorai-workspace-tree-row" style={{ paddingLeft: 8 + depth * 14 }} onPointerEnter={() => void preloadCodeEditor()} onFocus={() => void preloadCodeEditor()} onClick={() => void activate()}>
-        <span className="zorai-workspace-chevron">{entry.isDirectory ? (expanded ? "⌄" : "›") : ""}</span>
-        <span className="zorai-workspace-file-icon">{entry.isDirectory ? "▰" : "·"}</span>
+        <span className="zorai-workspace-chevron">{entry.isDirectory ? <CodeFolderChevron expanded={expanded} /> : null}</span>
+        {!entry.isDirectory ? <CodeFileIcon path={entry.path} /> : null}
         <span className="zorai-workspace-tree-name">{entry.name}</span>
         {marker ? <span className="zorai-workspace-git-marker">{marker}</span> : null}
       </button>
       {loading ? <div className="zorai-workspace-tree-loading" style={{ paddingLeft: 24 + depth * 14 }}>Loading…</div> : null}
       {expanded ? children.map((child) => (
-        <WorkspaceTreeNode key={child.path} root={root} entry={child} depth={depth + 1} status={status} onOpen={onOpen} />
+        <WorkspaceTreeNode key={child.path} root={root} entry={child} depth={depth + 1} status={status} onOpen={onOpen} refreshToken={refreshToken} />
       )) : null}
     </div>
   );
+}
+
+function GitChangeRow({ entry, staged, onOpen, onReview, onAction }: {
+  entry: ZoraiWorkspaceGitStatus;
+  staged: boolean;
+  onOpen: (path: string) => Promise<void>;
+  onReview: (path: string, staged: boolean) => Promise<void>;
+  onAction: (action: "stage" | "unstage" | "discard", path: string) => Promise<void>;
+}) {
+  const status = staged ? entry.indexStatus : entry.worktreeStatus || entry.indexStatus;
+  const parent = entry.path.split(/[\\/]/).slice(0, -1).join("/");
+  return <div className="zorai-workspace-change-row">
+    <button type="button" className="zorai-workspace-change-path" onClick={() => void onOpen(entry.path)}><CodeFileIcon path={entry.path} /><span><strong>{entry.path.split(/[\\/]/).pop()}</strong>{parent ? <small>{parent}</small> : null}</span><em>{status.trim() || "?"}</em></button>
+    <span className="zorai-workspace-change-actions">
+      <button type="button" title="Review hunks" onClick={() => void onReview(entry.path, staged)}>≡</button>
+      <button type="button" title={staged ? "Unstage" : "Stage"} onClick={() => void onAction(staged ? "unstage" : "stage", entry.path)}>{staged ? "−" : "+"}</button>
+      {!staged && entry.worktreeStatus.trim() && entry.worktreeStatus !== "?" ? <button type="button" title="Discard changes" onClick={() => void onAction("discard", entry.path)}>↶</button> : null}
+    </span>
+  </div>;
 }
 
 export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null } = {}) {
@@ -95,6 +121,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
   const setIsolatedWorktreeState = useWorkspaceContextStore((state) => state.setIsolatedWorktreeState);
   const [rootInput, setRootInput] = useState(context?.root ?? activeWorkspace?.cwd ?? "");
   const [rootEntries, setRootEntries] = useState<ZoraiWorkspaceEntry[]>([]);
+  const [explorerRefreshToken, setExplorerRefreshToken] = useState(0);
   const [gitStatus, setGitStatus] = useState<ZoraiWorkspaceGitStatus[]>([]);
   const [gitOverview, setGitOverview] = useState<ZoraiWorkspaceGitOverview | null>(null);
   const [gitHistory, setGitHistory] = useState<Array<{ hash: string; shortHash: string; author: string; date: string; subject: string }>>([]);
@@ -178,6 +205,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     setGitWorktrees(worktrees);
     setGitHistory(history);
     setGitConflicts(conflicts);
+    setExplorerRefreshToken((token) => token + 1);
   }, [bridge, context?.root]);
 
   useEffect(() => { void useWorkspaceContextStore.getState().hydrate(); }, []);
@@ -751,13 +779,14 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     } catch (reason: any) { setError(reason?.message ?? String(reason)); }
   };
 
-  const createPath = async (kind: "file" | "directory") => {
-    if (!activeThreadId || !context?.root || !newPath.trim()) return;
+  const createPath = async (kind: "file" | "directory", requestedPath = newPath) => {
+    const targetPath = requestedPath.trim();
+    if (!activeThreadId || !context?.root || !targetPath) return;
     try {
       if (kind === "directory") {
-        await bridge?.workspaceCreateDirectory?.(context.root, newPath.trim());
+        await bridge?.workspaceCreateDirectory?.(context.root, targetPath);
       } else {
-        const created = await bridge?.workspaceWriteFile?.(context.root, newPath.trim(), "", null);
+        const created = await bridge?.workspaceWriteFile?.(context.root, targetPath, "", null);
         if (created) {
           setDocuments((current) => ({ ...current, [created.path]: { ...created, original: "", dirty: false } }));
           setActiveFile(activeThreadId, created.path);
@@ -964,8 +993,15 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
               ))}
             </details>
             <details className="zorai-code-files" open>
-              <summary>Files</summary>
-              <div className="zorai-workspace-tree" role="tree" aria-label="Workspace files">{rootEntries.map((entry) => <WorkspaceTreeNode key={entry.path} root={context.root} entry={entry} depth={0} status={statusMap} onOpen={(path) => void openFile(path)} />)}</div>
+              <summary className="zorai-code-files-heading">
+                <span>Files</span>
+                <span className="zorai-code-explorer-actions">
+                  <button type="button" title="New file" aria-label="New file" onClick={(event) => { event.preventDefault(); const path = window.prompt("New file path", newPath)?.trim(); if (path) void createPath("file", path); }}>＋</button>
+                  <button type="button" title="New folder" aria-label="New folder" onClick={(event) => { event.preventDefault(); const path = window.prompt("New folder path", newPath)?.trim(); if (path) void createPath("directory", path); }}>◇</button>
+                  <button type="button" title="Refresh Explorer" aria-label="Refresh Explorer" onClick={(event) => { event.preventDefault(); void refreshRoot(); }}>↻</button>
+                </span>
+              </summary>
+              <div className="zorai-workspace-tree" role="tree" aria-label="Workspace files">{rootEntries.map((entry) => <WorkspaceTreeNode key={entry.path} root={context.root} entry={entry} depth={0} status={statusMap} onOpen={(path) => void openFile(path)} refreshToken={explorerRefreshToken} />)}</div>
             </details>
             <details className="zorai-code-workspace-actions">
               <summary>Workspace Actions</summary>
@@ -1079,8 +1115,8 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
               </details>
             ) : null}
             {gitOverview?.isRepository ? (
-              <details className="zorai-code-source-control">
-                <summary>Source Control ({gitOverview.stagedFiles + gitOverview.unstagedFiles})</summary>
+              <details className="zorai-code-source-control" open>
+                <summary className="zorai-code-source-heading"><span>Source Control ({gitOverview.stagedFiles + gitOverview.unstagedFiles})</span><button type="button" title="Refresh Source Control" aria-label="Refresh Source Control" onClick={(event) => { event.preventDefault(); void refreshRoot(); }}>↻</button></summary>
                 <div className="zorai-workspace-git-overview">
                   <span><strong>{gitOverview.branch || "detached HEAD"}</strong>{gitOverview.upstream ? ` · ${gitOverview.upstream}` : " · no upstream"}</span>
                   <span>↑{gitOverview.ahead} ↓{gitOverview.behind} · {gitOverview.stagedFiles} staged · {gitOverview.unstagedFiles} unstaged</span>
@@ -1090,23 +1126,10 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
               </details>
             ) : null}
             {gitStatus.length > 0 ? (
-              <details className="zorai-workspace-source-control">
-                <summary>Source Control ({gitStatus.length})</summary>
-                {gitStatus.slice(0, 500).map((entry) => (
-                  <div key={`${entry.path}:${entry.indexStatus}:${entry.worktreeStatus}`}>
-                    <button type="button" className="zorai-workspace-change-path" onClick={() => void openFile(entry.path)}>
-                      <strong>{entry.path}</strong><span>{entry.indexStatus}{entry.worktreeStatus}</span>
-                    </button>
-                    <span className="zorai-workspace-change-actions">
-                      {entry.worktreeStatus.trim() || entry.indexStatus === "?" ? <button type="button" onClick={() => void reviewHunks(entry.path, false)}>Hunks</button> : null}
-                      {entry.indexStatus.trim() && entry.indexStatus !== "?" ? <button type="button" onClick={() => void reviewHunks(entry.path, true)}>Staged hunks</button> : null}
-                      {entry.worktreeStatus.trim() || entry.indexStatus === "?" ? <button type="button" onClick={() => void runGitAction("stage", entry.path)}>Stage</button> : null}
-                      {entry.indexStatus.trim() && entry.indexStatus !== "?" ? <button type="button" onClick={() => void runGitAction("unstage", entry.path)}>Unstage</button> : null}
-                      {entry.worktreeStatus.trim() && entry.worktreeStatus !== "?" ? <button type="button" onClick={() => void runGitAction("discard", entry.path)}>Discard</button> : null}
-                    </span>
-                  </div>
-                ))}
-              </details>
+              <div className="zorai-workspace-source-control">
+                {gitStatus.some((entry) => entry.indexStatus.trim() && entry.indexStatus !== "?") ? <section><header><span>Staged Changes</span><button type="button" onClick={() => { for (const entry of gitStatus.filter((item) => item.indexStatus.trim() && item.indexStatus !== "?")) void runGitAction("unstage", entry.path); }}>− All</button></header>{gitStatus.filter((entry) => entry.indexStatus.trim() && entry.indexStatus !== "?").slice(0, 500).map((entry) => <GitChangeRow key={`staged:${entry.path}`} entry={entry} staged onOpen={openFile} onReview={reviewHunks} onAction={runGitAction} />)}</section> : null}
+                {gitStatus.some((entry) => entry.worktreeStatus.trim() || entry.indexStatus === "?") ? <section><header><span>Changes</span><button type="button" onClick={() => { for (const entry of gitStatus.filter((item) => item.worktreeStatus.trim() || item.indexStatus === "?")) void runGitAction("stage", entry.path); }}>＋ All</button></header>{gitStatus.filter((entry) => entry.worktreeStatus.trim() || entry.indexStatus === "?").slice(0, 500).map((entry) => <GitChangeRow key={`change:${entry.path}`} entry={entry} staged={false} onOpen={openFile} onReview={reviewHunks} onAction={runGitAction} />)}</section> : null}
+              </div>
             ) : null}
             {searchResults.length > 0 ? <div className="zorai-workspace-search-results">{searchResults.map((result) => <button type="button" key={`${result.path}:${result.line}:${result.column}`} onClick={() => void openFile(result.path, { line: result.line, column: result.column })}><strong>{result.path}:{result.line}</strong><span>{result.preview}</span></button>)}</div> : null}
             {reviewedChange ? (

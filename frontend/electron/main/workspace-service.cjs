@@ -79,14 +79,22 @@ function resolveWorkspacePath(rootPath, relativePath = '', { allowMissing = fals
     return { root, absolutePath: candidate, relativePath: path.relative(root, candidate) };
 }
 
-function languageForPath(filePath) {
-    const byExtension = {
-        '.c': 'c', '.cc': 'cpp', '.cpp': 'cpp', '.css': 'css', '.go': 'go', '.html': 'html',
-        '.java': 'java', '.js': 'javascript', '.jsx': 'javascript', '.json': 'json', '.md': 'markdown',
-        '.py': 'python', '.rs': 'rust', '.scss': 'scss', '.sh': 'shell', '.sql': 'sql', '.toml': 'toml',
-        '.ts': 'typescript', '.tsx': 'typescript', '.xml': 'xml', '.yaml': 'yaml', '.yml': 'yaml',
+const LANGUAGE_BY_EXTENSION = {
+        '.c': 'c', '.h': 'c', '.cc': 'cpp', '.cpp': 'cpp', '.cxx': 'cpp', '.hpp': 'cpp', '.cs': 'csharp',
+        '.css': 'css', '.scss': 'scss', '.sass': 'scss', '.less': 'less', '.dart': 'dart', '.ex': 'elixir', '.exs': 'elixir',
+        '.fs': 'fsharp', '.fsx': 'fsharp', '.go': 'go', '.graphql': 'graphql', '.gql': 'graphql', '.groovy': 'groovy',
+        '.html': 'html', '.htm': 'html', '.java': 'java', '.js': 'javascript', '.mjs': 'javascript', '.cjs': 'javascript',
+        '.jsx': 'javascriptreact', '.json': 'json', '.jsonc': 'json', '.kt': 'kotlin', '.kts': 'kotlin', '.lua': 'lua',
+        '.md': 'markdown', '.mdx': 'mdx', '.php': 'php', '.pl': 'perl', '.proto': 'protobuf', '.py': 'python', '.r': 'r',
+        '.rb': 'ruby', '.rs': 'rust', '.sh': 'shell', '.bash': 'shell', '.zsh': 'shell', '.sql': 'sql', '.swift': 'swift',
+        '.svelte': 'svelte', '.tf': 'terraform', '.tfvars': 'terraform', '.toml': 'toml', '.ts': 'typescript', '.mts': 'typescript',
+        '.cts': 'typescript', '.tsx': 'typescriptreact', '.vue': 'vue', '.xml': 'xml', '.yaml': 'yaml', '.yml': 'yaml', '.zig': 'zig',
     };
-    return byExtension[path.extname(filePath).toLowerCase()] || 'plaintext';
+const LANGUAGE_BY_NAME = { dockerfile: 'dockerfile', makefile: 'makefile', rakefile: 'ruby', gemfile: 'ruby', procfile: 'shell' };
+
+function languageForPath(filePath) {
+    const name = path.basename(filePath).toLowerCase();
+    return LANGUAGE_BY_NAME[name] || LANGUAGE_BY_EXTENSION[path.extname(name)] || 'plaintext';
 }
 
 function isProbablyBinary(buffer) {
