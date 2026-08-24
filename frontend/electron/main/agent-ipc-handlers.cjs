@@ -308,7 +308,7 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
                 content: payload?.content ?? '',
                 content_blocks_json: typeof payload?.contentBlocksJson === 'string' ? payload.contentBlocksJson : payload?.content_blocks_json ?? null,
                 prompt_id: payload?.promptId ?? payload?.prompt_id ?? null,
-            }, 'prompt-queue');
+            }, 'prompt-queue', 15000);
         } catch (err) {
             return { thread_id: payload?.threadId ?? payload?.thread_id ?? null, prompts: [], error: err?.message || String(err) };
         }
@@ -318,7 +318,7 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
             return await sendAgentQuery({
                 type: 'list-prompt-queue',
                 thread_id: typeof threadId === 'string' && threadId.trim() ? threadId.trim() : null,
-            }, 'prompt-queue');
+            }, 'prompt-queue', 15000);
         } catch (err) {
             return { thread_id: threadId ?? null, prompts: [], error: err?.message || String(err) };
         }
@@ -331,7 +331,7 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
                 prompt_id: payload?.promptId ?? payload?.prompt_id,
                 content: payload?.content ?? '',
                 content_blocks_json: typeof payload?.contentBlocksJson === 'string' ? payload.contentBlocksJson : payload?.content_blocks_json ?? null,
-            }, 'prompt-queue');
+            }, 'prompt-queue', 15000);
         } catch (err) {
             return { thread_id: payload?.threadId ?? payload?.thread_id ?? null, prompts: [], error: err?.message || String(err) };
         }
@@ -342,7 +342,7 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
                 type: 'cancel-queued-prompt',
                 thread_id: payload?.threadId ?? payload?.thread_id,
                 prompt_id: payload?.promptId ?? payload?.prompt_id,
-            }, 'prompt-queue');
+            }, 'prompt-queue', 15000);
         } catch (err) {
             return { thread_id: payload?.threadId ?? payload?.thread_id ?? null, prompts: [], error: err?.message || String(err) };
         }
@@ -353,7 +353,7 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
                 type: 'send-queued-prompt-now',
                 thread_id: payload?.threadId ?? payload?.thread_id,
                 prompt_id: payload?.promptId ?? payload?.prompt_id,
-            }, 'prompt-queue');
+            }, 'prompt-queue', 15000);
         } catch (err) {
             return { thread_id: payload?.threadId ?? payload?.thread_id ?? null, prompts: [], error: err?.message || String(err) };
         }

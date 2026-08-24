@@ -12,11 +12,16 @@ import { usePromptQueueStore, selectThreadPromptQueue } from "./promptQueueStore
 function applyQueueResponse(threadId: string, raw: unknown, expectedId?: string): { accepted: boolean; parsed: ReturnType<typeof readPromptQueueResponse> } {
   const parsed = readPromptQueueResponse(raw);
   if (parsed.error) {
+    // Surface the daemon's real message (QUEUE FULL, validation, or timeout
+    // mapped in agent-ipc-handlers). Don't fall through to the generic string.
     pushToast(parsed.error);
     return { accepted: false, parsed };
   }
   if (expectedId && !parsed.prompts.some((item) => item.id === expectedId)) {
-    pushToast("Queue is full or the daemon rejected that follow-up.");
+    // This is an unexpected serialization mismatch (IPC timeout mapped badly,
+    // race, etc.). Surface it distinctly so it doesn't look like a capacity
+    // rejection. The queue will self-heal via the next prompt_queue_update event.
+    pushToast("Follow-up not echoed back — it may still be queued (syncing…)");
     return { accepted: false, parsed };
   }
   usePromptQueueStore.getState().setQueue(threadId, parsed.prompts);

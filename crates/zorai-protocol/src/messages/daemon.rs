@@ -202,4 +202,9 @@ pub enum DaemonMessage {
         thread_id: Option<String>,
         prompts: Vec<QueuedPromptRecord>,
     },
+    AgentPromptQueueError {
+        thread_id: Option<String>,
+        message: String,
+        prompts: Vec<QueuedPromptRecord>,
+    },
 }

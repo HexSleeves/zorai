@@ -58,11 +58,13 @@ pub(crate) async fn dispatch_part11(
                     .await
                     .unwrap_or_default();
                 framed
-                    .send(DaemonMessage::Error {
+                    .send(DaemonMessage::AgentPromptQueueError {
+                        thread_id: Some(thread_id),
                         message: error.to_string(),
+                        prompts,
                     })
                     .await?;
-                send_prompt_queue(framed, Some(thread_id), prompts).await
+                Ok(true)
             }
         },
         ClientMessage::AgentListPromptQueue { thread_id } => {

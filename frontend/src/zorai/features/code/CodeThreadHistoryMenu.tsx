@@ -33,14 +33,24 @@ export function CodeThreadHistoryMenu({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
+  const [expanded, setExpanded] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const searchRef = useRef<HTMLInputElement | null>(null);
   const clockRef = useRef<HTMLButtonElement | null>(null);
   const filtered = useMemo(() => filterCodeProjectThreads(entries, query), [entries, query]);
+  const collapsedCount = 5;
+  const searching = query.trim().length > 0;
+  const visible = useMemo(() => {
+    if (searching || expanded) return filtered;
+    if (filtered.length <= collapsedCount) return filtered;
+    return filtered.slice(0, collapsedCount);
+  }, [expanded, filtered, searching]);
+  const hiddenCount = filtered.length - visible.length;
 
   useEffect(() => {
     if (!open) return;
     setActiveIndex(0);
+    setExpanded(false);
     requestAnimationFrame(() => searchRef.current?.focus());
     const onPointerDown = (event: globalThis.PointerEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
@@ -52,6 +62,7 @@ export function CodeThreadHistoryMenu({
   const close = () => {
     setOpen(false);
     setQuery("");
+    setExpanded(false);
     requestAnimationFrame(() => clockRef.current?.focus());
   };
 
@@ -68,13 +79,13 @@ export function CodeThreadHistoryMenu({
     }
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
-      if (filtered.length === 0) return;
+      if (visible.length === 0) return;
       const direction = event.key === "ArrowDown" ? 1 : -1;
-      setActiveIndex((current) => (current + direction + filtered.length) % filtered.length);
+      setActiveIndex((current) => (current + direction + visible.length) % visible.length);
       return;
     }
     if (event.key === "Enter") {
-      const entry = filtered[activeIndex];
+      const entry = visible[activeIndex];
       if (entry) {
         event.preventDefault();
         choose(entry);
@@ -122,6 +133,7 @@ export function CodeThreadHistoryMenu({
             onChange={(event) => {
               setQuery(event.target.value);
               setActiveIndex(0);
+              if (event.target.value.trim()) setExpanded(true);
             }}
             onKeyDown={onSearchKeyDown}
           />
@@ -133,8 +145,12 @@ export function CodeThreadHistoryMenu({
           ) : null}
           <div className="zorai-code-thread-history-list" role="listbox" aria-label="Threads for this project">
             {loading && entries.length === 0 ? <div className="zorai-code-thread-empty">Loading project threads…</div> : null}
-            {!loading && filtered.length === 0 ? <div className="zorai-code-thread-empty">No other threads for this project.</div> : null}
-            {filtered.map((entry, index) => {
+            {!loading && visible.length === 0 ? (
+              <div className="zorai-code-thread-empty">
+                {searching ? `No matches for “${query.trim()}”.` : "No other threads for this project."}
+              </div>
+            ) : null}
+            {visible.map((entry, index) => {
               const presentation = statusPresentation(entry.status);
               const selected = entry.identity === currentIdentity;
               return (
@@ -164,6 +180,20 @@ export function CodeThreadHistoryMenu({
                 </button>
               );
             })}
+            {hiddenCount > 0 ? (
+              <button
+                type="button"
+                className="zorai-code-thread-history-more"
+                onClick={() => setExpanded(true)}
+              >
+                Show {hiddenCount} more
+              </button>
+            ) : null}
+            {searching && expanded && filtered.length > collapsedCount ? (
+              <div className="zorai-code-thread-history-hint">
+                Searching all {entries.length} thread{entries.length === 1 ? "" : "s"} in this workspace
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}

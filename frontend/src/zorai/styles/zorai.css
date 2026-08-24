@@ -3310,6 +3310,14 @@ button.zorai-composer-context-chip { cursor: pointer; }
 .zorai-workspace-lifecycle-actions button { padding: 2px 5px; border: 1px solid var(--zorai-border); border-radius: 3px; background: transparent; color: var(--zorai-muted); font-size: 8px; cursor: pointer; }
 
 .zorai-shell.zorai-shell--code {
+  --zorai-bg: #030405;
+  --zorai-bg-panel: #070809;
+  --zorai-bg-surface: #0a0b0d;
+  --zorai-bg-elevated: #0d0f11;
+  --zorai-bg-active: #151719;
+  --zorai-border: #1b1d20;
+  --zorai-border-strong: #2a2d31;
+  --zorai-muted: #858b94;
   grid-template-columns:
     68px
     var(--zorai-code-explorer-width)
@@ -3342,8 +3350,8 @@ button.zorai-composer-context-chip { cursor: pointer; }
 
 .zorai-shell--code .zorai-global-item--active {
   border-color: var(--zorai-border-strong);
-  background: var(--zorai-bg-active);
-  color: var(--zorai-text);
+  background: var(--zorai-accent);
+  color: var(--bg-void);
   box-shadow: none;
 }
 

@@ -19,6 +19,7 @@ import {
 } from "./codeProjectThreads";
 import { useCodeWorkspaceBindingStore } from "./codeWorkspaceBindingStore";
 import { CodeThreadHistoryMenu, type CodeThreadHistoryEntry } from "./CodeThreadHistoryMenu";
+import { threadTurnIsActive } from "@/components/agent-chat-panel/runtime/threadTurnState";
 
 const ACTIVE_GOAL_STATUSES = new Set(["queued", "planning", "running", "paused"]);
 
@@ -35,7 +36,7 @@ export function CodeAgentPane() {
   const localThreads = useAgentStore((state) => state.threads);
   const activeThread = localThreads.find((thread) => thread.id === activeThreadId) ?? null;
   const contextsByThreadId = useWorkspaceContextStore((state) => state.byThreadId);
-  const hydrated = useWorkspaceContextStore((state) => state.hydrated);
+  void useWorkspaceContextStore((state) => state.hydrated);
   const bindRoot = useWorkspaceContextStore((state) => state.bindRoot);
   const root = useCodeWorkspaceBindingStore((state) => state.lastRoot);
   const threadsByRoot = useCodeWorkspaceBindingStore((state) => state.threadsByRoot);
@@ -62,16 +63,36 @@ export function CodeAgentPane() {
       ]);
       setDaemonThreads(nextThreads);
       setTasks(nextTasks);
+      // History membership was previously keyed by ephemeral local ids
+      // (thread_5) that get reminted on hydrate. Heal the persisted set:
+      // for any daemon-backed local thread currently in scope, ensure its
+      // durable daemon id is present so reload doesn't drop history to 1.
+      if (root) {
+        const daemonByLocal = new Map<string, string>();
+        for (const thread of useAgentStore.getState().threads) {
+          const daemonId = thread.daemonThreadId?.trim();
+          if (daemonId) daemonByLocal.set(thread.id, daemonId);
+        }
+        const needsHeal = projectThreadIds.some((id) => /^thread_\d+$/.test(id) && !id.includes(":"));
+        if (needsHeal) {
+          for (const id of [...projectThreadIds]) {
+            const daemonId = daemonByLocal.get(id);
+            if (daemonId && !projectThreadIds.includes(daemonId)) {
+              useCodeWorkspaceBindingStore.getState().recordProjectThread(root, daemonId);
+            }
+          }
+        }
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not load project threads.");
     } finally {
       setLoading(false);
     }
-  }, [fetchThreadList]);
+  }, [fetchThreadList, projectThreadIds, root]);
 
   useEffect(() => {
     void refresh();
-  }, [refresh, root]);
+  }, [refresh]);
 
   useEffect(() => {
     if (!root || !activeThread?.daemonThreadId) return;
@@ -81,11 +102,11 @@ export function CodeAgentPane() {
   }, [activeThread, contextsByThreadId, root]);
 
   const allMessagesByThread = runtime.allMessagesByThread;
-  const activeRuntimeThreadId = runtime.activeThreadId;
-  const isStreamingResponse = runtime.isStreamingResponse;
   const goalRunsForTrace = runtime.goalRunsForTrace;
   const entries = useMemo(() => {
-    if (!hydrated) return [];
+    // Don't block history on context hydrate: without a provider-backed
+    // context map the membership gate still recovers via daemon synthesis.
+    // Once `hydrated` flips the root gate self-corrects.
     return projectThreadsForRoot({
       root,
       localThreads,
@@ -97,8 +118,6 @@ export function CodeAgentPane() {
         entry,
         {
           allMessagesByThread,
-          activeThreadId: activeRuntimeThreadId,
-          isStreamingResponse,
           goalRunsForTrace,
         },
         operatorQuestion?.threadId ?? null,
@@ -113,12 +132,9 @@ export function CodeAgentPane() {
     });
   }, [
     allMessagesByThread,
-    activeRuntimeThreadId,
     contextsByThreadId,
     daemonThreads,
     goalRunsForTrace,
-    hydrated,
-    isStreamingResponse,
     localThreads,
     operatorQuestion?.threadId,
     projectThreadIds,
@@ -170,19 +186,19 @@ export function CodeAgentPane() {
     }
   };
 
-  const workspace = activeThreadId ? contextsByThreadId[activeThreadId] ?? null : null;
-  const activeFile = workspace?.activeFile?.split(/[\\/]/).slice(-1)[0] ?? null;
-  const selection = workspace?.selection;
+  // const workspace = activeThreadId ? contextsByThreadId[activeThreadId] ?? null : null;
+  // const activeFile = workspace?.activeFile?.split(/[\\/]/).slice(-1)[0] ?? null;
+  // const selection = workspace?.selection;
   const currentIdentity = activeThread ? authoritativeThreadIdentity(activeThread) : null;
 
   return (
     <div className="zorai-code-agent-pane">
-      <div className="zorai-code-context-chips" aria-label="Code Agent context">
+      {/* <div className="zorai-code-context-chips" aria-label="Code Agent context">
         <span>{activeThread?.agent_name ? `Responder · ${actualThreadResponder(activeThread).name}` : "Code workspace"}</span>
         {root ? <span title={root}>{displayRootName(root)}</span> : null}
         {activeFile ? <span title={workspace?.activeFile ?? undefined}>{activeFile}</span> : null}
         {selection ? <span>Selection {selection.startLine}:{selection.startColumn}–{selection.endLine}:{selection.endColumn}</span> : null}
-      </div>
+      </div> */}
       <ThreadsView
         variant="compact"
         compactHeaderActions={
@@ -207,8 +223,6 @@ function evidenceForEntry(
   entry: CodeProjectThreadEntry,
   runtime: {
     allMessagesByThread: ReturnType<typeof useAgentChatPanelRuntime>["allMessagesByThread"];
-    activeThreadId: ReturnType<typeof useAgentChatPanelRuntime>["activeThreadId"];
-    isStreamingResponse: ReturnType<typeof useAgentChatPanelRuntime>["isStreamingResponse"];
     goalRunsForTrace: ReturnType<typeof useAgentChatPanelRuntime>["goalRunsForTrace"];
   },
   questionThreadId: string | null,
@@ -216,8 +230,12 @@ function evidenceForEntry(
   tasks: AgentQueueTask[],
 ) {
   const identities = new Set([entry.localThread.id, entry.thread.daemonThreadId, entry.localThread.daemonThreadId].filter(Boolean));
-  const messages = runtime.allMessagesByThread[entry.localThread.id] ?? [];
-  let working = entry.localThread.id === runtime.activeThreadId && runtime.isStreamingResponse;
+  // Status for the history list is per-entry, not "is the currently
+  // focused thread streaming". A background thread keeps Working/Needs
+  // attention even while you look at another thread.
+  const messages = runtime.allMessagesByThread[entry.localThread.id]
+    ?? runtime.allMessagesByThread[entry.thread.daemonThreadId ?? ""] ?? [];
+  let working = threadTurnIsActive(messages);
   let latestCompletionAt: number | null = null;
   for (const message of messages) {
     if (message.role === "assistant" && !message.isStreaming) {
