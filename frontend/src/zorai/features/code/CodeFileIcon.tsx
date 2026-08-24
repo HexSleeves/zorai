@@ -2,7 +2,7 @@ import { fileTypeForPath } from "./codeFileTypes";
 
 export function CodeFileIcon({ path }: { path: string }) {
   const type = fileTypeForPath(path);
-  return <span className={`zorai-code-file-icon type-${type.id}`} title={type.label} aria-label={`${type.label} file`}>{type.glyph}</span>;
+  return <span className={`zorai-code-file-icon type-${type.id}`} title={`${type.label} file`} role="img" aria-label={`${type.label} file`}>{type.glyph}</span>;
 }
 
 export function CodeFolderChevron({ expanded }: { expanded: boolean }) {
