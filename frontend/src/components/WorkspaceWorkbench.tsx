@@ -19,6 +19,11 @@ import { applyCodeSaveTransforms, createCodeAutoSaveController } from "@/zorai/f
 import { DirtyFileCloseDialog } from "@/zorai/features/code/DirtyFileCloseDialog";
 import { formatCodeText, prettierParserForLanguage } from "@/zorai/features/code/codeFormatter";
 import { CodeSettingsView } from "@/zorai/features/code/CodeSettingsView";
+import {
+  getCachedWorkspaceFiles,
+  getWorkspaceFiles,
+  invalidateWorkspaceFileIndex,
+} from "@/zorai/features/code/workspaceFileIndex";
 import { useCodeEditorSettingsStore } from "@/zorai/features/code/codeEditorSettingsStore";
 import { createFileTab } from "@/zorai/features/code/codeEditorTabs";
 import { CodeLargeFileGate, exceedsCodeFileLimit } from "@/zorai/features/code/CodeLargeFileGate";
@@ -240,6 +245,8 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     const watchedRoot = context.root;
     const unsubscribe = bridge.onWorkspaceFilesChanged((batch) => {
       if (batch.root !== watchedRoot || (subscriptionId && batch.subscriptionId !== subscriptionId)) return;
+      invalidateWorkspaceFileIndex(watchedRoot);
+      void getWorkspaceFiles(bridge, watchedRoot, { force: true }).then((files) => setIndexedFiles(files)).catch(() => {});
       void refreshRoot(watchedRoot).catch(() => {});
       const currentActive = activeDocument;
       if (!currentActive) return;
@@ -904,14 +911,28 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     return () => window.removeEventListener("keydown", onKeyDown, true);
   }, [editorSettings.keybindings, runCodeCommand]);
 
+  const [indexedFiles, setIndexedFiles] = useState<string[] | null>(null);
+  useEffect(() => {
+    if (!context?.root || !bridge?.workspaceListDirectory) { setIndexedFiles(null); return; }
+    const root = context.root;
+    // Use cache synchronously so Quick Open is instant on repeat opens.
+    const cached = getCachedWorkspaceFiles(root);
+    if (cached) { setIndexedFiles(cached); return; }
+    const controller = new AbortController();
+    void getWorkspaceFiles(bridge, root, { signal: controller.signal }).then((files) => {
+      if (!controller.signal.aborted) setIndexedFiles(files);
+    }).catch(() => {});
+    return () => controller.abort();
+  }, [bridge, context?.root]);
   const explorerFiles = useMemo(() => {
-    const paths: string[] = [];
-    const visit = (entries: ZoraiWorkspaceEntry[]) => {
-      for (const entry of entries) if (!entry.isDirectory) paths.push(entry.path);
-    };
-    visit(rootEntries);
-    return [...(context?.openFiles ?? []), ...paths];
-  }, [context?.openFiles, rootEntries]);
+    const shallow: string[] = [];
+    for (const entry of rootEntries) if (!entry.isDirectory) shallow.push(entry.path);
+    // Indexed files are the authoritative file list for Quick Open; fall back to
+    // shallow root entries until the background walk completes.
+    const baseFiles = indexedFiles ?? shallow;
+    const merged = new Set<string>([...(context?.openFiles ?? []), ...baseFiles, ...shallow]);
+    return [...merged];
+  }, [context?.openFiles, rootEntries, indexedFiles]);
 
   const requestCloseFile = useCallback((path: string) => {
     if (!activeThreadId) return;
