@@ -377,6 +377,16 @@ where
             let msg = serde_json::json!({"type":"mlflow-tracing-headers","data":{"names":names}});
             emit_agent_event(&msg.to_string())?;
         }
+        Some(Ok(DaemonMessage::AgentPromptQueue { thread_id, prompts })) => {
+            let msg = serde_json::json!({
+                "type": "prompt-queue",
+                "data": {
+                    "thread_id": thread_id,
+                    "prompts": prompts,
+                }
+            });
+            emit_agent_event(&msg.to_string())?;
+        }
         Some(Ok(DaemonMessage::AgentConfigResponse { config_json })) => {
             let msg = serde_json::json!({"type":"config","data":serde_json::from_str::<serde_json::Value>(&config_json).unwrap_or_default()});
             emit_agent_event(&msg.to_string())?;

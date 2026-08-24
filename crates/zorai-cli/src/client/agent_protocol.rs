@@ -513,5 +513,32 @@ pub(super) enum AgentBridgeCommand {
     GetStatistics {
         window: zorai_protocol::AgentStatisticsWindow,
     },
+    EnqueuePrompt {
+        thread_id: String,
+        content: String,
+        #[serde(default)]
+        content_blocks_json: Option<String>,
+        #[serde(default)]
+        prompt_id: Option<String>,
+    },
+    ListPromptQueue {
+        #[serde(default)]
+        thread_id: Option<String>,
+    },
+    UpdateQueuedPrompt {
+        thread_id: String,
+        prompt_id: String,
+        content: String,
+        #[serde(default)]
+        content_blocks_json: Option<String>,
+    },
+    CancelQueuedPrompt {
+        thread_id: String,
+        prompt_id: String,
+    },
+    SendQueuedPromptNow {
+        thread_id: String,
+        prompt_id: String,
+    },
     Shutdown,
 }

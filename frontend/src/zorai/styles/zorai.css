@@ -1647,6 +1647,10 @@
   white-space: nowrap;
 }
 
+.zorai-composer-queue__chip--editing {
+  border-style: solid;
+}
+
 .zorai-composer-queue__remove {
   font-size: var(--text-base);
 }
@@ -1940,14 +1944,6 @@
 }
 
 .zorai-approval-overlay {
-  --zorai-bg: #06080d;
-  --zorai-bg-panel: #090d14;
-  --zorai-bg-elevated: #0f1621;
-  --zorai-border: #1c2430;
-  --zorai-border-strong: #2a3546;
-  --zorai-text: #d9e2ef;
-  --zorai-muted: #8593a7;
-  --zorai-accent: #77d8c5;
   position: fixed;
   inset: 0;
   z-index: 5000;
@@ -3312,20 +3308,7 @@ button.zorai-composer-context-chip { cursor: pointer; }
 .zorai-workspace-lifecycle-actions { display: flex; gap: 4px; margin-top: 4px; }
 .zorai-workspace-lifecycle-actions button { padding: 2px 5px; border: 1px solid var(--zorai-border); border-radius: 3px; background: transparent; color: var(--zorai-muted); font-size: 8px; cursor: pointer; }
 
-/* First-class Code workspace geometry. The workbench owns state once and portals
-   its Explorer into the contextual rail while the editor remains in main. */
 .zorai-shell.zorai-shell--code {
-  /* Code keeps the current Zorai token contract, but resolves it to a neutral
-     black hierarchy so editor chrome never inherits the shell's blue-space
-     wash. Semantic danger/warning/success colors remain global. */
-  --zorai-bg: #030405;
-  --zorai-bg-panel: #070809;
-  --zorai-bg-surface: #0a0b0d;
-  --zorai-bg-elevated: #0d0f11;
-  --zorai-bg-active: #151719;
-  --zorai-border: #1b1d20;
-  --zorai-border-strong: #2a2d31;
-  --zorai-muted: #858b94;
   grid-template-columns:
     68px
     var(--zorai-code-explorer-width)
@@ -3863,11 +3846,11 @@ button.zorai-composer-context-chip { cursor: pointer; }
   min-width: 0;
   display: grid;
   grid-template-columns: 9px minmax(0, 1fr);
-  gap: 6px;
+  gap: 8px;
   align-items: start;
   border: 0;
-  border-radius: 6px;
-  padding: 7px;
+  border-radius: 0;
+  padding: 8px 0;
   background: transparent;
   color: var(--zorai-text);
   text-align: left;
@@ -3880,14 +3863,11 @@ button.zorai-composer-context-chip { cursor: pointer; }
   background: var(--zorai-bg-active);
 }
 
-.zorai-code-thread-history-item.is-current {
-  box-shadow: inset 2px 0 var(--zorai-muted);
-}
-
 .zorai-code-thread-status {
   width: 7px;
   height: 7px;
   margin-top: 3px;
+  margin-left: 3px;
   border-radius: 50%;
   background: transparent;
 }
@@ -4455,7 +4435,7 @@ button.zorai-composer-context-chip { cursor: pointer; }
 .zorai-code-explorer-actions button, .zorai-code-source-heading button { width: 23px; height: 23px; display: grid; place-items: center; border: 0; border-radius: 4px; padding: 0; background: transparent; color: var(--zorai-muted); cursor: pointer; }
 .zorai-code-explorer-actions button:hover, .zorai-code-source-heading button:hover { background: var(--zorai-bg-active); color: var(--zorai-text); }
 .zorai-code-folder-chevron { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.zorai-code-file-icon { width: 20px; height: 18px; display: inline-flex; flex: 0 0 20px; align-items: center; justify-content: center; color: #9aa1ab; font: 700 8px/1 var(--font-mono); letter-spacing: -.04em; }
+.zorai-code-file-icon { width: 20px; height: 18px; display: inline-flex; flex: 0 0 20px; align-items: center; justify-content: center; color: #9aa1ab; font: 700 var(--text-xs)/1 var(--font-mono); letter-spacing: -.04em; }
 .zorai-code-file-icon.type-react { color: #61dafb; font-size: 14px; }.zorai-code-file-icon.type-typescript { color: #4d9de0; }.zorai-code-file-icon.type-javascript { color: #e6d34f; }.zorai-code-file-icon.type-css { color: #5a9df0; font-size: 12px; }.zorai-code-file-icon.type-sass { color: #cf649a; }.zorai-code-file-icon.type-html { color: #e56b3f; }.zorai-code-file-icon.type-json { color: #d7ba7d; }.zorai-code-file-icon.type-markdown { color: #78a9df; }.zorai-code-file-icon.type-rust { color: #d68b5f; }.zorai-code-file-icon.type-python { color: #6ca4d9; }.zorai-code-file-icon.type-go { color: #5dc9e2; }.zorai-code-file-icon.type-java { color: #e6783c; }.zorai-code-file-icon.type-node { color: #6bbf59; }.zorai-code-file-icon.type-docker { color: #2496ed; }.zorai-code-file-icon.type-git { color: #f05032; }.zorai-code-file-icon.type-config { color: #a4aab3; }.zorai-code-file-icon.type-image { color: #b47ad6; }.zorai-code-file-icon.type-database { color: #d7a94a; }
 .zorai-code-source-heading button { margin-left: auto; }
 .zorai-workspace-source-control { max-height: none; overflow: visible; border-block: 1px solid var(--zorai-border); container-type: inline-size; }

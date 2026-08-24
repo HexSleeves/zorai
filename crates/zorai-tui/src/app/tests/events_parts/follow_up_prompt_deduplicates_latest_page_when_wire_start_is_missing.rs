@@ -362,7 +362,15 @@ fn queued_prompt_flushes_after_last_tool_result_before_turn_done() {
 
     model.submit_prompt("stay on the migration task".to_string());
     assert_eq!(model.queued_prompts.len(), 1);
-    assert!(daemon_rx.try_recv().is_err());
+    match daemon_rx.try_recv() {
+        Ok(DaemonCommand::EnqueuePrompt {
+            thread_id, content, ..
+        }) => {
+            assert_eq!(thread_id, "thread-1");
+            assert_eq!(content, "stay on the migration task");
+        }
+        other => panic!("expected enqueue while tools are running, got {:?}", other),
+    }
 
     model.handle_client_event(ClientEvent::ToolResult {
         thread_id: "thread-1".to_string(),
@@ -375,18 +383,14 @@ fn queued_prompt_flushes_after_last_tool_result_before_turn_done() {
         message_id: None,
     });
 
-    match daemon_rx.try_recv() {
-        Ok(DaemonCommand::SendMessage {
-            thread_id, content, ..
-        }) => {
-            assert_eq!(thread_id.as_deref(), Some("thread-1"));
-            assert_eq!(content, "stay on the migration task");
-        }
-        other => panic!("expected queued send after tool result, got {:?}", other),
-    }
     assert!(
-        model.queued_prompts.is_empty(),
-        "queued prompt should flush as soon as the last tool finishes"
+        daemon_rx.try_recv().is_err(),
+        "daemon owns flush; TUI must not send the queued prompt locally"
+    );
+    assert_eq!(
+        model.queued_prompts.len(),
+        1,
+        "queued prompt stays visible until the daemon queue update arrives"
     );
 }
 
@@ -414,7 +418,18 @@ fn prompt_during_text_stream_without_running_tools_waits_for_done() {
 
     model.submit_prompt("switch to the auth bug instead".to_string());
     assert_eq!(model.queued_prompts.len(), 1);
-    assert!(daemon_rx.try_recv().is_err());
+    match daemon_rx.try_recv() {
+        Ok(DaemonCommand::EnqueuePrompt {
+            thread_id, content, ..
+        }) => {
+            assert_eq!(thread_id, "thread-1");
+            assert_eq!(content, "switch to the auth bug instead");
+        }
+        other => panic!(
+            "expected enqueue while text is streaming, got {:?}",
+            other
+        ),
+    }
 
     model.handle_client_event(ClientEvent::Done {
         thread_id: "thread-1".to_string(),
@@ -431,20 +446,48 @@ fn prompt_during_text_stream_without_running_tools_waits_for_done() {
         message_id: None,
     });
 
-    match daemon_rx.try_recv() {
-        Ok(DaemonCommand::SendMessage {
-            thread_id, content, ..
-        }) => {
-            assert_eq!(thread_id.as_deref(), Some("thread-1"));
-            assert_eq!(content, "switch to the auth bug instead");
-        }
-        other => panic!(
-            "expected queued send after done when text is streaming, got {:?}",
-            other
-        ),
-    }
     assert!(
-        model.queued_prompts.is_empty(),
-        "message should flush once the streaming assistant message completes"
+        daemon_rx.try_recv().is_err(),
+        "daemon owns flush; TUI must not send the queued prompt locally"
     );
+    assert_eq!(
+        model.queued_prompts.len(),
+        1,
+        "queued prompt stays visible until the daemon queue update arrives"
+    );
+}
+
+#[test]
+fn daemon_prompt_queue_event_replaces_operator_items_for_thread() {
+    let (mut model, mut daemon_rx) = make_model_with_daemon_rx();
+    model.connected = true;
+    model.concierge.auto_cleanup_on_navigate = false;
+    model.chat.reduce(chat::ChatAction::ThreadCreated {
+        thread_id: "thread-1".to_string(),
+        title: "Thread".to_string(),
+    });
+    model
+        .chat
+        .reduce(chat::ChatAction::SelectThread("thread-1".to_string()));
+    model.queue_prompt("optimistic follow-up".to_string());
+    assert!(matches!(
+        daemon_rx.try_recv(),
+        Ok(DaemonCommand::EnqueuePrompt { .. })
+    ));
+
+    model.handle_client_event(ClientEvent::PromptQueue {
+        thread_id: Some("thread-1".to_string()),
+        prompts: vec![zorai_protocol::QueuedPromptRecord {
+            id: "prompt-1".to_string(),
+            thread_id: "thread-1".to_string(),
+            content: "from daemon".to_string(),
+            content_blocks_json: None,
+            created_at: 1,
+            position: 0,
+        }],
+    });
+
+    assert_eq!(model.queued_prompts.len(), 1);
+    assert_eq!(model.queued_prompts[0].text, "from daemon");
+    assert_eq!(model.queued_prompts[0].prompt_id.as_deref(), Some("prompt-1"));
 }

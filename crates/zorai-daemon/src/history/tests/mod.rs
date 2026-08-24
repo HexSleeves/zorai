@@ -8,6 +8,7 @@ async fn make_test_store() -> Result<(HistoryStore, PathBuf)> {
     Ok((store, root))
 }
 
+mod agent_wakeups;
 mod browser_profiles;
 mod cognitive_resonance;
 mod command_log;
@@ -26,6 +27,7 @@ mod metacognition;
 mod misc;
 mod notifications;
 mod provider_auth;
+mod prompt_queue;
 mod routine_definitions;
 mod semantic_documents;
 mod skill_variants;

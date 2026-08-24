@@ -28,7 +28,7 @@ function WorkspaceExplorerTreeNode({ entry, depth, status, onOpen, snapshot, onT
 
   return <div>
     <button type="button" role="treeitem" aria-expanded={entry.isDirectory ? expanded : undefined} aria-disabled={loading || undefined} className="zorai-workspace-tree-row" style={{ paddingLeft: 8 + depth * 14 }} onClick={() => void activate()}>
-      <span className="zorai-workspace-chevron">{entry.isDirectory ? <CodeFolderChevron expanded={expanded} /> : null}</span>
+      {entry.isDirectory ? <span className="zorai-workspace-chevron"><CodeFolderChevron expanded={expanded} /></span> : null}
       {!entry.isDirectory ? <CodeFileIcon path={entry.path} /> : null}
       <span className="zorai-workspace-tree-name">{entry.name}</span>
       {marker ? <span className="zorai-workspace-git-marker">{marker}</span> : null}

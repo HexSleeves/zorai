@@ -75,6 +75,8 @@ describe("Zorai feature surfaces", () => {
     expect(workbenchSource).not.toContain('<details className="zorai-workspace-operation-changes" open>');
     expect(workbenchSource).not.toContain('<details className="zorai-workspace-agent-changes" open>');
     expect(workbenchSource).toContain("shouldRestoreWorkspaceDocument");
+    expect(workbenchSource).toContain("shouldPassthroughCodeCommand");
+    expect(workbenchSource).toContain("shouldPassthroughCodeCommand(command.id, event.target)");
     expect(workbenchSource).toContain('setActiveEditorTabId(`file:${filePath}`)');
     expect(workbenchSource).toContain("void openFile(filePath)");
     expect(readFeature("./code/CodeTabs.tsx")).toContain("Unpin editor");
@@ -214,7 +216,7 @@ describe("Zorai feature surfaces", () => {
     expect(source).toContain("zorai-goals-surface");
   });
 
-  it("keeps TUI goal workspace modes in native Goals", () => {
+  it("keeps goal workspace modes in native Goals", () => {
     const source = readFeature("./goals/goalWorkspaceModel.ts");
     const panelSource = readFeature("./goals/GoalWorkspacePanel.tsx");
 
@@ -229,9 +231,17 @@ describe("Zorai feature surfaces", () => {
     expect(source).toContain("targetFilePath");
     expect(panelSource).toContain("loadGoalProjectionFiles");
     expect(panelSource).toContain("openThreadFilePreview");
+    expect(panelSource).not.toContain("zorai-tui-pane");
+    expect(panelSource).toContain("zorai-ghost-button");
+    expect(panelSource).toContain("footerActions");
+    expect(panelSource).toContain("{action.label}");
+    expect(source).toContain('label: "Retry step"');
+    expect(source).toContain('label: "Rerun from here"');
+    expect(source).toContain('label: "Stop"');
+    expect(panelSource).not.toContain("[Actions]");
   });
 
-  it("enters a dedicated TUI-style goal view from mission control", () => {
+  it("enters a dedicated goal view from mission control", () => {
     const source = readFeature("./goals/GoalsView.tsx");
     const openThreadSource = readFeature("./threads/openThreadTarget.ts");
 
@@ -570,11 +580,19 @@ describe("Zorai feature surfaces", () => {
 
   it("queues messages while the agent is streaming", () => {
     const source = readFeature("./threads/ThreadComposer.tsx");
+    const queue = readFeature("./threads/ThreadComposerQueue.tsx");
+    const hook = readFeature("./threads/useDaemonPromptQueue.ts");
 
-    expect(source).toContain("queuedMessages");
+    expect(source).toContain("useDaemonPromptQueue");
     expect(source).toContain("queueCurrentInput");
-    expect(source).toContain("zorai-composer-queue");
     expect(source).toContain("Queue a follow-up");
+    expect(queue).toContain("zorai-composer-queue");
+    expect(hook).toContain("agentEnqueuePrompt");
+    expect(hook).toContain("agentListPromptQueue");
+    expect(hook).toContain("agentUpdateQueuedPrompt");
+    expect(hook).toContain("agentCancelQueuedPrompt");
+    expect(hook).toContain("agentSendQueuedPromptNow");
+    expect(hook).toContain("prompt_queue_update");
   });
 
   it("shows a thinking indicator while the agent streams", () => {

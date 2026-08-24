@@ -1425,6 +1425,47 @@ fn start_daemon_bridge(
                             DaemonCommand::ArchiveReadNotifications => {
                                 let _ = client.archive_read_notifications();
                             }
+                            DaemonCommand::EnqueuePrompt {
+                                thread_id,
+                                prompt_id,
+                                content,
+                                content_blocks_json,
+                            } => {
+                                let _ = client.enqueue_prompt(
+                                    thread_id,
+                                    prompt_id,
+                                    content,
+                                    content_blocks_json,
+                                );
+                            }
+                            DaemonCommand::ListPromptQueue { thread_id } => {
+                                let _ = client.list_prompt_queue(thread_id);
+                            }
+                            DaemonCommand::UpdateQueuedPrompt {
+                                thread_id,
+                                prompt_id,
+                                content,
+                                content_blocks_json,
+                            } => {
+                                let _ = client.update_queued_prompt(
+                                    thread_id,
+                                    prompt_id,
+                                    content,
+                                    content_blocks_json,
+                                );
+                            }
+                            DaemonCommand::CancelQueuedPrompt {
+                                thread_id,
+                                prompt_id,
+                            } => {
+                                let _ = client.cancel_queued_prompt(thread_id, prompt_id);
+                            }
+                            DaemonCommand::SendQueuedPromptNow {
+                                thread_id,
+                                prompt_id,
+                            } => {
+                                let _ = client.send_queued_prompt_now(thread_id, prompt_id);
+                            }
                             DaemonCommand::WhatsAppLinkStart => {
                                 let _ = client.whatsapp_link_start();
                             }

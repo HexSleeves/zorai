@@ -440,6 +440,10 @@ pub enum ClientEvent {
     },
 
     Error(String),
+    PromptQueue {
+        thread_id: Option<String>,
+        prompts: Vec<zorai_protocol::QueuedPromptRecord>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

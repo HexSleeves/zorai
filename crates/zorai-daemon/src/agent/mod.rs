@@ -82,6 +82,7 @@ mod operator_questions;
 mod orchestrator_policy;
 mod persistence;
 mod prompt_inspection;
+mod prompt_queue;
 mod provenance;
 mod provider_auth_store;
 mod provider_resolution;

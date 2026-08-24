@@ -16,12 +16,8 @@ import { useAgentStore } from "@/lib/agentStore";
 import { useWorkspaceContextStore } from "@/lib/workspaceContextStore";
 import { useComposerInputHistory } from "./composerInputHistory";
 import { applyComposerTextareaSize } from "./composerTextareaSize";
-import {
-  createQueuedComposerMessage,
-  queuedComposerLabel,
-  shouldDispatchQueuedFollowUp,
-  type QueuedComposerMessage,
-} from "./composerQueue";
+import { ThreadComposerQueue } from "./ThreadComposerQueue";
+import { useDaemonPromptQueue } from "./useDaemonPromptQueue";
 import { getBridge } from "@/lib/bridge";
 import { pushToast } from "@/lib/toastStore";
 import { activeThreadBudgetExceededNotice } from "./threadBudgetNotice";
@@ -71,22 +67,20 @@ export function ThreadComposer({
   const stopStreaming = runtime.stopStreaming;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
-  const [dropActive, setDropActive] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [queuedMessages, setQueuedMessages] = useState<QueuedComposerMessage[]>([]);
-  const [sendNowMessage, setSendNowMessage] = useState<QueuedComposerMessage | null>(null);
+  const [dropActive, setDropActive] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const discardCaptureRef = useRef(false);
-  const awaitingStreamStartRef = useRef(false);
   const history = useComposerInputHistory(runtime.input, runtime.setInput, runtime.inputRef);
   const budgetNotice = activeThreadBudgetExceededNotice(
     runtime.activeThread?.daemonThreadId,
     runtime.messages,
     runtime.spawnedAgentTree,
   );
+  const queue = useDaemonPromptQueue(runtime.activeThread?.daemonThreadId);
   const canSend = Boolean(runtime.input.trim() || attachments.length > 0);
   const ttsAvailable = agentSettings.audio_tts_enabled && Boolean(getBridge()?.agentTextToSpeech);
   const updateAgentSetting = useAgentStore((state) => state.updateAgentSetting);
@@ -180,58 +174,30 @@ export function ThreadComposer({
     const payload = buildAttachmentSendPayload(runtime.input, attachments);
     if (!payload.text && !payload.contentBlocksJson) return;
     history.remember(payload.text);
-    setQueuedMessages((current) => [...current, createQueuedComposerMessage(payload)]);
-    runtime.setInput("");
+    void queue.enqueue(payload).then((ok) => {
+      if (!ok) return;
+      runtime.setInput("");
+      setAttachments([]);
+    });
+  };
+
+  const updateQueuedInput = () => {
+    if (!queue.editingId) return;
+    const payload = buildAttachmentSendPayload(runtime.input, attachments);
+    if (!payload.text && !payload.contentBlocksJson) return;
+    history.remember(payload.text);
+    void queue.updateQueued(queue.editingId, payload).then((ok) => {
+      if (!ok) return;
+      runtime.setInput("");
+      setAttachments([]);
+    });
+  };
+
+  const startEditQueued = (item: (typeof queue.queuedMessages)[number]) => {
+    queue.startEdit(item);
+    runtime.setInput(item.text);
     setAttachments([]);
   };
-
-  const removeQueuedMessage = (index: number) => {
-    setQueuedMessages((current) => current.filter((_, i) => i !== index));
-  };
-
-  const sendQueuedMessageNow = (index: number) => {
-    if (budgetNotice) return;
-    const queued = queuedMessages[index];
-    if (!queued) return;
-    setQueuedMessages((current) => current.filter((_, i) => i !== index));
-    if (isStreamingResponse) {
-      setSendNowMessage(queued);
-      stopStreaming(activeRuntimeThreadId);
-      return;
-    }
-    awaitingStreamStartRef.current = true;
-    sendMessage(queued);
-  };
-
-  useEffect(() => {
-    if (budgetNotice) return;
-    if (isStreamingResponse) {
-      awaitingStreamStartRef.current = false;
-      return;
-    }
-    if (!shouldDispatchQueuedFollowUp({
-      isStreaming: isStreamingResponse,
-      awaitingStreamStart: awaitingStreamStartRef.current,
-      hasSendNow: Boolean(sendNowMessage),
-      queueLength: queuedMessages.length,
-    })) {
-      return;
-    }
-    awaitingStreamStartRef.current = true;
-    if (sendNowMessage) {
-      const payload = sendNowMessage;
-      setSendNowMessage(null);
-      sendMessage(payload);
-      return;
-    }
-    const [next, ...rest] = queuedMessages;
-    if (!next) {
-      awaitingStreamStartRef.current = false;
-      return;
-    }
-    setQueuedMessages(rest);
-    sendMessage(next);
-  }, [budgetNotice, isStreamingResponse, queuedMessages, sendMessage, sendNowMessage]);
 
   // Ctrl+M toggles voice recording from anywhere in the thread surface
   // (including while typing in the textarea — that's where you want it most).
@@ -254,6 +220,8 @@ export function ThreadComposer({
       event.preventDefault();
       if (isStreamingResponse) {
         queueCurrentInput();
+      } else if (queue.editingId) {
+        updateQueuedInput();
       } else {
         void sendCurrentInput();
       }
@@ -410,32 +378,13 @@ export function ThreadComposer({
         <p className="zorai-composer-budget-notice" role="alert">{budgetNotice}</p>
       ) : null}
 
-      {queuedMessages.length > 0 ? (
-        <div className="zorai-composer-queue">
-          {queuedMessages.map((queued, index) => (
-            <div key={queued.id} className="zorai-composer-queue__chip">
-              <span className="zorai-composer-queue__label">Queued {index + 1}</span>
-              <span className="zorai-composer-queue__text">{queuedComposerLabel(queued)}</span>
-              <button
-                type="button"
-                className="zorai-composer-queue__send-now"
-                title="Interrupt the current response and send this message now"
-                onClick={() => sendQueuedMessageNow(index)}
-              >
-                Send now
-              </button>
-              <button
-                type="button"
-                className="zorai-composer-queue__remove"
-                aria-label="Remove queued message"
-                onClick={() => removeQueuedMessage(index)}
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : null}
+      <ThreadComposerQueue
+        items={queue.queuedMessages}
+        editingId={queue.editingId}
+        onEdit={startEditQueued}
+        onSendNow={(id) => void queue.sendNow(id)}
+        onCancel={(id) => void queue.cancelQueued(id)}
+      />
 
       {targetError ? <p className="zorai-composer-budget-notice" role="alert">{targetError}</p> : null}
       <div className="zorai-composer-box">
@@ -449,7 +398,7 @@ export function ThreadComposer({
           }}
           onClick={() => history.commit()}
           onKeyDown={handleKeyDown}
-          placeholder={isTranscribing ? "Transcribing..." : isRecording ? "Recording..." : isStreamingResponse ? "Queue a follow-up…" : "Message Zorai..."}
+          placeholder={isTranscribing ? "Transcribing..." : isRecording ? "Recording..." : queue.editingId ? "Edit queued message…" : isStreamingResponse ? "Queue a follow-up…" : "Message Zorai..."}
           rows={3}
         />
 
@@ -538,7 +487,33 @@ export function ThreadComposer({
           </div>
 
           <div className="zorai-composer-actions__right">
-            {isStreamingResponse ? (
+            {queue.editingId ? (
+              <>
+                <button
+                  type="button"
+                  className="zorai-composer-icon-button"
+                  title="Cancel edit"
+                  aria-label="Cancel edit"
+                  onClick={() => {
+                    queue.cancelEdit();
+                    runtime.setInput("");
+                    setAttachments([]);
+                  }}
+                >
+                  <ComposerIcon kind="stop" />
+                </button>
+                <button
+                  type="button"
+                  className="zorai-composer-icon-button zorai-composer-icon-button--send"
+                  title="Update queued message"
+                  aria-label="Update queued message"
+                  onClick={updateQueuedInput}
+                  disabled={!canSend}
+                >
+                  <ComposerIcon kind="queue" />
+                </button>
+              </>
+            ) : isStreamingResponse ? (
               <>
                 <button
                   type="button"

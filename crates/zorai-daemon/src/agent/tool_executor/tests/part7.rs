@@ -223,6 +223,44 @@ async fn update_memory_from_custom_agent_scope_writes_only_custom_memory() {
 }
 
 #[tokio::test]
+async fn schedule_wakeup_schema_exposes_finite_goal_supervision_contract() {
+    let root = tempdir().expect("tempdir");
+    let tools = get_available_tools(&AgentConfig::default(), root.path(), false);
+    let schedule = tools
+        .iter()
+        .find(|tool| tool.function.name == "schedule_wakeup")
+        .expect("schedule_wakeup tool should be available");
+    let properties = schedule
+        .function
+        .parameters
+        .get("properties")
+        .and_then(|value| value.as_object())
+        .expect("schedule_wakeup schema should expose properties");
+    assert_eq!(
+        properties
+            .get("kind")
+            .and_then(|value| value.get("enum"))
+            .and_then(|value| value.as_array())
+            .expect("kind enum"),
+        &vec![
+            serde_json::Value::String("generic".to_string()),
+            serde_json::Value::String("goal_supervision".to_string()),
+        ]
+    );
+    assert!(properties.contains_key("goal_run_id"));
+    let repetitions_description = properties
+        .get("repetitions")
+        .and_then(|value| value.get("description"))
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+    assert!(repetitions_description.contains("requires exactly 1"));
+    assert!(schedule
+        .function
+        .description
+        .contains("cleared automatically"));
+}
+
+#[tokio::test]
 async fn list_threads_tool_returns_filtered_visible_summaries() {
     let root = tempdir().expect("tempdir");
     let manager = SessionManager::new_test(root.path()).await;

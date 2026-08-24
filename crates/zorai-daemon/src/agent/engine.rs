@@ -230,6 +230,7 @@ pub struct AgentEngine {
         mpsc::UnboundedSender<super::skill_preflight::AsyncSkillDiscoveryCompletion>,
     pub(super) auto_thread_title_jobs:
         mpsc::UnboundedSender<super::thread_title::AutoThreadTitleJob>,
+    pub(super) prompt_queue_wake_tx: mpsc::UnboundedSender<String>,
     #[cfg(test)]
     pub(super) skill_discovery_test_runner:
         std::sync::OnceLock<Arc<dyn super::skill_preflight::SkillDiscoveryTestRunner>>,
@@ -354,6 +355,7 @@ impl AgentEngine {
         let (watcher_refresh_tx, watcher_refresh_rx) = mpsc::unbounded_channel();
         let (skill_discovery_result_tx, skill_discovery_result_rx) = mpsc::unbounded_channel();
         let (auto_thread_title_jobs, auto_thread_title_rx) = mpsc::unbounded_channel();
+        let (prompt_queue_wake_tx, prompt_queue_wake_rx) = mpsc::unbounded_channel();
 
         let mut runners = HashMap::new();
         for agent_type in &["openclaw", "hermes"] {
@@ -481,6 +483,7 @@ impl AgentEngine {
             watcher_refresh_rx: Mutex::new(Some(watcher_refresh_rx)),
             skill_discovery_result_tx,
             auto_thread_title_jobs,
+            prompt_queue_wake_tx,
             #[cfg(test)]
             skill_discovery_test_runner: std::sync::OnceLock::new(),
             #[cfg(test)]
@@ -522,6 +525,8 @@ impl AgentEngine {
             skill_discovery_result_rx,
         );
         super::thread_title::spawn_auto_thread_title_worker(engine.clone(), auto_thread_title_rx);
+        super::prompt_queue::spawn_prompt_queue_worker(engine.clone(), prompt_queue_wake_rx);
+        super::prompt_queue::spawn_prompt_queue_startup_flush(engine.clone());
         mlflow_tracing.start(
             Arc::downgrade(&engine),
             event_tx.subscribe(),

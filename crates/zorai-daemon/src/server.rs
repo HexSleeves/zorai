@@ -121,6 +121,8 @@ mod connection_pre_dispatch;
 mod dispatch_part1;
 #[path = "server/dispatch_part10.rs"]
 mod dispatch_part10;
+#[path = "server/dispatch_part11.rs"]
+mod dispatch_part11;
 #[path = "server/dispatch_part2.rs"]
 mod dispatch_part2;
 #[path = "server/dispatch_part3.rs"]
@@ -218,6 +220,11 @@ fn client_message_variant_name(msg: &ClientMessage) -> &'static str {
         AgentListMlflowTracingHeaders => "AgentListMlflowTracingHeaders",
         AgentSetMlflowTracingHeader { .. } => "AgentSetMlflowTracingHeader",
         AgentDeleteMlflowTracingHeader { .. } => "AgentDeleteMlflowTracingHeader",
+        AgentEnqueuePrompt { .. } => "AgentEnqueuePrompt",
+        AgentListPromptQueue { .. } => "AgentListPromptQueue",
+        AgentUpdateQueuedPrompt { .. } => "AgentUpdateQueuedPrompt",
+        AgentCancelQueuedPrompt { .. } => "AgentCancelQueuedPrompt",
+        AgentSendQueuedPromptNow { .. } => "AgentSendQueuedPromptNow",
         AgentGetGatewayConfig => "AgentGetGatewayConfig",
         AgentGetEffectiveConfigState => "AgentGetEffectiveConfigState",
         AgentGetProviderCatalog => "AgentGetProviderCatalog",
@@ -509,6 +516,9 @@ where
             )
             .await?
             {
+                continue;
+            }
+            if dispatch_part11::dispatch_part11(&msg, &agent, &mut framed).await? {
                 continue;
             }
         }

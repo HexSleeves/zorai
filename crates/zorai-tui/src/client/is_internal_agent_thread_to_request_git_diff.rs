@@ -265,4 +265,52 @@ impl DaemonClient {
             file_path,
         })
     }
+
+    pub fn enqueue_prompt(
+        &self,
+        thread_id: String,
+        prompt_id: String,
+        content: String,
+        content_blocks_json: Option<String>,
+    ) -> Result<()> {
+        self.send(ClientMessage::AgentEnqueuePrompt {
+            thread_id,
+            content,
+            content_blocks_json,
+            prompt_id: Some(prompt_id),
+        })
+    }
+
+    pub fn list_prompt_queue(&self, thread_id: Option<String>) -> Result<()> {
+        self.send(ClientMessage::AgentListPromptQueue { thread_id })
+    }
+
+    pub fn update_queued_prompt(
+        &self,
+        thread_id: String,
+        prompt_id: String,
+        content: String,
+        content_blocks_json: Option<String>,
+    ) -> Result<()> {
+        self.send(ClientMessage::AgentUpdateQueuedPrompt {
+            thread_id,
+            prompt_id,
+            content,
+            content_blocks_json,
+        })
+    }
+
+    pub fn cancel_queued_prompt(&self, thread_id: String, prompt_id: String) -> Result<()> {
+        self.send(ClientMessage::AgentCancelQueuedPrompt {
+            thread_id,
+            prompt_id,
+        })
+    }
+
+    pub fn send_queued_prompt_now(&self, thread_id: String, prompt_id: String) -> Result<()> {
+        self.send(ClientMessage::AgentSendQueuedPromptNow {
+            thread_id,
+            prompt_id,
+        })
+    }
 }

@@ -392,4 +392,8 @@ pub enum AgentEvent {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         reaction: Option<zorai_protocol::Reaction>,
     },
+    PromptQueueUpdate {
+        thread_id: String,
+        prompts: Vec<zorai_protocol::QueuedPromptRecord>,
+    },
 }

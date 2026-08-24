@@ -688,6 +688,27 @@ declare global {
         stopTerminalSession?: (paneId: string, killSession?: boolean) => Promise<boolean>;
         executeManagedCommand?: (paneId: string | null, payload: unknown) => Promise<boolean | { output?: string }>;
         agentSendMessage?: (threadId: string | null, content: string, sessionId?: string | null, contextMessages?: unknown[], contentBlocksJson?: string | null, targetAgentId?: string | null) => Promise<{ ok?: boolean; error?: string } | unknown>;
+        agentEnqueuePrompt?: (payload: {
+            threadId: string;
+            content: string;
+            contentBlocksJson?: string | null;
+            promptId?: string | null;
+        }) => Promise<{ thread_id?: string | null; prompts?: unknown[]; error?: string } | unknown>;
+        agentListPromptQueue?: (threadId?: string | null) => Promise<{ thread_id?: string | null; prompts?: unknown[]; error?: string } | unknown>;
+        agentUpdateQueuedPrompt?: (payload: {
+            threadId: string;
+            promptId: string;
+            content: string;
+            contentBlocksJson?: string | null;
+        }) => Promise<{ thread_id?: string | null; prompts?: unknown[]; error?: string } | unknown>;
+        agentCancelQueuedPrompt?: (payload: {
+            threadId: string;
+            promptId: string;
+        }) => Promise<{ thread_id?: string | null; prompts?: unknown[]; error?: string } | unknown>;
+        agentSendQueuedPromptNow?: (payload: {
+            threadId: string;
+            promptId: string;
+        }) => Promise<{ thread_id?: string | null; prompts?: unknown[]; error?: string } | unknown>;
         agentInternalDelegate?: (threadId: string | null, targetAgentId: string, content: string, sessionId?: string | null) => Promise<{ ok?: boolean; error?: string } | unknown>;
         agentThreadParticipantCommand?: (payload: {
             threadId: string;

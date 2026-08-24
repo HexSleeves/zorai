@@ -1014,6 +1014,63 @@ where
                 .send(ClientMessage::AgentGetDivergentSession { session_id })
                 .await?;
         }
+        AgentBridgeCommand::EnqueuePrompt {
+            thread_id,
+            content,
+            content_blocks_json,
+            prompt_id,
+        } => {
+            framed
+                .send(ClientMessage::AgentEnqueuePrompt {
+                    thread_id,
+                    content,
+                    content_blocks_json,
+                    prompt_id,
+                })
+                .await?;
+        }
+        AgentBridgeCommand::ListPromptQueue { thread_id } => {
+            framed
+                .send(ClientMessage::AgentListPromptQueue { thread_id })
+                .await?;
+        }
+        AgentBridgeCommand::UpdateQueuedPrompt {
+            thread_id,
+            prompt_id,
+            content,
+            content_blocks_json,
+        } => {
+            framed
+                .send(ClientMessage::AgentUpdateQueuedPrompt {
+                    thread_id,
+                    prompt_id,
+                    content,
+                    content_blocks_json,
+                })
+                .await?;
+        }
+        AgentBridgeCommand::CancelQueuedPrompt {
+            thread_id,
+            prompt_id,
+        } => {
+            framed
+                .send(ClientMessage::AgentCancelQueuedPrompt {
+                    thread_id,
+                    prompt_id,
+                })
+                .await?;
+        }
+        AgentBridgeCommand::SendQueuedPromptNow {
+            thread_id,
+            prompt_id,
+        } => {
+            framed
+                .send(ClientMessage::AgentSendQueuedPromptNow {
+                    thread_id,
+                    prompt_id,
+                })
+                .await?;
+        }
         AgentBridgeCommand::Shutdown => {
             framed.send(ClientMessage::AgentUnsubscribe).await?;
             return Ok(false);

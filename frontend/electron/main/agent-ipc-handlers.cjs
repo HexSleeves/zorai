@@ -300,6 +300,64 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
     ipcMain.handle('agent-list-mlflow-tracing-headers', async () => sendAgentQuery({ type: 'list-mlflow-tracing-headers' }, 'mlflow-tracing-headers'));
     ipcMain.handle('agent-set-mlflow-tracing-header', async (_event, name, value) => sendAgentQuery({ type: 'set-mlflow-tracing-header', name, value }, 'mlflow-tracing-headers'));
     ipcMain.handle('agent-delete-mlflow-tracing-header', async (_event, name) => sendAgentQuery({ type: 'delete-mlflow-tracing-header', name }, 'mlflow-tracing-headers'));
+    ipcMain.handle('agent-enqueue-prompt', async (_event, payload) => {
+        try {
+            return await sendAgentQuery({
+                type: 'enqueue-prompt',
+                thread_id: payload?.threadId ?? payload?.thread_id,
+                content: payload?.content ?? '',
+                content_blocks_json: typeof payload?.contentBlocksJson === 'string' ? payload.contentBlocksJson : payload?.content_blocks_json ?? null,
+                prompt_id: payload?.promptId ?? payload?.prompt_id ?? null,
+            }, 'prompt-queue');
+        } catch (err) {
+            return { thread_id: payload?.threadId ?? payload?.thread_id ?? null, prompts: [], error: err?.message || String(err) };
+        }
+    });
+    ipcMain.handle('agent-list-prompt-queue', async (_event, threadId) => {
+        try {
+            return await sendAgentQuery({
+                type: 'list-prompt-queue',
+                thread_id: typeof threadId === 'string' && threadId.trim() ? threadId.trim() : null,
+            }, 'prompt-queue');
+        } catch (err) {
+            return { thread_id: threadId ?? null, prompts: [], error: err?.message || String(err) };
+        }
+    });
+    ipcMain.handle('agent-update-queued-prompt', async (_event, payload) => {
+        try {
+            return await sendAgentQuery({
+                type: 'update-queued-prompt',
+                thread_id: payload?.threadId ?? payload?.thread_id,
+                prompt_id: payload?.promptId ?? payload?.prompt_id,
+                content: payload?.content ?? '',
+                content_blocks_json: typeof payload?.contentBlocksJson === 'string' ? payload.contentBlocksJson : payload?.content_blocks_json ?? null,
+            }, 'prompt-queue');
+        } catch (err) {
+            return { thread_id: payload?.threadId ?? payload?.thread_id ?? null, prompts: [], error: err?.message || String(err) };
+        }
+    });
+    ipcMain.handle('agent-cancel-queued-prompt', async (_event, payload) => {
+        try {
+            return await sendAgentQuery({
+                type: 'cancel-queued-prompt',
+                thread_id: payload?.threadId ?? payload?.thread_id,
+                prompt_id: payload?.promptId ?? payload?.prompt_id,
+            }, 'prompt-queue');
+        } catch (err) {
+            return { thread_id: payload?.threadId ?? payload?.thread_id ?? null, prompts: [], error: err?.message || String(err) };
+        }
+    });
+    ipcMain.handle('agent-send-queued-prompt-now', async (_event, payload) => {
+        try {
+            return await sendAgentQuery({
+                type: 'send-queued-prompt-now',
+                thread_id: payload?.threadId ?? payload?.thread_id,
+                prompt_id: payload?.promptId ?? payload?.prompt_id,
+            }, 'prompt-queue');
+        } catch (err) {
+            return { thread_id: payload?.threadId ?? payload?.thread_id ?? null, prompts: [], error: err?.message || String(err) };
+        }
+    });
     ipcMain.handle('agent-external-runtime-migration-status', async () => sendAgentQuery({ type: 'external-runtime-migration-status' }, 'external-runtime-migration', 15000));
     ipcMain.handle('agent-external-runtime-migration-preview', async (_event, runtime, configPath) => sendAgentQuery({
         type: 'external-runtime-migration-preview',

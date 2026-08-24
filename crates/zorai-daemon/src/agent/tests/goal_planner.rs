@@ -577,6 +577,17 @@ async fn fail_goal_run_advances_active_thread_and_execution_thread_list() {
     goal_run.execution_thread_ids = vec!["thread-root".to_string()];
     goal_run.thread_id = Some("thread-root".to_string());
     engine.goal_runs.lock().await.push_back(goal_run);
+    let wakeup = engine
+        .schedule_wakeup_with_context(
+            "thread-root",
+            60_000,
+            1,
+            "supervise failure",
+            "goal_supervision",
+            Some(goal_run_id),
+        )
+        .await
+        .expect("valid goal supervision");
 
     engine
         .fail_goal_run(
@@ -600,6 +611,14 @@ async fn fail_goal_run_advances_active_thread_and_execution_thread_list() {
         updated.execution_thread_ids,
         vec!["thread-root".to_string(), "thread-specialist".to_string()]
     );
+    assert!(!engine.timer_wakeups.lock().await.contains_key(&wakeup.id));
+    assert!(!engine
+        .history
+        .list_agent_wakeups()
+        .await
+        .expect("wakeups")
+        .iter()
+        .any(|row| row.id == wakeup.id));
 }
 
 #[tokio::test]

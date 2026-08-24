@@ -120,13 +120,15 @@ pub(crate) fn add_available_tools_part_d(
             "limit": { "type": "integer", "description": "Maximum number of tasks to return" }
         }
     })));
-    tools.push(tool_def(tool_names::SCHEDULE_WAKEUP, "Schedule a wakeup that re-prompts you on this thread after a delay, e.g. to check on a long-running job. Returns a wakeup_id you can pass to cancel_wakeup. The delay is reschedule interval for repeats.", serde_json::json!({
+    tools.push(tool_def(tool_names::SCHEDULE_WAKEUP, "Schedule a wakeup that re-prompts you on this thread after a delay. For goal supervision, set kind=goal_supervision and goal_run_id; goal supervision must be finite and the triggered agent must reassess whether another follow-up is useful. Goal-linked wakeups are cleared automatically when the goal becomes terminal.", serde_json::json!({
         "type": "object",
         "properties": {
             "delay": { "type": "integer", "description": "How long until the wakeup fires (in `unit`s). Minimum 1." },
             "unit": { "type": "string", "enum": ["seconds", "minutes", "hours"], "description": "Time unit for delay (default: minutes)" },
-            "repetitions": { "type": "integer", "description": "How many times to fire (default 1). 0 = repeat indefinitely until cancelled." },
-            "message": { "type": "string", "description": "What you want to be reminded to do when the wakeup fires" }
+            "repetitions": { "type": "integer", "description": "How many times to fire (default 1). Goal supervision requires exactly 1 so each triggered turn reassesses whether another follow-up is useful." },
+            "message": { "type": "string", "description": "What you want to be reminded to do when the wakeup fires" },
+            "kind": { "type": "string", "enum": ["generic", "goal_supervision"], "description": "Wakeup policy. Goal supervision is status-aware and finite." },
+            "goal_run_id": { "type": "string", "description": "Required when kind=goal_supervision; links lifecycle cleanup to the goal." }
         },
         "required": ["delay"]
     })));

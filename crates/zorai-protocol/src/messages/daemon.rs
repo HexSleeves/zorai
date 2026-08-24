@@ -4,10 +4,10 @@ use super::{
     ApprovalDecision, ApprovalPayload, AsyncCommandCapability, CommunitySkillEntry,
     GatewayBootstrapPayload, GatewayReloadCommand, GatewaySendRequest, GatewayShutdownCommand,
     GitInfo, HistorySearchHit, ManagedCommandSource, OperationStatusSnapshot,
-    OscNotificationPayload, PluginCommandInfo, PluginInfo, SessionId, SessionInfo,
-    SkillVariantPublic, SnapshotInfo, SymbolMatch, TaskApprovalRule, TelemetryLedgerStatus,
-    ThreadHandoffResult, ToolListResultPublic, ToolSearchResultPublic, WorkspaceNotice,
-    WorkspaceSettings, WorkspaceTask,
+    OscNotificationPayload, PluginCommandInfo, PluginInfo, QueuedPromptRecord, SessionId,
+    SessionInfo, SkillVariantPublic, SnapshotInfo, SymbolMatch, TaskApprovalRule,
+    TelemetryLedgerStatus, ThreadHandoffResult, ToolListResultPublic, ToolSearchResultPublic,
+    WorkspaceNotice, WorkspaceSettings, WorkspaceTask,
 };
 
 #[rustfmt::skip]
@@ -198,4 +198,8 @@ pub enum DaemonMessage {
     AgentMlflowTracingStatus { status_json: String },
     AgentMlflowTracingTestResult { result_json: String },
     AgentMlflowTracingHeaders { names: Vec<String> },
+    AgentPromptQueue {
+        thread_id: Option<String>,
+        prompts: Vec<QueuedPromptRecord>,
+    },
 }

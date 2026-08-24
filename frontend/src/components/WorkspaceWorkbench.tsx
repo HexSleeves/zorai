@@ -11,7 +11,7 @@ import { shouldRestoreWorkspaceDocument } from "@/zorai/features/code/workspaceD
 import { useWorkspaceEditorRequestStore } from "@/lib/workspaceEditorRequestStore";
 import { CodeQuickOpen } from "@/zorai/features/code/CodeQuickOpen";
 import { CodeCommandPalette } from "@/zorai/features/code/CodeCommandPalette";
-import { CODE_COMMANDS, matchesCodeBinding, type CodeCommandId } from "@/zorai/features/code/codeCommands";
+import { CODE_COMMANDS, matchesCodeBinding, shouldPassthroughCodeCommand, type CodeCommandId } from "@/zorai/features/code/codeCommands";
 import { CodeIconButton } from "@/zorai/features/code/CodeIconButton";
 import { createCodeDocumentController } from "@/zorai/features/code/codeDocumentModel";
 import { createCodeFileOpenTrace } from "@/zorai/features/code/codeEditorPerformance";
@@ -844,6 +844,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
         return binding && matchesCodeBinding(binding, event);
       });
       if (!command) return;
+      if (shouldPassthroughCodeCommand(command.id, event.target)) return;
       event.preventDefault();
       event.stopPropagation();
       runCodeCommand(command.id);

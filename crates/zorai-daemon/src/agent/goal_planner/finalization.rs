@@ -587,6 +587,7 @@ impl AgentEngine {
         };
 
         self.persist_goal_runs().await;
+        self.cancel_goal_wakeups(goal_run_id).await;
         crate::governance::record_transition_audit(
             &self.history,
             crate::governance::TransitionKind::FinalDisposition,
@@ -789,6 +790,7 @@ impl AgentEngine {
         }
         if let Some(updated) = maybe_updated {
             self.persist_goal_runs().await;
+            self.cancel_goal_wakeups(goal_run_id).await;
             crate::governance::record_transition_audit(
                 &self.history,
                 crate::governance::TransitionKind::FinalDisposition,

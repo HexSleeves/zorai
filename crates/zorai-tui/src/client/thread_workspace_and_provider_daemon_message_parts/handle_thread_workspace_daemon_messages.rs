@@ -409,6 +409,11 @@ impl DaemonClient {
             DaemonMessage::AgentTaskApprovalRules { rules } => {
                 let _ = event_tx.send(ClientEvent::TaskApprovalRules(rules)).await;
             }
+            DaemonMessage::AgentPromptQueue { thread_id, prompts } => {
+                let _ = event_tx
+                    .send(ClientEvent::PromptQueue { thread_id, prompts })
+                    .await;
+            }
             _ => unreachable!("thread/workspace daemon message dispatch should be exhaustive"),
         }
     }

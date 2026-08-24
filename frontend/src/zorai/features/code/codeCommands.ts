@@ -123,3 +123,36 @@ export function codeCommandConflicts(bindings: Record<string, string | null>) {
     .map(([binding, commandIds]) => ({ binding, commandIds: commandIds.sort() }))
     .sort((a, b) => a.binding.localeCompare(b.binding));
 }
+
+const NATIVE_EDIT_COMMANDS = new Set<CodeCommandId>([
+  "edit.copy", "edit.paste", "edit.cut", "edit.undo", "edit.redo", "edit.selectAll",
+  "edit.indent", "edit.outdent",
+]);
+
+type EditableTargetLike = {
+  tagName?: string;
+  isContentEditable?: boolean;
+  readOnly?: boolean;
+  disabled?: boolean;
+  type?: string;
+  closest?: (selector: string) => unknown;
+};
+
+export function isEditableKeyboardTarget(target: EventTarget | null): boolean {
+  if (!target || typeof target !== "object") return false;
+  const el = target as EditableTargetLike;
+  if (el.closest?.(".monaco-editor")) return true;
+  const tag = el.tagName?.toUpperCase();
+  if (tag === "TEXTAREA") return !el.readOnly && !el.disabled;
+  if (tag === "INPUT") {
+    if (el.readOnly || el.disabled) return false;
+    const type = (el.type ?? "text").toLowerCase();
+    return type === "text" || type === "search" || type === "url" || type === "email"
+      || type === "password" || type === "tel" || type === "number" || type === "";
+  }
+  return Boolean(el.isContentEditable);
+}
+
+export function shouldPassthroughCodeCommand(id: CodeCommandId, target: EventTarget | null): boolean {
+  return NATIVE_EDIT_COMMANDS.has(id) && isEditableKeyboardTarget(target);
+}

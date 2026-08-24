@@ -1401,6 +1401,17 @@ async fn stopping_goal_run_records_operator_stop_resume_decision() {
             approval_id,
         ));
     sample_awaiting_task(&engine, goal_run_id, task_id, approval_id).await;
+    let wakeup = engine
+        .schedule_wakeup_with_context(
+            "thread-supervised-stop",
+            60_000,
+            1,
+            "supervise stop",
+            "goal_supervision",
+            Some(goal_run_id),
+        )
+        .await
+        .expect("valid goal supervision");
 
     let changed = engine
         .control_goal_run(goal_run_id, "stop", None, None)
@@ -1426,6 +1437,14 @@ async fn stopping_goal_run_records_operator_stop_resume_decision() {
         resume_decision.projection_state,
         GoalProjectionState::Failed
     );
+    assert!(!engine.timer_wakeups.lock().await.contains_key(&wakeup.id));
+    assert!(!engine
+        .history
+        .list_agent_wakeups()
+        .await
+        .expect("wakeups")
+        .iter()
+        .any(|row| row.id == wakeup.id));
 }
 
 #[tokio::test]
@@ -2907,6 +2926,17 @@ async fn delete_goal_run_removes_goal_and_related_tasks() {
         .upsert_goal_run(&goal_run)
         .await
         .expect("persist goal run");
+    let wakeup = engine
+        .schedule_wakeup_with_context(
+            "thread-goal-delete",
+            60_000,
+            1,
+            "supervise deletion",
+            "goal_supervision",
+            Some("goal-delete"),
+        )
+        .await
+        .expect("valid goal supervision");
     engine
         .history
         .upsert_agent_task(&AgentTask {
@@ -2995,6 +3025,14 @@ async fn delete_goal_run_removes_goal_and_related_tasks() {
         .await
         .iter()
         .all(|task| task.goal_run_id.as_deref() != Some("goal-delete")));
+    assert!(!engine.timer_wakeups.lock().await.contains_key(&wakeup.id));
+    assert!(!engine
+        .history
+        .list_agent_wakeups()
+        .await
+        .expect("wakeups")
+        .iter()
+        .any(|row| row.id == wakeup.id));
     assert!(engine
         .history
         .get_goal_run("goal-delete")

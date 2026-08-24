@@ -1821,6 +1821,26 @@ pub(crate) async fn execute_schedule_wakeup(
         .get("repetitions")
         .and_then(|value| value.as_u64())
         .unwrap_or(1);
+    let wakeup_kind = args
+        .get("kind")
+        .and_then(|value| value.as_str())
+        .unwrap_or("generic")
+        .trim();
+    let goal_run_id = args
+        .get("goal_run_id")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if wakeup_kind == "goal_supervision" {
+        if goal_run_id.is_none() {
+            return Err(anyhow::anyhow!("goal supervision requires 'goal_run_id'"));
+        }
+        if repetitions != 1 {
+            return Err(anyhow::anyhow!(
+                "goal supervision must schedule exactly one wakeup; let the triggered agent reassess before scheduling another"
+            ));
+        }
+    }
     let message = args
         .get("message")
         .and_then(|value| value.as_str())
@@ -1829,8 +1849,15 @@ pub(crate) async fn execute_schedule_wakeup(
         .unwrap_or("Scheduled wakeup — continue with what you intended to check.");
 
     let wakeup = agent
-        .schedule_wakeup(thread_id, delay_ms, repetitions, message)
-        .await;
+        .schedule_wakeup_with_context(
+            thread_id,
+            delay_ms,
+            repetitions,
+            message,
+            wakeup_kind,
+            goal_run_id,
+        )
+        .await?;
 
     let repetitions_value = if repetitions == 0 {
         serde_json::Value::String("infinite".to_string())
@@ -1842,6 +1869,8 @@ pub(crate) async fn execute_schedule_wakeup(
         "fires_in_ms": delay_ms,
         "next_fire_at_ms": wakeup.next_fire_at,
         "repetitions": repetitions_value,
+        "kind": wakeup.wakeup_kind,
+        "goal_run_id": wakeup.goal_run_id,
         "note": "Cancel with cancel_wakeup using this wakeup_id. Fires within ~30s of the scheduled time.",
     })
     .to_string())

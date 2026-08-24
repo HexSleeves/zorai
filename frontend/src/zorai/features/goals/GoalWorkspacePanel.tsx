@@ -4,7 +4,6 @@ import { useThreadFilePreview } from "../threads/ThreadFilePreviewContext";
 import {
   controlGoalRun,
   formatGoalRunStatus,
-  isGoalRunActive,
   summarizeGoalRunStep,
   type GoalRun,
   type GoalRunControlAction,
@@ -12,6 +11,7 @@ import {
 import {
   buildGoalWorkspaceModel,
   type GoalProjectionFile,
+  type GoalWorkspaceAction,
   type GoalWorkspaceMode,
   type GoalWorkspaceRow,
   type GoalWorkspaceSection,
@@ -62,21 +62,34 @@ export function GoalWorkspacePanel({
     projectionFiles,
   }) : null, [expandedStepIds, mode, projectionFiles, promptExpanded, run, selectedCenterIndex, selectedStepId]);
 
-  const activeStepIndex = typeof run?.current_step_index === "number" ? run.current_step_index : null;
-
   const control = async (action: GoalRunControlAction) => {
-    if (!run) return;
-    const ok = await controlGoalRun(run.id, action, activeStepIndex);
+    if (!run || !model) return;
+    if (action === "cancel" && !window.confirm("Stop this goal run?")) return;
+    if (action === "retry_step" && !window.confirm("Retry the selected step?")) return;
+    if (action === "rerun_from_step" && !window.confirm("Rerun from the selected step?")) return;
+    const ok = await controlGoalRun(run.id, action, model.selectedStepIndex);
     onMessage(ok ? `Goal ${action.replace(/_/g, " ")} requested.` : "Goal action failed.");
     await onRefresh();
+  };
+
+  const runFooterAction = async (action: GoalWorkspaceAction) => {
+    if (action.id === "refresh") {
+      await onRefresh();
+      return;
+    }
+    if (action.id === "toggle") {
+      await control(run?.status === "paused" ? "resume" : "pause");
+      return;
+    }
+    if (action.id === "cancel") await control("cancel");
+    if (action.id === "retry") await control("retry_step");
+    if (action.id === "rerun") await control("rerun_from_step");
   };
 
   if (!run || !model) {
     return (
       <div className="zorai-goal-workspace-shell">
-        <div className="zorai-tui-pane">
-          <div className="zorai-tui-pane__body zorai-empty-state">Select a goal run to open the TUI-style workspace.</div>
-        </div>
+        <div className="zorai-panel zorai-empty-state">Select a goal run to inspect its plan, timeline, and actions.</div>
       </div>
     );
   }
@@ -119,25 +132,22 @@ export function GoalWorkspacePanel({
   };
 
   return (
-    <div className="zorai-goal-workspace-shell" aria-label="Goal Mission Control">
-      <section className="zorai-tui-pane zorai-goal-summary-pane">
-        <div className="zorai-tui-pane__title">{model.summaryTitle}</div>
-        <div className="zorai-goal-mode-tabs" aria-label="Goal workspace modes">
-          {model.tabs.map((tab) => (
-            <button
-              type="button"
-              key={tab.id}
-              className={["zorai-goal-tab", tab.active ? "zorai-goal-tab--active" : ""].filter(Boolean).join(" ")}
-              onClick={() => {
-                setMode(tab.id);
-                setSelectedCenterIndex(0);
-              }}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-      </section>
+    <div className="zorai-goal-workspace-shell" aria-label="Goal workspace">
+      <nav className="zorai-goal-tabs" aria-label="Goal workspace modes">
+        {model.tabs.map((tab) => (
+          <button
+            type="button"
+            key={tab.id}
+            className={["zorai-goal-tab", tab.active ? "zorai-goal-tab--active" : ""].filter(Boolean).join(" ")}
+            onClick={() => {
+              setMode(tab.id);
+              setSelectedCenterIndex(0);
+            }}
+          >
+            {tab.label}
+          </button>
+        ))}
+      </nav>
 
       <div className="zorai-goal-workspace-grid">
         <Pane title={model.planTitle} className="zorai-goal-plan-pane">
@@ -159,36 +169,28 @@ export function GoalWorkspacePanel({
         </Pane>
       </div>
 
-      <section className="zorai-tui-pane zorai-step-actions-pane">
-        <div className="zorai-tui-pane__title">{model.footerTitle}</div>
-        <div className="zorai-step-actions">
-          {model.footerSegments.map((segment) => (
+      <section className="zorai-panel zorai-goal-toolbar">
+        <div>
+          <div className="zorai-section-label">{model.footerTitle}</div>
+          <strong>{model.selectedStepLabel}</strong>
+        </div>
+        <div className="zorai-card-actions">
+          {model.footerActions.map((action) => (
             <button
-              key={segment.id}
+              key={action.id}
               type="button"
-              className={["zorai-step-action", `zorai-row-tone--${segment.tone ?? "normal"}`].join(" ")}
-              onClick={() => {
-                if (segment.id === "toggle") void control(run.status === "paused" ? "resume" : "pause");
-                if (segment.id === "retry") void control("retry_step");
-                if (segment.id === "rerun") void control("rerun_from_step");
-                if (segment.id === "refresh") void onRefresh();
-              }}
-              disabled={
-                (segment.id === "toggle" && !isGoalRunActive(run))
-                || ((segment.id === "retry" || segment.id === "rerun") && activeStepIndex === null)
-                || segment.id === "actions"
-                || segment.id === "step"
-                || segment.id === "prompt"
-              }
+              className={action.id === "toggle" && action.label === "Resume" ? "zorai-primary-button" : "zorai-ghost-button"}
+              onClick={() => void runFooterAction(action)}
+              disabled={!action.enabled}
             >
-              {segment.text}
+              {action.label}
             </button>
           ))}
         </div>
       </section>
 
       <div className="zorai-goal-workspace-status">
-        <span>{formatGoalRunStatus(run.status)}</span>
+        <span className="zorai-status-pill">{formatGoalRunStatus(run.status)}</span>
         <span>{summarizeGoalRunStep(run)}</span>
       </div>
     </div>
@@ -205,9 +207,9 @@ function Pane({
   children: ReactNode;
 }) {
   return (
-    <section className={["zorai-tui-pane", className ?? ""].filter(Boolean).join(" ")}>
-      <div className="zorai-tui-pane__title">{title}</div>
-      <div className="zorai-tui-pane__body">{children}</div>
+    <section className={["zorai-panel zorai-goal-pane", className ?? ""].filter(Boolean).join(" ")}>
+      <div className="zorai-section-label">{title}</div>
+      <div className="zorai-goal-pane__body">{children}</div>
     </section>
   );
 }
@@ -220,20 +222,23 @@ function RowList({
   onRowClick?: (row: GoalWorkspaceRow, index: number) => void;
 }) {
   return (
-    <div className="zorai-tui-row-list">
+    <div className="zorai-goal-item-list">
       {rows.map((row, index) => (
         <button
           key={`${row.id}-${index}`}
           type="button"
           className={[
-            "zorai-tui-row",
+            "zorai-goal-item",
             `zorai-row-tone--${row.tone ?? "normal"}`,
-            row.selected ? "zorai-tui-row--selected" : "",
+            row.selected ? "zorai-goal-item--selected" : "",
           ].filter(Boolean).join(" ")}
-          style={{ paddingLeft: `${8 + (row.depth ?? 0) * 18}px` }}
+          style={{ paddingLeft: `${10 + (row.depth ?? 0) * 16}px` }}
           onClick={() => onRowClick?.(row, index)}
         >
-          {row.text}
+          <span className="zorai-goal-item__body">
+            <span className="zorai-goal-item__text">{row.text}</span>
+            {row.meta ? <span className="zorai-goal-item__meta">{row.meta}</span> : null}
+          </span>
         </button>
       ))}
     </div>

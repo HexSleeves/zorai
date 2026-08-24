@@ -384,6 +384,29 @@ pub enum DaemonCommand {
     UpsertNotification(zorai_protocol::InboxNotification),
     MarkAllNotificationsRead,
     ArchiveReadNotifications,
+    EnqueuePrompt {
+        thread_id: String,
+        prompt_id: String,
+        content: String,
+        content_blocks_json: Option<String>,
+    },
+    ListPromptQueue {
+        thread_id: Option<String>,
+    },
+    UpdateQueuedPrompt {
+        thread_id: String,
+        prompt_id: String,
+        content: String,
+        content_blocks_json: Option<String>,
+    },
+    CancelQueuedPrompt {
+        thread_id: String,
+        prompt_id: String,
+    },
+    SendQueuedPromptNow {
+        thread_id: String,
+        prompt_id: String,
+    },
 }
 
 #[allow(unused_imports)]

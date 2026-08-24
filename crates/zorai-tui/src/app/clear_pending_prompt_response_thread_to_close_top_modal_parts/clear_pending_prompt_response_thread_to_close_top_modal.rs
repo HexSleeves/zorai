@@ -101,10 +101,6 @@ impl TuiModel {
         self.chat.is_streaming() || self.current_thread_agent_activity().is_some()
     }
 
-    pub(crate) fn queue_barrier_active(&self) -> bool {
-        self.chat.has_running_tool_calls()
-    }
-
     pub(crate) fn should_queue_submitted_prompt(&self) -> bool {
         self.chat.is_streaming()
     }

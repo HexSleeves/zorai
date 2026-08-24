@@ -622,6 +622,8 @@ impl AgentEngine {
                             interval_ms: row.interval_ms,
                             next_fire_at: row.next_fire_at,
                             repetitions_remaining: row.repetitions_remaining,
+                            wakeup_kind: row.wakeup_kind,
+                            goal_run_id: row.goal_run_id,
                             created_at: row.created_at,
                         },
                     );

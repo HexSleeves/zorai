@@ -281,4 +281,31 @@ pub enum ClientMessage {
     AgentListMlflowTracingHeaders,
     AgentSetMlflowTracingHeader { name: String, value: String },
     AgentDeleteMlflowTracingHeader { name: String },
+    AgentEnqueuePrompt {
+        thread_id: String,
+        content: String,
+        #[serde(default)]
+        content_blocks_json: Option<String>,
+        #[serde(default)]
+        prompt_id: Option<String>,
+    },
+    AgentListPromptQueue {
+        #[serde(default)]
+        thread_id: Option<String>,
+    },
+    AgentUpdateQueuedPrompt {
+        thread_id: String,
+        prompt_id: String,
+        content: String,
+        #[serde(default)]
+        content_blocks_json: Option<String>,
+    },
+    AgentCancelQueuedPrompt {
+        thread_id: String,
+        prompt_id: String,
+    },
+    AgentSendQueuedPromptNow {
+        thread_id: String,
+        prompt_id: String,
+    },
 }

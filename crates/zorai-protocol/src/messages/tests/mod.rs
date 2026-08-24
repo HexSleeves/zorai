@@ -2287,12 +2287,57 @@ fn mlflow_tracing_protocol_variants_round_trip_at_append_only_tail() {
         DaemonMessage::AgentMlflowTracingHeaders {
             names: vec!["X-Test".to_string()],
         },
+        DaemonMessage::AgentPromptQueue {
+            thread_id: Some("thread-1".to_string()),
+            prompts: vec![QueuedPromptRecord {
+                id: "prompt-1".to_string(),
+                thread_id: "thread-1".to_string(),
+                content: "follow up".to_string(),
+                content_blocks_json: None,
+                created_at: 1,
+                position: 1,
+            }],
+        },
     ];
     for response in responses {
         let bytes = bincode::serialize(&response).unwrap();
         let decoded: DaemonMessage = bincode::deserialize(&bytes).unwrap();
         assert_eq!(
             bincode_variant_index(&response),
+            bincode_variant_index(&decoded)
+        );
+    }
+
+    let queue_requests = vec![
+        ClientMessage::AgentEnqueuePrompt {
+            thread_id: "thread-1".to_string(),
+            content: "follow up".to_string(),
+            content_blocks_json: None,
+            prompt_id: Some("prompt-1".to_string()),
+        },
+        ClientMessage::AgentListPromptQueue {
+            thread_id: Some("thread-1".to_string()),
+        },
+        ClientMessage::AgentUpdateQueuedPrompt {
+            thread_id: "thread-1".to_string(),
+            prompt_id: "prompt-1".to_string(),
+            content: "edited".to_string(),
+            content_blocks_json: None,
+        },
+        ClientMessage::AgentCancelQueuedPrompt {
+            thread_id: "thread-1".to_string(),
+            prompt_id: "prompt-1".to_string(),
+        },
+        ClientMessage::AgentSendQueuedPromptNow {
+            thread_id: "thread-1".to_string(),
+            prompt_id: "prompt-1".to_string(),
+        },
+    ];
+    for request in queue_requests {
+        let bytes = bincode::serialize(&request).unwrap();
+        let decoded: ClientMessage = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(
+            bincode_variant_index(&request),
             bincode_variant_index(&decoded)
         );
     }

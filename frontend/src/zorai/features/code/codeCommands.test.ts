@@ -5,6 +5,7 @@ import {
   codeCommandConflicts,
   displayCodeBinding,
   matchesCodeBinding,
+  shouldPassthroughCodeCommand,
 } from "./codeCommands";
 
 const REQUIRED = [
@@ -37,5 +38,22 @@ describe("Code command registry", () => {
     expect(codeCommandConflicts({ "file.save": "CtrlCmd+S", "file.reload": "CtrlCmd+S" })).toEqual([
       { binding: "CtrlCmd+S", commandIds: ["file.reload", "file.save"] },
     ]);
+  });
+
+  it("lets native clipboard shortcuts reach the Code agent composer", () => {
+    const composer = { tagName: "TEXTAREA", readOnly: false, disabled: false } as EventTarget;
+    const search = { tagName: "INPUT", type: "text", readOnly: false, disabled: false } as EventTarget;
+    const monacoInput = {
+      tagName: "TEXTAREA",
+      closest: (selector: string) => selector === ".monaco-editor" ? {} : null,
+    } as EventTarget;
+
+    expect(shouldPassthroughCodeCommand("edit.copy", composer)).toBe(true);
+    expect(shouldPassthroughCodeCommand("edit.paste", composer)).toBe(true);
+    expect(shouldPassthroughCodeCommand("edit.cut", search)).toBe(true);
+    expect(shouldPassthroughCodeCommand("edit.selectAll", monacoInput)).toBe(true);
+    expect(shouldPassthroughCodeCommand("file.save", composer)).toBe(false);
+    expect(shouldPassthroughCodeCommand("edit.copy", { tagName: "DIV" } as EventTarget)).toBe(false);
+    expect(shouldPassthroughCodeCommand("edit.copy", null)).toBe(false);
   });
 });

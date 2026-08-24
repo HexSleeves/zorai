@@ -387,6 +387,9 @@ impl AgentEngine {
             .unwrap_or(false);
         if should_remove {
             streams.remove(thread_id);
+            drop(streams);
+            self.wake_prompt_queue(thread_id);
+            return;
         }
     }
 

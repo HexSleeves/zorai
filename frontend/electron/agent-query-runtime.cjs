@@ -26,6 +26,7 @@ const AGENT_QUERY_RESPONSE_TYPES = [
   'mlflow-tracing-status',
   'mlflow-tracing-test-result',
   'mlflow-tracing-headers',
+  'prompt-queue',
   'gateway-config',
   'heartbeat-items',
   'provider-auth-states',
