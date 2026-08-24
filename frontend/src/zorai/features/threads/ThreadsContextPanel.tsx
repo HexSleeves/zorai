@@ -10,6 +10,8 @@ import {
   threadContextEntryKey,
 } from "./threadContextPreview";
 import { useThreadFilePreview } from "./ThreadFilePreviewContext";
+import { useWorkspaceContextStore } from "@/lib/workspaceContextStore";
+import { useWorkspaceEditorRequestStore } from "@/lib/workspaceEditorRequestStore";
 import { SpawnedContext } from "./ThreadsSpawnedContext";
 import { ThreadRuntimeBar } from "./ThreadRuntimeBar";
 import { resolveThreadOwnerRuntimeProfile } from "./threadOwnerRuntime";
@@ -88,7 +90,7 @@ export function ThreadsContext() {
       </div>
 
       {activeTab === "todos" ? <TodoContext todos={runtime.todos} /> : null}
-      {activeTab === "files" ? <FilesContext entries={workContext.entries} /> : null}
+      {activeTab === "files" ? <FilesContext entries={workContext.entries} activeThreadId={activeThread?.id ?? null} /> : null}
       {activeTab === "spawned" ? (
         <SpawnedContext
           tree={runtime.spawnedAgentTree}
@@ -194,8 +196,12 @@ function TodoContext({ todos }: { todos: AgentTodoItem[] }) {
   );
 }
 
-function FilesContext({ entries }: { entries: WorkContextEntry[] }) {
+function FilesContext({ entries, activeThreadId }: { entries: WorkContextEntry[]; activeThreadId: string | null }) {
   const { openThreadFilePreview, previewTarget } = useThreadFilePreview();
+  const workspaceContext = useWorkspaceContextStore((state) =>
+    activeThreadId ? state.byThreadId[activeThreadId] : undefined,
+  );
+  const requestFileView = useWorkspaceEditorRequestStore((state) => state.requestFileView);
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
   const overlayEntryKey = previewTarget ? threadContextEntryKey(previewTarget.entry) : null;
 
@@ -218,14 +224,25 @@ function FilesContext({ entries }: { entries: WorkContextEntry[] }) {
         {entries.slice(0, 24).map((entry) => {
           const entryKey = threadContextEntryKey(entry);
           const selected = entryKey === selectedKey || entryKey === overlayEntryKey;
+          const workspaceRoot = workspaceContext?.root ?? null;
+          const entryWithinWorkspace = workspaceRoot !== null && entry.path
+            && (!entry.repoRoot || entry.repoRoot === workspaceRoot);
+          const canOpenInEditor = Boolean(activeThreadId && entryWithinWorkspace);
+          const title = canOpenInEditor ? "Open in editor" : "Preview file";
           return (
             <button
               key={entryKey}
               type="button"
               className={selected ? "zorai-file-context__item zorai-file-context__item--active" : "zorai-file-context__item"}
+              title={title}
               onClick={() => {
                 setSelectedKey(entryKey);
-                openThreadFilePreview(entry);
+                // When a Code workspace is bound, open in the editor; otherwise fall back to preview overlay.
+                if (canOpenInEditor && activeThreadId) {
+                  requestFileView(activeThreadId, entry.path, "edit");
+                } else {
+                  openThreadFilePreview(entry);
+                }
               }}
             >
               <span style={{ color: workContextKindColor(entry) }}>{workContextKindLabel(entry)}</span>
