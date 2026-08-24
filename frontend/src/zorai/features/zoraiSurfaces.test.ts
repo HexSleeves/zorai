@@ -75,9 +75,10 @@ describe("Zorai feature surfaces", () => {
     expect(workbenchSource).not.toContain('<details className="zorai-workspace-operation-changes" open>');
     expect(workbenchSource).not.toContain('<details className="zorai-workspace-agent-changes" open>');
     expect(workbenchSource).toContain("shouldRestoreWorkspaceDocument");
-    expect(workbenchSource).toContain("onActivate={(filePath) => void openFile(filePath)}");
-    expect(readFeature("./code/CodeTabs.tsx")).toContain("Unpin file");
-    expect(readFeature("./code/CodeTabs.tsx")).toContain("Pin file");
+    expect(workbenchSource).toContain('setActiveEditorTabId(`file:${filePath}`)');
+    expect(workbenchSource).toContain("void openFile(filePath)");
+    expect(readFeature("./code/CodeTabs.tsx")).toContain("Unpin editor");
+    expect(readFeature("./code/CodeTabs.tsx")).toContain("Pin editor");
     expect(styleSource).toContain(".zorai-workspace-editor .minimap");
     expect(styleSource).toContain(".zorai-security-shield");
     expect(styleSource).toContain(".zorai-effort-gauge");

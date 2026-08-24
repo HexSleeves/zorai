@@ -1421,6 +1421,7 @@
 }
 
 .zorai-thread-composer {
+  grid-area: composer;
   border-top: 1px solid var(--zorai-border);
   border-bottom: 0;
   padding: 14px 22px 12px;
@@ -3317,6 +3318,14 @@ button.zorai-composer-context-chip { cursor: pointer; }
   /* Code keeps the current Zorai token contract, but resolves it to a neutral
      black hierarchy so editor chrome never inherits the shell's blue-space
      wash. Semantic danger/warning/success colors remain global. */
+  --zorai-bg: #030405;
+  --zorai-bg-panel: #070809;
+  --zorai-bg-surface: #0a0b0d;
+  --zorai-bg-elevated: #0d0f11;
+  --zorai-bg-active: #151719;
+  --zorai-border: #1b1d20;
+  --zorai-border-strong: #2a2d31;
+  --zorai-muted: #858b94;
   grid-template-columns:
     68px
     var(--zorai-code-explorer-width)
