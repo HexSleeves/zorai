@@ -88,6 +88,22 @@ test('workspace search is bounded, ignores heavy directories, and reports locati
     fs.rmSync(root, { recursive: true, force: true });
 });
 
+test('workspace file language IDs match bundled Monaco tokenizers', async () => {
+    const root = tempWorkspace();
+    const cases = [
+        ['app.tsx', 'typescript'], ['app.jsx', 'javascript'], ['theme.css', 'css'], ['page.html', 'html'],
+        ['settings.jsonc', 'json'], ['schema.proto', 'proto'], ['main.tf', 'hcl'], ['Cargo.toml', 'ini'],
+        ['component.vue', 'html'], ['component.svelte', 'html'], ['script.groovy', 'java'], ['main.zig', 'cpp'], ['Dockerfile', 'dockerfile'],
+        ['Containerfile', 'dockerfile'], ['GNUmakefile', 'shell'], ['.prettierrc', 'json'], ['tsconfig.json', 'json'],
+    ];
+    for (const [name, expected] of cases) {
+        fs.writeFileSync(path.join(root, name), 'sample\n');
+        const opened = await readWorkspaceFile(root, name);
+        assert.equal(opened.language, expected, name);
+    }
+    fs.rmSync(root, { recursive: true, force: true });
+});
+
 test('workspace git operations stage, unstage, and discard tracked changes', async () => {
     const root = tempWorkspace();
     const runGit = (...args) => require('node:child_process').execFileSync('git', args, { cwd: root, encoding: 'utf8' });

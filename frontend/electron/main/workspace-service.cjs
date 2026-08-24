@@ -82,15 +82,21 @@ function resolveWorkspacePath(rootPath, relativePath = '', { allowMissing = fals
 const LANGUAGE_BY_EXTENSION = {
         '.c': 'c', '.h': 'c', '.cc': 'cpp', '.cpp': 'cpp', '.cxx': 'cpp', '.hpp': 'cpp', '.cs': 'csharp',
         '.css': 'css', '.scss': 'scss', '.sass': 'scss', '.less': 'less', '.dart': 'dart', '.ex': 'elixir', '.exs': 'elixir',
-        '.fs': 'fsharp', '.fsx': 'fsharp', '.go': 'go', '.graphql': 'graphql', '.gql': 'graphql', '.groovy': 'groovy',
+        '.fs': 'fsharp', '.fsx': 'fsharp', '.go': 'go', '.graphql': 'graphql', '.gql': 'graphql', '.groovy': 'java',
         '.html': 'html', '.htm': 'html', '.java': 'java', '.js': 'javascript', '.mjs': 'javascript', '.cjs': 'javascript',
-        '.jsx': 'javascriptreact', '.json': 'json', '.jsonc': 'json', '.kt': 'kotlin', '.kts': 'kotlin', '.lua': 'lua',
-        '.md': 'markdown', '.mdx': 'mdx', '.php': 'php', '.pl': 'perl', '.proto': 'protobuf', '.py': 'python', '.r': 'r',
+        '.jsx': 'javascript', '.json': 'json', '.jsonc': 'json', '.kt': 'kotlin', '.kts': 'kotlin', '.lua': 'lua',
+        '.md': 'markdown', '.mdx': 'mdx', '.php': 'php', '.pl': 'perl', '.proto': 'proto', '.py': 'python', '.r': 'r',
         '.rb': 'ruby', '.rs': 'rust', '.sh': 'shell', '.bash': 'shell', '.zsh': 'shell', '.sql': 'sql', '.swift': 'swift',
-        '.svelte': 'svelte', '.tf': 'terraform', '.tfvars': 'terraform', '.toml': 'toml', '.ts': 'typescript', '.mts': 'typescript',
-        '.cts': 'typescript', '.tsx': 'typescriptreact', '.vue': 'vue', '.xml': 'xml', '.yaml': 'yaml', '.yml': 'yaml', '.zig': 'zig',
+        '.svelte': 'html', '.tf': 'hcl', '.tfvars': 'hcl', '.toml': 'ini', '.ts': 'typescript', '.mts': 'typescript',
+        '.cts': 'typescript', '.tsx': 'typescript', '.vue': 'html', '.xml': 'xml', '.yaml': 'yaml', '.yml': 'yaml', '.zig': 'cpp',
     };
-const LANGUAGE_BY_NAME = { dockerfile: 'dockerfile', makefile: 'makefile', rakefile: 'ruby', gemfile: 'ruby', procfile: 'shell' };
+const LANGUAGE_BY_NAME = {
+    dockerfile: 'dockerfile', containerfile: 'dockerfile', makefile: 'shell', gnumakefile: 'shell',
+    rakefile: 'ruby', gemfile: 'ruby', guardfile: 'ruby', procfile: 'shell',
+    '.bashrc': 'shell', '.bash_profile': 'shell', '.zshrc': 'shell', '.profile': 'shell',
+    '.editorconfig': 'ini', '.npmrc': 'ini', '.prettierrc': 'json', '.eslintrc': 'json',
+    'tsconfig.json': 'json', 'jsconfig.json': 'json', 'deno.json': 'json', 'deno.jsonc': 'json',
+};
 
 function languageForPath(filePath) {
     const name = path.basename(filePath).toLowerCase();
