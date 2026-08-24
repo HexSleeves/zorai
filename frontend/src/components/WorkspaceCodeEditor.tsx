@@ -15,6 +15,7 @@ type FallbackEditorProps = {
   onChange: (value: string) => void;
   onSelect: (startLine: number, startColumn: number, endLine: number, endColumn: number) => void;
   onSave: () => void;
+  onBlur?: () => void;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
 };
 
@@ -32,6 +33,7 @@ export function WorkspaceCodeEditor({
   onChange,
   onSelect,
   onSave,
+  onBlur,
   diagnostics = [],
   testResults = [],
   lsp,
@@ -46,13 +48,14 @@ export function WorkspaceCodeEditor({
   lsp?: { root: string; path: string; language: string; available: boolean };
   onNavigateLocation?: (path: string, line: number, column: number) => void;
   onMount?: OnMount;
+  onBlur?: () => void;
   settings: CodeEditorSettings;
 }) {
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
   const monacoRef = useRef<Parameters<OnMount>[1] | null>(null);
   const providerDisposablesRef = useRef<Array<{ dispose: () => void }>>([]);
   const actionDisposablesRef = useRef<Array<{ dispose: () => void }>>([]);
-  const fallback = <FallbackEditor value={value} path={path} onChange={onChange} onSelect={onSelect} onSave={onSave} textareaRef={textareaRef} />;
+  const fallback = <FallbackEditor value={value} path={path} onChange={onChange} onSelect={onSelect} onSave={onSave} onBlur={onBlur} textareaRef={textareaRef} />;
   useEffect(() => {
     const monacoEditor = editorRef.current;
     const monaco = monacoRef.current;
@@ -186,6 +189,7 @@ export function WorkspaceCodeEditor({
       actionDisposablesRef.current.forEach((disposable) => disposable.dispose());
       actionDisposablesRef.current = [];
     });
+    editor.onDidBlurEditorWidget(() => onBlur?.());
     editor.onDidChangeCursorSelection((event) => onSelect(
       event.selection.startLineNumber,
       event.selection.startColumn,
@@ -250,7 +254,7 @@ export function WorkspaceDiffEditor({ original, modified, language }: { original
   );
 }
 
-function FallbackEditor({ value, path, onChange, onSelect, onSave, textareaRef }: FallbackEditorProps) {
+function FallbackEditor({ value, path, onChange, onSelect, onSave, onBlur, textareaRef }: FallbackEditorProps) {
   const updateSelection = () => {
     const textarea = textareaRef.current;
     if (!textarea) return;
@@ -286,6 +290,7 @@ function FallbackEditor({ value, path, onChange, onSelect, onSave, textareaRef }
         }
       }}
       onChange={(event) => onChange(event.target.value)}
+      onBlur={onBlur}
     />
   );
 }

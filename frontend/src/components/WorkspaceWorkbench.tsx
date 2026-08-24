@@ -16,6 +16,8 @@ import { CODE_COMMANDS, matchesCodeBinding, type CodeCommandId } from "@/zorai/f
 import { CodeIconButton } from "@/zorai/features/code/CodeIconButton";
 import { createCodeDocumentController } from "@/zorai/features/code/codeDocumentModel";
 import { createCodeFileOpenTrace } from "@/zorai/features/code/codeEditorPerformance";
+import { applyCodeSaveTransforms, createCodeAutoSaveController } from "@/zorai/features/code/codeAutoSave";
+import { DirtyFileCloseDialog } from "@/zorai/features/code/DirtyFileCloseDialog";
 import { CodeSettingsView } from "@/zorai/features/code/CodeSettingsView";
 import { useCodeEditorSettingsStore } from "@/zorai/features/code/codeEditorSettingsStore";
 import { createFileTab } from "@/zorai/features/code/codeEditorTabs";
@@ -110,6 +112,8 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
   const [mode, setMode] = useState<"edit" | "diff" | "external">("edit");
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [pendingDirtyClosePath, setPendingDirtyClosePath] = useState<string | null>(null);
+  const [dirtyCloseError, setDirtyCloseError] = useState<string | null>(null);
   const [codeOverlay, setCodeOverlay] = useState<"quickOpen" | "commands" | null>(null);
   const [settingsTabOpen, setSettingsTabOpen] = useState(false);
   const [settingsTabPinned, setSettingsTabPinned] = useState(false);
@@ -132,8 +136,10 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
   const editorRef = useRef<HTMLTextAreaElement | null>(null);
   const monacoEditorRef = useRef<MonacoEditorApi.IStandaloneCodeEditor | null>(null);
   const pendingNavigationRef = useRef<{ path: string; line: number; column: number } | null>(null);
-  const saveCommandRef = useRef<() => Promise<void>>(async () => {});
+  const saveCommandRef = useRef<() => Promise<boolean>>(async () => false);
   const reloadCommandRef = useRef<() => Promise<void>>(async () => {});
+  const saveDocumentRef = useRef<(path: string) => Promise<boolean>>(async () => false);
+  const autoSaveControllerRef = useRef(createCodeAutoSaveController((path) => saveDocumentRef.current(path)));
   const activeFileTargetRef = useRef<{ root: string; path: string } | null>(null);
   const handledEditorRequestTokenRef = useRef(0);
   const editorRequest = useWorkspaceEditorRequestStore((state) => state.request);
@@ -524,31 +530,43 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     void openFile(editorRequest.path, undefined, editorRequest.view);
   }, [activeThreadId, editorRequest]);
 
-  const save = async () => {
-    if (!activeThreadId || !context?.root || !activeDocument || !bridge?.workspaceWriteFile) return;
+  const saveDocument = async (path: string): Promise<boolean> => {
+    if (!activeThreadId || !context?.root || !bridge?.workspaceWriteFile) return false;
+    const document = documents[path];
+    if (!document || !document.dirty) return true;
+    const content = applyCodeSaveTransforms(document.content, {
+      trimTrailingWhitespace: editorSettings.trimTrailingWhitespaceOnSave,
+      finalNewline: editorSettings.finalNewlineOnSave,
+    });
     setSaving(true);
     try {
-      const saved = await bridge.workspaceWriteFile(context.root, activeDocument.path, activeDocument.content, activeDocument.hash);
+      const saved = await bridge.workspaceWriteFile(context.root, path, content, document.hash);
       setDocuments((current) => ({ ...current, [saved.path]: { ...saved, original: saved.content, dirty: false } }));
-      documentControllerRef.current.invalidate(context.root, activeDocument.path);
+      autoSaveControllerRef.current.cancel(path);
+      documentControllerRef.current.invalidate(context.root, path);
       await documentControllerRef.current.open(context.root, saved.path, async () => ({
-        root: context.root,
-        path: saved.path,
-        content: saved.content,
-        original: saved.content,
-        hash: saved.hash,
-        language: saved.language,
-        byteSize: saved.sizeBytes,
-        modifiedAt: saved.modifiedAt,
+        root: context.root, path: saved.path, content: saved.content, original: saved.content, hash: saved.hash,
+        language: saved.language, byteSize: saved.sizeBytes, modifiedAt: saved.modifiedAt,
         lineCount: saved.content.split("\n").length,
       }));
       await refreshRoot();
       setError(null);
+      setDirtyCloseError(null);
+      return true;
     } catch (reason: any) {
-      setError(reason?.code === "WORKSPACE_WRITE_CONFLICT"
+      const message = reason?.code === "WORKSPACE_WRITE_CONFLICT"
         ? "Save conflict: the file changed on disk. Review or reopen it before overwriting."
-        : reason?.message ?? String(reason));
+        : reason?.message ?? String(reason);
+      setError(message);
+      setDirtyCloseError(message);
+      return false;
     } finally { setSaving(false); }
+  };
+  saveDocumentRef.current = saveDocument;
+
+  const save = async () => {
+    if (!activeDocument) return false;
+    return saveDocument(activeDocument.path);
   };
 
   useEffect(() => {
@@ -822,6 +840,50 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     visit(rootEntries);
     return [...(context?.openFiles ?? []), ...paths];
   }, [context?.openFiles, rootEntries]);
+
+  const requestCloseFile = useCallback((path: string) => {
+    if (!activeThreadId) return;
+    const document = documents[path];
+    if (document?.dirty) {
+      setDirtyCloseError(null);
+      setPendingDirtyClosePath(path);
+      return;
+    }
+    autoSaveControllerRef.current.cancel(path);
+    closeFile(activeThreadId, path);
+  }, [activeThreadId, closeFile, documents]);
+
+  const discardAndCloseFile = useCallback((path: string) => {
+    if (!activeThreadId) return;
+    autoSaveControllerRef.current.cancel(path);
+    setDocuments((current) => {
+      const next = { ...current };
+      delete next[path];
+      return next;
+    });
+    closeFile(activeThreadId, path);
+    setPendingDirtyClosePath(null);
+    setDirtyCloseError(null);
+  }, [activeThreadId, closeFile]);
+
+  useEffect(() => {
+    const controller = autoSaveControllerRef.current;
+    if (editorSettings.autoSave !== "after_delay") { controller.cancelAll(); return; }
+    for (const [path, document] of Object.entries(documents)) {
+      if (document.dirty && document.externalContent === undefined) controller.schedule(path, editorSettings.autoSaveDelayMs);
+      else controller.cancel(path);
+    }
+    return () => controller.cancelAll();
+  }, [documents, editorSettings.autoSave, editorSettings.autoSaveDelayMs]);
+
+  useEffect(() => {
+    if (editorSettings.autoSave !== "code_window_focus_lost") return;
+    const saveDirty = () => { for (const [path, document] of Object.entries(documents)) if (document.dirty && document.externalContent === undefined) void saveDocumentRef.current(path); };
+    const onVisibility = () => { if (document.visibilityState === "hidden") saveDirty(); };
+    window.addEventListener("blur", saveDirty);
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => { window.removeEventListener("blur", saveDirty); document.removeEventListener("visibilitychange", onVisibility); };
+  }, [documents, editorSettings.autoSave]);
 
   const deleteActiveFile = async () => {
     if (!activeThreadId || !context?.root || !activeDocument || !bridge?.workspaceDeletePath) return;
@@ -1105,7 +1167,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
           }}
           onClose={(tabId) => {
             if (tabId === "code-settings") { closeSettingsTab(); return; }
-            closeFile(activeThreadId, tabId.replace(/^file:/, ""));
+            requestCloseFile(tabId.replace(/^file:/, ""));
           }}
           onTogglePin={(tabId) => {
             if (tabId === "code-settings") { setSettingsTabPinned((pinned) => !pinned); return; }
@@ -1173,6 +1235,9 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
                     textareaRef={editorRef}
                     onMount={(editor) => { monacoEditorRef.current = editor; }}
                     onSave={() => void save()}
+                    onBlur={() => {
+                      if (editorSettings.autoSave === "editor_focus_lost" && activeDocument.dirty && activeDocument.externalContent === undefined) void saveDocumentRef.current(activeDocument.path);
+                    }}
                     diagnostics={diagnosticsByPath[activeDocument.path] ?? []}
                     testResults={(testRun?.evidence?.results ?? []).map((result) => {
                       const known = workspaceTests.find((test) => test.name === result.name || result.name.endsWith(test.name));
@@ -1218,6 +1283,14 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
         {codeOverlay === "commands" ? (
           <CodeCommandPalette onRun={runCodeCommand} onClose={() => setCodeOverlay(null)} />
         ) : null}
+        {pendingDirtyClosePath ? <DirtyFileCloseDialog
+          path={pendingDirtyClosePath}
+          saving={saving}
+          error={dirtyCloseError}
+          onCancel={() => { setPendingDirtyClosePath(null); setDirtyCloseError(null); }}
+          onDiscard={() => discardAndCloseFile(pendingDirtyClosePath)}
+          onSave={() => { void saveDocumentRef.current(pendingDirtyClosePath).then((saved) => { if (saved) discardAndCloseFile(pendingDirtyClosePath); }); }}
+        /> : null}
         {error ? <div className="zorai-workspace-error">{error}</div> : null}
       </section>
   );
