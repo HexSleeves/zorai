@@ -129,11 +129,18 @@ async function listWorkspaceDirectory(rootPath, relativePath = '', options = {})
         .sort((a, b) => Number(b.isDirectory) - Number(a.isDirectory) || a.name.localeCompare(b.name));
 }
 
+async function statWorkspaceFile(rootPath, relativePath) {
+    const resolved = resolveWorkspacePath(rootPath, relativePath);
+    const stats = await fs.promises.stat(resolved.absolutePath);
+    if (!stats.isFile()) throw workspaceError('WORKSPACE_NOT_FILE', `${relativePath} is not a file.`);
+    return { path: resolved.relativePath, sizeBytes: stats.size, modifiedAt: stats.mtimeMs };
+}
+
 async function readWorkspaceFile(rootPath, relativePath, options = {}) {
     const resolved = resolveWorkspacePath(rootPath, relativePath);
     const stats = await fs.promises.stat(resolved.absolutePath);
     if (!stats.isFile()) throw workspaceError('WORKSPACE_NOT_FILE', `${relativePath} is not a file.`);
-    const maxBytes = Math.max(1, Math.min(Number(options.maxBytes) || DEFAULT_MAX_FILE_BYTES, 16 * 1024 * 1024));
+    const maxBytes = Math.max(1, Math.min(Number(options.maxBytes) || DEFAULT_MAX_FILE_BYTES, 100 * 1024 * 1024));
     if (stats.size > maxBytes) {
         throw workspaceError('WORKSPACE_FILE_TOO_LARGE', `File is ${stats.size} bytes; limit is ${maxBytes}.`, { sizeBytes: stats.size, maxBytes });
     }
@@ -704,6 +711,7 @@ module.exports = {
     renameWorkspacePath,
     resolveWorkspacePath,
     searchWorkspace,
+    statWorkspaceFile,
     sha256,
     parseGitWorktreeList,
     parseUnifiedDiffHunks,

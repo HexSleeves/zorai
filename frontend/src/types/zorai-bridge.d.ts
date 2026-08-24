@@ -563,6 +563,7 @@ declare global {
         workspaceOpen?: (rootPath: string) => Promise<{ root: string; name: string; gitRoot: string | null; isGitRepository: boolean }>;
         workspaceSelectFolder?: () => Promise<{ canceled: boolean; root: { root: string; name: string; gitRoot: string | null; isGitRepository: boolean } | null }>;
         workspaceListDirectory?: (rootPath: string, relativePath?: string, options?: { includeIgnored?: boolean }) => Promise<ZoraiWorkspaceEntry[]>;
+        workspaceStatFile?: (rootPath: string, relativePath: string) => Promise<{ path: string; sizeBytes: number; modifiedAt: number }>;
         workspaceReadFile?: (rootPath: string, relativePath: string, options?: { maxBytes?: number }) => Promise<ZoraiWorkspaceFile>;
         workspaceWriteFile?: (rootPath: string, relativePath: string, content: string, expectedHash?: string | null) => Promise<ZoraiWorkspaceFile>;
         workspaceCreateDirectory?: (rootPath: string, relativePath: string) => Promise<{ path: string }>;

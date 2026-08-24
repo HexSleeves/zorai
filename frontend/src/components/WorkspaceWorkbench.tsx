@@ -21,6 +21,7 @@ import { DirtyFileCloseDialog } from "@/zorai/features/code/DirtyFileCloseDialog
 import { CodeSettingsView } from "@/zorai/features/code/CodeSettingsView";
 import { useCodeEditorSettingsStore } from "@/zorai/features/code/codeEditorSettingsStore";
 import { createFileTab } from "@/zorai/features/code/codeEditorTabs";
+import { CodeLargeFileGate, exceedsCodeFileLimit } from "@/zorai/features/code/CodeLargeFileGate";
 
 const WorkspaceCodeEditor = lazy(() => import("@/components/WorkspaceCodeEditor").then((module) => ({ default: module.WorkspaceCodeEditor })));
 const WorkspaceDiffEditor = lazy(() => import("@/components/WorkspaceCodeEditor").then((module) => ({ default: module.WorkspaceDiffEditor })));
@@ -114,6 +115,8 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
   const [saving, setSaving] = useState(false);
   const [pendingDirtyClosePath, setPendingDirtyClosePath] = useState<string | null>(null);
   const [dirtyCloseError, setDirtyCloseError] = useState<string | null>(null);
+  const [largeFileGate, setLargeFileGate] = useState<{ path: string; sizeBytes: number } | null>(null);
+  const reducedModePathsRef = useRef(new Set<string>());
   const [codeOverlay, setCodeOverlay] = useState<"quickOpen" | "commands" | null>(null);
   const [settingsTabOpen, setSettingsTabOpen] = useState(false);
   const [settingsTabPinned, setSettingsTabPinned] = useState(false);
@@ -421,8 +424,16 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     } catch (reason: any) { setError(reason?.message ?? String(reason)); }
   };
 
-  const openFile = async (filePath: string, location?: { line: number; column: number }, view: "edit" | "diff" = "edit") => {
+  const openFile = async (filePath: string, location?: { line: number; column: number }, view: "edit" | "diff" = "edit", reducedOverride = false) => {
     if (!activeThreadId || !context?.root || !bridge?.workspaceReadFile) return;
+    if (!reducedOverride && bridge.workspaceStatFile) {
+      const metadata = await bridge.workspaceStatFile(context.root, filePath).catch(() => null);
+      if (metadata && exceedsCodeFileLimit(metadata.sizeBytes, editorSettings.maxFileSizeMb)) {
+        setLargeFileGate({ path: filePath, sizeBytes: metadata.sizeBytes });
+        return;
+      }
+    }
+    if (reducedOverride) reducedModePathsRef.current.add(filePath);
     const controller = documentControllerRef.current;
     const cacheHit = Boolean(controller.get(context.root, filePath));
     const trace = createCodeFileOpenTrace({ root: context.root, path: filePath, cacheHit });
@@ -437,7 +448,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
       if (!nextDocument) {
         trace.mark("ipc-start");
         const entry = await controller.open(context.root, filePath, async () => {
-          const file = await bridge.workspaceReadFile!(context.root, filePath);
+          const file = await bridge.workspaceReadFile!(context.root, filePath, { maxBytes: reducedOverride ? 100 * 1024 * 1024 : editorSettings.maxFileSizeMb * 1024 * 1024 });
           trace.mark("ipc-complete");
           return {
             root: context.root,
@@ -1228,7 +1239,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
               ) : (
                 <Suspense fallback={<div className="zorai-workspace-editor-loading">Loading Monaco editor…</div>}>
                   <WorkspaceCodeEditor
-                    settings={editorSettings}
+                    settings={reducedModePathsRef.current.has(activeDocument.path) ? { ...editorSettings, minimap: false, stickyScroll: false, formatOnPaste: false, formatOnType: false } : editorSettings}
                     path={activeDocument.path}
                     value={activeDocument.content}
                     language={activeDocument.language}
@@ -1238,13 +1249,13 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
                     onBlur={() => {
                       if (editorSettings.autoSave === "editor_focus_lost" && activeDocument.dirty && activeDocument.externalContent === undefined) void saveDocumentRef.current(activeDocument.path);
                     }}
-                    diagnostics={diagnosticsByPath[activeDocument.path] ?? []}
+                    diagnostics={reducedModePathsRef.current.has(activeDocument.path) ? [] : diagnosticsByPath[activeDocument.path] ?? []}
                     testResults={(testRun?.evidence?.results ?? []).map((result) => {
                       const known = workspaceTests.find((test) => test.name === result.name || result.name.endsWith(test.name));
                       const location = result.location?.path === activeDocument.path ? result.location : known?.path === activeDocument.path ? { line: known.line } : null;
                       return location ? { line: location.line, status: result.status, message: result.message } : null;
                     }).filter((result): result is { line: number; status: "passed" | "failed" | "skipped"; message: string | null } => result !== null)}
-                    lsp={context?.root && lspStatus ? { root: context.root, path: activeDocument.path, language: activeDocument.language, available: editorSettings.lspEnabled && lspStatus.available } : undefined}
+                    lsp={context?.root && lspStatus ? { root: context.root, path: activeDocument.path, language: activeDocument.language, available: !reducedModePathsRef.current.has(activeDocument.path) && editorSettings.lspEnabled && lspStatus.available } : undefined}
                     onNavigateLocation={(targetPath, line, column) => void openFile(targetPath, { line, column })}
                     onSelect={recordEditorSelection}
                     onChange={(value) => {
@@ -1283,6 +1294,14 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
         {codeOverlay === "commands" ? (
           <CodeCommandPalette onRun={runCodeCommand} onClose={() => setCodeOverlay(null)} />
         ) : null}
+        {largeFileGate && context?.root ? <CodeLargeFileGate
+          path={largeFileGate.path}
+          sizeBytes={largeFileGate.sizeBytes}
+          maxFileSizeMb={editorSettings.maxFileSizeMb}
+          onOpenReduced={() => { const pending = largeFileGate; setLargeFileGate(null); void openFile(pending.path, undefined, "edit", true); }}
+          onOpenExternal={() => { const root = context.root; void bridge?.openFsPath?.(`${root.replace(/[\\/]$/, "")}/${largeFileGate.path}`); }}
+          onReveal={() => { const root = context.root; void bridge?.revealFsPath?.(`${root.replace(/[\\/]$/, "")}/${largeFileGate.path}`); }}
+        /> : null}
         {pendingDirtyClosePath ? <DirtyFileCloseDialog
           path={pendingDirtyClosePath}
           saving={saving}

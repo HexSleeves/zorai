@@ -108,6 +108,7 @@ function registerCoreIpcHandlers(ipcMain, options) {
         return { canceled: false, root: validated };
     });
     ipcMain.handle('workspace-list-directory', (_event, rootPath, relativePath, runtimeOptions) => workspaceService.listWorkspaceDirectory(rootPath, relativePath, runtimeOptions));
+    ipcMain.handle('workspace-stat-file', (_event, rootPath, relativePath) => workspaceService.statWorkspaceFile(rootPath, relativePath));
     ipcMain.handle('workspace-read-file', (_event, rootPath, relativePath, runtimeOptions) => workspaceService.readWorkspaceFile(rootPath, relativePath, runtimeOptions));
     ipcMain.handle('workspace-write-file', (_event, rootPath, relativePath, content, expectedHash) => workspaceService.writeWorkspaceFile(rootPath, relativePath, content, expectedHash));
     ipcMain.handle('workspace-create-directory', (_event, rootPath, relativePath) => workspaceService.createWorkspaceDirectory(rootPath, relativePath));

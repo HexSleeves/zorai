@@ -153,6 +153,7 @@ const bridgeApi = {
     workspaceOpen: (rootPath) => ipcRenderer.invoke('workspace-open', rootPath),
     workspaceSelectFolder: () => ipcRenderer.invoke('workspace-select-folder'),
     workspaceListDirectory: (rootPath, relativePath, options) => ipcRenderer.invoke('workspace-list-directory', rootPath, relativePath, options),
+    workspaceStatFile: (rootPath, relativePath) => ipcRenderer.invoke('workspace-stat-file', rootPath, relativePath),
     workspaceReadFile: (rootPath, relativePath, options) => ipcRenderer.invoke('workspace-read-file', rootPath, relativePath, options),
     workspaceWriteFile: (rootPath, relativePath, content, expectedHash) => ipcRenderer.invoke('workspace-write-file', rootPath, relativePath, content, expectedHash),
     workspaceCreateDirectory: (rootPath, relativePath) => ipcRenderer.invoke('workspace-create-directory', rootPath, relativePath),
