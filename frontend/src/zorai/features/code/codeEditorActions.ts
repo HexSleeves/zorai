@@ -15,7 +15,7 @@ export function transformSelectedLines(value: string, transform: SelectionLinesT
 
 export function registerCodeEditorActions(
   editor: MonacoEditorApi.IStandaloneCodeEditor,
-  callbacks: { onSave: () => void },
+  callbacks: { onSave: () => void; onFormatDocument?: () => Promise<void> },
 ): Array<{ dispose(): void }> {
   const disposables: Array<{ dispose(): void }> = [];
   disposables.push(editor.addAction({ id: "file.save", label: "Save", run: callbacks.onSave }));
@@ -46,12 +46,14 @@ export function registerCodeEditorActions(
     ["edit.insertLineAbove", "Insert Line Above", "editor.action.insertLineBefore"],
     ["edit.insertLineBelow", "Insert Line Below", "editor.action.insertLineAfter"],
     ["edit.joinLines", "Join Lines", "editor.action.joinLines"],
-    ["edit.formatDocument", "Format Document", "editor.action.formatDocument"],
+    ...(callbacks.onFormatDocument ? [] : [["edit.formatDocument", "Format Document", "editor.action.formatDocument"] as [string, string, string]]),
     ["edit.formatSelection", "Format Selection", "editor.action.formatSelection"],
   ];
   for (const [id, label, actionId] of builtins) {
     disposables.push(editor.addAction({ id, label, run: () => editor.getAction(actionId)?.run() }));
   }
+
+  if (callbacks.onFormatDocument) disposables.push(editor.addAction({ id: "edit.formatDocument", label: "Format Document", run: callbacks.onFormatDocument }));
 
   const transform = (id: string, label: string, mapper: (text: string) => string) => {
     disposables.push(editor.addAction({

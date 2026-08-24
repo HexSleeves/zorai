@@ -3,6 +3,7 @@ import { getBridge } from "@/lib/bridge";
 import "@/lib/monacoEnvironment";
 import type { OnMount } from "@monaco-editor/react";
 import type { CodeEditorSettings } from "@/zorai/features/code/codeEditorSettingsStore";
+import { formatCodeText, prettierParserForLanguage } from "@/zorai/features/code/codeFormatter";
 import type { languages as MonacoLanguagesApi } from "monaco-editor";
 import { registerCodeEditorActions } from "@/zorai/features/code/codeEditorActions";
 
@@ -34,6 +35,7 @@ export function WorkspaceCodeEditor({
   onSelect,
   onSave,
   onBlur,
+  onFormatError,
   diagnostics = [],
   testResults = [],
   lsp,
@@ -49,6 +51,7 @@ export function WorkspaceCodeEditor({
   onNavigateLocation?: (path: string, line: number, column: number) => void;
   onMount?: OnMount;
   onBlur?: () => void;
+  onFormatError?: (message: string) => void;
   settings: CodeEditorSettings;
 }) {
   const editorRef = useRef<Parameters<OnMount>[0] | null>(null);
@@ -107,7 +110,19 @@ export function WorkspaceCodeEditor({
     });
     monaco.editor.setTheme("zorai-dark");
     actionDisposablesRef.current.forEach((disposable) => disposable.dispose());
-    actionDisposablesRef.current = registerCodeEditorActions(editor, { onSave });
+    actionDisposablesRef.current = registerCodeEditorActions(editor, {
+      onSave,
+      onFormatDocument: prettierParserForLanguage(language) ? async () => {
+        const model = editor.getModel();
+        if (!model) return;
+        try {
+          const formatted = await formatCodeText(model.getValue(), language);
+          editor.pushUndoStop();
+          editor.executeEdits("edit.formatDocument", [{ range: model.getFullModelRange(), text: formatted, forceMoveMarkers: true }]);
+          editor.pushUndoStop();
+        } catch (reason) { onFormatError?.(reason instanceof Error ? reason.message : String(reason)); }
+      } : undefined,
+    });
     providerDisposablesRef.current.forEach((disposable) => disposable.dispose());
     providerDisposablesRef.current = [];
     const bridge = getBridge();

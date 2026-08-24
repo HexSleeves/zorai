@@ -18,6 +18,7 @@ import { createCodeDocumentController } from "@/zorai/features/code/codeDocument
 import { createCodeFileOpenTrace } from "@/zorai/features/code/codeEditorPerformance";
 import { applyCodeSaveTransforms, createCodeAutoSaveController } from "@/zorai/features/code/codeAutoSave";
 import { DirtyFileCloseDialog } from "@/zorai/features/code/DirtyFileCloseDialog";
+import { formatCodeText, prettierParserForLanguage } from "@/zorai/features/code/codeFormatter";
 import { CodeSettingsView } from "@/zorai/features/code/CodeSettingsView";
 import { useCodeEditorSettingsStore } from "@/zorai/features/code/codeEditorSettingsStore";
 import { createFileTab } from "@/zorai/features/code/codeEditorTabs";
@@ -545,10 +546,18 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     if (!activeThreadId || !context?.root || !bridge?.workspaceWriteFile) return false;
     const document = documents[path];
     if (!document || !document.dirty) return true;
-    const content = applyCodeSaveTransforms(document.content, {
+    let content = applyCodeSaveTransforms(document.content, {
       trimTrailingWhitespace: editorSettings.trimTrailingWhitespaceOnSave,
       finalNewline: editorSettings.finalNewlineOnSave,
     });
+    if (editorSettings.formatOnSave && prettierParserForLanguage(document.language) && !reducedModePathsRef.current.has(path)) {
+      try { content = await formatCodeText(content, document.language); }
+      catch (reason) {
+        const message = reason instanceof Error ? reason.message : String(reason);
+        setError(`Format on save failed: ${message}`);
+        return false;
+      }
+    }
     setSaving(true);
     try {
       const saved = await bridge.workspaceWriteFile(context.root, path, content, document.hash);
@@ -1246,6 +1255,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
                     textareaRef={editorRef}
                     onMount={(editor) => { monacoEditorRef.current = editor; }}
                     onSave={() => void save()}
+                    onFormatError={(message) => setError(`Formatting failed: ${message}`)}
                     onBlur={() => {
                       if (editorSettings.autoSave === "editor_focus_lost" && activeDocument.dirty && activeDocument.externalContent === undefined) void saveDocumentRef.current(activeDocument.path);
                     }}
