@@ -93,4 +93,22 @@ describe("thread owner runtime profile", () => {
     expect(profile.model).toBe("claude-opus-4-7");
     expect(profile.effort).toBe("low");
   });
+
+  it("prefers upstream provider/model over stale thread profile after a provider switch", () => {
+    const profile = resolveThreadOwnerRuntimeProfile(
+      thread({
+        agent_name: "muse",
+        profileProvider: "opencode-go",
+        profileModel: "meta/muse-spark-1.2-contributor-free",
+        upstreamProvider: "openrouter",
+        upstreamModel: "meta/muse-spark-1.2-contributor",
+      }),
+      [],
+      DEFAULT_AGENT_SETTINGS,
+      {},
+    );
+
+    expect(profile.provider).toBe("openrouter");
+    expect(profile.model).toBe("meta/muse-spark-1.2-contributor");
+  });
 });

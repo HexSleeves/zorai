@@ -28,10 +28,12 @@ export function resolveThreadOwnerRuntimeProfile(
   const inherited = svarogRuntimeProfile(agentSettings, ownerId);
   const configured = configuredOwnerRuntimeProfile(ownerId, subAgents, agentSettings, conciergeConfig)
     ?? inherited;
+  const upstreamProvider = typeof thread.upstreamProvider === "string" ? thread.upstreamProvider.trim() : "";
+  const upstreamModel = typeof thread.upstreamModel === "string" ? thread.upstreamModel.trim() : "";
   return {
     ownerId,
-    provider: thread.profileProvider?.trim() || configured.provider,
-    model: thread.profileModel?.trim() || configured.model,
+    provider: upstreamProvider || thread.profileProvider?.trim() || configured.provider,
+    model: upstreamModel || thread.profileModel?.trim() || configured.model,
     effort: thread.profileReasoningEffort?.trim() || configured.effort,
     contextWindowTokens: typeof thread.profileContextWindowTokens === "number" && thread.profileContextWindowTokens > 0
       ? Math.trunc(thread.profileContextWindowTokens)
