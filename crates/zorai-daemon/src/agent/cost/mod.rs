@@ -91,19 +91,19 @@ impl CostTracker {
         self.summary.total_prompt_tokens += input_tokens;
         self.summary.total_completion_tokens += output_tokens;
 
-        let cost = if let Some(rate) = lookup_rate(rate_cards, provider, model) {
-            let incremental = compute_cost_from_tokens(input_tokens, output_tokens, rate);
-            let current = self.summary.estimated_cost_usd.unwrap_or(0.0);
-            self.summary.estimated_cost_usd = Some(current + incremental);
-            Some(incremental)
-        } else {
-            tracing::warn!(
-                provider,
-                model,
-                "no rate card found for model -- cost estimate unavailable"
-            );
-            None
+        // Never leave cost at None just because the catalog lagged behind
+        // a new frontend model id — use FALLBACK_RATE so the thread shows *some* $.
+        let (rate, is_fallback) = match lookup_rate(rate_cards, provider, model) {
+            Some(r) => (r, false),
+            None => (&crate::agent::cost::rate_cards::FALLBACK_RATE, true),
         };
+        let incremental = compute_cost_from_tokens(input_tokens, output_tokens, rate);
+        if is_fallback {
+            tracing::debug!(provider, model, "no rate card for model — using fallback rate");
+        }
+        let current = self.summary.estimated_cost_usd.unwrap_or(0.0);
+        self.summary.estimated_cost_usd = Some(current + incremental);
+        let cost = Some(incremental);
 
         let entry = self
             .model_usage
@@ -193,15 +193,14 @@ mod tests {
     }
 
     #[test]
-    fn cost_tracker_accumulate_unknown_model_returns_none() {
+    fn cost_tracker_accumulate_unknown_model_uses_fallback() {
         let mut tracker = CostTracker::new();
         let cards = default_rate_cards();
-
         let cost = tracker.accumulate(500, 200, "unknown", "fake-model-9000", &cards, None);
-        assert!(cost.is_none());
+        assert!(cost.is_some(), "fallback rate should produce a cost");
         assert_eq!(tracker.summary().total_prompt_tokens, 500);
         assert_eq!(tracker.summary().total_completion_tokens, 200);
-        assert!(tracker.summary().estimated_cost_usd.is_none());
+        assert!(tracker.summary().estimated_cost_usd.is_some());
     }
 
     #[test]

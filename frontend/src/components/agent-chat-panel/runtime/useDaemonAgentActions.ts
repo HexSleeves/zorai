@@ -537,6 +537,18 @@ export function useDaemonAgentActions({
       if (workspaceContext && zorai.agentSetThreadWorkspaceContext) {
         await zorai.agentSetThreadWorkspaceContext(daemonThreadId || threadId, workspaceContext);
       }
+      if (
+        !daemonThreadId
+        && zorai.agentSetThreadExecutionProfile
+        && (thread?.profileProvider || thread?.profileModel)
+      ) {
+        await zorai.agentSetThreadExecutionProfile(threadId, {
+          provider: thread.profileProvider ?? null,
+          model: thread.profileModel ?? null,
+          reasoning_effort: thread.profileReasoningEffort ?? null,
+          context_window_tokens: thread.profileContextWindowTokens ?? null,
+        });
+      }
       await sendAgentMessage(
         daemonThreadId || threadId,
         text,

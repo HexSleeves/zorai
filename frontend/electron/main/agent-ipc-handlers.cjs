@@ -124,7 +124,10 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
                 type: 'handoff-thread',
                 thread_id: payload?.threadId,
                 action: payload?.action,
-                target_agent_id: typeof payload?.targetAgentId === 'string' && payload.targetAgentId.trim() ? payload.targetAgentId.trim() : null,
+                target_agent_id: typeof (payload?.targetAgentId ?? payload?.target_agent_id) === 'string'
+                    && (payload.targetAgentId ?? payload.target_agent_id).trim()
+                    ? (payload.targetAgentId ?? payload.target_agent_id).trim()
+                    : null,
                 reason: typeof payload?.reason === 'string' ? payload.reason : '',
                 summary: typeof payload?.summary === 'string' ? payload.summary : '',
                 requested_by: 'user',

@@ -180,17 +180,18 @@ impl<'a> SendMessageRunner<'a> {
     ) -> Result<LoopDisposition> {
         let turn_cost = if !self.config.cost.enabled {
             None
+        } else if let Some(c) = reported_cost_usd {
+            Some(c)
         } else {
-            reported_cost_usd.or_else(|| {
-                crate::agent::cost::lookup_rate(
-                    &self.config.cost.rate_cards,
-                    &self.config.provider,
-                    &self.provider_config.model,
-                )
-                .map(|rate| {
-                    crate::agent::cost::compute_cost_from_tokens(input_tokens, output_tokens, rate)
-                })
-            })
+            let rate = crate::agent::cost::lookup_rate(
+                &self.config.cost.rate_cards,
+                &self.config.provider,
+                &self.provider_config.model,
+            )
+            .unwrap_or(&crate::agent::cost::rate_cards::FALLBACK_RATE);
+            Some(crate::agent::cost::compute_cost_from_tokens(
+                input_tokens, output_tokens, rate,
+            ))
         };
         let mut final_content = if content.is_empty() {
             accumulated_content

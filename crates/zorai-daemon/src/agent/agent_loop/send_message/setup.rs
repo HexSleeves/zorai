@@ -162,7 +162,34 @@ fn build_direct_thread_responder_config(
         crate::agent::agent_identity::resolve_agent_target(agent_scope_id, sub_agents);
     let resolved_scope = resolved_target.scope_id.as_str();
     if resolved_scope == MAIN_AGENT_ID {
-        return Ok(None);
+        let profile_provider = nonempty(execution_profile.and_then(|profile| profile.provider.as_deref()));
+        let profile_model = nonempty(execution_profile.and_then(|profile| profile.model.as_deref()));
+        let profile_reasoning_effort =
+            nonempty(execution_profile.and_then(|profile| profile.reasoning_effort.as_deref()));
+        let profile_context_window_tokens =
+            execution_profile.and_then(|profile| profile.context_window_tokens);
+        if profile_provider.is_none()
+            && profile_model.is_none()
+            && profile_reasoning_effort.is_none()
+            && profile_context_window_tokens.is_none()
+        {
+            return Ok(None);
+        }
+        return Ok(Some(DirectThreadResponderConfig {
+            agent_name: MAIN_AGENT_NAME.to_string(),
+            provider_id: profile_provider.unwrap_or_else(|| config.provider.clone()),
+            model: profile_model,
+            base_url: None,
+            reasoning_effort: profile_reasoning_effort,
+            context_window_tokens: profile_context_window_tokens,
+            huggingface_provider: None,
+            openrouter_provider_order: Vec::new(),
+            openrouter_provider_ignore: Vec::new(),
+            openrouter_allow_fallbacks: None,
+            system_prompt: config.system_prompt.clone(),
+            persona_prompt: String::new(),
+            tool_filter: None,
+        }));
     }
     if resolved_scope == CONCIERGE_AGENT_ID {
         let provider_id = config
@@ -2245,6 +2272,35 @@ mod tests {
             responder.persona_prompt.contains("Dola"),
             "persona prompt should identify the targeted subagent"
         );
+    }
+
+    #[test]
+    fn main_responder_uses_explicit_thread_execution_profile() {
+        let mut config = AgentConfig::default();
+        config.provider = "openrouter".to_string();
+        config.model = "meta/muse-spark-1.2-contributor".to_string();
+        config.system_prompt = "Svarog system prompt".to_string();
+        let profile = ThreadExecutionProfile {
+            provider: Some("openai".to_string()),
+            model: Some("gpt-5.6-sol".to_string()),
+            reasoning_effort: Some("high".to_string()),
+            context_window_tokens: Some(400_000),
+        };
+
+        let responder = build_direct_thread_responder_config(
+            &config,
+            MAIN_AGENT_ID,
+            &[],
+            Some(&profile),
+        )
+        .expect("main responder profile should resolve")
+        .expect("explicit main-thread profile should create an override");
+
+        assert_eq!(responder.agent_name, MAIN_AGENT_NAME);
+        assert_eq!(responder.provider_id, "openai");
+        assert_eq!(responder.model.as_deref(), Some("gpt-5.6-sol"));
+        assert_eq!(responder.reasoning_effort.as_deref(), Some("high"));
+        assert_eq!(responder.context_window_tokens, Some(400_000));
     }
 
     #[tokio::test]

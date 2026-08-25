@@ -94,7 +94,7 @@ describe("thread owner runtime profile", () => {
     expect(profile.effort).toBe("low");
   });
 
-  it("prefers upstream provider/model over stale thread profile after a provider switch", () => {
+  it("prefers an explicit thread selection over the previous turn's upstream runtime", () => {
     const profile = resolveThreadOwnerRuntimeProfile(
       thread({
         agent_name: "muse",
@@ -108,7 +108,7 @@ describe("thread owner runtime profile", () => {
       {},
     );
 
-    expect(profile.provider).toBe("openrouter");
-    expect(profile.model).toBe("meta/muse-spark-1.2-contributor");
+    expect(profile.provider).toBe("opencode-go");
+    expect(profile.model).toBe("meta/muse-spark-1.2-contributor-free");
   });
 });

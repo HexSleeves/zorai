@@ -305,6 +305,7 @@ export function useDaemonAgentEvents({
               totalTokens: (event.input_tokens ?? 0) + (event.output_tokens ?? 0),
               provider: event.provider || undefined,
               model: event.model || undefined,
+              cost: typeof event.cost === "number" ? event.cost : undefined,
               tps: typeof event.tps === "number" ? event.tps : undefined,
               reasoning: event.reasoning || last.reasoning || undefined,
             });

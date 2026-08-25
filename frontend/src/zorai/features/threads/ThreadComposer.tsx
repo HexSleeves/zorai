@@ -23,6 +23,8 @@ import { pushToast } from "@/lib/toastStore";
 import { activeThreadBudgetExceededNotice } from "./threadBudgetNotice";
 import { ManagedSecurityShield } from "./ManagedSecurityShield";
 import { ThreadEffortGauge } from "./ThreadEffortGauge";
+import { ComposerContextCircle } from "./ComposerContextCircle";
+import { CodeThreadRuntimeSwitcher } from "../code/CodeThreadRuntimeSwitcher";
 import { AttachmentTiles, composerAttachmentToTile } from "./attachmentTiles";
 import { buildHandoffDefaults, buildThreadAgentOptions } from "./threadHandoffModel";
 import {
@@ -422,7 +424,9 @@ export function ThreadComposer({
 
         <div className="zorai-composer-actions">
           <div className="zorai-composer-actions__left">
-            {showTargetSelector ? (
+            {compact ? (
+              <CodeThreadRuntimeSwitcher thread={runtime.activeThread ?? null} variant="composer" />
+            ) : showTargetSelector ? (
               <label className="zorai-composer-target">
                 <select
                   className="zorai-input"
@@ -518,6 +522,7 @@ export function ThreadComposer({
           </div>
 
           <div className="zorai-composer-actions__right">
+            <ComposerContextCircle thread={runtime.activeThread ?? null} messages={runtime.messages} />
             {queue.editingId ? (
               <>
                 <button

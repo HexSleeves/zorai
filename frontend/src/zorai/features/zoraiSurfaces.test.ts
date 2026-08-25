@@ -98,12 +98,15 @@ describe("Zorai feature surfaces", () => {
     expect(shellSource).toContain('if (activeView !== "code" || codeAgentOpenedRef.current) return');
     expect(shellSource).toContain("setContextOpen(true)");
     expect(codeSource).toContain('export { CodeAgentPane } from "./CodeAgentPane"');
-    expect(agentPaneSource).toContain('className="zorai-code-agent-toolbar"');
-    expect(agentPaneSource).toContain('CodeThreadRuntimeSwitcher');
-    expect(agentPaneSource).toContain('CodeContextWindowMeter');
+    expect(readFeature("./threads/ThreadComposer.tsx")).toContain('CodeThreadRuntimeSwitcher');
+    expect(readFeature("./threads/ThreadComposer.tsx")).toContain('variant="composer"');
+    expect(agentPaneSource).not.toContain('CodeContextWindowMeter');
     expect(agentPaneSource).not.toContain('className="zorai-code-context-chips"');
+    expect(agentPaneSource).not.toContain('className="zorai-code-agent-toolbar"');
     expect(historyMenuSource).toContain('aria-label="New project thread"');
     expect(historyMenuSource).toContain('aria-label="Project thread history"');
+    expect(readFeature("./threads/ComposerContextCircle.tsx")).toContain('className="zorai-composer-context-circle"');
+    expect(readFeature("./threads/ThreadComposer.tsx")).toContain('ComposerContextCircle');
   });
 
   it("reserves editor hierarchy when no document is selected", () => {

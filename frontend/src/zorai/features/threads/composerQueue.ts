@@ -1,4 +1,5 @@
 import type { SendMessagePayload } from "@/components/agent-chat-panel/chat-view/types";
+import type { AgentContentBlock, AgentMessage } from "@/lib/agentStore/types";
 
 export type QueuedComposerMessage = SendMessagePayload & { id: string };
 
@@ -26,6 +27,57 @@ export function createQueuedComposerMessage(payload: SendMessagePayload): Queued
 export function queuedComposerLabel(payload: SendMessagePayload): string {
   const text = payload.text.trim();
   return text || "(attachment)";
+}
+
+export function shouldApplyPromptQueueSnapshot(
+  daemonEventRevisionAtRequest: number,
+  currentDaemonEventRevision: number,
+): boolean {
+  return currentDaemonEventRevision === daemonEventRevisionAtRequest;
+}
+
+function queuedContentBlocks(contentBlocksJson: string | null | undefined): AgentContentBlock[] | undefined {
+  if (!contentBlocksJson) return undefined;
+  try {
+    const parsed = JSON.parse(contentBlocksJson);
+    return Array.isArray(parsed) ? parsed as AgentContentBlock[] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function reconcileSentQueuedPromptMessages(
+  messages: AgentMessage[],
+  threadId: string,
+  prompt: QueuedComposerMessage,
+  createdAt = Date.now(),
+  insertionBoundary = messages.length,
+): AgentMessage[] {
+  const localMessageId = `queued-prompt:${prompt.id}`;
+  if (messages.some((message) => message.id === localMessageId)) return messages;
+
+  const userMessage: AgentMessage = {
+    id: localMessageId,
+    threadId,
+    createdAt,
+    role: "user",
+    content: prompt.text,
+    contentBlocks: prompt.localContentBlocks ?? queuedContentBlocks(prompt.contentBlocksJson),
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    isCompactionSummary: false,
+  };
+
+  // The boundary is captured when Send now is clicked. Existing messages,
+  // including the assistant being interrupted, stay before the queued prompt;
+  // any new stream messages that race the IPC reply stay after it.
+  const insertionIndex = Math.max(0, Math.min(insertionBoundary, messages.length));
+  return [
+    ...messages.slice(0, insertionIndex),
+    userMessage,
+    ...messages.slice(insertionIndex),
+  ];
 }
 
 export const EMPTY_PROMPT_QUEUE: QueuedComposerMessage[] = [];

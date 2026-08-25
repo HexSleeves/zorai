@@ -1308,6 +1308,14 @@ pub(crate) async fn dispatch_part4(
         }
 
         ClientMessage::AgentSetThreadExecutionProfile { thread_id, profile_json } => {
+            if agent.is_thread_streaming(&thread_id).await {
+                framed
+                    .send(DaemonMessage::Error {
+                        message: "thread_runtime_switch_blocked:thread_is_streaming".to_string(),
+                    })
+                    .await?;
+                return Ok(true);
+            }
             let trimmed = profile_json.trim();
             let parsed: Option<crate::agent::types::ThreadExecutionProfile> =
                 if trimmed.is_empty() || trimmed == "null" {

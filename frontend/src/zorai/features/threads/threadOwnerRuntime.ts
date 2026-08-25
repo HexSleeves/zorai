@@ -32,8 +32,8 @@ export function resolveThreadOwnerRuntimeProfile(
   const upstreamModel = typeof thread.upstreamModel === "string" ? thread.upstreamModel.trim() : "";
   return {
     ownerId,
-    provider: upstreamProvider || thread.profileProvider?.trim() || configured.provider,
-    model: upstreamModel || thread.profileModel?.trim() || configured.model,
+    provider: thread.profileProvider?.trim() || upstreamProvider || configured.provider,
+    model: thread.profileModel?.trim() || upstreamModel || configured.model,
     effort: thread.profileReasoningEffort?.trim() || configured.effort,
     contextWindowTokens: typeof thread.profileContextWindowTokens === "number" && thread.profileContextWindowTokens > 0
       ? Math.trunc(thread.profileContextWindowTokens)

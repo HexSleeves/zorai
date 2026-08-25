@@ -56,7 +56,7 @@ export function CodeTabs({ tabs, onActivate, onClose, onTogglePin, onMove }: Cod
             </span>
             <span className="zorai-code-tab-label">{tab.label}{tab.dirty ? " ●" : ""}</span>
             <span className="zorai-workspace-tab-move" onClick={(event) => { event.stopPropagation(); onMove(tab.path, index > 0 ? -1 : 1); }}>↔</span>
-            {!tab.pinned ? <span onClick={(event) => { event.stopPropagation(); onClose(tab.path); }}>×</span> : null}
+            {!tab.pinned ? <span className="zorai-icon-button" onClick={(event) => { event.stopPropagation(); onClose(tab.path); }}>×</span> : null}
           </button>
         ))}
       </div>
