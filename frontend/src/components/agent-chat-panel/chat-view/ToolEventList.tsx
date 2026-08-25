@@ -1,0 +1,46 @@
+import { useState } from "react";
+import type { ToolEventGroup } from "./types";
+import { ToolEventRow } from "./ToolEventRow";
+
+export function ToolEventList({ groups }: { groups: ToolEventGroup[] }) {
+  const [expanded, setExpanded] = useState(false);
+
+  if (groups.length === 0) {
+    return null;
+  }
+
+  const doneCount = groups.filter((group) => group.status === "done").length;
+  const working = groups.some(
+    (group) => group.status === "requested" || group.status === "executing",
+  );
+  const title = groups[groups.length - 1]?.toolName || "tools";
+
+  return (
+    <div className="acp-tool-list">
+      <button
+        type="button"
+        aria-expanded={expanded}
+        className="acp-tool-list__header"
+        onClick={() => setExpanded((prev) => !prev)}
+      >
+        <span className="acp-tool-list__caret">{expanded ? "▼" : "▶"}</span>
+        <span
+          className={`acp-tool-list__title${working ? " acp-tool-list__title--working" : ""}`}
+          title={title}
+        >
+          {title}
+        </span>
+        <span className="acp-tool-list__stats">
+          [{doneCount} / {groups.length}]
+        </span>
+      </button>
+      {expanded && (
+        <div className="acp-tool-list__body">
+          {groups.map((group) => (
+            <ToolEventRow key={group.key} group={group} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}

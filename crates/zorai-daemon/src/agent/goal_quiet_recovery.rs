@@ -587,6 +587,7 @@ mod tests {
             launch_assignment_snapshot: Vec::new(),
             runtime_assignment_list: Vec::new(),
             root_thread_id: Some(thread_id.to_string()),
+            supervision_thread_id: None,
             active_thread_id: Some(thread_id.to_string()),
             execution_thread_ids: vec![thread_id.to_string()],
         }

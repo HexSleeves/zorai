@@ -165,6 +165,7 @@ impl DaemonClient {
                 .collect(),
             autonomy_level: None,
             client_surface: Some(zorai_protocol::ClientSurface::Tui),
+            target_agent_id: None,
             requires_approval: true,
         })
     }
@@ -204,6 +205,7 @@ impl DaemonClient {
             thread_id: thread_id.into(),
             message_limit,
             message_offset,
+            collapse_tool_calls: false,
         })
     }
 

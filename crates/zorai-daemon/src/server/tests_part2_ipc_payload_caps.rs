@@ -91,6 +91,7 @@ async fn get_thread_streams_oversized_thread_detail_without_truncation() {
             thread_id: thread_id.to_string(),
             message_limit: None,
             message_offset: None,
+            collapse_tool_calls: false,
         })
         .await
         .expect("request thread detail");
@@ -164,6 +165,7 @@ async fn get_thread_respects_requested_message_page_and_reports_window_metadata(
             thread_id: thread_id.to_string(),
             message_limit: Some(50),
             message_offset: Some(50),
+            collapse_tool_calls: false,
         })
         .await
         .expect("request paged thread detail");

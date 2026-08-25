@@ -1,8 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useAgentStore } from "@/lib/agentStore";
+import { buildHydratedRemoteThread, useAgentStore } from "@/lib/agentStore";
 import type { AgentMessage, AgentThread } from "@/lib/agentStore";
 import {
   loadDaemonThreadPageIntoLocalState,
+  refreshDaemonThreadMessagesIntoLocalState,
   refreshDaemonThreadMetadataIntoLocalState,
   resolveAbsoluteMessageIndex,
   trimDaemonThreadMessagesToLatestWindow,
@@ -124,6 +125,33 @@ describe("loadDaemonThreadPageIntoLocalState", () => {
     expect(useAgentStore.getState().messages["local-stale"]).toEqual([]);
   });
 
+  it("removes hydrated assistant tool-call arrays represented by standalone tool rows", () => {
+    const hydrated = buildHydratedRemoteThread({
+      id: "daemon-tool-thread",
+      title: "Tool thread",
+      messages: [
+        {
+          id: "assistant-call",
+          role: "assistant",
+          content: "Calling tools...",
+          tool_calls: [{ id: "call-1", name: "bash_command", arguments: "{}" }],
+          timestamp: 1,
+        },
+        {
+          id: "tool-call",
+          role: "tool",
+          content: "done",
+          tool_call_id: "call-1",
+          tool_name: "bash_command",
+          timestamp: 2,
+        },
+      ],
+    }, "Svarog");
+
+    expect(hydrated?.messages[0]?.toolCalls).toBeUndefined();
+    expect(hydrated?.messages[1]?.toolCallId).toBe("call-1");
+  });
+
   it("refreshes daemon thread metadata without replacing visible messages", async () => {
     useAgentStore.setState({
       messages: {
@@ -153,6 +181,7 @@ describe("loadDaemonThreadPageIntoLocalState", () => {
         },
       ],
       total_message_count: 27,
+      total_cost_usd: 0.562112,
       loaded_message_start: 27,
       loaded_message_end: 27,
     });
@@ -170,7 +199,184 @@ describe("loadDaemonThreadPageIntoLocalState", () => {
     });
     expect(useAgentStore.getState().threads.find((thread) => thread.id === "local-active")?.title).toBe("Updated title");
     expect(useAgentStore.getState().threads.find((thread) => thread.id === "local-active")?.messageCount).toBe(27);
+    expect(useAgentStore.getState().threads.find((thread) => thread.id === "local-active")?.totalCostUsd).toBe(0.562112);
     expect(useAgentStore.getState().messages["local-active"]?.[0]?.content).toBe("streaming local content");
+  });
+
+  it("appends a persisted compaction artifact on thread reload without discarding the visible window", async () => {
+    useAgentStore.setState({
+      threads: [
+        {
+          ...makeThread("local-active", "daemon-1"),
+          messageCount: 2,
+          loadedMessageStart: 0,
+          loadedMessageEnd: 2,
+        },
+      ],
+      messages: {
+        "local-active": [makeMessage(0), makeMessage(1)],
+      },
+      activeThreadId: "local-active",
+    } as any);
+    agentGetThread.mockResolvedValue({
+      id: "daemon-1",
+      title: "Compacted thread",
+      agent_name: "Svarog",
+      messages: [
+        {
+          id: "message-1",
+          role: "assistant",
+          content: "message 1",
+          timestamp: 1,
+        },
+        {
+          id: "compaction-2",
+          role: "assistant",
+          content: "Manual compaction applied.",
+          timestamp: 2,
+          message_kind: "compaction_artifact",
+          compaction_strategy: "heuristic",
+          compaction_payload: "# Compaction Scope Packet\n\nFull expandable checkpoint content",
+        },
+      ],
+      total_message_count: 3,
+      loaded_message_start: 1,
+      loaded_message_end: 3,
+    });
+
+    const refreshed = await refreshDaemonThreadMessagesIntoLocalState({
+      daemonThreadId: "daemon-1",
+      setThreadTodos: vi.fn(),
+      setDaemonTodosByThread: vi.fn(),
+    });
+
+    expect(refreshed).toBe(true);
+    expect(agentGetThread).toHaveBeenCalledWith("daemon-1", {
+      messageLimit: 100,
+      messageOffset: null,
+    });
+    const messages = useAgentStore.getState().messages["local-active"] ?? [];
+    expect(messages.map((message) => message.id)).toEqual([
+      "message-0",
+      "message-1",
+      "compaction-2",
+    ]);
+    expect(messages[2]).toMatchObject({
+      messageKind: "compaction_artifact",
+      isCompactionSummary: true,
+      compactionPayload: "# Compaction Scope Packet\n\nFull expandable checkpoint content",
+    });
+  });
+
+  it("keeps live tool and streaming messages after newly persisted reload rows", async () => {
+    useAgentStore.setState({
+      threads: [
+        {
+          ...makeThread("local-active", "daemon-1"),
+          messageCount: 4,
+          loadedMessageStart: 0,
+          loadedMessageEnd: 2,
+        },
+      ],
+      messages: {
+        "local-active": [
+          makeMessage(0),
+          makeMessage(1),
+          {
+            ...makeMessage(20),
+            id: "live-tool",
+            role: "tool",
+            content: "",
+            toolName: "get_operation_status",
+            toolCallId: "call-live",
+            toolStatus: "requested",
+          },
+          {
+            ...makeMessage(21),
+            id: "live-assistant",
+            role: "assistant",
+            content: "still streaming",
+            isStreaming: true,
+          },
+        ],
+      },
+      activeThreadId: "local-active",
+    } as any);
+    agentGetThread.mockResolvedValue({
+      id: "daemon-1",
+      title: "Active thread",
+      agent_name: "Svarog",
+      messages: [
+        {
+          id: "message-1",
+          role: "assistant",
+          content: "message 1",
+          timestamp: 1,
+        },
+        {
+          id: "metacognition-2",
+          role: "system",
+          content: "Metacognitive reflection\n\nPersisted while the turn continues.",
+          timestamp: 2,
+        },
+      ],
+      total_message_count: 3,
+      loaded_message_start: 1,
+      loaded_message_end: 3,
+    });
+
+    const refreshed = await refreshDaemonThreadMessagesIntoLocalState({
+      daemonThreadId: "daemon-1",
+      setThreadTodos: vi.fn(),
+      setDaemonTodosByThread: vi.fn(),
+    });
+
+    expect(refreshed).toBe(true);
+    expect(useAgentStore.getState().messages["local-active"]?.map((message) => message.id)).toEqual([
+      "message-0",
+      "message-1",
+      "metacognition-2",
+      "live-tool",
+      "live-assistant",
+    ]);
+  });
+
+  it("deduplicates queued local and persisted user messages during reload", async () => {
+    useAgentStore.setState({
+      messages: {
+        "local-active": [{
+          ...makeMessage(10),
+          id: "queued-prompt:queue-1",
+          role: "user",
+          content: "queued follow-up",
+        }],
+      },
+    } as any);
+    agentGetThread.mockResolvedValue({
+      id: "daemon-1",
+      title: "Active thread",
+      agent_name: "Svarog",
+      messages: [{
+        id: "persisted-user-1",
+        role: "user",
+        content: "queued follow-up",
+        timestamp: 11,
+      }],
+      total_message_count: 1,
+      loaded_message_start: 0,
+      loaded_message_end: 1,
+    });
+
+    await refreshDaemonThreadMessagesIntoLocalState({
+      daemonThreadId: "daemon-1",
+      setThreadTodos: vi.fn(),
+      setDaemonTodosByThread: vi.fn(),
+    });
+
+    const matching = (useAgentStore.getState().messages["local-active"] ?? [])
+      .filter((message) => message.role === "user" && message.content === "queued follow-up");
+    expect(matching).toHaveLength(1);
+    expect(matching[0]?.id).toBe("persisted-user-1");
   });
 
   it("prepends older daemon messages without trimming the expanded loaded range", async () => {

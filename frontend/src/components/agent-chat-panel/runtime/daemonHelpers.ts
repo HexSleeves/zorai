@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
-import { buildHydratedRemoteMessage, buildHydratedRemoteThread, useAgentStore } from "@/lib/agentStore";
+import { buildHydratedRemoteMessage, buildHydratedRemoteThread, canonicalizeHydratedToolCalls, useAgentStore } from "@/lib/agentStore";
 import type {
   AgentMessage,
   AgentProviderConfig,
@@ -131,6 +131,23 @@ export function resolveAbsoluteMessageIndex(
   return Math.max(0, loadedMessageStart ?? 0) + localIndex;
 }
 
+export async function refreshDaemonThreadMessagesIntoLocalState({
+  daemonThreadId,
+  setThreadTodos,
+  setDaemonTodosByThread,
+}: {
+  daemonThreadId: string;
+  setThreadTodos: (threadId: string, todos: AgentTodoItem[]) => void;
+  setDaemonTodosByThread: Dispatch<SetStateAction<Record<string, AgentTodoItem[]>>>;
+}) {
+  return loadDaemonThreadPageIntoLocalState({
+    daemonThreadId,
+    mergeMode: "append",
+    setThreadTodos,
+    setDaemonTodosByThread,
+  });
+}
+
 export async function refreshDaemonThreadMetadataIntoLocalState({
   daemonThreadId,
   setThreadTodos,
@@ -163,7 +180,7 @@ export async function loadDaemonThreadPageIntoLocalState({
   localThreadId?: string | null;
   messageLimit?: number | null;
   messageOffset?: number | null;
-  mergeMode: "replace" | "prepend" | "metadata";
+  mergeMode: "replace" | "prepend" | "append" | "metadata";
   setThreadTodos: (threadId: string, todos: AgentTodoItem[]) => void;
   setDaemonTodosByThread: Dispatch<SetStateAction<Record<string, AgentTodoItem[]>>>;
 }): Promise<boolean> {
@@ -203,14 +220,16 @@ export async function loadDaemonThreadPageIntoLocalState({
     threadId: localThreadId,
   })) as AgentMessage[];
 
-  if (mergeMode === "prepend") {
+  if (mergeMode === "prepend" || mergeMode === "append") {
     const existingIds = new Set(
       (useAgentStore.getState().messages[localThreadId] ?? [])
         .map((message) => message.id)
         .filter((id) => id.length > 0),
     );
-    const prependedNew = reloadedMessages.some((message) => message.id.length > 0 && !existingIds.has(message.id));
-    if (!prependedNew) return false;
+    const hasNewMessages = reloadedMessages.some(
+      (message) => message.id.length > 0 && !existingIds.has(message.id),
+    );
+    if (!hasNewMessages && mergeMode === "prepend") return false;
   }
 
   useAgentStore.setState((state) => ({
@@ -218,10 +237,10 @@ export async function loadDaemonThreadPageIntoLocalState({
       ...thread,
       ...reloadedThread,
       lastMessagePreview: reloadedThread.lastMessagePreview || thread.lastMessagePreview,
-      loadedMessageStart: mergeMode === "prepend"
+      loadedMessageStart: mergeMode === "prepend" || mergeMode === "append"
         ? Math.min(thread.loadedMessageStart ?? reloadedThread.loadedMessageStart ?? 0, reloadedThread.loadedMessageStart ?? 0)
         : reloadedThread.loadedMessageStart,
-      loadedMessageEnd: mergeMode === "prepend"
+      loadedMessageEnd: mergeMode === "prepend" || mergeMode === "append"
         ? Math.max(thread.loadedMessageEnd ?? 0, reloadedThread.loadedMessageEnd ?? 0)
         : reloadedThread.loadedMessageEnd,
     } : thread),
@@ -231,6 +250,8 @@ export async function loadDaemonThreadPageIntoLocalState({
         ...state.messages,
         [localThreadId]: mergeMode === "prepend"
           ? mergeMessages(reloadedMessages, state.messages[localThreadId] ?? [])
+          : mergeMode === "append"
+          ? mergeMessagesForLiveRefresh(state.messages[localThreadId] ?? [], reloadedMessages)
           : reloadedMessages,
       },
   }));
@@ -284,6 +305,53 @@ export function trimDaemonThreadMessagesToLatestWindow({
   });
 
   return didTrim;
+}
+
+function mergeMessagesForLiveRefresh(
+  existing: AgentMessage[],
+  persisted: AgentMessage[],
+): AgentMessage[] {
+  const persistedIds = new Set(persisted.map((message) => message.id));
+  const liveTailStart = existing.findIndex((message) =>
+    message.isStreaming === true
+    || (message.role === "tool" && !persistedIds.has(message.id))
+  );
+  if (liveTailStart < 0) {
+    return canonicalizeHydratedToolCalls(
+      reconcileEquivalentUserMessages(mergeMessages(existing, persisted)),
+    );
+  }
+
+  // A reload event can arrive while the current turn still has ephemeral tool
+  // rows or an assistant stream that the daemon page does not contain yet.
+  // Insert newly persisted rows before that live suffix; appending the fetched
+  // page after it makes history trimming discard the active turn.
+  const messages = mergeMessages(
+    existing.slice(0, liveTailStart),
+    mergeMessages(persisted, existing.slice(liveTailStart)),
+  );
+  return canonicalizeHydratedToolCalls(reconcileEquivalentUserMessages(messages));
+}
+
+function reconcileEquivalentUserMessages(messages: AgentMessage[]): AgentMessage[] {
+  const authoritativeKeys = new Set(
+    messages
+      .filter((message) => message.role === "user" && !isOptimisticLocalUserMessage(message))
+      .map(userMessageEquivalenceKey),
+  );
+  return messages.filter((message) =>
+    message.role !== "user"
+    || !isOptimisticLocalUserMessage(message)
+    || !authoritativeKeys.has(userMessageEquivalenceKey(message))
+  );
+}
+
+function isOptimisticLocalUserMessage(message: AgentMessage): boolean {
+  return message.id.startsWith("queued-prompt:") || /^msg_\d+$/.test(message.id);
+}
+
+function userMessageEquivalenceKey(message: AgentMessage): string {
+  return JSON.stringify([message.content.trim(), message.contentBlocks ?? null]);
 }
 
 function mergeMessages(prefix: AgentMessage[], existing: AgentMessage[]): AgentMessage[] {

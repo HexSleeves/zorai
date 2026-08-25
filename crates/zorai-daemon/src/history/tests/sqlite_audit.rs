@@ -2500,6 +2500,96 @@ async fn delete_messages_soft_deletes_and_restore_makes_visible_again() -> Resul
 }
 
 #[tokio::test]
+async fn gui_pagination_counts_contiguous_tool_rows_as_one_slot() -> Result<()> {
+    let (store, root) = make_test_store().await?;
+    let thread_id = "thread-collapsed-tool-window";
+    store
+        .create_thread(&AgentDbThread {
+            id: thread_id.to_string(),
+            workspace_id: None,
+            surface_id: None,
+            pane_id: None,
+            agent_name: Some("test-agent".to_string()),
+            title: "Collapsed tools".to_string(),
+            created_at: 1,
+            updated_at: 1,
+            message_count: 0,
+            total_tokens: 0,
+            last_preview: String::new(),
+            metadata_json: None,
+        })
+        .await?;
+
+    let rows = [
+        ("user-old", "user", "old question"),
+        ("assistant-old", "assistant", "old answer"),
+        ("user-new", "user", "new question"),
+        ("tool-1", "tool", "requested"),
+        ("tool-2", "tool", "result"),
+        ("tool-3", "tool", "requested"),
+        ("tool-4", "tool", "result"),
+        ("assistant-new", "assistant", "new answer"),
+    ];
+    for (index, (id, role, content)) in rows.into_iter().enumerate() {
+        let metadata_json = if role == "tool" {
+            Some(
+                serde_json::json!({
+                    "toolCallId": format!("call-{}", (index - 3) / 2),
+                    "toolName": "test_tool",
+                    "toolStatus": if content == "result" { "done" } else { "requested" },
+                })
+                .to_string(),
+            )
+        } else {
+            None
+        };
+        store
+            .add_message(&AgentDbMessage {
+                id: id.to_string(),
+                thread_id: thread_id.to_string(),
+                created_at: index as i64 + 1,
+                role: role.to_string(),
+                content: content.to_string(),
+                provider: None,
+                model: None,
+                input_tokens: Some(0),
+                output_tokens: Some(0),
+                total_tokens: Some(0),
+                cost_usd: None,
+                reasoning: None,
+                tool_calls_json: None,
+                metadata_json,
+            })
+            .await?;
+    }
+
+    let (messages, total, start, end) = store
+        .list_message_window_collapsing_tool_runs(thread_id, 3, 0)
+        .await?;
+
+    assert_eq!(total, 8);
+    assert_eq!(start, 2);
+    assert_eq!(end, 8);
+    assert_eq!(
+        messages
+            .iter()
+            .map(|message| message.id.as_str())
+            .collect::<Vec<_>>(),
+        vec![
+            "user-new",
+            "tool-1",
+            "tool-2",
+            "tool-3",
+            "tool-4",
+            "assistant-new"
+        ]
+    );
+
+    fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn list_messages_with_limit_returns_latest_messages_in_chronological_order() -> Result<()> {
     let (store, root) = make_test_store().await?;
     let thread_id = "limited-latest-thread";
@@ -3107,6 +3197,62 @@ async fn thread_message_token_totals_sum_visible_message_token_columns() -> Resu
     assert_eq!(
         store.thread_message_token_totals(thread_id).await?,
         (18, 16)
+    );
+
+    fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn thread_message_cost_total_sums_all_visible_costed_rows() -> Result<()> {
+    let (store, root) = make_test_store().await?;
+    let thread_id = "thread-cost-total";
+    store
+        .create_thread(&AgentDbThread {
+            id: thread_id.to_string(),
+            workspace_id: None,
+            surface_id: None,
+            pane_id: None,
+            agent_name: None,
+            title: "Cost total".to_string(),
+            created_at: 1,
+            updated_at: 1,
+            message_count: 0,
+            total_tokens: 0,
+            last_preview: String::new(),
+            metadata_json: None,
+        })
+        .await?;
+
+    for (id, cost_usd) in [("m1", Some(0.12)), ("m2", None), ("m3", Some(0.03))] {
+        store
+            .add_message(&AgentDbMessage {
+                id: id.to_string(),
+                thread_id: thread_id.to_string(),
+                created_at: 1,
+                role: "assistant".to_string(),
+                content: id.to_string(),
+                provider: None,
+                model: None,
+                input_tokens: None,
+                output_tokens: None,
+                total_tokens: None,
+                cost_usd,
+                reasoning: None,
+                tool_calls_json: None,
+                metadata_json: None,
+            })
+            .await?;
+    }
+
+    let total = store
+        .thread_message_cost_total(thread_id)
+        .await?
+        .expect("costed rows should produce a total");
+    assert!((total - 0.15).abs() < 1e-12);
+    assert_eq!(
+        store.thread_message_cost_total("missing-thread").await?,
+        None
     );
 
     fs::remove_dir_all(root)?;

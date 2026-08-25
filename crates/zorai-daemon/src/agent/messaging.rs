@@ -591,7 +591,7 @@ impl AgentEngine {
             .await
     }
 
-    pub(super) async fn get_or_create_thread_with_target(
+    pub(crate) async fn get_or_create_thread_with_target(
         &self,
         thread_id: Option<&str>,
         content: &str,

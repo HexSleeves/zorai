@@ -626,6 +626,9 @@ export function useDaemonAgentActions({
       title: goal.slice(0, 72),
       priority: "normal",
       threadId: effectiveThreadId,
+      targetAgentId: useAgentStore.getState().threads.find((thread) => thread.id === threadId)?.targetAgentId
+        ?? useAgentStore.getState().threads.find((thread) => thread.id === threadId)?.agent_name
+        ?? null,
       sessionId: provision?.coordinatorSessionId ?? null,
     });
 

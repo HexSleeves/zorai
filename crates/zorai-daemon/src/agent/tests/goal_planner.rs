@@ -164,6 +164,7 @@ fn sample_goal_run(goal_run_id: &str) -> GoalRun {
         launch_assignment_snapshot: Vec::new(),
         runtime_assignment_list: Vec::new(),
         root_thread_id: None,
+        supervision_thread_id: None,
         active_thread_id: None,
         execution_thread_ids: Vec::new(),
     }
@@ -238,6 +239,11 @@ async fn start_goal_run_creates_dedicated_goal_thread_and_thread_routing_default
     assert_ne!(
         goal_thread_id, source_thread_id,
         "goal runs should no longer pin themselves to the spawning thread"
+    );
+    assert_eq!(
+        goal_run.supervision_thread_id.as_deref(),
+        Some(source_thread_id.as_str()),
+        "existing-thread launches must retain the original thread as supervision surface"
     );
     assert_eq!(
         goal_run.root_thread_id.as_deref(),
@@ -350,6 +356,11 @@ async fn start_goal_run_without_thread_still_creates_pinned_main_thread() {
     assert!(
         thread_id.starts_with("goal:"),
         "threadless goal launches should still allocate goal-prefixed threads"
+    );
+    assert_eq!(
+        goal_run.supervision_thread_id.as_deref(),
+        Some(thread_id.as_str()),
+        "threadless launches must use the dedicated goal thread for supervision"
     );
     assert_eq!(goal_run.root_thread_id.as_deref(), Some(thread_id.as_str()));
     assert_eq!(
@@ -1623,6 +1634,7 @@ fn sample_goal_run_with_kind(
         launch_assignment_snapshot: Vec::new(),
         runtime_assignment_list: Vec::new(),
         root_thread_id: None,
+        supervision_thread_id: None,
         active_thread_id: None,
         execution_thread_ids: Vec::new(),
     }

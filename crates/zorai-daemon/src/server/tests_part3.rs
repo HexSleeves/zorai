@@ -156,6 +156,7 @@ async fn seed_goal_plan_review_approval_fixture(
             launch_assignment_snapshot: Vec::new(),
             runtime_assignment_list: Vec::new(),
             root_thread_id: None,
+            supervision_thread_id: Some(thread_id.to_string()),
             active_thread_id: None,
             execution_thread_ids: Vec::new(),
         });
@@ -1354,6 +1355,7 @@ async fn thread_list_does_not_subscribe_client_to_live_agent_events() {
             thread_id: thread_id.to_string(),
             message_limit: None,
             message_offset: None,
+            collapse_tool_calls: false,
         })
         .await
         .expect("request thread detail");

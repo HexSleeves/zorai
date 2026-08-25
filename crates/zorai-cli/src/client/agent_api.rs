@@ -473,6 +473,7 @@ pub async fn send_thread_get_query(thread_id: String) -> Result<Option<AgentThre
             thread_id,
             message_limit: None,
             message_offset: None,
+            collapse_tool_calls: false,
         })
         .await?;
 

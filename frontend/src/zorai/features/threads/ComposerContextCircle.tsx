@@ -19,6 +19,17 @@ function formatCost(cost: number | undefined): string {
   return `$${cost.toFixed(2)}`;
 }
 
+export function resolveComposerThreadCost(
+  thread: AgentThread | null | undefined,
+  messages: AgentMessage[],
+): { hasCost: boolean; totalCost: number } {
+  if (typeof thread?.totalCostUsd === "number" && Number.isFinite(thread.totalCostUsd)) {
+    return { hasCost: true, totalCost: thread.totalCostUsd };
+  }
+  const usage = summarizeSessionUsage(messages);
+  return { hasCost: usage.hasCost, totalCost: usage.totalCost };
+}
+
 function currentContextTokens(thread: AgentThread | null, messages: AgentMessage[]): number {
   if (!thread) return 0;
   const synced = thread.activeContextWindowTokens;
@@ -52,8 +63,9 @@ export function ComposerContextCircle({ thread, messages }: Props) {
   const tone: "ok" | "warn" | "danger" = pct >= 90 ? "danger" : pct >= 75 ? "warn" : "ok";
   const autoCompact = (agentSettings as unknown as Record<string, unknown>).auto_compact_context === true;
   const sessionUsage = useMemo(() => summarizeSessionUsage(messages), [messages]);
-  const sessionCost = sessionUsage.totalCost;
-  const sessionHasCost = sessionUsage.hasCost;
+  const resolvedCost = useMemo(() => resolveComposerThreadCost(thread, messages), [thread, messages]);
+  const sessionCost = resolvedCost.totalCost;
+  const sessionHasCost = resolvedCost.hasCost;
   const sessionAvgTps = sessionUsage.avgTps;
 
   const [popoverStyle, setPopoverStyle] = useState<React.CSSProperties | undefined>(undefined);
@@ -147,8 +159,6 @@ export function ComposerContextCircle({ thread, messages }: Props) {
         aria-label={`Context ${pct}% — ${formatTokens(used)} of ${formatTokens(contextWindowTokens)} — show details`}
         aria-expanded={open}
         aria-haspopup="dialog"
-        onMouseEnter={() => setOpen(true)}
-        onMouseLeave={() => { /* keep click to pin; hover just opens preview */ }}
         onClick={() => setOpen((v) => !v)}
         title={`${pct}% · ${formatTokens(used)} / ${formatTokens(contextWindowTokens)}${sessionHasCost ? ` · $${sessionCost.toFixed(4)} session` : ""}`}
       >

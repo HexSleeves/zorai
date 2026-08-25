@@ -1151,7 +1151,7 @@ async fn hydrated_idle_participant_auto_send_is_visible_in_thread_detail() {
     .expect("participant note and follow-up should appear after hydrate");
 
     let thread_json = reloaded
-        .agent_thread_detail_json(thread_id, None, None)
+        .agent_thread_detail_json(thread_id, None, None, false)
         .await;
     let detail: serde_json::Value =
         serde_json::from_str(&thread_json).expect("decode hydrated thread detail");

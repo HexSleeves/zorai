@@ -69,6 +69,7 @@ fn make_goal_run(id: &str, title: &str, status: GoalRunStatus, updated_at: u64) 
         launch_assignment_snapshot: Vec::new(),
         runtime_assignment_list: Vec::new(),
         root_thread_id: None,
+        supervision_thread_id: None,
         active_thread_id: None,
         execution_thread_ids: Vec::new(),
     }
@@ -269,6 +270,58 @@ async fn heartbeat_checks_stale_todos_detects_old_pending() {
     assert_eq!(result.check_type, HeartbeatCheckType::StaleTodos);
     assert_eq!(result.items_found, 2);
     assert_eq!(result.details.len(), 2);
+}
+
+#[tokio::test]
+async fn heartbeat_checks_stale_todos_ignore_heartbeat_synthesis_threads() {
+    let now = now_millis();
+    let old = now - (25 * 3600 * 1000);
+    let heartbeat_thread_id = "thread-heartbeat";
+    let mut todos = HashMap::new();
+    todos.insert(
+        heartbeat_thread_id.to_string(),
+        vec![make_todo(
+            "todo-heartbeat",
+            "Decide whether to act on paused goal runs",
+            TodoStatus::Pending,
+            old,
+        )],
+    );
+    todos.insert(
+        "thread-user".to_string(),
+        vec![make_todo(
+            "todo-user",
+            "Fix actual user task",
+            TodoStatus::Pending,
+            old,
+        )],
+    );
+
+    let engine = make_test_engine(todos, VecDeque::new(), HashMap::new()).await;
+    engine.threads.write().await.insert(
+        heartbeat_thread_id.to_string(),
+        AgentThread {
+            id: heartbeat_thread_id.to_string(),
+            agent_name: Some("Weles".to_string()),
+            title: "HEARTBEAT SYNTHESIS\nScheduled check".to_string(),
+            messages: Vec::new(),
+            pinned: false,
+            upstream_thread_id: None,
+            upstream_transport: None,
+            upstream_provider: None,
+            upstream_model: None,
+            upstream_assistant_id: None,
+            created_at: old,
+            updated_at: old,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
+        },
+    );
+
+    let result = engine.check_stale_todos(24).await;
+
+    assert_eq!(result.items_found, 1);
+    assert_eq!(result.details[0].id, "todo-user");
 }
 
 #[tokio::test]

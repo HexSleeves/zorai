@@ -13,7 +13,7 @@ import type { Dispatch, MutableRefObject, SetStateAction } from "react";
 import {
   appendDaemonSystemMessage,
   recordDaemonWorkflowNotice,
-  refreshDaemonThreadMetadataIntoLocalState,
+  refreshDaemonThreadMessagesIntoLocalState,
   reloadDaemonThreadIntoLocalState,
   syncWelesHealth,
 } from "./daemonHelpers";
@@ -83,6 +83,13 @@ export function hasOpenLocalAssistantStream(localThreadId: string | null): boole
   const messages = useAgentStore.getState().getThreadMessages(localThreadId);
   const last = messages[messages.length - 1];
   return last?.role === "assistant" && last.isStreaming === true;
+}
+
+export function isAuxiliaryDaemonError(event: unknown): boolean {
+  if (!event || typeof event !== "object") return false;
+  const candidate = event as { type?: unknown; message?: unknown };
+  if (candidate.type !== "error" || typeof candidate.message !== "string") return false;
+  return candidate.message.startsWith("message_feedback:");
 }
 
 export function useDaemonAgentEvents({
@@ -429,6 +436,19 @@ export function useDaemonAgentEvents({
           break;
         }
         case "error": {
+          if (isAuxiliaryDaemonError(event)) {
+            addNotification({
+              title: "Message feedback failed",
+              body: String(event.message).replace(/^message_feedback:/, ""),
+              subtitle: "The active response was not interrupted.",
+              icon: "alert-triangle",
+              source: "system",
+              workspaceId: activeWorkspace?.id ?? null,
+              paneId: activePaneId ?? null,
+              panelId: activePaneId ?? null,
+            });
+            break;
+          }
           clearThreadRetryStatus(typeof event.thread_id === "string" ? event.thread_id : null);
           if (!tid) break;
           flushStreamDeltas();
@@ -462,7 +482,7 @@ export function useDaemonAgentEvents({
         case "thread_reload_required": {
           const reloadThreadId = typeof event.thread_id === "string" ? event.thread_id : null;
           if (reloadThreadId) {
-            void refreshDaemonThreadMetadataIntoLocalState({
+            void refreshDaemonThreadMessagesIntoLocalState({
               daemonThreadId: reloadThreadId,
               setThreadTodos,
               setDaemonTodosByThread,

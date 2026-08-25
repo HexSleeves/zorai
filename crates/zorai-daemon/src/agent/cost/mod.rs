@@ -9,7 +9,7 @@
 
 pub mod rate_cards;
 
-pub use rate_cards::{default_rate_cards, lookup_rate, RateCard};
+pub use rate_cards::{lookup_rate, RateCard};
 
 use crate::agent::types::GoalRunModelUsage;
 use serde::{Deserialize, Serialize};
@@ -25,8 +25,9 @@ pub struct CostConfig {
     /// Fire a BudgetAlert event when cumulative cost exceeds this USD amount.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub budget_alert_threshold_usd: Option<f64>,
-    /// Per-model pricing overrides. Falls back to `default_rate_cards()`.
-    #[serde(default = "default_rate_cards")]
+    /// Optional operator-supplied per-model pricing. Empty by default because
+    /// prices are volatile and provider/account specific.
+    #[serde(default)]
     pub rate_cards: HashMap<String, RateCard>,
 }
 
@@ -39,7 +40,7 @@ impl Default for CostConfig {
         Self {
             enabled: true,
             budget_alert_threshold_usd: None,
-            rate_cards: default_rate_cards(),
+            rate_cards: HashMap::new(),
         }
     }
 }
@@ -91,19 +92,12 @@ impl CostTracker {
         self.summary.total_prompt_tokens += input_tokens;
         self.summary.total_completion_tokens += output_tokens;
 
-        // Never leave cost at None just because the catalog lagged behind
-        // a new frontend model id — use FALLBACK_RATE so the thread shows *some* $.
-        let (rate, is_fallback) = match lookup_rate(rate_cards, provider, model) {
-            Some(r) => (r, false),
-            None => (&crate::agent::cost::rate_cards::FALLBACK_RATE, true),
-        };
-        let incremental = compute_cost_from_tokens(input_tokens, output_tokens, rate);
-        if is_fallback {
-            tracing::debug!(provider, model, "no rate card for model — using fallback rate");
-        }
-        let current = self.summary.estimated_cost_usd.unwrap_or(0.0);
-        self.summary.estimated_cost_usd = Some(current + incremental);
-        let cost = Some(incremental);
+        let cost = lookup_rate(rate_cards, provider, model).map(|rate| {
+            let incremental = compute_cost_from_tokens(input_tokens, output_tokens, rate);
+            let current = self.summary.estimated_cost_usd.unwrap_or(0.0);
+            self.summary.estimated_cost_usd = Some(current + incremental);
+            incremental
+        });
 
         let entry = self
             .model_usage
@@ -166,6 +160,16 @@ mod tests {
     use super::*;
     use zorai_shared::providers::PROVIDER_ID_OPENAI;
 
+    fn explicitly_configured_test_rates() -> HashMap<String, RateCard> {
+        HashMap::from([(
+            "test-model".to_string(),
+            RateCard {
+                input_per_million: 2.50,
+                output_per_million: 10.00,
+            },
+        )])
+    }
+
     #[test]
     fn cost_tracker_new_has_zero_totals() {
         let tracker = CostTracker::new();
@@ -176,11 +180,20 @@ mod tests {
     }
 
     #[test]
+    fn cost_config_ships_without_any_rate_cards() {
+        assert!(CostConfig::default().rate_cards.is_empty());
+
+        let config: CostConfig = serde_json::from_str(r#"{"enabled":true}"#)
+            .expect("cost config without explicit pricing should deserialize");
+        assert!(config.rate_cards.is_empty());
+    }
+
+    #[test]
     fn cost_tracker_accumulate_adds_tokens_and_computes_usd() {
         let mut tracker = CostTracker::new();
-        let cards = default_rate_cards();
+        let cards = explicitly_configured_test_rates();
 
-        let cost = tracker.accumulate(1000, 500, PROVIDER_ID_OPENAI, "gpt-4o", &cards, None);
+        let cost = tracker.accumulate(1000, 500, PROVIDER_ID_OPENAI, "test-model", &cards, None);
         assert!(cost.is_some());
         let c = cost.unwrap();
         let expected = (1000.0 * 2.50 / 1_000_000.0) + (500.0 * 10.00 / 1_000_000.0);
@@ -193,26 +206,34 @@ mod tests {
     }
 
     #[test]
-    fn cost_tracker_accumulate_unknown_model_uses_fallback() {
+    fn cost_tracker_accumulate_unknown_model_returns_none() {
         let mut tracker = CostTracker::new();
-        let cards = default_rate_cards();
+        let cards = explicitly_configured_test_rates();
+
         let cost = tracker.accumulate(500, 200, "unknown", "fake-model-9000", &cards, None);
-        assert!(cost.is_some(), "fallback rate should produce a cost");
+        assert!(cost.is_none());
         assert_eq!(tracker.summary().total_prompt_tokens, 500);
         assert_eq!(tracker.summary().total_completion_tokens, 200);
-        assert!(tracker.summary().estimated_cost_usd.is_some());
+        assert!(tracker.summary().estimated_cost_usd.is_none());
     }
 
     #[test]
     fn cost_tracker_budget_alert_fires_once() {
         let mut tracker = CostTracker::new();
-        let cards = default_rate_cards();
+        let cards = explicitly_configured_test_rates();
         let threshold = Some(0.001);
 
-        tracker.accumulate(100, 50, PROVIDER_ID_OPENAI, "gpt-4o", &cards, None);
+        tracker.accumulate(100, 50, PROVIDER_ID_OPENAI, "test-model", &cards, None);
         assert!(!tracker.budget_alert_needed(threshold));
 
-        tracker.accumulate(100_000, 50_000, PROVIDER_ID_OPENAI, "gpt-4o", &cards, None);
+        tracker.accumulate(
+            100_000,
+            50_000,
+            PROVIDER_ID_OPENAI,
+            "test-model",
+            &cards,
+            None,
+        );
         assert!(tracker.budget_alert_needed(threshold));
 
         assert!(!tracker.budget_alert_needed(threshold));
@@ -221,12 +242,12 @@ mod tests {
     #[test]
     fn cost_tracker_budget_alert_none_threshold() {
         let mut tracker = CostTracker::new();
-        let cards = default_rate_cards();
+        let cards = explicitly_configured_test_rates();
         tracker.accumulate(
             1_000_000,
             500_000,
             PROVIDER_ID_OPENAI,
-            "gpt-4o",
+            "test-model",
             &cards,
             None,
         );
@@ -236,15 +257,29 @@ mod tests {
     #[test]
     fn cost_tracker_keeps_per_model_usage_and_duration() {
         let mut tracker = CostTracker::new();
-        let cards = default_rate_cards();
+        let cards = explicitly_configured_test_rates();
 
-        tracker.accumulate(1000, 500, PROVIDER_ID_OPENAI, "gpt-4o", &cards, Some(1200));
-        tracker.accumulate(2000, 700, PROVIDER_ID_OPENAI, "gpt-4o", &cards, Some(800));
+        tracker.accumulate(
+            1000,
+            500,
+            PROVIDER_ID_OPENAI,
+            "test-model",
+            &cards,
+            Some(1200),
+        );
+        tracker.accumulate(
+            2000,
+            700,
+            PROVIDER_ID_OPENAI,
+            "test-model",
+            &cards,
+            Some(800),
+        );
         tracker.accumulate(
             300,
             100,
             zorai_shared::providers::PROVIDER_ID_OPENROUTER,
-            "anthropic/claude-sonnet-4",
+            "unpriced-model",
             &cards,
             None,
         );
@@ -253,24 +288,25 @@ mod tests {
         assert_eq!(usage.len(), 2);
         let gpt = usage
             .iter()
-            .find(|entry| entry.provider == PROVIDER_ID_OPENAI && entry.model == "gpt-4o")
-            .expect("gpt-4o usage should be grouped");
+            .find(|entry| entry.provider == PROVIDER_ID_OPENAI && entry.model == "test-model")
+            .expect("explicit test-model usage should be grouped");
         assert_eq!(gpt.request_count, 2);
         assert_eq!(gpt.prompt_tokens, 3000);
         assert_eq!(gpt.completion_tokens, 1200);
         assert_eq!(gpt.duration_ms, Some(2000));
 
-        let openrouter = usage
+        let unpriced = usage
             .iter()
             .find(|entry| {
                 entry.provider == zorai_shared::providers::PROVIDER_ID_OPENROUTER
-                    && entry.model == "anthropic/claude-sonnet-4"
+                    && entry.model == "unpriced-model"
             })
-            .expect("openrouter usage should be tracked separately");
-        assert_eq!(openrouter.request_count, 1);
-        assert_eq!(openrouter.prompt_tokens, 300);
-        assert_eq!(openrouter.completion_tokens, 100);
-        assert_eq!(openrouter.duration_ms, None);
+            .expect("unpriced provider usage should still be tracked");
+        assert_eq!(unpriced.request_count, 1);
+        assert_eq!(unpriced.prompt_tokens, 300);
+        assert_eq!(unpriced.completion_tokens, 100);
+        assert_eq!(unpriced.duration_ms, None);
+        assert_eq!(unpriced.estimated_cost_usd, None);
     }
 
     #[test]

@@ -1193,7 +1193,7 @@ impl AgentEngine {
                                 );
                             }
                         }
-                        if updated.source == "subagent" {
+                        if updated.source == "subagent" && !updated.is_internal_weles_review() {
                             self.record_collaboration_outcome(&updated, "success").await;
                             self.record_subagent_outcome_on_parent(
                                 &updated,
@@ -1220,7 +1220,7 @@ impl AgentEngine {
                                 );
                             }
                         }
-                        if updated.source == "subagent" {
+                        if updated.source == "subagent" && !updated.is_internal_weles_review() {
                             self.record_collaboration_outcome(&updated, "failure").await;
                             self.record_subagent_outcome_on_parent(
                                 &updated,
@@ -1245,7 +1245,7 @@ impl AgentEngine {
                                 );
                             }
                         }
-                        if updated.source == "subagent" {
+                        if updated.source == "subagent" && !updated.is_internal_weles_review() {
                             self.record_collaboration_outcome(&updated, "failure").await;
                             self.record_subagent_outcome_on_parent(
                                 &updated,
@@ -1389,6 +1389,7 @@ impl AgentEngine {
                     }
                 }
                 if updated.source == "subagent"
+                    && !updated.is_internal_weles_review()
                     && matches!(updated.status, TaskStatus::Failed | TaskStatus::Cancelled)
                 {
                     self.record_collaboration_outcome(&updated, "failure").await;
@@ -1453,6 +1454,9 @@ impl AgentEngine {
         message: &str,
         details: Option<String>,
     ) {
+        if child_task.is_internal_weles_review() {
+            return;
+        }
         let mut updated_live_parent = false;
         let mut updated_parent = None;
         if let Some(parent_task_id) = child_task.parent_task_id.as_deref() {
@@ -2147,6 +2151,72 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn internal_weles_review_does_not_report_back_or_wake_visible_parent() {
+        let root = tempdir().expect("tempdir should succeed");
+        let manager = SessionManager::new_test(root.path()).await;
+        let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+        let parent_thread_id = "thread-glmus-governance-parent";
+        let _ = engine
+            .get_or_create_thread(Some(parent_thread_id), "operator request")
+            .await;
+        let original_count = engine
+            .threads
+            .read()
+            .await
+            .get(parent_thread_id)
+            .map(|thread| thread.messages.len())
+            .unwrap_or_default();
+
+        let mut review = engine
+            .enqueue_task(
+                "WELES".to_string(),
+                "Internal governance review".to_string(),
+                "high",
+                None,
+                None,
+                Vec::new(),
+                None,
+                "subagent",
+                None,
+                None,
+                Some("dm:subagent-1781800311670:weles".to_string()),
+                Some("daemon".to_string()),
+            )
+            .await;
+        review.status = TaskStatus::Completed;
+        review.parent_thread_id = Some(parent_thread_id.to_string());
+        review.sub_agent_def_id =
+            Some(crate::agent::agent_identity::WELES_BUILTIN_SUBAGENT_ID.to_string());
+        review.override_system_prompt =
+            crate::agent::weles_governance::build_weles_internal_override_payload(
+                crate::agent::agent_identity::WELES_GOVERNANCE_SCOPE,
+                &serde_json::json!({"tool_name":"bash_command"}),
+            );
+
+        engine
+            .record_subagent_outcome_on_parent(
+                &review,
+                TaskLogLevel::Info,
+                "subagent completed",
+                None,
+            )
+            .await;
+
+        let messages = engine
+            .threads
+            .read()
+            .await
+            .get(parent_thread_id)
+            .map(|thread| thread.messages.len())
+            .unwrap_or_default();
+        assert_eq!(messages, original_count);
+        assert!(engine
+            .deferred_visible_thread_continuations_for(parent_thread_id)
+            .await
+            .is_empty());
+    }
+
+    #[tokio::test]
     async fn completed_goal_subagent_injects_ledger_checkpoint_into_parent_thread() {
         let root = tempdir().expect("tempdir");
         let manager = SessionManager::new_test(root.path()).await;
@@ -2633,6 +2703,7 @@ mod tests {
         task.parent_task_id = Some("parent".to_string());
         let outcome = SendMessageOutcome {
             thread_id: "thread-child".to_string(),
+            stream_generation: 0,
             interrupted_for_approval: false,
             terminated_for_budget: false,
             subagent_report: None,
@@ -2669,6 +2740,7 @@ mod tests {
         task.parent_task_id = Some("parent".to_string());
         let outcome = SendMessageOutcome {
             thread_id: "thread-child".to_string(),
+            stream_generation: 0,
             interrupted_for_approval: true,
             terminated_for_budget: false,
             subagent_report: None,

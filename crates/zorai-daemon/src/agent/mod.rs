@@ -58,6 +58,7 @@ mod goal_planner;
 mod goal_quiet_recovery;
 mod goal_routing;
 mod goal_run_health;
+mod goal_supervision_routing;
 pub(crate) mod harness;
 mod heartbeat;
 mod heartbeat_checks;

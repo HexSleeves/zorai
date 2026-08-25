@@ -161,6 +161,7 @@ pub(crate) async fn dispatch_part4(
             thread_id,
             message_limit,
             message_offset,
+            collapse_tool_calls,
         } => {
             let started = std::time::Instant::now();
             tracing::info!(
@@ -171,7 +172,12 @@ pub(crate) async fn dispatch_part4(
             );
             client_agent_threads.insert(thread_id.clone());
             let json = agent
-                .agent_thread_detail_json(&thread_id, message_limit, message_offset)
+                .agent_thread_detail_json(
+                    &thread_id,
+                    message_limit,
+                    message_offset,
+                    collapse_tool_calls,
+                )
                 .await;
             tracing::info!(
                 thread_id = %thread_id,
@@ -352,8 +358,20 @@ pub(crate) async fn dispatch_part4(
             launch_assignments,
             autonomy_level,
             client_surface,
+            target_agent_id,
             requires_approval,
         } => {
+            if let (Some(thread_id), Some(target_agent_id)) =
+                (thread_id.as_deref(), target_agent_id.as_deref())
+            {
+                let _ = agent
+                    .get_or_create_thread_with_target(
+                        Some(thread_id),
+                        title.as_deref().unwrap_or(&goal),
+                        Some(target_agent_id),
+                    )
+                    .await;
+            }
             let goal_run = agent
                 .start_goal_run_with_surface_and_approval_policy(
                     goal,
@@ -1294,9 +1312,7 @@ pub(crate) async fn dispatch_part4(
         }
 
         ClientMessage::AgentGetThreadExecutionProfile { thread_id } => {
-            let profile = agent
-                .get_thread_execution_profile(&thread_id)
-                .await;
+            let profile = agent.get_thread_execution_profile(&thread_id).await;
             let profile_json =
                 serde_json::to_string(&profile).unwrap_or_else(|_| "null".to_string());
             framed
@@ -1307,7 +1323,10 @@ pub(crate) async fn dispatch_part4(
                 .await?;
         }
 
-        ClientMessage::AgentSetThreadExecutionProfile { thread_id, profile_json } => {
+        ClientMessage::AgentSetThreadExecutionProfile {
+            thread_id,
+            profile_json,
+        } => {
             if agent.is_thread_streaming(&thread_id).await {
                 framed
                     .send(DaemonMessage::Error {
@@ -1317,22 +1336,23 @@ pub(crate) async fn dispatch_part4(
                 return Ok(true);
             }
             let trimmed = profile_json.trim();
-            let parsed: Option<crate::agent::types::ThreadExecutionProfile> =
-                if trimmed.is_empty() || trimmed == "null" {
-                    None
-                } else {
-                    match serde_json::from_str::<crate::agent::types::ThreadExecutionProfile>(trimmed) {
-                        Ok(profile) => Some(profile),
-                        Err(error) => {
-                            framed
-                                .send(DaemonMessage::Error {
-                                    message: format!("Invalid thread execution profile: {error}"),
-                                })
-                                .await?;
-                            return Ok(true);
-                        }
+            let parsed: Option<crate::agent::types::ThreadExecutionProfile> = if trimmed.is_empty()
+                || trimmed == "null"
+            {
+                None
+            } else {
+                match serde_json::from_str::<crate::agent::types::ThreadExecutionProfile>(trimmed) {
+                    Ok(profile) => Some(profile),
+                    Err(error) => {
+                        framed
+                            .send(DaemonMessage::Error {
+                                message: format!("Invalid thread execution profile: {error}"),
+                            })
+                            .await?;
+                        return Ok(true);
                     }
-                };
+                }
+            };
             // Persist + broadcast so the persisted thread row reloads with it.
             if let Some(profile) = parsed.clone() {
                 let mut map = agent.thread_execution_profiles.write().await;
@@ -1347,7 +1367,11 @@ pub(crate) async fn dispatch_part4(
                 }
                 drop(map);
             } else {
-                agent.thread_execution_profiles.write().await.remove(&thread_id);
+                agent
+                    .thread_execution_profiles
+                    .write()
+                    .await
+                    .remove(&thread_id);
             }
             // Reflect into persisted thread metadata (thread room + DB).
             agent.persist_thread_by_id(&thread_id).await;

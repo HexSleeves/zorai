@@ -972,6 +972,7 @@ pub(super) async fn apply_schema_migrations<E: super::db::DbExecutor + ?Sized>(
         "TEXT NOT NULL DEFAULT '[]'",
     )
     .await?;
+    ensure_column(&mut *exec, "goal_runs", "supervision_thread_id", "TEXT").await?;
     ensure_column(
         &mut *exec,
         "goal_runs",

@@ -743,6 +743,7 @@
 
 .zorai-message__content > div > p:last-child,
 .zorai-message__reasoning > div p:last-child {
+  margin-top: 2px;
   margin-bottom: 0;
 }
 
@@ -775,10 +776,14 @@
 
 .zorai-message__reasoning {
   margin: 0;
-  border: 1px solid var(--zorai-border);
+  border: none;
   border-radius: 7px;
-  background: var(--border-color);
-  padding: 8px 10px;
+  background: transparent;
+  padding: 0;
+}
+
+.zorai-message__reasoning .zorai-message__reasoning--streaming {
+  color: linear-gradient(90deg, var(--text-muted) 0%, var(--text-primary) 50%, var(--text-muted) 100%);
 }
 
 .zorai-message__tools {
@@ -789,14 +794,62 @@
 .zorai-message__reasoning-toggle {
   cursor: pointer;
   user-select: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--zorai-muted);
+  font-size: var(--text-sm);
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  list-style: none;
+}
+
+.zorai-message__reasoning-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.zorai-message__reasoning[open] > .zorai-message__reasoning-toggle {
+  border-bottom-left-radius: 4px;
+  border-bottom-right-radius: 4px;
 }
 
 .zorai-message__reasoning > div {
-  margin-top: 6px;
+  margin-top: 8px;
+  padding: 8px 12px;
+  border: 1px solid color-mix(in srgb, var(--zorai-muted) 22%, transparent);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--zorai-muted);
+  font-size: var(--text-sm);
   max-height: min(42vh, 360px);
   overflow: auto;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+.zorai-message__reasoning[data-streaming="true"] > div {
+  border-color: color-mix(in srgb, var(--text-primary) 35%, transparent);
+}
+
+.zorai-message__reasoning-pulse {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--text-primary);
+  animation: zorai-reasoning-pulse 1.4s ease-in-out infinite;
+}
+
+@keyframes zorai-reasoning-pulse {
+  0%, 100% {
+    opacity: 0.25;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
 }
 
 .zorai-message__actions {
@@ -1563,6 +1616,11 @@
 .zorai-composer-icon-button--stop:hover:not(:disabled) {
   background: var(--risk-critical);
   color: var(--risk-critical-solid);
+}
+
+.composer-icon-button--queue {
+  border-color: var(--border);
+  border-radius: 50%;
 }
 
 .zorai-composer-icon-button--queue:hover:not(:disabled) {
@@ -4168,6 +4226,13 @@ button.zorai-composer-context-chip { cursor: pointer; }
 .zorai-code-thread-history-copy time,
 .zorai-code-thread-empty { color: var(--zorai-muted); font-size: 9px; }
 .zorai-code-thread-empty { padding: 12px 7px; text-align: center; }
+
+.zorai-code-thread-history-more {
+  font-size: var(--text-xs);
+  text-align: center;
+  width: 100%;
+  color: var(--zorai-muted);
+}
 
 .zorai-code-thread-error {
   display: flex;

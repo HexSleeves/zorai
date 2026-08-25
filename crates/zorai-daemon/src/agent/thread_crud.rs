@@ -1077,9 +1077,33 @@ impl AgentEngine {
         message_limit: Option<usize>,
         message_offset: usize,
     ) -> Option<ThreadDetailResult> {
+        self.get_thread_filtered_with_tool_run_pagination(
+            thread_id,
+            include_internal,
+            message_limit,
+            message_offset,
+            false,
+        )
+        .await
+    }
+
+    pub(crate) async fn get_thread_filtered_with_tool_run_pagination(
+        &self,
+        thread_id: &str,
+        include_internal: bool,
+        message_limit: Option<usize>,
+        message_offset: usize,
+        collapse_tool_calls: bool,
+    ) -> Option<ThreadDetailResult> {
         if let Some(limit) = message_limit {
             if let Some(detail) = self
-                .get_persisted_thread_window(thread_id, include_internal, limit, message_offset)
+                .get_persisted_thread_window(
+                    thread_id,
+                    include_internal,
+                    limit,
+                    message_offset,
+                    collapse_tool_calls,
+                )
                 .await
             {
                 tracing::info!(
@@ -1307,8 +1331,14 @@ impl AgentEngine {
             return None;
         }
 
-        self.get_persisted_thread_window(thread_id, include_internal, message_limit, message_offset)
-            .await
+        self.get_persisted_thread_window(
+            thread_id,
+            include_internal,
+            message_limit,
+            message_offset,
+            false,
+        )
+        .await
     }
 
     async fn get_persisted_thread_window(
@@ -1317,6 +1347,7 @@ impl AgentEngine {
         include_internal: bool,
         message_limit: usize,
         message_offset: usize,
+        collapse_tool_calls: bool,
     ) -> Option<ThreadDetailResult> {
         let existing_pinned = self
             .threads
@@ -1340,9 +1371,21 @@ impl AgentEngine {
                     .await
             }
         };
-        let window_fut = self
-            .history
-            .list_message_window(thread_id, message_limit, message_offset);
+        let window_fut = async {
+            if collapse_tool_calls {
+                self.history
+                    .list_message_window_collapsing_tool_runs(
+                        thread_id,
+                        message_limit,
+                        message_offset,
+                    )
+                    .await
+            } else {
+                self.history
+                    .list_message_window(thread_id, message_limit, message_offset)
+                    .await
+            }
+        };
         let pinned_fut = persisted_pinned_message_summaries(self, thread_id);
         let context_window_fut = self.history.list_active_context_window(thread_id);
 
@@ -1413,6 +1456,7 @@ impl AgentEngine {
                 include_internal,
                 LAZY_CAPPED_IPC_MESSAGE_WINDOW,
                 0,
+                false,
             )
             .await
         {

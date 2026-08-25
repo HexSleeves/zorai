@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
 import { ToolEventRow } from "@/components/agent-chat-panel/chat-view/ToolEventRow";
+import { ToolEventList } from "@/components/agent-chat-panel/chat-view/ToolEventList";
 import { buildDisplayItems } from "@/components/agent-chat-panel/chat-view/helpers";
 import { useAgentChatPanelRuntime } from "@/components/agent-chat-panel/runtime/context";
 import {
@@ -308,6 +309,9 @@ export function ThreadsView({
             )}
           </div>
         ) : displayItems.map((item) => {
+          if (item.type === "toolList") {
+            return <ToolEventList key={`toollist_${item.groups[0]?.key ?? "empty"}`} groups={item.groups} />;
+          }
           if (item.type === "tool") {
             return <ToolEventRow key={`tool_${item.group.key}`} group={item.group} />;
           }
@@ -336,7 +340,7 @@ export function ThreadsView({
               speechLoading={speech.loadingMessageId === message.id}
               speechQueued={speech.queuedMessageIds.includes(message.id)}
               onSpeak={() => void speech.speakMessage(message)}
-              onFeedback={message.role === "assistant"
+              onFeedback={message.role === "assistant" && !message.isStreaming
                 ? (reaction) => runtime.submitMessageFeedback(runtime.activeThread?.id ?? message.threadId, message.id, reaction)
                 : undefined}
               onRegenerate={message.role === "assistant" ? () => regenerateAssistantMessage(message.id) : undefined}

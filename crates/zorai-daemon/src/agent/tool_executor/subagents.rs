@@ -1134,6 +1134,9 @@ pub(in crate::agent) async fn spawn_weles_internal_subagent(
             Some("daemon".to_string()),
         )
         .await;
+    subagent.status = crate::agent::types::TaskStatus::InProgress;
+    subagent.started_at = Some(now_millis());
+    subagent.notify_on_complete = false;
     subagent.override_provider = Some(def.provider.clone());
     subagent.override_model = Some(def.model.clone());
     subagent.override_api_transport = def.api_transport;

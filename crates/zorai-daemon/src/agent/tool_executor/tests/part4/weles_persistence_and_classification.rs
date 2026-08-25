@@ -178,6 +178,12 @@ async fn persisted_weles_internal_task_keeps_runtime_path_without_serializing_hi
     )
     .await
     .expect("daemon-owned WELES governance spawn should succeed");
+    assert_eq!(
+        task.status,
+        crate::agent::types::TaskStatus::InProgress,
+        "synchronous governance reviews must be reserved from normal scheduler dispatch"
+    );
+    assert!(!task.notify_on_complete);
     assert!(seed_engine
         .trusted_weles_tasks
         .read()

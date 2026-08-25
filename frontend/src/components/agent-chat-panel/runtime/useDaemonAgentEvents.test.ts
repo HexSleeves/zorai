@@ -3,6 +3,7 @@ import { useAgentStore } from "@/lib/agentStore";
 import type { AgentMessage, AgentThread } from "@/lib/agentStore";
 import {
   hasOpenLocalAssistantStream,
+  isAuxiliaryDaemonError,
   isThreadlessDaemonStreamEvent,
   resolveDaemonEventLocalThreadId,
 } from "./useDaemonAgentEvents";
@@ -120,5 +121,26 @@ describe("resolveDaemonEventLocalThreadId", () => {
       "daemon-b",
       { allowThreadlessFallback: hasOpenLocalAssistantStream("local-b") },
     )).toBeNull();
+  });
+});
+
+
+describe("isAuxiliaryDaemonError", () => {
+  it("isolates message feedback failures from turn failures", () => {
+    expect(isAuxiliaryDaemonError({
+      type: "error",
+      message: "message_feedback:message_not_found",
+    })).toBe(true);
+  });
+
+  it("keeps provider and agent-loop failures terminal", () => {
+    expect(isAuxiliaryDaemonError({
+      type: "error",
+      message: "429 rate limit exceeded",
+    })).toBe(false);
+    expect(isAuxiliaryDaemonError({
+      type: "done",
+      message: "message_feedback:message_not_found",
+    })).toBe(false);
   });
 });

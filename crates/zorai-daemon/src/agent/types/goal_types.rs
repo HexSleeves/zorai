@@ -182,6 +182,8 @@ pub struct GoalRun {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub root_thread_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub supervision_thread_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub active_thread_id: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub execution_thread_ids: Vec<String>,

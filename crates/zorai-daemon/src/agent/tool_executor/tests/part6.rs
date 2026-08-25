@@ -4716,7 +4716,7 @@ async fn spawn_subagent_reserved_thread_detail_includes_execution_profile_metada
         .expect("spawned subagent should reserve a thread id");
 
     let detail_json = engine
-        .agent_thread_detail_json(&reserved_thread_id, None, None)
+        .agent_thread_detail_json(&reserved_thread_id, None, None, false)
         .await;
     let detail: serde_json::Value =
         serde_json::from_str(&detail_json).expect("thread detail json should parse");
@@ -7045,6 +7045,7 @@ async fn update_todo_for_goal_owned_main_task_requires_explicit_goal_binding() {
             completed_at: None,
             thread_id: Some(thread_id.to_string()),
             root_thread_id: Some(thread_id.to_string()),
+            supervision_thread_id: None,
             active_thread_id: Some(thread_id.to_string()),
             execution_thread_ids: Vec::new(),
             session_id: None,
@@ -7221,6 +7222,7 @@ async fn update_todo_for_goal_owned_main_task_pins_items_to_bound_goal_step() {
             completed_at: None,
             thread_id: Some(thread_id.to_string()),
             root_thread_id: Some(thread_id.to_string()),
+            supervision_thread_id: None,
             active_thread_id: Some(thread_id.to_string()),
             execution_thread_ids: Vec::new(),
             session_id: None,
@@ -7412,6 +7414,7 @@ async fn update_todo_for_goal_owned_main_task_allows_only_status_changes_within_
             completed_at: None,
             thread_id: Some(thread_id.to_string()),
             root_thread_id: Some(thread_id.to_string()),
+            supervision_thread_id: None,
             active_thread_id: Some(thread_id.to_string()),
             execution_thread_ids: Vec::new(),
             session_id: None,
@@ -7691,6 +7694,7 @@ async fn update_todo_for_goal_owned_main_task_rejects_updates_after_goal_step_cl
             completed_at: None,
             thread_id: Some(thread_id.to_string()),
             root_thread_id: Some(thread_id.to_string()),
+            supervision_thread_id: None,
             active_thread_id: Some(thread_id.to_string()),
             execution_thread_ids: Vec::new(),
             session_id: None,
@@ -8002,6 +8006,7 @@ async fn submit_goal_step_verdict_records_structured_verdict_for_current_goal_ve
             completed_at: None,
             thread_id: Some(thread_id.to_string()),
             root_thread_id: Some(thread_id.to_string()),
+            supervision_thread_id: None,
             active_thread_id: Some(thread_id.to_string()),
             execution_thread_ids: Vec::new(),
             session_id: None,
@@ -8209,6 +8214,7 @@ async fn submit_goal_step_verdict_rejects_pass_without_evidence() {
             completed_at: None,
             thread_id: Some(thread_id.to_string()),
             root_thread_id: Some(thread_id.to_string()),
+            supervision_thread_id: None,
             active_thread_id: Some(thread_id.to_string()),
             execution_thread_ids: Vec::new(),
             session_id: None,

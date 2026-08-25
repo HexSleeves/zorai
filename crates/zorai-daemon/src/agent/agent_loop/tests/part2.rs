@@ -372,6 +372,7 @@ async fn send_message_request_includes_runtime_continuity_and_negative_knowledge
             completed_at: None,
             thread_id: Some(thread_id.to_string()),
             root_thread_id: Some(thread_id.to_string()),
+            supervision_thread_id: None,
             active_thread_id: Some(thread_id.to_string()),
             execution_thread_ids: vec![thread_id.to_string()],
             session_id: None,

@@ -40,6 +40,7 @@ impl AgentEngine {
             completed_at: None,
             thread_id: Some(created_thread_id.clone()),
             root_thread_id: None,
+            supervision_thread_id: Some(created_thread_id.clone()),
             active_thread_id: None,
             execution_thread_ids: Vec::new(),
             session_id: None,

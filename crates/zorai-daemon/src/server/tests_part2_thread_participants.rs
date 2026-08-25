@@ -195,6 +195,7 @@ async fn get_thread_includes_thread_participants_for_reload() {
             thread_id: thread_id.to_string(),
             message_limit: None,
             message_offset: None,
+            collapse_tool_calls: false,
         })
         .await
         .expect("request thread detail");
@@ -267,6 +268,7 @@ async fn get_thread_includes_failed_participant_suggestions() {
             thread_id: thread_id.to_string(),
             message_limit: None,
             message_offset: None,
+            collapse_tool_calls: false,
         })
         .await
         .expect("request thread detail");

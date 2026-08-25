@@ -71,6 +71,8 @@ pub(super) enum AgentBridgeCommand {
         message_limit: Option<usize>,
         #[serde(default)]
         message_offset: Option<usize>,
+        #[serde(default)]
+        collapse_tool_calls: bool,
     },
     DeleteThread {
         thread_id: String,

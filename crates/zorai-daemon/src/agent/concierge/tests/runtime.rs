@@ -21,6 +21,7 @@ fn sample_goal_run_for_welcome(
         completed_at: None,
         thread_id: Some(format!("thread-{goal_run_id}")),
         root_thread_id: None,
+        supervision_thread_id: None,
         active_thread_id: None,
         execution_thread_ids: Vec::new(),
         session_id: None,
@@ -150,6 +151,7 @@ fn sample_goal_run_with_kind(
         launch_assignment_snapshot: Vec::new(),
         runtime_assignment_list: Vec::new(),
         root_thread_id: None,
+        supervision_thread_id: None,
         active_thread_id: None,
         execution_thread_ids: Vec::new(),
     }

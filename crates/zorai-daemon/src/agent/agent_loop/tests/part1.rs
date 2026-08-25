@@ -263,6 +263,7 @@ async fn policy_halt_aborts_before_guarded_tool_execution_and_persists_failure_t
             completed_at: None,
             thread_id: Some(thread_id.to_string()),
             root_thread_id: Some(thread_id.to_string()),
+            supervision_thread_id: None,
             active_thread_id: Some(thread_id.to_string()),
             execution_thread_ids: vec![thread_id.to_string()],
             session_id: None,

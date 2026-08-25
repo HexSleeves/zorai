@@ -1481,6 +1481,7 @@ fn agent_get_thread_round_trip_preserves_message_page_arguments() {
         thread_id: "thread-1".to_string(),
         message_limit: Some(50),
         message_offset: Some(100),
+        collapse_tool_calls: true,
     };
 
     let bytes = bincode::serialize(&msg).unwrap();
@@ -1490,10 +1491,38 @@ fn agent_get_thread_round_trip_preserves_message_page_arguments() {
             thread_id,
             message_limit,
             message_offset,
+            collapse_tool_calls,
         } => {
             assert_eq!(thread_id, "thread-1");
             assert_eq!(message_limit, Some(50));
             assert_eq!(message_offset, Some(100));
+            assert!(collapse_tool_calls);
+        }
+        other => panic!("unexpected variant: {:?}", other),
+    }
+}
+
+#[test]
+fn agent_get_thread_defaults_collapse_tool_calls_to_false() {
+    let value = serde_json::json!({
+        "AgentGetThread": {
+            "thread_id": "thread-1",
+            "message_limit": 50,
+            "message_offset": 100,
+        }
+    });
+    let decoded: ClientMessage = serde_json::from_value(value).unwrap();
+    match decoded {
+        ClientMessage::AgentGetThread {
+            thread_id,
+            message_limit,
+            message_offset,
+            collapse_tool_calls,
+        } => {
+            assert_eq!(thread_id, "thread-1");
+            assert_eq!(message_limit, Some(50));
+            assert_eq!(message_offset, Some(100));
+            assert!(!collapse_tool_calls);
         }
         other => panic!("unexpected variant: {:?}", other),
     }

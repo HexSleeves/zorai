@@ -1073,6 +1073,7 @@ impl AgentEngine {
             completed_at: None,
             thread_id: goal_thread_id,
             root_thread_id: None,
+            supervision_thread_id: source_thread_id.clone(),
             active_thread_id: None,
             execution_thread_ids: Vec::new(),
             session_id,
@@ -1121,6 +1122,9 @@ impl AgentEngine {
         let mut goal_run = goal_run;
         let goal_thread_id = goal_run.thread_id.clone();
         super::goal_run_apply_thread_routing(&mut goal_run, goal_thread_id);
+        if goal_run.supervision_thread_id.is_none() {
+            goal_run.supervision_thread_id = goal_run.thread_id.clone();
+        }
         crate::agent::goal_dossier::refresh_goal_run_dossier(&mut goal_run);
         if let Some(goal_thread_id) = goal_run.thread_id.as_deref() {
             self.set_thread_identity_metadata(

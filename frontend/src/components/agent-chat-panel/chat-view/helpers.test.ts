@@ -66,6 +66,9 @@ describe("buildDisplayItems", () => {
     ]);
 
     const rendered = items.map((item) => {
+      if (item.type === "toolList") {
+        return item.groups.map((group) => `tool:${group.toolName}:${group.status}`).join(",");
+      }
       if (item.type === "tool") {
         return `tool:${item.group.toolName}:${item.group.status}`;
       }
@@ -100,6 +103,7 @@ describe("buildDisplayItems", () => {
     ]);
 
     expect(items.some((item) => item.type === "message" && item.message.reasoning === "I should list the files.")).toBe(true);
+    expect(items.some((item) => item.type === "toolList" && item.groups.length === 1)).toBe(true);
     expect(assistantMessageHasVisibleContent("Calling tools...")).toBe(false);
     expect(assistantMessageHasVisibleContent("The command completed.")).toBe(true);
   });

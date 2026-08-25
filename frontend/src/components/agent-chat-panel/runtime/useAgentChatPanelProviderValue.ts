@@ -1061,6 +1061,11 @@ export function useAgentChatPanelProviderValue(): {
 
   const submitMessageFeedback = useCallback(async (threadId: string, messageId: string, reaction: "up" | "down" | null) => {
     const currentState = useAgentStore.getState();
+    const currentMessage = (currentState.messages[threadId] ?? [])
+      .find((message) => message.id === messageId);
+    if (!currentMessage || currentMessage.isStreaming === true) {
+      return;
+    }
     const thread = currentState.threads.find((entry) => entry.id === threadId);
     const daemonThreadId = thread?.daemonThreadId ?? (threadId === activeThreadId ? daemonThreadIdRef.current : null);
     const absoluteMessageIndex = resolveAbsoluteMessageIndex(

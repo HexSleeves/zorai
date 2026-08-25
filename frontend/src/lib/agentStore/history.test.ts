@@ -4,6 +4,7 @@ import {
   isGatewayAgentThread,
   isInternalAgentThread,
 } from "./history.ts";
+import { summarizeSessionUsage } from "@/components/agent-chat-panel/chat-view/helpers";
 
 describe("agent thread classification", () => {
   it("recognizes internal daemon threads by id or title", () => {
@@ -21,6 +22,76 @@ describe("agent thread classification", () => {
 });
 
 describe("buildHydratedRemoteThread", () => {
+  it("preserves persisted assistant cost when reopening a daemon thread", () => {
+    const hydrated = buildHydratedRemoteThread(
+      {
+        id: "thread-cost",
+        title: "Costed thread",
+        messages: [
+          {
+            id: "assistant-costed",
+            role: "assistant",
+            content: "Done",
+            input_tokens: 1_000,
+            output_tokens: 250,
+            cost: 0.0123,
+            timestamp: 1,
+          },
+        ],
+      },
+      "Svarog",
+    );
+
+    expect(hydrated?.messages[0]?.cost).toBe(0.0123);
+    expect(summarizeSessionUsage(hydrated?.messages ?? [])).toMatchObject({
+      hasCost: true,
+      totalCost: 0.0123,
+    });
+  });
+
+  it("hydrates authoritative whole-thread cost even when the loaded page has no costed messages", () => {
+    const hydrated = buildHydratedRemoteThread(
+      {
+        id: "thread-paged-cost",
+        title: "Paged cost",
+        total_cost_usd: 0.562112,
+        total_message_count: 791,
+        loaded_message_start: 727,
+        loaded_message_end: 791,
+        messages: [
+          {
+            role: "assistant",
+            content: "Latest uncosted message",
+            cost: null,
+          },
+        ],
+      },
+      "Svarog",
+    );
+
+    expect(hydrated?.thread.totalCostUsd).toBe(0.562112);
+    expect(summarizeSessionUsage(hydrated?.messages ?? []).hasCost).toBe(false);
+  });
+
+  it("accepts cost_usd from database-shaped remote message payloads", () => {
+    const hydrated = buildHydratedRemoteThread(
+      {
+        id: "thread-db-cost",
+        title: "DB cost",
+        messages: [
+          {
+            role: "assistant",
+            content: "Done",
+            cost_usd: 0.0042,
+          },
+        ],
+      },
+      "Svarog",
+    );
+
+    expect(hydrated?.messages[0]?.cost).toBe(0.0042);
+  });
+
   it("keeps internal daemon threads visible for the React thread browser", () => {
     const hydrated = buildHydratedRemoteThread(
       {

@@ -595,9 +595,9 @@ impl AgentEngine {
                     continue;
                 }
                 let manifest_path = path.join("manifest.json");
-                let manifest = std::fs::read(&manifest_path)
-                    .ok()
-                    .and_then(|bytes| serde_json::from_slice::<OperationSnapshotManifest>(&bytes).ok());
+                let manifest = std::fs::read(&manifest_path).ok().and_then(|bytes| {
+                    serde_json::from_slice::<OperationSnapshotManifest>(&bytes).ok()
+                });
                 let created_at = manifest.as_ref().map(|value| value.created_at).unwrap_or(0);
                 let size = std::fs::read_dir(&path)
                     .ok()
@@ -621,7 +621,8 @@ impl AgentEngine {
                 let is_protected = protected.as_deref() == Some(component.as_str());
                 let expired = now.saturating_sub(created_at) > OPERATION_SNAPSHOT_MAX_AGE_MS;
                 let over_count = retained_count >= OPERATION_SNAPSHOT_MAX_COUNT;
-                let over_bytes = retained_bytes.saturating_add(size) > OPERATION_SNAPSHOT_MAX_TOTAL_BYTES;
+                let over_bytes =
+                    retained_bytes.saturating_add(size) > OPERATION_SNAPSHOT_MAX_TOTAL_BYTES;
                 if !is_protected && (expired || over_count || over_bytes) {
                     let _ = std::fs::remove_dir_all(path);
                 } else {

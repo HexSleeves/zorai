@@ -162,8 +162,10 @@ fn build_direct_thread_responder_config(
         crate::agent::agent_identity::resolve_agent_target(agent_scope_id, sub_agents);
     let resolved_scope = resolved_target.scope_id.as_str();
     if resolved_scope == MAIN_AGENT_ID {
-        let profile_provider = nonempty(execution_profile.and_then(|profile| profile.provider.as_deref()));
-        let profile_model = nonempty(execution_profile.and_then(|profile| profile.model.as_deref()));
+        let profile_provider =
+            nonempty(execution_profile.and_then(|profile| profile.provider.as_deref()));
+        let profile_model =
+            nonempty(execution_profile.and_then(|profile| profile.model.as_deref()));
         let profile_reasoning_effort =
             nonempty(execution_profile.and_then(|profile| profile.reasoning_effort.as_deref()));
         let profile_context_window_tokens =
@@ -2287,14 +2289,10 @@ mod tests {
             context_window_tokens: Some(400_000),
         };
 
-        let responder = build_direct_thread_responder_config(
-            &config,
-            MAIN_AGENT_ID,
-            &[],
-            Some(&profile),
-        )
-        .expect("main responder profile should resolve")
-        .expect("explicit main-thread profile should create an override");
+        let responder =
+            build_direct_thread_responder_config(&config, MAIN_AGENT_ID, &[], Some(&profile))
+                .expect("main responder profile should resolve")
+                .expect("explicit main-thread profile should create an override");
 
         assert_eq!(responder.agent_name, MAIN_AGENT_NAME);
         assert_eq!(responder.provider_id, "openai");
@@ -3186,6 +3184,7 @@ mod tests {
             completed_at: None,
             thread_id: Some("thread-goal-1".to_string()),
             root_thread_id: None,
+            supervision_thread_id: None,
             active_thread_id: None,
             execution_thread_ids: Vec::new(),
             session_id: Some("session-1".to_string()),
@@ -3427,6 +3426,7 @@ mod tests {
             completed_at: None,
             thread_id: Some("thread-goal-clarification-blacklist".to_string()),
             root_thread_id: None,
+            supervision_thread_id: None,
             active_thread_id: None,
             execution_thread_ids: Vec::new(),
             session_id: Some("session-1".to_string()),

@@ -297,6 +297,7 @@ fn terminal_goal_run_for_thread(goal_run_id: &str, thread_id: &str, now: u64) ->
         completed_at: Some(now.saturating_sub(30_000)),
         thread_id: Some(thread_id.to_string()),
         root_thread_id: Some(thread_id.to_string()),
+        supervision_thread_id: None,
         active_thread_id: Some(thread_id.to_string()),
         execution_thread_ids: vec![thread_id.to_string()],
         session_id: None,

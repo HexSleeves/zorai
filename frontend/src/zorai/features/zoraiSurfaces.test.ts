@@ -686,10 +686,9 @@ describe("Zorai feature surfaces", () => {
     expect(source).toContain("ToolEventRow");
     expect(source).toContain('item.type === "tool"');
     expect(source).not.toContain("summarizeToolMessage");
-    expect(toolSource).toContain("toolStatusTone");
-    expect(readFeature("../../components/agent-chat-panel/chat-view/toolStatusTone.ts")).toContain("toolStatusTone");
-    expect(readFeature("../../components/agent-chat-panel/chat-view/toolStatusTone.ts")).toContain("var(--success)");
-    expect(readFeature("../../components/agent-chat-panel/chat-view/toolStatusTone.ts")).toContain("var(--warning)");
+    expect(toolSource).toContain("ToolStatusIcon");
+    expect(readFeature("../../components/agent-chat-panel/chat-view/ToolStatusIcon.tsx")).toContain("ToolStatusIcon");
+    expect(readFeature("../../components/agent-chat-panel/chat-view/ToolStatusIcon.tsx")).toContain("acp-tool-status-icon");
   });
 
   it("keeps thread context aligned with TUI tabs and daemon token context windows", () => {

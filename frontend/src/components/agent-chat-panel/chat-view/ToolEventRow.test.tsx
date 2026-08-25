@@ -1,17 +1,22 @@
 import { describe, expect, it } from "vitest";
 
-import { toolStatusTone } from "./toolStatusTone";
+import { ToolStatusIcon } from "./ToolStatusIcon";
+import { boundedRawToolPayload, formatRawToolPayload, toolArtifactPreviewEntry } from "./toolArtifactPresentation";
 
-describe("toolStatusTone", () => {
-  it("uses success for done tools, warning for requested/executing tools, and danger for errors", () => {
-    expect(toolStatusTone("done").text).toBe("var(--success)");
-    expect(toolStatusTone("requested").text).toBe("var(--warning)");
-    expect(toolStatusTone("executing").text).toBe("var(--warning)");
-    expect(toolStatusTone("error").text).toBe("var(--danger)");
+describe("tool status icon", () => {
+  it("renders muted svg icons for ok, running, and error statuses", () => {
+    for (const status of ["done", "requested", "executing", "error"] as const) {
+      const html = renderToStaticMarkup(<ToolStatusIcon status={status} />);
+      expect(html).toContain("<svg");
+      expect(html).toContain('class="acp-tool-status-icon');
+      expect(html).not.toContain("var(--success)");
+      expect(html).not.toContain("var(--warning)");
+      expect(html).not.toContain("var(--danger)");
+    }
   });
 });
 
-import { boundedRawToolPayload, formatRawToolPayload, toolArtifactPreviewEntry } from "./toolArtifactPresentation";
+import { renderToStaticMarkup } from "react-dom/server";
 
 describe("tool artifact presentation", () => {
   it("converts artifacts to existing file-preview entries with provenance", () => {

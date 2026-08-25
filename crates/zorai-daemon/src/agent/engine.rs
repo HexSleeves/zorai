@@ -19,6 +19,7 @@ pub(in crate::agent) use helpers::{
 
 pub(super) struct SendMessageOutcome {
     pub thread_id: String,
+    pub stream_generation: u64,
     pub interrupted_for_approval: bool,
     pub terminated_for_budget: bool,
     pub subagent_report: Option<SubagentTurnReport>,

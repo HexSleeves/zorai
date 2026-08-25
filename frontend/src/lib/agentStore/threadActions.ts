@@ -253,6 +253,11 @@ export function createThreadActions(
         const tokenDeltaIn = nextInputTokens - lastMessage.inputTokens;
         const tokenDeltaOut = nextOutputTokens - lastMessage.outputTokens;
         const tokenDeltaTotal = nextTotalTokens - lastMessage.totalTokens;
+        const previousCostKnown = typeof lastMessage.cost === "number" && Number.isFinite(lastMessage.cost);
+        const nextCostKnown = typeof updatedLastMessage.cost === "number" && Number.isFinite(updatedLastMessage.cost);
+        const previousCost = previousCostKnown ? lastMessage.cost as number : 0;
+        const nextCost = nextCostKnown ? updatedLastMessage.cost as number : 0;
+        const costDelta = nextCost - previousCost;
         const nextThreads = state.threads.map((thread) =>
           thread.id === threadId
             ? {
@@ -260,6 +265,9 @@ export function createThreadActions(
               totalInputTokens: thread.totalInputTokens + tokenDeltaIn,
               totalOutputTokens: thread.totalOutputTokens + tokenDeltaOut,
               totalTokens: thread.totalTokens + tokenDeltaTotal,
+              totalCostUsd: nextCostKnown && (!previousCostKnown || costDelta !== 0)
+                ? (thread.totalCostUsd ?? 0) + costDelta
+                : thread.totalCostUsd,
               updatedAt: Date.now(),
               lastMessagePreview: content.slice(0, 100),
             }

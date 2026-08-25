@@ -98,12 +98,14 @@ where
             thread_id,
             message_limit,
             message_offset,
+            collapse_tool_calls,
         } => {
             framed
                 .send(ClientMessage::AgentGetThread {
                     thread_id,
                     message_limit,
                     message_offset,
+                    collapse_tool_calls,
                 })
                 .await?;
         }
@@ -244,6 +246,7 @@ where
                     launch_assignments: Vec::new(),
                     autonomy_level,
                     client_surface: Some(zorai_protocol::ClientSurface::Electron),
+                    target_agent_id: None,
                     requires_approval,
                 })
                 .await?;
@@ -1546,10 +1549,12 @@ mod tests {
                 thread_id,
                 message_limit,
                 message_offset,
+                collapse_tool_calls,
             } => {
                 assert_eq!(thread_id, "thread-1");
                 assert_eq!(message_limit, Some(50));
                 assert_eq!(message_offset, Some(100));
+                assert!(!collapse_tool_calls);
             }
             other => panic!("expected AgentGetThread, got {other:?}"),
         }
@@ -1605,6 +1610,7 @@ mod tests {
                 thread_id: "thread-1".to_string(),
                 message_limit: None,
                 message_offset: None,
+                collapse_tool_calls: false,
             })
             .await
             .expect("direct send should succeed");
@@ -1614,6 +1620,7 @@ mod tests {
                 thread_id,
                 message_limit,
                 message_offset,
+                ..
             })) => {
                 assert_eq!(thread_id, "thread-1");
                 assert!(message_limit.is_none());

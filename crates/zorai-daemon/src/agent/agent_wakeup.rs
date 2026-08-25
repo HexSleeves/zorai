@@ -269,57 +269,83 @@ impl AgentEngine {
                                 goal.id == goal_run_id && !goal.status.is_terminal()
                             }) =>
                         {
-                            Some(message)
+                            Some((message, Some(goal_run_id)))
                         }
                         Some(_) => None,
-                        None => Some(message),
+                        None => Some((message, None)),
                     }
                 })
                 .collect::<Vec<_>>();
+            drop(goal_runs);
             if messages.is_empty() {
-                drop(goal_runs);
                 continue;
             }
-            let body = if messages.len() == 1 {
-                messages.into_iter().next().unwrap_or_default()
-            } else {
-                messages
-                    .iter()
-                    .enumerate()
-                    .map(|(index, message)| format!("{}. {message}", index + 1))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            };
-            let content = format!("[Scheduled wakeup] {body}");
-            let agent_id = self
-                .active_agent_id_for_thread(&thread_id)
-                .await
-                .unwrap_or_else(|| MAIN_AGENT_ID.to_string());
-            self.enqueue_visible_thread_continuation(
-                &thread_id,
-                DeferredVisibleThreadContinuation {
-                    agent_id,
-                    task_id: None,
-                    preferred_session_hint: None,
-                    llm_user_content: content,
-                    queued_at_ms: 0,
-                    force_compaction: false,
-                    rerun_participant_observers_after_turn: true,
-                    internal_delegate_sender: None,
-                    internal_delegate_message: None,
-                },
-            )
-            .await;
-            drop(goal_runs);
-            if let Err(error) = self
-                .flush_deferred_visible_thread_continuations(&thread_id)
-                .await
-            {
-                tracing::warn!(
-                    thread_id = %thread_id,
-                    error = %error,
-                    "scheduled wakeup continuation flush failed"
-                );
+
+            let mut routed_messages =
+                std::collections::BTreeMap::<(String, String), Vec<String>>::new();
+            for (message, goal_run_id) in messages {
+                let route = match goal_run_id {
+                    Some(goal_run_id) => {
+                        match self.resolve_goal_supervision_route(&goal_run_id).await {
+                            Ok(route) => (route.thread_id, route.agent_id),
+                            Err(error) => {
+                                tracing::warn!(
+                                    goal_run_id,
+                                    error = %error,
+                                    "goal supervision wakeup has no resolvable owner route"
+                                );
+                                continue;
+                            }
+                        }
+                    }
+                    None => {
+                        let agent_id = self
+                            .active_agent_id_for_thread(&thread_id)
+                            .await
+                            .unwrap_or_else(|| MAIN_AGENT_ID.to_string());
+                        (thread_id.clone(), agent_id)
+                    }
+                };
+                routed_messages.entry(route).or_default().push(message);
+            }
+
+            for ((route_thread_id, agent_id), messages) in routed_messages {
+                let body = if messages.len() == 1 {
+                    messages.into_iter().next().unwrap_or_default()
+                } else {
+                    messages
+                        .iter()
+                        .enumerate()
+                        .map(|(index, message)| format!("{}. {message}", index + 1))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                };
+                let content = format!("[Scheduled wakeup] {body}");
+                self.enqueue_visible_thread_continuation(
+                    &route_thread_id,
+                    DeferredVisibleThreadContinuation {
+                        agent_id,
+                        task_id: None,
+                        preferred_session_hint: None,
+                        llm_user_content: content,
+                        queued_at_ms: 0,
+                        force_compaction: false,
+                        rerun_participant_observers_after_turn: true,
+                        internal_delegate_sender: None,
+                        internal_delegate_message: None,
+                    },
+                )
+                .await;
+                if let Err(error) = self
+                    .flush_deferred_visible_thread_continuations(&route_thread_id)
+                    .await
+                {
+                    tracing::warn!(
+                        thread_id = %route_thread_id,
+                        error = %error,
+                        "scheduled wakeup continuation flush failed"
+                    );
+                }
             }
         }
 
@@ -397,6 +423,24 @@ mod tests {
         let wakeup = engine
             .schedule_wakeup(thread_id, 5 * 60_000, 1, "check job progress")
             .await;
+        engine
+            .set_thread_handoff_state(
+                thread_id,
+                ThreadHandoffState {
+                    origin_agent_id: MAIN_AGENT_ID.to_string(),
+                    active_agent_id: "glmus".to_string(),
+                    responder_stack: vec![ThreadResponderFrame {
+                        agent_id: "glmus".to_string(),
+                        agent_name: "glmus".to_string(),
+                        entered_at: 2,
+                        entered_via_handoff_event_id: Some("handoff-glmus".to_string()),
+                        linked_thread_id: None,
+                    }],
+                    events: Vec::new(),
+                    pending_approval_id: None,
+                },
+            )
+            .await;
         force_due(&engine, &wakeup.id).await;
         let (_generation, _, _) = engine.begin_stream_cancellation(thread_id).await;
 
@@ -409,6 +453,10 @@ mod tests {
             .deferred_visible_thread_continuations_for(thread_id)
             .await;
         assert_eq!(continuations.len(), 1);
+        assert_eq!(
+            continuations[0].agent_id, "glmus",
+            "ordinary reminders must preserve the explicitly active responder"
+        );
         assert!(continuations[0]
             .llm_user_content
             .contains("check job progress"));
@@ -466,6 +514,14 @@ mod tests {
         let thread_id = "thread-goal-supervision-active";
         let engine = engine_with_thread(thread_id).await;
         let goal_run_id = insert_goal(&engine, GoalRunStatus::Running).await;
+        {
+            let mut goal_runs = engine.goal_runs.lock().await;
+            goal_runs
+                .iter_mut()
+                .find(|goal| goal.id == goal_run_id)
+                .expect("goal")
+                .supervision_thread_id = Some(thread_id.to_string());
+        }
         let wakeup = engine
             .schedule_wakeup_with_context(
                 thread_id,
@@ -477,6 +533,33 @@ mod tests {
             )
             .await
             .expect("valid goal supervision");
+        engine
+            .set_thread_handoff_state(
+                thread_id,
+                ThreadHandoffState {
+                    origin_agent_id: MAIN_AGENT_ID.to_string(),
+                    active_agent_id: "glmus".to_string(),
+                    responder_stack: vec![
+                        ThreadResponderFrame {
+                            agent_id: MAIN_AGENT_ID.to_string(),
+                            agent_name: MAIN_AGENT_NAME.to_string(),
+                            entered_at: 1,
+                            entered_via_handoff_event_id: None,
+                            linked_thread_id: None,
+                        },
+                        ThreadResponderFrame {
+                            agent_id: "glmus".to_string(),
+                            agent_name: "glmus".to_string(),
+                            entered_at: 2,
+                            entered_via_handoff_event_id: Some("handoff-glmus".to_string()),
+                            linked_thread_id: None,
+                        },
+                    ],
+                    events: Vec::new(),
+                    pending_approval_id: None,
+                },
+            )
+            .await;
         force_due(&engine, &wakeup.id).await;
         let (_generation, _, _) = engine.begin_stream_cancellation(thread_id).await;
 
@@ -489,6 +572,10 @@ mod tests {
             .deferred_visible_thread_continuations_for(thread_id)
             .await;
         assert_eq!(continuations.len(), 1);
+        assert_eq!(
+            continuations[0].agent_id, "glmus",
+            "goal supervision must follow the target thread's current responder"
+        );
         let prompt = &continuations[0].llm_user_content;
         assert!(prompt.contains(&goal_run_id));
         assert!(prompt.contains("Scheduler-observed status: Running"));
