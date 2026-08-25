@@ -102,14 +102,6 @@ impl AgentEngine {
     }
 
     pub(in crate::agent) async fn cancel_goal_wakeups(&self, goal_run_id: &str) -> usize {
-        if let Err(error) = self
-            .history
-            .delete_agent_wakeups_for_goal(goal_run_id)
-            .await
-        {
-            tracing::warn!(goal_run_id, error = %error, "failed to delete persisted goal wakeups");
-            return 0;
-        }
         let removed = {
             let mut wakeups = self.timer_wakeups.lock().await;
             let ids = wakeups
@@ -123,16 +115,23 @@ impl AgentEngine {
             }
             removed
         };
+        if let Err(error) = self
+            .history
+            .delete_agent_wakeups_for_goal(goal_run_id)
+            .await
+        {
+            tracing::warn!(goal_run_id, error = %error, "failed to delete persisted goal wakeups");
+        }
         removed
     }
 
     pub(in crate::agent) async fn cancel_wakeup(&self, wakeup_id: &str) -> bool {
         let wakeup_id = wakeup_id.trim();
+        let removed = self.timer_wakeups.lock().await.remove(wakeup_id).is_some();
         if let Err(error) = self.history.delete_agent_wakeup(wakeup_id).await {
             tracing::warn!(error = %error, "failed to delete persisted wakeup");
-            return false;
         }
-        self.timer_wakeups.lock().await.remove(wakeup_id).is_some()
+        removed
     }
 
     #[cfg(test)]
@@ -775,6 +774,72 @@ mod tests {
         assert!(
             !engine.cancel_wakeup(&wakeup.id).await,
             "cancelling an unknown wakeup id is a no-op"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancel_wakeup_clears_memory_when_history_delete_fails() {
+        let thread_id = "thread-wakeup-cancel-history-fail";
+        let engine = engine_with_thread(thread_id).await;
+        let wakeup = engine
+            .schedule_wakeup(thread_id, 60_000, 0, "loop forever")
+            .await;
+        engine
+            .history
+            .conn
+            .call(|conn| {
+                conn.execute("DROP TABLE agent_wakeups", [])?;
+                Ok(())
+            })
+            .await
+            .expect("drop wakeups table to force persist failure");
+
+        assert!(
+            engine.cancel_wakeup(&wakeup.id).await,
+            "a live wakeup must still cancel when persistence fails, otherwise it keeps firing"
+        );
+        assert_eq!(
+            engine.pending_wakeup_count().await,
+            0,
+            "memory is the live schedule; a history failure must not leave a stale timer"
+        );
+    }
+
+    #[tokio::test]
+    async fn cancel_goal_wakeups_clears_memory_when_history_delete_fails() {
+        let thread_id = "thread-goal-wakeup-cancel-history-fail";
+        let engine = engine_with_thread(thread_id).await;
+        let goal_run_id = insert_goal(&engine, GoalRunStatus::Running).await;
+        engine
+            .schedule_wakeup_with_context(
+                thread_id,
+                60_000,
+                1,
+                "owned",
+                "goal_supervision",
+                Some(&goal_run_id),
+            )
+            .await
+            .expect("valid goal supervision");
+        engine
+            .history
+            .conn
+            .call(|conn| {
+                conn.execute("DROP TABLE agent_wakeups", [])?;
+                Ok(())
+            })
+            .await
+            .expect("drop wakeups table to force persist failure");
+
+        assert_eq!(
+            engine.cancel_goal_wakeups(&goal_run_id).await,
+            1,
+            "goal wakeup cancellation must succeed from memory even if history delete fails"
+        );
+        assert_eq!(
+            engine.pending_wakeup_count().await,
+            0,
+            "a history failure must not leave supervised goal timers live"
         );
     }
 
