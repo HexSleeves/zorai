@@ -907,6 +907,8 @@ pub struct AgentWakeupRow {
     pub interval_ms: u64,
     pub next_fire_at: u64,
     pub repetitions_remaining: Option<u64>,
+    pub wakeup_kind: String,
+    pub goal_run_id: Option<String>,
     pub created_at: u64,
 }
 
@@ -1767,6 +1769,7 @@ mod operator_profile;
 mod protocol_candidates;
 mod protocol_registry;
 mod provenance;
+pub(crate) mod prompt_queue;
 mod routines;
 mod row_mapping;
 mod schema;

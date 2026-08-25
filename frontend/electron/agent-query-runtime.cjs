@@ -1,6 +1,7 @@
 const AGENT_QUERY_RESPONSE_TYPES = [
   'thread-list',
   'thread-detail',
+  'thread-execution-profile',
   'thread-message-pin-result',
   'task-list',
   'run-list',
@@ -26,6 +27,7 @@ const AGENT_QUERY_RESPONSE_TYPES = [
   'mlflow-tracing-status',
   'mlflow-tracing-test-result',
   'mlflow-tracing-headers',
+  'prompt-queue',
   'gateway-config',
   'heartbeat-items',
   'provider-auth-states',

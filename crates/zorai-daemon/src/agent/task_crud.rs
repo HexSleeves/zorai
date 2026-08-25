@@ -1073,6 +1073,7 @@ impl AgentEngine {
             completed_at: None,
             thread_id: goal_thread_id,
             root_thread_id: None,
+            supervision_thread_id: source_thread_id.clone(),
             active_thread_id: None,
             execution_thread_ids: Vec::new(),
             session_id,
@@ -1121,6 +1122,9 @@ impl AgentEngine {
         let mut goal_run = goal_run;
         let goal_thread_id = goal_run.thread_id.clone();
         super::goal_run_apply_thread_routing(&mut goal_run, goal_thread_id);
+        if goal_run.supervision_thread_id.is_none() {
+            goal_run.supervision_thread_id = goal_run.thread_id.clone();
+        }
         crate::agent::goal_dossier::refresh_goal_run_dossier(&mut goal_run);
         if let Some(goal_thread_id) = goal_run.thread_id.as_deref() {
             self.set_thread_identity_metadata(
@@ -2025,6 +2029,9 @@ impl AgentEngine {
 
         if let Some(goal_run) = changed_goal {
             self.persist_goal_runs().await;
+            if goal_run.status.is_terminal() {
+                self.cancel_goal_wakeups(&goal_run.id).await;
+            }
             // Settle skill consultations and causal traces for any operator
             // -initiated terminal transition that didn't run through the
             // normal finalization path (which handles Completed/Failed).
@@ -2158,6 +2165,7 @@ impl AgentEngine {
 
         self.inflight_goal_runs.lock().await.remove(goal_run_id);
         self.cost_trackers.lock().await.remove(goal_run_id);
+        self.cancel_goal_wakeups(goal_run_id).await;
 
         if let Err(error) = self.history.delete_goal_run(goal_run_id).await {
             tracing::warn!(goal_run_id = %goal_run_id, %error, "failed to delete goal run history");

@@ -1433,9 +1433,16 @@ impl AgentEngine {
         thread_id: &str,
         message_limit: Option<usize>,
         message_offset: Option<usize>,
+        collapse_tool_calls: bool,
     ) -> String {
         let detail_result = self
-            .get_thread_filtered(thread_id, false, message_limit, message_offset.unwrap_or(0))
+            .get_thread_filtered_with_tool_run_pagination(
+                thread_id,
+                false,
+                message_limit,
+                message_offset.unwrap_or(0),
+                collapse_tool_calls,
+            )
             .await;
         let mut value = serde_json::to_value(detail_result.as_ref().map(|result| &result.thread))
             .unwrap_or(serde_json::Value::Null);
@@ -1483,6 +1490,19 @@ impl AgentEngine {
                         .cloned()
                 },
                 self.thread_handoff_state(thread_id),
+            );
+            let total_cost_usd = self
+                .history
+                .thread_message_cost_total(thread_id)
+                .await
+                .ok()
+                .flatten();
+            detail.insert(
+                "total_cost_usd".to_string(),
+                total_cost_usd
+                    .and_then(serde_json::Number::from_f64)
+                    .map(serde_json::Value::Number)
+                    .unwrap_or(serde_json::Value::Null),
             );
             let nonempty = |value: Option<String>| {
                 value

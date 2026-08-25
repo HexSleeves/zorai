@@ -1376,16 +1376,17 @@ impl HistoryStore {
         &self,
         id: &str,
         metadata_json: Option<String>,
-    ) -> Result<()> {
+    ) -> Result<bool> {
         let id_owned = id.to_string();
         self.caches.thread_metadata_json.invalidate(&id_owned);
-        self.conn_db
+        let affected = self
+            .conn_db
             .execute(
                 "UPDATE agent_threads SET metadata_json = ?2 WHERE id = ?1 AND deleted_at IS NULL",
                 db::db_params![id_owned, metadata_json],
             )
             .await?;
-        Ok(())
+        Ok(affected > 0)
     }
 
     pub async fn add_message(&self, message: &AgentDbMessage) -> Result<()> {
@@ -1683,6 +1684,62 @@ impl HistoryStore {
                 .collect()
         };
         Ok(messages)
+    }
+
+    pub async fn list_message_window_collapsing_tool_runs(
+        &self,
+        thread_id: &str,
+        logical_limit: usize,
+        offset_from_end: usize,
+    ) -> Result<(Vec<AgentDbMessage>, usize, usize, usize)> {
+        let total_count = self
+            .interactive_read_db
+            .query_opt(
+                "SELECT COUNT(*) FROM agent_messages WHERE thread_id = ?1 AND deleted_at IS NULL",
+                db::db_params![thread_id],
+            )
+            .await?
+            .map(|row| row.get::<i64>(0))
+            .transpose()?
+            .unwrap_or(0)
+            .max(0) as usize;
+        let raw_end = total_count.saturating_sub(offset_from_end);
+        if raw_end == 0 || logical_limit == 0 {
+            return Ok((Vec::new(), total_count, raw_end, raw_end));
+        }
+
+        let rows = self
+            .interactive_read_db
+            .query(
+                r#"WITH ordered AS (
+                   SELECT id, thread_id, created_at, role, content, provider, model, input_tokens, output_tokens, total_tokens, cost_usd, reasoning, tool_calls_json, metadata_json, rowid,
+                          ROW_NUMBER() OVER (ORDER BY created_at ASC, rowid ASC) AS raw_position,
+                          LAG(role) OVER (ORDER BY created_at ASC, rowid ASC) AS previous_role
+                   FROM agent_messages WHERE thread_id = ?1 AND deleted_at IS NULL
+                 ), grouped AS (
+                   SELECT *, SUM(CASE WHEN role = 'tool' AND previous_role = 'tool' THEN 0 ELSE 1 END)
+                     OVER (ORDER BY raw_position ASC) AS logical_group
+                   FROM ordered
+                 ), selected_groups AS (
+                   SELECT logical_group FROM grouped WHERE raw_position <= ?2
+                   GROUP BY logical_group ORDER BY logical_group DESC LIMIT ?3
+                 )
+                 SELECT id, thread_id, created_at, role, content, provider, model, input_tokens, output_tokens, total_tokens, cost_usd, reasoning, tool_calls_json, metadata_json, raw_position
+                 FROM grouped WHERE raw_position <= ?2 AND logical_group IN (SELECT logical_group FROM selected_groups)
+                 ORDER BY raw_position ASC"#,
+                db::db_params![thread_id, raw_end as i64, logical_limit as i64],
+            )
+            .await?;
+        let loaded_start = rows
+            .first()
+            .and_then(|row| row.get::<i64>(14).ok())
+            .map(|position| position.saturating_sub(1) as usize)
+            .unwrap_or(raw_end);
+        let messages = rows
+            .iter()
+            .filter_map(|row| map_agent_message_db(row).ok())
+            .collect();
+        Ok((messages, total_count, loaded_start, raw_end))
     }
 
     pub async fn list_message_window(
@@ -2043,6 +2100,20 @@ impl HistoryStore {
             .transpose()?
             .unwrap_or((0, 0));
         Ok((input_tokens.max(0) as u64, output_tokens.max(0) as u64))
+    }
+
+    pub async fn thread_message_cost_total(&self, thread_id: &str) -> Result<Option<f64>> {
+        self.interactive_read_db
+            .query_opt(
+                "SELECT SUM(cost_usd)
+                 FROM agent_messages
+                 WHERE thread_id = ?1 AND deleted_at IS NULL",
+                db::db_params![thread_id],
+            )
+            .await?
+            .map(|row| row.get::<Option<f64>>(0))
+            .transpose()
+            .map(Option::flatten)
     }
 
     pub async fn list_pinned_messages_for_compaction(

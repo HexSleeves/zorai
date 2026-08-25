@@ -25,7 +25,15 @@ export function GoalLaunchPanel({
   onLaunch,
   onClose,
 }: GoalLaunchPanelProps) {
-  const mainAssignment = useMemo(() => buildMainAssignment(runtime), [runtime]);
+  const mainAssignment = useMemo(
+    () => buildMainAssignment(runtime),
+    [
+      runtime.activeThread?.profileProvider,
+      runtime.activeThread?.profileModel,
+      runtime.activeThread?.profileReasoningEffort,
+      runtime.agentSettings,
+    ],
+  );
   const [prompt, setPrompt] = useState("");
   const [saveAsDefaultPending, setSaveAsDefaultPending] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(0);

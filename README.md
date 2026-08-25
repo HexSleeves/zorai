@@ -21,7 +21,7 @@ The name comes from **Zora**: mythic but clean, suggesting dawn, awakening, watc
 
 In practice that means:
 
-- Electron, the TUI, the CLI, MCP clients, and chat gateways all reconnect to the same daemon state
+- Electron GUI, the TUI, the CLI, MCP clients, and chat gateways all reconnect to the same daemon state
 - the built-in runtime can plan work, run tools, spawn bounded sub-agents, pause for approval, and learn over time
 - memory, workspace boards, execution queue state, and operational history stay durable instead of vanishing with a single terminal tab
 

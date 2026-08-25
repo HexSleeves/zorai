@@ -122,6 +122,7 @@ async fn post_tool_policy_checkpoint_pivots_for_non_error_stuckness_with_runtime
             completed_at: None,
             thread_id: Some(thread_id.to_string()),
             root_thread_id: Some(thread_id.to_string()),
+            supervision_thread_id: None,
             active_thread_id: Some(thread_id.to_string()),
             execution_thread_ids: vec![thread_id.to_string()],
             session_id: None,

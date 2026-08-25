@@ -1099,6 +1099,7 @@ fn goal_dossier_serializes_into_goal_run_state() {
         completed_at: None,
         thread_id: Some("thread-1".to_string()),
         root_thread_id: Some("thread-1".to_string()),
+        supervision_thread_id: None,
         active_thread_id: Some("thread-1".to_string()),
         execution_thread_ids: vec!["thread-1".to_string()],
         session_id: Some("session-1".to_string()),

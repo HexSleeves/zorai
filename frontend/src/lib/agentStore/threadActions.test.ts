@@ -119,6 +119,19 @@ describe("agentStore spawned thread navigation", () => {
     expect((useAgentStore.getState() as any).threadHistoryStack).toEqual([]);
   });
 
+  it("assigns a new owner on an unsent local thread", () => {
+    resetStoreState([makeThread("thread-a")], "thread-a", []);
+
+    useAgentStore.getState().setThreadOwner("thread-a", {
+      agentId: "reviewer",
+      agentName: "Code Reviewer",
+    });
+    const updated = useAgentStore.getState().threads.find((thread) => thread.id === "thread-a");
+
+    expect(updated?.agent_name).toBe("Code Reviewer");
+    expect(updated?.targetAgentId).toBe("reviewer");
+  });
+
   it("creates a thread owned by an explicitly selected agent", () => {
     resetStoreState([], null, []);
 

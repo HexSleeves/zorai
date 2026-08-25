@@ -53,6 +53,48 @@ fn list_ids(threads: &[AgentThread]) -> Vec<&str> {
 }
 
 #[tokio::test]
+async fn first_workspace_context_write_persists_for_memory_only_thread() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let thread_id = "workspace-context-first-write";
+    let context = ThreadWorkspaceContext {
+        root: "/repo".to_string(),
+        isolate_agent_tasks: true,
+        updated_at: 42,
+        ..ThreadWorkspaceContext::default()
+    };
+
+    engine.threads.write().await.insert(
+        thread_id.to_string(),
+        make_thread(
+            thread_id,
+            Some(crate::agent::agent_identity::MAIN_AGENT_NAME),
+            "Workspace context",
+            false,
+            1,
+            2,
+            Vec::new(),
+        ),
+    );
+    assert!(!engine
+        .history
+        .has_thread_id(thread_id)
+        .await
+        .expect("thread existence query"));
+
+    assert!(
+        engine
+            .set_thread_workspace_context(thread_id, Some(context.clone()))
+            .await
+    );
+    assert_eq!(
+        engine.get_thread_workspace_context(thread_id).await,
+        Some(context)
+    );
+}
+
+#[tokio::test]
 async fn message_feedback_resolves_stale_id_by_absolute_index() {
     let root = tempdir().expect("temp dir");
     let manager = SessionManager::new_test(root.path()).await;
@@ -1619,7 +1661,7 @@ async fn agent_thread_detail_json_includes_offscreen_pinned_message_summaries() 
     );
 
     let json = engine
-        .agent_thread_detail_json("thread-pinned", Some(1), Some(0))
+        .agent_thread_detail_json("thread-pinned", Some(1), Some(0), false)
         .await;
     let value: serde_json::Value = serde_json::from_str(&json).expect("decode thread detail");
     let pinned_messages = value["pinned_messages"]
@@ -1670,7 +1712,7 @@ async fn agent_thread_detail_json_reports_real_active_context_window_for_paged_t
     );
 
     let json = engine
-        .agent_thread_detail_json("thread-context-window", Some(1), Some(0))
+        .agent_thread_detail_json("thread-context-window", Some(1), Some(0), false)
         .await;
     let value: serde_json::Value = serde_json::from_str(&json).expect("decode thread detail");
 
@@ -1713,7 +1755,7 @@ async fn agent_thread_detail_json_treats_legacy_visible_compaction_as_active_bou
     );
 
     let json = engine
-        .agent_thread_detail_json("thread-legacy-context-window", Some(1), Some(0))
+        .agent_thread_detail_json("thread-legacy-context-window", Some(1), Some(0), false)
         .await;
     let value: serde_json::Value = serde_json::from_str(&json).expect("decode thread detail");
 
@@ -1759,7 +1801,7 @@ async fn paged_persisted_thread_detail_keeps_full_history_lazy() {
     rehydrated.hydrate().await.expect("hydrate should succeed");
 
     let json = rehydrated
-        .agent_thread_detail_json(thread_id, Some(3), Some(2))
+        .agent_thread_detail_json(thread_id, Some(3), Some(2), false)
         .await;
     let value: serde_json::Value = serde_json::from_str(&json).expect("thread detail json");
 
@@ -2424,7 +2466,7 @@ async fn agent_thread_detail_json_paginates_internal_dm_threads() {
     );
 
     let json = engine
-        .agent_thread_detail_json("dm:svarog:weles", Some(2), Some(1))
+        .agent_thread_detail_json("dm:svarog:weles", Some(2), Some(1), false)
         .await;
     let value: serde_json::Value = serde_json::from_str(&json).expect("thread detail json");
 
@@ -2544,7 +2586,7 @@ async fn agent_thread_detail_json_falls_back_to_message_provider_when_execution_
         .remove(thread_id);
 
     let json = engine
-        .agent_thread_detail_json(thread_id, Some(10), Some(0))
+        .agent_thread_detail_json(thread_id, Some(10), Some(0), false)
         .await;
     let value: serde_json::Value = serde_json::from_str(&json).expect("decode thread detail");
 
@@ -2591,7 +2633,7 @@ async fn agent_thread_detail_json_skips_compaction_artifact_when_deriving_profil
     );
 
     let json = engine
-        .agent_thread_detail_json(thread_id, Some(10), Some(0))
+        .agent_thread_detail_json(thread_id, Some(10), Some(0), false)
         .await;
     let value: serde_json::Value = serde_json::from_str(&json).expect("decode thread detail");
 
@@ -2682,7 +2724,7 @@ async fn agent_thread_detail_json_backfills_agent_name_from_message_author_when_
     );
 
     let json = engine
-        .agent_thread_detail_json(thread_id, Some(10), Some(0))
+        .agent_thread_detail_json(thread_id, Some(10), Some(0), false)
         .await;
     let value: serde_json::Value = serde_json::from_str(&json).expect("decode thread detail");
 

@@ -3,6 +3,82 @@ use serde::{Deserialize, Serialize};
 
 pub use crate::agent::memory_context::PromptMemoryInjectionState;
 
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThreadWorkspaceSelection {
+    pub start_line: u32,
+    pub start_column: u32,
+    pub end_line: u32,
+    pub end_column: u32,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ThreadWorkspaceContext {
+    pub root: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub active_file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub selection: Option<ThreadWorkspaceSelection>,
+    #[serde(default)]
+    pub attached_files: Vec<String>,
+    #[serde(default)]
+    pub open_files: Vec<String>,
+    #[serde(default)]
+    pub updated_at: u64,
+    #[serde(default)]
+    pub isolate_agent_tasks: bool,
+    #[serde(default)]
+    pub isolated_worktree_states: std::collections::BTreeMap<String, String>,
+}
+
+impl ThreadWorkspaceContext {
+    pub fn prompt_block(&self) -> Option<String> {
+        let root = self.root.trim();
+        if root.is_empty() {
+            return None;
+        }
+        let mut lines = vec![
+            "## Thread Workspace Context".to_string(),
+            format!("- Workspace: `{root}`"),
+        ];
+        if let Some(active_file) = self
+            .active_file
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            lines.push(format!("- Active file: `{active_file}`"));
+            if let Some(selection) = self.selection.as_ref() {
+                lines.push(format!(
+                    "- Selection: `{active_file}:{}-{}`",
+                    selection.start_line, selection.end_line
+                ));
+            }
+        }
+        if !self.attached_files.is_empty() {
+            lines.push(format!(
+                "- Explicitly attached files: {}",
+                self.attached_files
+                    .iter()
+                    .map(|path| format!("`{path}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        if !self.open_files.is_empty() {
+            lines.push(format!(
+                "- Open files: {}",
+                self.open_files
+                    .iter()
+                    .map(|path| format!("`{path}`"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        lines.push("- Read current file contents through filesystem tools on demand; editor metadata is not a disk snapshot.".to_string());
+        Some(lines.join("\n"))
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentThread {
     pub id: String,
@@ -87,6 +163,42 @@ pub(crate) fn compact_skill_discovery_query_for_persistence(query: &str) -> Stri
 
 fn bool_is_false(value: &bool) -> bool {
     !*value
+}
+
+#[cfg(test)]
+mod workspace_context_tests {
+    use super::*;
+
+    #[test]
+    fn workspace_prompt_block_is_compact_and_excludes_file_contents() {
+        let context = ThreadWorkspaceContext {
+            root: "/repo".to_string(),
+            active_file: Some("src/main.rs".to_string()),
+            selection: Some(ThreadWorkspaceSelection {
+                start_line: 10,
+                start_column: 2,
+                end_line: 14,
+                end_column: 8,
+            }),
+            attached_files: vec!["src/main.rs".to_string()],
+            open_files: vec!["src/main.rs".to_string(), "Cargo.toml".to_string()],
+            updated_at: 42,
+            isolate_agent_tasks: false,
+            isolated_worktree_states: std::collections::BTreeMap::new(),
+        };
+
+        let prompt = context.prompt_block().expect("workspace prompt");
+        assert!(prompt.contains("Workspace: `/repo`"));
+        assert!(prompt.contains("Active file: `src/main.rs`"));
+        assert!(prompt.contains("Selection: `src/main.rs:10-14`"));
+        assert!(prompt.contains("Explicitly attached files: `src/main.rs`"));
+        assert!(prompt.contains("Read current file contents through filesystem tools"));
+    }
+
+    #[test]
+    fn empty_workspace_root_has_no_prompt_block() {
+        assert_eq!(ThreadWorkspaceContext::default().prompt_block(), None);
+    }
 }
 
 impl LatestSkillDiscoveryState {

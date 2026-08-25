@@ -128,6 +128,7 @@ impl AgentEngine {
                     .await?;
                     return Ok(SendMessageOutcome {
                         thread_id: crate::agent::concierge::CONCIERGE_THREAD_ID.to_string(),
+                        stream_generation: 0,
                         interrupted_for_approval: false,
                         terminated_for_budget: false,
                         subagent_report: None,
@@ -158,6 +159,7 @@ impl AgentEngine {
                             .await
                             .map(|thread_id| SendMessageOutcome {
                                 thread_id,
+                                stream_generation: 0,
                                 interrupted_for_approval: false,
                                 terminated_for_budget: false,
                                 subagent_report: None,
@@ -351,7 +353,12 @@ impl AgentEngine {
             .await?;
             let outcome = Box::pin(runner.run()).await?;
             if let Some(retry) = outcome.fresh_runner_retry {
-                thread_id = Some(outcome.thread_id);
+                if self.stream_cancellation_requested(&outcome.thread_id).await {
+                    self.finish_stream_cancellation(&outcome.thread_id, outcome.stream_generation)
+                        .await;
+                    return Ok(outcome);
+                }
+                thread_id = Some(outcome.thread_id.clone());
                 record_operator = false;
                 reuse_existing_user_message = true;
                 scheduled_retry_cycles = retry.scheduled_retry_cycles;

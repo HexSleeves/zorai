@@ -111,6 +111,25 @@ fn approval_required_events_forward_to_subscribed_thread() {
 }
 
 #[test]
+fn prompt_queue_updates_forward_only_to_subscribed_thread() {
+    let event = AgentEvent::PromptQueueUpdate {
+        thread_id: "thread-queue".to_string(),
+        prompts: Vec::new(),
+    };
+    let subscribed = HashSet::from(["thread-queue".to_string()]);
+    assert!(
+        super::should_forward_agent_event(&event, &subscribed),
+        "queue dequeue/removal updates must reach every client subscribed to the thread"
+    );
+
+    let unrelated = HashSet::from(["thread-other".to_string()]);
+    assert!(
+        !super::should_forward_agent_event(&event, &unrelated),
+        "queue contents must not leak to clients subscribed only to unrelated threads"
+    );
+}
+
+#[test]
 fn gateway_incoming_events_forward_without_thread_subscription() {
     let event = AgentEvent::GatewayIncoming {
         platform: "WhatsApp".to_string(),

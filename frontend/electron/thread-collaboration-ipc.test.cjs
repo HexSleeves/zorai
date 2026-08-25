@@ -95,6 +95,20 @@ test("handoff IPC sends exact user-requested query contract", async () => {
   }]);
 });
 
+test("handoff IPC accepts the runtime switcher's snake-case target field", async () => {
+  const { handlers, queries } = createHandlerHarness();
+
+  await handlers.get("agent-handoff-thread")(null, {
+    threadId: "thread-1",
+    action: "push_handoff",
+    target_agent_id: "swarog",
+    reason: "runtime switch",
+    summary: "Switch this thread to Svarog.",
+  });
+
+  assert.equal(queries[0].command.target_agent_id, "swarog");
+});
+
 test("operation status IPC sends exact query contract", async () => {
   const { handlers, queries } = createHandlerHarness();
 

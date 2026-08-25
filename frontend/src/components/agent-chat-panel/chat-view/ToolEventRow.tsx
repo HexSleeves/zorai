@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { buildToolReviewPresentation } from "../toolReviewPresentation";
 import type { ToolEventGroup } from "./types";
 import { getToolDiffPresentation, ToolDiffView } from "./toolDiffPresentation";
-import { toolStatusTone } from "./toolStatusTone";
+import { ToolStatusIcon } from "./ToolStatusIcon";
 import { extractToolArtifacts } from "./toolArtifacts";
 import { ToolArtifactChips } from "./ToolArtifactChips";
 import { RawToolPayload } from "./RawToolPayload";
@@ -20,7 +20,6 @@ export function ToolEventRow({ group }: { group: ToolEventGroup }) {
     [group.resultContent, group.toolArguments],
   );
   const statusLabel = group.status.toUpperCase();
-  const statusTone = toolStatusTone(group.status);
   const toolDiff = group.toolArguments
     ? getToolDiffPresentation(group.toolName, group.toolArguments)
     : null;
@@ -60,8 +59,12 @@ export function ToolEventRow({ group }: { group: ToolEventGroup }) {
               {reviewPresentation.badgeLabel === "Blocked" ? "blocked" : null}
             </span>
           )}
-          <span className="acp-tool-row__badge" style={{ color: statusTone.text }}>
-            {statusLabel === "DONE" ? "ok" : statusLabel === "REQUESTED" || statusLabel === "EXECUTING" ? "running" : statusLabel === "ERROR" ? "bad" : null}
+          <span
+            className="acp-tool-row__badge acp-tool-row__badge--status"
+            data-status={group.status}
+            title={statusLabel.toLowerCase()}
+          >
+            <ToolStatusIcon status={group.status} />
           </span>
         </div>
       </div>

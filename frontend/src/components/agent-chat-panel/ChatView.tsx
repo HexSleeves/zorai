@@ -15,6 +15,7 @@ import {
 } from "./chat-view/audioPlayback";
 import { compactionArtifactDisplayText, MessageBubble } from "./chat-view/MessageBubble";
 import { TodoPanel } from "./chat-view/TodoPanel";
+import { ToolEventList } from "./chat-view/ToolEventList";
 import { ToolEventRow } from "./chat-view/ToolEventRow";
 import type { AgentMessage } from "@/lib/agentStore";
 import type { ChatViewProps, ComposerAttachment } from "./chat-view/types";
@@ -330,6 +331,9 @@ export function ChatView({
         )}
 
         {filteredDisplayItems.map((item) => {
+          if (item.type === "toolList") {
+            return <ToolEventList key={`toollist_${item.groups[0]?.key ?? "empty"}`} groups={item.groups} />;
+          }
           if (item.type === "tool") {
             return <ToolEventRow key={`tool_${item.group.key}`} group={item.group} />;
           }
@@ -370,7 +374,7 @@ export function ChatView({
               onSpeak={message.role === "assistant" ? async () => {
                 await speakMessage(message);
               } : undefined}
-              onFeedback={onFeedbackMessage ? (reaction) => {
+              onFeedback={onFeedbackMessage && !message.isStreaming ? (reaction) => {
                 void onFeedbackMessage(message.id, reaction);
               } : undefined}
               onFork={onForkMessage ? () => onForkMessage(message.id) : undefined}

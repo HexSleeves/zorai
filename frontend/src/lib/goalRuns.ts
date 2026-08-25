@@ -143,6 +143,7 @@ export interface GoalRun {
     completed_at?: number | null;
     thread_id?: string | null;
     root_thread_id?: string | null;
+    supervision_thread_id?: string | null;
     active_thread_id?: string | null;
     execution_thread_ids?: string[];
     current_step_index?: number | null;
@@ -183,6 +184,7 @@ export interface StartGoalRunPayload {
     sessionId?: string | null;
     priority?: string | null;
     threadId?: string | null;
+    targetAgentId?: string | null;
     clientRequestId?: string | null;
     requiresApproval?: boolean;
     launchAssignments?: GoalAgentAssignment[];
@@ -569,6 +571,11 @@ export function normalizeGoalRun(raw: unknown): GoalRun | null {
             ? goalRun.root_thread_id
             : typeof goalRun.rootThreadId === "string"
                 ? goalRun.rootThreadId
+                : null,
+        supervision_thread_id: typeof goalRun.supervision_thread_id === "string"
+            ? goalRun.supervision_thread_id
+            : typeof goalRun.supervisionThreadId === "string"
+                ? goalRun.supervisionThreadId
                 : null,
         active_thread_id: typeof goalRun.active_thread_id === "string"
             ? goalRun.active_thread_id

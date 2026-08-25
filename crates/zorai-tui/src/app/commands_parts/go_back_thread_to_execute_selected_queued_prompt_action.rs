@@ -319,16 +319,31 @@ impl TuiModel {
     }
 
     pub(crate) fn queue_prompt(&mut self, prompt: String) {
-        // Bound the queue so a runaway loop (or accidental hold-to-send) can't
-        // grow it without limit. The cap is far above any realistic manual use;
-        // refuse rather than drop so a user-authored prompt is never lost
-        // silently.
         if self.queued_prompts.len() >= MAX_QUEUED_PROMPTS {
             self.status_line =
                 format!("QUEUE FULL ({MAX_QUEUED_PROMPTS}); send or clear queued messages first");
             return;
         }
-        self.queued_prompts.push(QueuedPrompt::new(prompt));
+        let thread_id = self.chat.active_thread_id().map(str::to_string);
+        let prompt_id = uuid::Uuid::new_v4().to_string();
+        if let Some(thread_id) = thread_id.clone() {
+            self.send_daemon_command(DaemonCommand::EnqueuePrompt {
+                thread_id,
+                prompt_id: prompt_id.clone(),
+                content: prompt.clone(),
+                content_blocks_json: None,
+            });
+        }
+        self.queued_prompts.push(QueuedPrompt {
+            text: prompt,
+            thread_id,
+            prompt_id: Some(prompt_id),
+            suggestion_id: None,
+            participant_agent_id: None,
+            participant_agent_name: None,
+            force_send: false,
+            copied_until_tick: None,
+        });
         self.status_line = format!("QUEUED ({})", self.queued_prompts.len());
         self.sync_queued_prompt_modal_state();
     }
@@ -373,20 +388,25 @@ impl TuiModel {
         Some(prompt)
     }
 
-    pub(crate) fn dispatch_next_queued_prompt_if_ready(&mut self) {
-        if self.queue_barrier_active() {
-            return;
+    pub(crate) fn dispatch_next_queued_prompt_if_ready(&mut self) {}
+
+    pub(crate) fn apply_daemon_prompt_queue(
+        &mut self,
+        thread_id: Option<String>,
+        prompts: Vec<zorai_protocol::QueuedPromptRecord>,
+    ) {
+        if let Some(thread_id) = thread_id.as_deref() {
+            self.queued_prompts.retain(|prompt| {
+                prompt.suggestion_id.is_some() || prompt.thread_id.as_deref() != Some(thread_id)
+            });
+        } else {
+            self.queued_prompts
+                .retain(|prompt| prompt.suggestion_id.is_some());
         }
-        let Some(index) = self
-            .queued_prompts
-            .iter()
-            .position(|prompt| prompt.suggestion_id.is_none())
-        else {
-            return;
-        };
-        if let Some(prompt) = self.remove_queued_prompt_at(index) {
-            self.submit_prompt(prompt.text);
+        for record in prompts {
+            self.queued_prompts.push(QueuedPrompt::from_daemon(record));
         }
+        self.sync_queued_prompt_modal_state();
     }
 
     pub(crate) fn sync_participant_queued_prompts_for_thread(
@@ -432,19 +452,31 @@ impl TuiModel {
                 let Some(prompt) = self.remove_queued_prompt_at(index) else {
                     return;
                 };
-                let should_interrupt =
-                    self.assistant_busy() && (prompt.suggestion_id.is_none() || prompt.force_send);
-                if should_interrupt {
-                    self.interrupt_current_stream();
-                }
                 if let (Some(thread_id), Some(suggestion_id)) =
                     (prompt.thread_id.clone(), prompt.suggestion_id.clone())
                 {
+                    let should_interrupt = self.assistant_busy() && prompt.force_send;
+                    if should_interrupt {
+                        self.interrupt_current_stream();
+                    }
                     self.send_daemon_command(DaemonCommand::SendParticipantSuggestion {
                         thread_id,
                         suggestion_id,
                     });
+                } else if let (Some(thread_id), Some(prompt_id)) =
+                    (prompt.thread_id.clone(), prompt.prompt_id.clone())
+                {
+                    self.chat.reduce(chat::ChatAction::ForceStopStreaming);
+                    self.clear_active_thread_activity();
+                    self.send_daemon_command(DaemonCommand::SendQueuedPromptNow {
+                        thread_id,
+                        prompt_id,
+                    });
                 } else {
+                    let should_interrupt = self.assistant_busy();
+                    if should_interrupt {
+                        self.interrupt_current_stream();
+                    }
                     self.submit_prompt(prompt.text);
                 }
             }
@@ -459,11 +491,18 @@ impl TuiModel {
             QueuedPromptAction::Delete => {
                 if let Some(prompt) = self.remove_queued_prompt_at(index) {
                     if let (Some(thread_id), Some(suggestion_id)) =
-                        (prompt.thread_id, prompt.suggestion_id)
+                        (prompt.thread_id.clone(), prompt.suggestion_id.clone())
                     {
                         self.send_daemon_command(DaemonCommand::DismissParticipantSuggestion {
                             thread_id,
                             suggestion_id,
+                        });
+                    } else if let (Some(thread_id), Some(prompt_id)) =
+                        (prompt.thread_id, prompt.prompt_id)
+                    {
+                        self.send_daemon_command(DaemonCommand::CancelQueuedPrompt {
+                            thread_id,
+                            prompt_id,
                         });
                     }
                     self.status_line = "Removed queued message".to_string();

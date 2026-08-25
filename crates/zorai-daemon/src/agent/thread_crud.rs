@@ -27,6 +27,7 @@ enum ThreadMetadataPatch {
     ClientSurface(Option<zorai_protocol::ClientSurface>),
     LatestSkillDiscoveryState(Option<LatestSkillDiscoveryState>),
     PromptMemoryInjectionState(Option<PromptMemoryInjectionState>),
+    WorkspaceContext(Option<ThreadWorkspaceContext>),
 }
 
 impl ThreadMetadataPatch {
@@ -61,6 +62,16 @@ impl ThreadMetadataPatch {
             ThreadMetadataPatch::PromptMemoryInjectionState(None) => {
                 metadata.remove("prompt_memory_injection_state");
                 metadata.remove("promptMemoryInjectionState");
+            }
+            ThreadMetadataPatch::WorkspaceContext(Some(context)) => {
+                if let Ok(value) = serde_json::to_value(context) {
+                    metadata.insert("workspace_context".to_string(), value);
+                    metadata.remove("workspaceContext");
+                }
+            }
+            ThreadMetadataPatch::WorkspaceContext(None) => {
+                metadata.remove("workspace_context");
+                metadata.remove("workspaceContext");
             }
         }
     }
@@ -223,16 +234,31 @@ impl AgentEngine {
         Some(parse_thread_metadata(metadata_json.as_deref()))
     }
 
-    async fn persist_thread_metadata_patch(&self, thread_id: &str, patch: ThreadMetadataPatch) {
+    async fn persist_thread_metadata_patch(
+        &self,
+        thread_id: &str,
+        patch: ThreadMetadataPatch,
+    ) -> bool {
         let metadata_json = match self.history.thread_metadata_json(thread_id).await {
             Ok(Some(metadata_json)) => Some(metadata_json),
             Ok(None) => match self.history.has_thread_id(thread_id).await {
                 Ok(true) => None,
                 Ok(false) => {
-                    if self.threads.read().await.contains_key(thread_id) {
-                        self.persist_thread_by_id(thread_id).await;
+                    if !self.threads.read().await.contains_key(thread_id) {
+                        return false;
                     }
-                    return;
+                    self.persist_thread_by_id(thread_id).await;
+                    match self.history.thread_metadata_json(thread_id).await {
+                        Ok(metadata_json) => metadata_json,
+                        Err(error) => {
+                            tracing::warn!(
+                                thread_id = %thread_id,
+                                %error,
+                                "failed to read thread metadata after initial persistence"
+                            );
+                            return false;
+                        }
+                    }
                 }
                 Err(error) => {
                     tracing::warn!(
@@ -240,7 +266,7 @@ impl AgentEngine {
                         %error,
                         "failed to check persisted thread existence"
                     );
-                    return;
+                    return false;
                 }
             },
             Err(error) => {
@@ -249,7 +275,7 @@ impl AgentEngine {
                     %error,
                     "failed to read persisted thread metadata"
                 );
-                return;
+                return false;
             }
         };
 
@@ -271,21 +297,58 @@ impl AgentEngine {
                     %error,
                     "failed to serialize persisted thread metadata"
                 );
-                return;
+                return false;
             }
         };
 
-        if let Err(error) = self
+        match self
             .history
             .update_thread_metadata_json(thread_id, metadata_json)
             .await
         {
-            tracing::warn!(
-                thread_id = %thread_id,
-                %error,
-                "failed to update persisted thread metadata"
-            );
+            Ok(true) => true,
+            Ok(false) => {
+                tracing::warn!(
+                    thread_id = %thread_id,
+                    "thread disappeared before persisted metadata update"
+                );
+                false
+            }
+            Err(error) => {
+                tracing::warn!(
+                    thread_id = %thread_id,
+                    %error,
+                    "failed to update persisted thread metadata"
+                );
+                false
+            }
         }
+    }
+
+    pub async fn get_thread_workspace_context(
+        &self,
+        thread_id: &str,
+    ) -> Option<ThreadWorkspaceContext> {
+        self.persisted_thread_metadata(thread_id)
+            .await
+            .and_then(|metadata| metadata.workspace_context)
+    }
+
+    pub async fn set_thread_workspace_context(
+        &self,
+        thread_id: &str,
+        context: Option<ThreadWorkspaceContext>,
+    ) -> bool {
+        let exists = self.threads.read().await.contains_key(thread_id)
+            || self.history.has_thread_id(thread_id).await.unwrap_or(false);
+        if !exists {
+            return false;
+        }
+        self.persist_thread_metadata_patch(
+            thread_id,
+            ThreadMetadataPatch::WorkspaceContext(context),
+        )
+        .await
     }
 
     pub(super) async fn append_system_thread_message(
@@ -1014,9 +1077,33 @@ impl AgentEngine {
         message_limit: Option<usize>,
         message_offset: usize,
     ) -> Option<ThreadDetailResult> {
+        self.get_thread_filtered_with_tool_run_pagination(
+            thread_id,
+            include_internal,
+            message_limit,
+            message_offset,
+            false,
+        )
+        .await
+    }
+
+    pub(crate) async fn get_thread_filtered_with_tool_run_pagination(
+        &self,
+        thread_id: &str,
+        include_internal: bool,
+        message_limit: Option<usize>,
+        message_offset: usize,
+        collapse_tool_calls: bool,
+    ) -> Option<ThreadDetailResult> {
         if let Some(limit) = message_limit {
             if let Some(detail) = self
-                .get_persisted_thread_window(thread_id, include_internal, limit, message_offset)
+                .get_persisted_thread_window(
+                    thread_id,
+                    include_internal,
+                    limit,
+                    message_offset,
+                    collapse_tool_calls,
+                )
                 .await
             {
                 tracing::info!(
@@ -1244,8 +1331,14 @@ impl AgentEngine {
             return None;
         }
 
-        self.get_persisted_thread_window(thread_id, include_internal, message_limit, message_offset)
-            .await
+        self.get_persisted_thread_window(
+            thread_id,
+            include_internal,
+            message_limit,
+            message_offset,
+            false,
+        )
+        .await
     }
 
     async fn get_persisted_thread_window(
@@ -1254,6 +1347,7 @@ impl AgentEngine {
         include_internal: bool,
         message_limit: usize,
         message_offset: usize,
+        collapse_tool_calls: bool,
     ) -> Option<ThreadDetailResult> {
         let existing_pinned = self
             .threads
@@ -1277,9 +1371,21 @@ impl AgentEngine {
                     .await
             }
         };
-        let window_fut = self
-            .history
-            .list_message_window(thread_id, message_limit, message_offset);
+        let window_fut = async {
+            if collapse_tool_calls {
+                self.history
+                    .list_message_window_collapsing_tool_runs(
+                        thread_id,
+                        message_limit,
+                        message_offset,
+                    )
+                    .await
+            } else {
+                self.history
+                    .list_message_window(thread_id, message_limit, message_offset)
+                    .await
+            }
+        };
         let pinned_fut = persisted_pinned_message_summaries(self, thread_id);
         let context_window_fut = self.history.list_active_context_window(thread_id);
 
@@ -1350,6 +1456,7 @@ impl AgentEngine {
                 include_internal,
                 LAZY_CAPPED_IPC_MESSAGE_WINDOW,
                 0,
+                false,
             )
             .await
         {

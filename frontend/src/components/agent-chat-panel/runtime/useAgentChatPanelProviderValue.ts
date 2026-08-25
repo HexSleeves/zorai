@@ -4,6 +4,7 @@ import { getAgentDbApi } from "@/lib/agentStore/history";
 import { getAgentBridge, shouldUseDaemonRuntime } from "@/lib/agentDaemonConfig";
 import { fetchAgentRuns, isSubagentRun, type AgentRun } from "@/lib/agentRuns";
 import { fetchThreadTodos } from "@/lib/agentTodos";
+import { beginThreadLoading } from "@/zorai/features/threads/threadLoadingStore";
 import { resolveReactChatHistoryMessageLimit } from "@/lib/chatHistoryPageSize";
 import { deriveSpawnedAgentTree } from "@/lib/spawnedAgentTree";
 import type { SpawnedAgentTree } from "@/lib/spawnedAgentTree";
@@ -24,6 +25,7 @@ import {
   hydrateDaemonThreadIntoLocalState,
   loadDaemonThreadPageIntoLocalState,
   reloadDaemonThreadIntoLocalState,
+  resolveAbsoluteMessageIndex,
   trimDaemonThreadMessagesToLatestWindow,
 } from "./daemonHelpers";
 import {
@@ -46,6 +48,7 @@ import {
 } from "@/lib/agent-client/pinnedMessageBudget";
 
 const EMPTY_MESSAGES: ReturnType<typeof useAgentStore.getState>["messages"][string] = [];
+const EMPTY_TODOS: ReturnType<typeof useAgentStore.getState>["todos"][string] = [];
 
 type SpawnedAgentNavigationState = {
   tree: SpawnedAgentTree<AgentRun> | null;
@@ -548,9 +551,12 @@ export function useAgentChatPanelProviderValue(): {
   }, [refreshSpawnedAgentRuns]);
 
   const messages = useMemo(() => storeMessages ?? EMPTY_MESSAGES, [storeMessages]);
-  const todos = useMemo(() => storeTodos ?? [], [storeTodos]);
+  const todos = useMemo(() => storeTodos ?? EMPTY_TODOS, [storeTodos]);
   const scopePaneId = activeThread?.paneId ?? activePaneId;
-  const pendingApprovals = approvals.filter((approval) => approval.status === "pending");
+  const pendingApprovals = useMemo(
+    () => approvals.filter((approval) => approval.status === "pending"),
+    [approvals],
+  );
   const scopeController = getTerminalController(scopePaneId);
   const usageMessageCount = useMemo(
     () => Object.values(allMessagesByThread)
@@ -847,6 +853,8 @@ export function useAgentChatPanelProviderValue(): {
     direction: "latest" | "older",
   ): Promise<boolean> => {
     const runThreadPageLoad = async (): Promise<boolean> => {
+      const finishLoading = direction === "latest" ? beginThreadLoading() : () => {};
+      try {
       const thread = useAgentStore.getState().threads.find((entry) => entry.id === threadId);
       const daemonThreadId = thread?.daemonThreadId;
       if (!daemonThreadId || !getAgentBridge()?.agentGetThread) {
@@ -882,6 +890,9 @@ export function useAgentChatPanelProviderValue(): {
         setThreadTodos,
         setDaemonTodosByThread,
       });
+      } finally {
+        finishLoading();
+      }
     };
 
     const nextLoad = threadPageLoadChainRef.current
@@ -948,6 +959,19 @@ export function useAgentChatPanelProviderValue(): {
     }
     sendMessageLegacy(payload.text);
   }, [agentSettings.agent_backend, sendDaemonMessage, sendMessageLegacy]);
+
+  const spawnSubagent = useCallback(async (request: { title: string; description: string; cwd?: string | null }) => {
+    const thread = useAgentStore.getState().threads.find((entry) => entry.id === activeThreadId);
+    const daemonThreadId = thread?.daemonThreadId ?? daemonThreadIdRef.current;
+    const bridge = getAgentBridge();
+    if (!daemonThreadId) return { ok: false, error: "Send the first message before delegating to a subagent." };
+    if (!bridge?.agentSpawnSubagent) return { ok: false, error: "Subagent delegation bridge is unavailable." };
+    try {
+      return await bridge.agentSpawnSubagent(daemonThreadId, request);
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : "Subagent delegation failed." };
+    }
+  }, [activeThreadId]);
 
   const collaborationActions = useMemo(() => createThreadCollaborationActions({
     getActiveDaemonThread: () => {
@@ -1042,8 +1066,19 @@ export function useAgentChatPanelProviderValue(): {
   }, [activeThreadId, agentSettings.agent_backend, setThreadTodos]);
 
   const submitMessageFeedback = useCallback(async (threadId: string, messageId: string, reaction: "up" | "down" | null) => {
-    const thread = useAgentStore.getState().threads.find((entry) => entry.id === threadId);
+    const currentState = useAgentStore.getState();
+    const currentMessage = (currentState.messages[threadId] ?? [])
+      .find((message) => message.id === messageId);
+    if (!currentMessage || currentMessage.isStreaming === true) {
+      return;
+    }
+    const thread = currentState.threads.find((entry) => entry.id === threadId);
     const daemonThreadId = thread?.daemonThreadId ?? (threadId === activeThreadId ? daemonThreadIdRef.current : null);
+    const absoluteMessageIndex = resolveAbsoluteMessageIndex(
+      thread?.loadedMessageStart,
+      currentState.messages[threadId] ?? [],
+      messageId,
+    );
     const zorai = getAgentBridge();
 
     // Optimistic local update so the UI shows the reaction instantly. The
@@ -1059,7 +1094,7 @@ export function useAgentChatPanelProviderValue(): {
 
     if (shouldUseDaemonRuntime(agentSettings.agent_backend) && daemonThreadId && zorai?.agentMessageFeedback) {
       try {
-        await zorai.agentMessageFeedback(daemonThreadId, messageId, reaction);
+        await zorai.agentMessageFeedback(daemonThreadId, messageId, reaction, absoluteMessageIndex);
       } catch (error) {
         console.warn("agentMessageFeedback failed", error);
       }
@@ -1165,6 +1200,7 @@ export function useAgentChatPanelProviderValue(): {
     messagesEndRef,
     inputRef,
     sendMessage,
+    spawnSubagent,
     pushHandoff,
     returnHandoff,
     upsertParticipant,
@@ -1263,6 +1299,7 @@ export function useAgentChatPanelProviderValue(): {
     welesHealth,
     createThread,
     sendMessage,
+    spawnSubagent,
     pushHandoff,
     returnHandoff,
     upsertParticipant,

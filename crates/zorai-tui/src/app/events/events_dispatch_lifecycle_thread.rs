@@ -174,6 +174,10 @@ impl TuiModel {
                 }
                 None
             }
+            ClientEvent::PromptQueue { thread_id, prompts } => {
+                self.apply_daemon_prompt_queue(thread_id, prompts);
+                None
+            }
             ClientEvent::ParticipantSuggestion {
                 thread_id,
                 suggestion,

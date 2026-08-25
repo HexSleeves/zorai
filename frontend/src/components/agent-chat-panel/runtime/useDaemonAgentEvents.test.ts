@@ -1,8 +1,11 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useAgentStore } from "@/lib/agentStore";
 import type { AgentMessage, AgentThread } from "@/lib/agentStore";
+import { applyDaemonRetryStatusEvent, getThreadRetryStatus } from "@/zorai/features/threads/threadRetryStatus";
 import {
+  clearRetryStatusForDaemonProgressEvent,
   hasOpenLocalAssistantStream,
+  isAuxiliaryDaemonError,
   isThreadlessDaemonStreamEvent,
   resolveDaemonEventLocalThreadId,
 } from "./useDaemonAgentEvents";
@@ -120,5 +123,45 @@ describe("resolveDaemonEventLocalThreadId", () => {
       "daemon-b",
       { allowThreadlessFallback: hasOpenLocalAssistantStream("local-b") },
     )).toBeNull();
+  });
+});
+
+
+describe("clearRetryStatusForDaemonProgressEvent", () => {
+  it("clears a stale retry banner as soon as tool work resumes", () => {
+    applyDaemonRetryStatusEvent({
+      thread_id: "daemon-b",
+      phase: "waiting",
+      attempt: 2,
+      max_retries: 0,
+      delay_ms: 30_000,
+      failure_class: "rate_limit",
+      message: "429",
+    });
+    expect(getThreadRetryStatus("daemon-b")).not.toBeNull();
+
+    clearRetryStatusForDaemonProgressEvent({ type: "tool_call", thread_id: "daemon-b" });
+
+    expect(getThreadRetryStatus("daemon-b")).toBeNull();
+  });
+});
+
+describe("isAuxiliaryDaemonError", () => {
+  it("isolates message feedback failures from turn failures", () => {
+    expect(isAuxiliaryDaemonError({
+      type: "error",
+      message: "message_feedback:message_not_found",
+    })).toBe(true);
+  });
+
+  it("keeps provider and agent-loop failures terminal", () => {
+    expect(isAuxiliaryDaemonError({
+      type: "error",
+      message: "429 rate limit exceeded",
+    })).toBe(false);
+    expect(isAuxiliaryDaemonError({
+      type: "done",
+      message: "message_feedback:message_not_found",
+    })).toBe(false);
   });
 });

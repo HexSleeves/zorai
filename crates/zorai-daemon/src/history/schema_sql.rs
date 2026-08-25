@@ -229,6 +229,7 @@ pub(super) fn base_schema_sql() -> &'static str {
                 root_thread_id      TEXT,
                 active_thread_id    TEXT,
                 execution_thread_ids_json TEXT NOT NULL DEFAULT '[]',
+                supervision_thread_id TEXT,
                 step_failure_history_json TEXT NOT NULL DEFAULT '[]',
                 deleted_at          INTEGER
             );

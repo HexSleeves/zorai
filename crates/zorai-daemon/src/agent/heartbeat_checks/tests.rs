@@ -69,6 +69,7 @@ fn make_goal_run(id: &str, title: &str, status: GoalRunStatus, updated_at: u64) 
         launch_assignment_snapshot: Vec::new(),
         runtime_assignment_list: Vec::new(),
         root_thread_id: None,
+        supervision_thread_id: None,
         active_thread_id: None,
         execution_thread_ids: Vec::new(),
     }
@@ -108,6 +109,7 @@ async fn make_test_engine(
     let _ = std::fs::create_dir_all(&data_dir);
     let (skill_discovery_result_tx, _skill_discovery_result_rx) = mpsc::unbounded_channel();
     let (auto_thread_title_jobs, _auto_thread_title_rx) = mpsc::unbounded_channel();
+    let (prompt_queue_wake_tx, _prompt_queue_wake_rx) = mpsc::unbounded_channel();
 
     let history = crate::history::HistoryStore::new_test_store(&data_dir)
         .await
@@ -214,6 +216,7 @@ async fn make_test_engine(
         watcher_refresh_rx: Mutex::new(Some(watcher_refresh_rx)),
         skill_discovery_result_tx,
         auto_thread_title_jobs,
+        prompt_queue_wake_tx,
         skill_discovery_test_runner: std::sync::OnceLock::new(),
         force_mesh_discovery_degraded_for_tests: std::sync::atomic::AtomicBool::new(false),
         aline_startup_reconcile_started: std::sync::atomic::AtomicBool::new(false),
@@ -267,6 +270,58 @@ async fn heartbeat_checks_stale_todos_detects_old_pending() {
     assert_eq!(result.check_type, HeartbeatCheckType::StaleTodos);
     assert_eq!(result.items_found, 2);
     assert_eq!(result.details.len(), 2);
+}
+
+#[tokio::test]
+async fn heartbeat_checks_stale_todos_ignore_heartbeat_synthesis_threads() {
+    let now = now_millis();
+    let old = now - (25 * 3600 * 1000);
+    let heartbeat_thread_id = "thread-heartbeat";
+    let mut todos = HashMap::new();
+    todos.insert(
+        heartbeat_thread_id.to_string(),
+        vec![make_todo(
+            "todo-heartbeat",
+            "Decide whether to act on paused goal runs",
+            TodoStatus::Pending,
+            old,
+        )],
+    );
+    todos.insert(
+        "thread-user".to_string(),
+        vec![make_todo(
+            "todo-user",
+            "Fix actual user task",
+            TodoStatus::Pending,
+            old,
+        )],
+    );
+
+    let engine = make_test_engine(todos, VecDeque::new(), HashMap::new()).await;
+    engine.threads.write().await.insert(
+        heartbeat_thread_id.to_string(),
+        AgentThread {
+            id: heartbeat_thread_id.to_string(),
+            agent_name: Some("Weles".to_string()),
+            title: "HEARTBEAT SYNTHESIS\nScheduled check".to_string(),
+            messages: Vec::new(),
+            pinned: false,
+            upstream_thread_id: None,
+            upstream_transport: None,
+            upstream_provider: None,
+            upstream_model: None,
+            upstream_assistant_id: None,
+            created_at: old,
+            updated_at: old,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
+        },
+    );
+
+    let result = engine.check_stale_todos(24).await;
+
+    assert_eq!(result.items_found, 1);
+    assert_eq!(result.details[0].id, "todo-user");
 }
 
 #[tokio::test]

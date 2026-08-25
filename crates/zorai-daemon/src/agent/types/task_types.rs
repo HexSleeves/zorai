@@ -387,6 +387,17 @@ pub struct AgentRun {
 }
 
 impl AgentTask {
+    pub(crate) fn is_internal_weles_review(&self) -> bool {
+        self.sub_agent_def_id.as_deref()
+            == Some(crate::agent::agent_identity::WELES_BUILTIN_SUBAGENT_ID)
+            && self.source == "subagent"
+            && self
+                .override_system_prompt
+                .as_deref()
+                .and_then(crate::agent::weles_governance::parse_weles_internal_override_payload)
+                .is_some()
+    }
+
     pub(crate) fn is_spawned_subagent(&self) -> bool {
         self.source == "subagent" || self.parent_task_id.is_some()
     }

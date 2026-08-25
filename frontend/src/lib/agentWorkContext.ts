@@ -10,6 +10,10 @@ export interface WorkContextEntry {
   goalRunId?: string | null;
   stepIndex?: number | null;
   sessionId?: string | null;
+  operationId?: string | null;
+  taskId?: string | null;
+  beforeHash?: string | null;
+  afterHash?: string | null;
   isText: boolean;
   updatedAt: number;
 }
@@ -66,6 +70,26 @@ function normalizeEntry(raw: unknown): WorkContextEntry | null {
       ? entry.session_id
       : typeof entry?.sessionId === "string"
         ? entry.sessionId
+        : null,
+    operationId: typeof entry?.operation_id === "string"
+      ? entry.operation_id
+      : typeof entry?.operationId === "string"
+        ? entry.operationId
+        : null,
+    taskId: typeof entry?.task_id === "string"
+      ? entry.task_id
+      : typeof entry?.taskId === "string"
+        ? entry.taskId
+        : null,
+    beforeHash: typeof entry?.before_hash === "string"
+      ? entry.before_hash
+      : typeof entry?.beforeHash === "string"
+        ? entry.beforeHash
+        : null,
+    afterHash: typeof entry?.after_hash === "string"
+      ? entry.after_hash
+      : typeof entry?.afterHash === "string"
+        ? entry.afterHash
         : null,
     isText: entry?.is_text === false ? false : entry?.isText === false ? false : true,
     updatedAt: typeof entry?.updated_at === "number"

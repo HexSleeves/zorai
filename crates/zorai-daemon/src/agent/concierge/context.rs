@@ -151,7 +151,7 @@ pub(crate) fn is_user_visible_thread(thread: &AgentThread) -> bool {
     })
 }
 
-pub(super) fn is_heartbeat_thread(thread: &AgentThread) -> bool {
+pub(crate) fn is_heartbeat_thread(thread: &AgentThread) -> bool {
     thread.title.starts_with("HEARTBEAT SYNTHESIS")
         || thread.title.starts_with("Heartbeat check:")
         || thread.messages.iter().any(|message| {

@@ -4,10 +4,10 @@ use super::{
     ApprovalDecision, ApprovalPayload, AsyncCommandCapability, CommunitySkillEntry,
     GatewayBootstrapPayload, GatewayReloadCommand, GatewaySendRequest, GatewayShutdownCommand,
     GitInfo, HistorySearchHit, ManagedCommandSource, OperationStatusSnapshot,
-    OscNotificationPayload, PluginCommandInfo, PluginInfo, SessionId, SessionInfo,
-    SkillVariantPublic, SnapshotInfo, SymbolMatch, TaskApprovalRule, TelemetryLedgerStatus,
-    ThreadHandoffResult, ToolListResultPublic, ToolSearchResultPublic, WorkspaceNotice,
-    WorkspaceSettings, WorkspaceTask,
+    OscNotificationPayload, PluginCommandInfo, PluginInfo, QueuedPromptRecord, SessionId,
+    SessionInfo, SkillVariantPublic, SnapshotInfo, SymbolMatch, TaskApprovalRule,
+    TelemetryLedgerStatus, ThreadHandoffResult, ToolListResultPublic, ToolSearchResultPublic,
+    WorkspaceNotice, WorkspaceSettings, WorkspaceTask,
 };
 
 #[rustfmt::skip]
@@ -77,6 +77,10 @@ pub enum DaemonMessage {
     AgentTodoList { todos_json: String },
     AgentTodoDetail { thread_id: String, todos_json: String },
     AgentWorkContextDetail { thread_id: String, context_json: String },
+    AgentFileOperationSnapshot { operation_id: String, status_json: String },
+    AgentFileOperationReverted { operation_id: String, result_json: String },
+    AgentThreadWorkspaceContext { thread_id: String, context_json: String, updated: bool },
+    AgentSubagentSpawned { thread_id: String, result_json: String },
     AgentTaskApprovalRules { rules: Vec<TaskApprovalRule> },
     AgentConfigResponse { config_json: String },
     AgentEffectiveConfigState { state_json: String },
@@ -194,4 +198,14 @@ pub enum DaemonMessage {
     AgentMlflowTracingStatus { status_json: String },
     AgentMlflowTracingTestResult { result_json: String },
     AgentMlflowTracingHeaders { names: Vec<String> },
+    AgentPromptQueue {
+        thread_id: Option<String>,
+        prompts: Vec<QueuedPromptRecord>,
+    },
+    AgentPromptQueueError {
+        thread_id: Option<String>,
+        message: String,
+        prompts: Vec<QueuedPromptRecord>,
+    },
+    AgentThreadExecutionProfile { thread_id: String, profile_json: String },
 }

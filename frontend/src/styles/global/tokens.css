@@ -42,7 +42,7 @@
   --bg-elevated: #212e3e;
   --bg-canvas: #060a10;
   --bg-overlay: rgba(2, 4, 6, 0.92);
-  
+
   /* Neutral Grays - For UI chrome */
   --neutral-50: #f8fafc;
   --neutral-100: #f1f5f9;
@@ -443,4 +443,25 @@
   --transition-base: var(--duration-normal) var(--ease-out);
   --transition-slow: var(--duration-slow) var(--ease-out);
   --transition-bounce: var(--duration-slow) var(--ease-bounce);
+
+  /* ═══════════════════════════════════════════════════════════════════════
+   * ZORAI THEME
+   * ═══════════════════════════════════════════════════════════════════════ */
+  
+  --zorai-bg: var(--bg-void);
+  --zorai-bg-panel: var(--bg-primary);
+  --zorai-bg-elevated: var(--bg-elevated);
+  --zorai-bg-active: var(--bg-secondary);
+  --zorai-bg-surface: var(--bg-tertiary);
+  --zorai-border: var(--border);
+  --zorai-border-strong: var(--border-color-strong);
+  --zorai-text: var(--text-primary);
+  --zorai-muted: var(--text-muted);
+  --zorai-accent: var(--accent);
+  --zorai-accent-secondary: var(--accent-secondary);
+  --zorai-accent-glow: var(--accent-glow);
+  --zorai-transition: 180ms cubic-bezier(0.4, 0, 0.2, 1);
+  --zorai-shadow: var(--shadow-color);
+  --zorai-code-explorer-width: 280px;
+  --zorai-code-agent-width: 320px;
 }

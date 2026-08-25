@@ -650,6 +650,45 @@ pub(super) async fn apply_schema_migrations<E: super::db::DbExecutor + ?Sized>(
         CREATE INDEX IF NOT EXISTS idx_agent_wakeups_next_fire ON agent_wakeups(next_fire_at ASC);",
     )
     .await?;
+    ensure_column(
+        &mut *exec,
+        "agent_wakeups",
+        "wakeup_kind",
+        "TEXT NOT NULL DEFAULT 'generic'",
+    )
+    .await?;
+    ensure_column(&mut *exec, "agent_wakeups", "goal_run_id", "TEXT").await?;
+    exec.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_agent_wakeups_goal_run ON agent_wakeups(goal_run_id, next_fire_at ASC);",
+    )
+    .await?;
+    let legacy_goal_wakeups = exec
+        .query(
+            "SELECT id, message FROM agent_wakeups WHERE goal_run_id IS NULL AND repetitions_remaining IS NULL AND message GLOB 'Supervise goal_*'",
+            super::db::Params::None,
+        )
+        .await?;
+    for row in &legacy_goal_wakeups {
+        let id = row.get::<String>(0)?;
+        let message = row.get::<String>(1)?;
+        let goal_run_id = message
+            .strip_prefix("Supervise ")
+            .and_then(|message| message.split_whitespace().next())
+            .map(|word| {
+                word.trim_end_matches(|character: char| {
+                    !character.is_ascii_alphanumeric() && character != '_' && character != '-'
+                })
+            })
+            .filter(|word| word.starts_with("goal_") && word.len() > "goal_".len())
+            .map(str::to_string);
+        if let Some(goal_run_id) = goal_run_id {
+            exec.execute(
+                "UPDATE agent_wakeups SET wakeup_kind = 'goal_supervision', goal_run_id = ?1, repetitions_remaining = 1 WHERE id = ?2",
+                super::db::db_params![goal_run_id, id],
+            )
+            .await?;
+        }
+    }
     ensure_column(&mut *exec, "event_triggers", "agent_id", "TEXT").await?;
     ensure_column(&mut *exec, "event_triggers", "prompt_template", "TEXT").await?;
     ensure_column(&mut *exec, "event_triggers", "tool_name", "TEXT").await?;
@@ -933,6 +972,7 @@ pub(super) async fn apply_schema_migrations<E: super::db::DbExecutor + ?Sized>(
         "TEXT NOT NULL DEFAULT '[]'",
     )
     .await?;
+    ensure_column(&mut *exec, "goal_runs", "supervision_thread_id", "TEXT").await?;
     ensure_column(
         &mut *exec,
         "goal_runs",
@@ -1407,7 +1447,18 @@ pub(super) async fn apply_schema_migrations<E: super::db::DbExecutor + ?Sized>(
             )
             WHERE json_valid(payload_json)
               AND json_extract(payload_json, '$.archived_at') IS NULL
-              AND json_extract(payload_json, '$.deleted_at')  IS NULL;",
+              AND json_extract(payload_json, '$.deleted_at')  IS NULL;
+
+        CREATE TABLE IF NOT EXISTS thread_prompt_queue (
+            id TEXT PRIMARY KEY,
+            thread_id TEXT NOT NULL,
+            position INTEGER NOT NULL,
+            content TEXT NOT NULL,
+            content_blocks_json TEXT,
+            created_at INTEGER NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_prompt_queue_thread_pos
+            ON thread_prompt_queue(thread_id, position, created_at);",
     )
     .await?;
 

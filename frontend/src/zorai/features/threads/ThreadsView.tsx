@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type UIEvent } from "react";
+import { LoadingState } from "@/components/LoadingState";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
 import { ToolEventRow } from "@/components/agent-chat-panel/chat-view/ToolEventRow";
+import { ToolEventList } from "@/components/agent-chat-panel/chat-view/ToolEventList";
 import { buildDisplayItems } from "@/components/agent-chat-panel/chat-view/helpers";
 import { useAgentChatPanelRuntime } from "@/components/agent-chat-panel/runtime/context";
 import {
@@ -10,8 +12,10 @@ import {
   shouldFollowThreadHistoryBottom,
 } from "@/components/agent-chat-panel/runtime/threadHistoryScroll";
 import { useAgentStore, type AgentThread } from "@/lib/agentStore";
+import { fetchAgentTasks, type AgentQueueTask } from "@/lib/agentTaskQueue";
 import { ThreadFilePreviewOverlay } from "./ThreadFilePreviewOverlay";
 import { ThreadComposer } from "./ThreadComposer";
+import { ThreadCompactSessionBar } from "./ThreadCompactSessionBar";
 import { ThreadActivityRow } from "./ThreadActivityRow";
 import { classifyThreadActivityMessage } from "./threadActivityModel";
 import { ThreadHandoffControl } from "./ThreadHandoffControl";
@@ -27,20 +31,41 @@ import { ThreadRetryStatusBanner } from "./ThreadRetryStatusBanner";
 import { useThreadRetryStatus } from "./threadRetryStatus";
 import { resolveThreadOwnerRuntimeProfile } from "./threadOwnerRuntime";
 import type { ZoraiReturnTarget } from "../../shell/zoraiNavigationEvents";
+import { useThreadLoadingStore } from "./threadLoadingStore";
+import { threadReadKey, useThreadReadStateStore } from "./threadReadStateStore";
 
 export { ThreadsRail } from "./ThreadsRail";
+
+function ThreadConversationSkeleton({ embedded = false }: { embedded?: boolean }) {
+  return (
+    <div className={["zorai-thread-conversation-loader", embedded ? "zorai-thread-conversation-loader--embedded" : ""].filter(Boolean).join(" ")} role="status" aria-label="Loading conversation">
+      <LoadingState size={16} label="Loading conversation" />
+      <div className="zorai-thread-conversation-loader__messages" aria-hidden="true">
+        <div className="zorai-thread-message-skeleton zorai-thread-message-skeleton--assistant"><LoadingState variant="skeleton" lines={3} /></div>
+        <div className="zorai-thread-message-skeleton zorai-thread-message-skeleton--user"><LoadingState variant="skeleton" lines={2} /></div>
+        <div className="zorai-thread-message-skeleton zorai-thread-message-skeleton--assistant zorai-thread-message-skeleton--short"><LoadingState variant="skeleton" lines={2} /></div>
+      </div>
+    </div>
+  );
+}
 
 export function ThreadsView({
   returnTarget = null,
   onReturnTarget,
+  variant = "full",
+  compactHeaderActions = null,
 }: {
   returnTarget?: ZoraiReturnTarget | null;
   onReturnTarget?: () => void;
+  variant?: "full" | "compact";
+  compactHeaderActions?: ReactNode;
 } = {}) {
+  const threadOpening = useThreadLoadingStore((state) => state.pending > 0);
   const runtime = useAgentChatPanelRuntime();
   const [pinLimitResult, setPinLimitResult] = useState<ZoraiThreadMessagePinResult | null>(null);
   const [participantsOpen, setParticipantsOpen] = useState(false);
   const [pinnedToBottom, setPinnedToBottom] = useState(true);
+  const [readTasks, setReadTasks] = useState<AgentQueueTask[]>([]);
   const subAgents = useAgentStore((state) => state.subAgents);
   const viewMountedAtRef = useRef(Date.now());
   const scrollerRef = useRef<HTMLDivElement | null>(null);
@@ -105,6 +130,55 @@ export function ThreadsView({
   }, [speech]);
 
   const activeThreadId = runtime.activeThread?.id ?? null;
+  const activeReadThread = runtime.activeThread;
+  const activeReadThreadId = activeReadThread?.id ?? null;
+  const activeReadDaemonThreadId = activeReadThread?.daemonThreadId ?? null;
+  const activeReadMessages = runtime.messages;
+
+  useEffect(() => {
+    if (!activeReadThreadId) {
+      setReadTasks([]);
+      return;
+    }
+    let active = true;
+    void fetchAgentTasks().then((tasks) => {
+      if (active) setReadTasks(tasks);
+    });
+    return () => { active = false; };
+  }, [activeReadDaemonThreadId, activeReadThreadId]);
+
+  useEffect(() => {
+    if (!activeReadThread) return;
+    const store = useThreadReadStateStore.getState();
+    const localKey = `local:${activeReadThread.id}`;
+    const daemonKey = activeReadThread.daemonThreadId?.trim()
+      ? `daemon:${activeReadThread.daemonThreadId.trim()}`
+      : null;
+    if (daemonKey) store.migrateThreadKey(localKey, daemonKey);
+    const key = threadReadKey(activeReadThread);
+    const newestDisplayedAt = activeReadMessages.reduce(
+      (latest, message) => Math.max(latest, message.createdAt ?? 0),
+      0,
+    );
+    const identities = new Set([activeReadThread.id, activeReadThread.daemonThreadId].filter(Boolean));
+    const newestTaskCompletionAt = readTasks.reduce((latest, task) => {
+      const matches = [task.thread_id, task.parent_thread_id].some((id) => id && identities.has(id));
+      const terminal = ["completed", "failed", "cancelled", "budget_exceeded"].includes(task.status);
+      return matches && terminal ? Math.max(latest, task.completed_at ?? 0) : latest;
+    }, 0);
+    const newestGoalCompletionAt = runtime.goalRunsForTrace.reduce((latest, goal) => {
+      const goalThreads = [goal.thread_id, goal.root_thread_id, goal.active_thread_id, ...(goal.execution_thread_ids ?? [])];
+      const matches = goalThreads.some((id) => id && identities.has(id));
+      const terminal = ["completed", "failed", "cancelled"].includes(goal.status);
+      return matches && terminal ? Math.max(latest, goal.completed_at ?? 0) : latest;
+    }, 0);
+    const newestReadAt = Math.max(newestDisplayedAt, newestTaskCompletionAt, newestGoalCompletionAt);
+    if (!key || newestReadAt <= 0) return;
+    const frame = requestAnimationFrame(() => {
+      useThreadReadStateStore.getState().markRead(key, newestReadAt);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeReadMessages, activeReadThread, readTasks, runtime.goalRunsForTrace]);
 
   useEffect(() => {
     setFollowThreadHistoryBottom(true);
@@ -125,6 +199,10 @@ export function ThreadsView({
       runtime.trimThreadMessagesToLatestWindow(activeThreadId);
     }
   }, [activeThreadId, runtime.messages, runtime.trimThreadMessagesToLatestWindow]);
+
+  if (threadOpening && !runtime.activeThread) {
+    return <ThreadConversationSkeleton />;
+  }
 
   if (!runtime.activeThread) {
     return (
@@ -186,9 +264,12 @@ export function ThreadsView({
       });
     }
   };
+  const profile = resolveThreadOwnerRuntimeProfile(activeThread, subAgents, useAgentStore.getState().agentSettings, useAgentStore.getState().conciergeConfig);
   return (
-    <section className="zorai-thread-surface zorai-native-thread-surface">
-      <ThreadHeader
+    <section className={["zorai-thread-surface", "zorai-native-thread-surface", variant === "compact" ? "zorai-thread-surface--compact" : ""].filter(Boolean).join(" ")}>
+      {variant === "full" ? (
+        <>
+          <ThreadHeader
         thread={runtime.activeThread}
         messageCount={runtime.messages.length}
         agentOptions={agentOptions}
@@ -198,18 +279,43 @@ export function ThreadsView({
         onReturnHandoff={runtime.returnHandoff}
         onOpenParticipants={() => setParticipantsOpen(true)}
         activeOperationCount={activeOperations.length}
-        onOpenOperations={() => {
-          const latest = activeOperations[activeOperations.length - 1];
-          if (latest && latest.operationId !== "unknown") {
-            document.getElementById(`zorai-operation-${latest.operationId}`)?.scrollIntoView({ block: "center" });
-          }
-        }}
-      />
-      <ParticipantStrip thread={runtime.activeThread} onOpen={() => setParticipantsOpen(true)} />
+            onOpenOperations={() => {
+              const latest = activeOperations[activeOperations.length - 1];
+              if (latest && latest.operationId !== "unknown") {
+                document.getElementById(`zorai-operation-${latest.operationId}`)?.scrollIntoView({ block: "center" });
+              }
+            }}
+          />
+          <ParticipantStrip thread={runtime.activeThread} onOpen={() => setParticipantsOpen(true)} />
+        </>
+      ) : (
+        <header className="zorai-code-agent-thread-header">
+          {runtime.canGoBackThread ? (
+            <button
+              type="button"
+              className="zorai-code-agent-thread-back"
+              title={runtime.backThreadTitle ? `Back to ${runtime.backThreadTitle}` : "Back to parent"}
+              onClick={runtime.goBackThread}
+            >
+              <span aria-hidden="true">←</span>
+              <span>{runtime.backThreadTitle ? `Back to ${runtime.backThreadTitle}` : "Back to parent"}</span>
+            </button>
+          ) : null}
+          <div className="zorai-code-agent-thread-header__meta">
+            <strong>{activeThread.title}</strong>
+            <span>Responder · {actualThreadResponderLabel(activeThread)} · {profile.model} · {profile.provider}</span>
+          </div>
+          <div className="zorai-code-agent-thread-actions">
+            {compactHeaderActions}
+          </div>
+        </header>
+      )}
 
       <div className="zorai-thread-chat">
         <div ref={scrollerRef} className="zorai-thread-chat-scroll" onScroll={(event) => void handleThreadScroll(event)}>
-        {runtime.messages.length === 0 ? (
+        {threadOpening ? (
+          <ThreadConversationSkeleton embedded />
+        ) : runtime.messages.length === 0 ? (
           <div className="zorai-thread-empty-state">
             {activeThread.messageCount > 0 || activeThread.lastMessagePreview ? (
               <>
@@ -225,6 +331,9 @@ export function ThreadsView({
             )}
           </div>
         ) : displayItems.map((item) => {
+          if (item.type === "toolList") {
+            return <ToolEventList key={`toollist_${item.groups[0]?.key ?? "empty"}`} groups={item.groups} />;
+          }
           if (item.type === "tool") {
             return <ToolEventRow key={`tool_${item.group.key}`} group={item.group} />;
           }
@@ -253,7 +362,7 @@ export function ThreadsView({
               speechLoading={speech.loadingMessageId === message.id}
               speechQueued={speech.queuedMessageIds.includes(message.id)}
               onSpeak={() => void speech.speakMessage(message)}
-              onFeedback={message.role === "assistant"
+              onFeedback={message.role === "assistant" && !message.isStreaming
                 ? (reaction) => runtime.submitMessageFeedback(runtime.activeThread?.id ?? message.threadId, message.id, reaction)
                 : undefined}
               onRegenerate={message.role === "assistant" ? () => regenerateAssistantMessage(message.id) : undefined}
@@ -291,12 +400,15 @@ export function ThreadsView({
         <ThreadScrollToBottomButton hidden={pinnedToBottom} onClick={scrollThreadToLatest} />
       </div>
 
-      <ThreadComposer />
+      <div className="zorai-thread-composer-stack">
+        {variant === "compact" ? <ThreadCompactSessionBar /> : null}
+        <ThreadComposer showTargetSelector={variant === "compact"} compact={variant === "compact"} />
+      </div>
 
-      {pinLimitResult ? (
+      {variant === "full" && pinLimitResult ? (
         <PinLimitModal result={pinLimitResult} onClose={() => setPinLimitResult(null)} />
       ) : null}
-      {participantsOpen ? (
+      {variant === "full" && participantsOpen ? (
         <ThreadParticipantsDrawer
           thread={runtime.activeThread}
           agentOptions={agentOptions}
@@ -310,6 +422,11 @@ export function ThreadsView({
       <ThreadFilePreviewOverlay />
     </section>
   );
+}
+
+function actualThreadResponderLabel(thread: AgentThread): string {
+  const stack = thread.threadHandoffState?.responderStack ?? [];
+  return stack[stack.length - 1]?.agentName ?? thread.agent_name;
 }
 
 function ThreadHeader({

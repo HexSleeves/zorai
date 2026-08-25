@@ -124,6 +124,10 @@ declare global {
         goal_run_id?: string | null;
         step_index?: number | null;
         session_id?: string | null;
+        operation_id?: string | null;
+        task_id?: string | null;
+        before_hash?: string | null;
+        after_hash?: string | null;
         is_text?: boolean;
         updated_at: number;
     };
@@ -395,6 +399,142 @@ declare global {
         sort_order?: number | null;
     };
 
+    type ZoraiWorkspaceFile = {
+        path: string;
+        content: string;
+        hash: string;
+        sizeBytes: number;
+        modifiedAt: number;
+        language: string;
+    };
+
+    type ZoraiWorkspaceEntry = {
+        name: string;
+        path: string;
+        isDirectory: boolean;
+        isSymbolicLink: boolean;
+        sizeBytes: number | null;
+        modifiedAt: number | null;
+    };
+
+    type ZoraiWorkspaceGitStatus = {
+        path: string;
+        previousPath: string | null;
+        indexStatus: string;
+        worktreeStatus: string;
+    };
+
+    type ZoraiWorkspaceTest = {
+        id: string;
+        framework: "rust" | "javascript" | "python" | "go";
+        path: string;
+        name: string;
+        line: number;
+        selector: string;
+    };
+
+    type ZoraiWorkspaceTestResult = {
+        name: string;
+        status: "passed" | "failed" | "skipped";
+        message: string | null;
+        location: { path: string; line: number; column: number } | null;
+    };
+
+    type ZoraiWorkspaceTestEvidence = {
+        framework: string;
+        request: { framework: string; path?: string; selector?: string };
+        command: string;
+        args: string[];
+        status: string;
+        exitCode: number | null;
+        durationMs: number;
+        results: ZoraiWorkspaceTestResult[];
+        passed: number;
+        failed: number;
+        skipped: number;
+        output: string;
+    };
+
+    type ZoraiWorkspaceTestEvent = {
+        runId: string;
+        type: "output" | "finished";
+        stream?: "stdout" | "stderr";
+        text?: string;
+        status?: "passed" | "failed" | "cancelled" | "error";
+        exitCode?: number | null;
+        durationMs?: number;
+        output?: string;
+        error?: string;
+        evidence?: ZoraiWorkspaceTestEvidence;
+    };
+
+    type ZoraiLspDiagnostic = {
+        message: string;
+        severity: number;
+        source: string | null;
+        code: string | null;
+        startLine: number;
+        startColumn: number;
+        endLine: number;
+        endColumn: number;
+    };
+
+    type ZoraiLspDiagnosticsPayload = {
+        root: string;
+        language: string;
+        path: string;
+        version: number | null;
+        diagnostics: ZoraiLspDiagnostic[];
+    };
+
+    type ZoraiWorktreeReview = {
+        source: { path: string; branch: string | null; head: string; clean: boolean };
+        target: { path: string; head: string; clean: boolean };
+        mergeBase: string;
+        commits: Array<{ hash: string; subject: string }>;
+        files: Array<{ status: string; path: string; previousPath: string | null }>;
+        canIntegrate: boolean;
+    };
+
+    type ZoraiGitWorktree = {
+        path: string;
+        head: string | null;
+        branch: string | null;
+        detached: boolean;
+        bare: boolean;
+        locked: boolean;
+        prunable: boolean;
+    };
+
+    type ZoraiWorkspaceGitOverview = {
+        isRepository: boolean;
+        root: string;
+        gitRoot: string | null;
+        branch: string | null;
+        upstream: string | null;
+        ahead: number;
+        behind: number;
+        stagedFiles: number;
+        unstagedFiles: number;
+    };
+
+    type ZoraiWorkspaceGitHunk = {
+        id: string;
+        index: number;
+        path: string;
+        staged: boolean;
+        header: string;
+        section: string;
+        oldStart: number;
+        oldLines: number;
+        newStart: number;
+        newLines: number;
+        additions: number;
+        deletions: number;
+        preview: string;
+        patch: string;
+    };
+
     type ZoraiBridge = {
         checkSetupPrereqs?: (profile?: "source" | "desktop") => Promise<ZoraiSetupPrereqReport>;
         discoverCodingAgents?: () => Promise<ZoraiCodingAgentDiscoveryResult[]>;
@@ -420,6 +560,48 @@ declare global {
         getFsPathInfo?: (targetPath: string) => Promise<{ path: string; isDirectory: boolean; sizeBytes: number; modifiedAt: number; createdAt: number } | null>;
         gitStatus?: (targetPath: string) => Promise<string>;
         gitDiff?: (targetPath: string, filePath?: string | null) => Promise<string>;
+        workspaceOpen?: (rootPath: string) => Promise<{ root: string; name: string; gitRoot: string | null; isGitRepository: boolean }>;
+        workspaceSelectFolder?: () => Promise<{ canceled: boolean; root: { root: string; name: string; gitRoot: string | null; isGitRepository: boolean } | null }>;
+        workspaceListDirectory?: (rootPath: string, relativePath?: string, options?: { includeIgnored?: boolean }) => Promise<ZoraiWorkspaceEntry[]>;
+        workspaceStatFile?: (rootPath: string, relativePath: string) => Promise<{ path: string; sizeBytes: number; modifiedAt: number }>;
+        workspaceReadFile?: (rootPath: string, relativePath: string, options?: { maxBytes?: number }) => Promise<ZoraiWorkspaceFile>;
+        workspaceWriteFile?: (rootPath: string, relativePath: string, content: string, expectedHash?: string | null) => Promise<ZoraiWorkspaceFile>;
+        workspaceCreateDirectory?: (rootPath: string, relativePath: string) => Promise<{ path: string }>;
+        workspaceRenamePath?: (rootPath: string, fromPath: string, toPath: string) => Promise<{ from: string; to: string }>;
+        workspaceDeletePath?: (rootPath: string, relativePath: string, options?: { recursive?: boolean }) => Promise<boolean>;
+        workspaceGitStatus?: (rootPath: string) => Promise<ZoraiWorkspaceGitStatus[]>;
+        workspaceGitOverview?: (rootPath: string) => Promise<ZoraiWorkspaceGitOverview>;
+        workspaceGitCommit?: (rootPath: string, message: string) => Promise<{ commit: string; subject: string; overview: ZoraiWorkspaceGitOverview; status: ZoraiWorkspaceGitStatus[] }>;
+        workspaceGitHistory?: (rootPath: string, options?: { limit?: number }) => Promise<Array<{ hash: string; shortHash: string; author: string; date: string; subject: string }>>;
+        workspaceGitCommitDetail?: (rootPath: string, commitHash: string) => Promise<{ hash: string; author: string; date: string; subject: string; body: string; files: Array<{ status: string; path: string }> }>;
+        workspaceGitConflicts?: (rootPath: string) => Promise<Array<{ path: string }>>;
+        workspaceGitListWorktrees?: (rootPath: string) => Promise<ZoraiGitWorktree[]>;
+        workspaceGitCreateWorktree?: (rootPath: string, options: { name: string; branch: string; baseRef?: string }) => Promise<{ root: string; branch: string; baseRef: string; worktrees: ZoraiGitWorktree[] }>;
+        workspaceGitRemoveWorktree?: (rootPath: string, worktreePath: string) => Promise<ZoraiGitWorktree[]>;
+        workspaceGitReviewWorktree?: (rootPath: string, worktreePath: string) => Promise<ZoraiWorktreeReview>;
+        workspaceGitIntegrateWorktree?: (rootPath: string, worktreePath: string, commitHashes: string[]) => Promise<{ integratedCommits: string[]; overview: ZoraiWorkspaceGitOverview; status: ZoraiWorkspaceGitStatus[]; review: ZoraiWorktreeReview }>;
+        workspaceGitStage?: (rootPath: string, relativePath: string) => Promise<ZoraiWorkspaceGitStatus[]>;
+        workspaceGitUnstage?: (rootPath: string, relativePath: string) => Promise<ZoraiWorkspaceGitStatus[]>;
+        workspaceGitDiscard?: (rootPath: string, relativePath: string) => Promise<ZoraiWorkspaceGitStatus[]>;
+        workspaceGitHunks?: (rootPath: string, relativePath: string, options?: { staged?: boolean }) => Promise<ZoraiWorkspaceGitHunk[]>;
+        workspaceGitApplyHunk?: (rootPath: string, relativePath: string, hunkId: string, action: "stage" | "unstage" | "discard") => Promise<{ status: ZoraiWorkspaceGitStatus[]; hunks: ZoraiWorkspaceGitHunk[] }>;
+        workspaceSearch?: (rootPath: string, query: string, options?: { caseSensitive?: boolean; maxResults?: number; maxFiles?: number }) => Promise<Array<{ path: string; line: number; column: number; preview: string }>>;
+        workspaceGitDiff?: (rootPath: string, relativePath?: string | null, options?: { staged?: boolean; againstHead?: boolean; includeUntracked?: boolean }) => Promise<string>;
+        workspaceGitShow?: (rootPath: string, relativePath: string, revision?: string) => Promise<string>;
+        workspaceWatchStart?: (rootPath: string, options?: { debounceMs?: number; maxDirectories?: number }) => Promise<{ subscriptionId: string; root: string; watchedDirectoryCount: number }>;
+        workspaceWatchStop?: (subscriptionId: string) => Promise<boolean>;
+        onWorkspaceFilesChanged?: (cb: (batch: { subscriptionId: string; root: string; changes: Array<{ path: string; eventType: "change" | "rename"; observedAt: number }>; emittedAt: number }) => void) => (() => void) | void;
+        workspaceLspStatus?: (rootPath: string, language: string) => Promise<{ root: string; language: string; configured: boolean; available: boolean; command: string | null; server: string | null }>;
+        workspaceLspOpen?: (rootPath: string, relativePath: string, language: string, content: string, version: number) => Promise<{ available: boolean; reason?: string; root?: string; server?: string; command?: string; document?: { path: string; version: number } }>;
+        workspaceLspChange?: (rootPath: string, relativePath: string, language: string, content: string, version: number) => Promise<unknown>;
+        workspaceLspRequest?: (rootPath: string, relativePath: string, language: string, method: "hover" | "definition" | "references" | "completion", position: { line: number; character: number }) => Promise<{ available: boolean; reason?: string; result?: unknown }>;
+        workspaceLspClose?: (rootPath: string, relativePath: string, language: string) => Promise<boolean>;
+        workspaceLspUnsubscribe?: (rootPath: string, language: string) => Promise<boolean>;
+        onWorkspaceLspDiagnostics?: (cb: (payload: ZoraiLspDiagnosticsPayload) => void) => (() => void) | void;
+        workspaceTestsDiscover?: (rootPath: string, options?: { maxTests?: number }) => Promise<{ root: string; frameworks: Array<{ id: string; label: string; command: string }>; tests: ZoraiWorkspaceTest[]; truncated: boolean }>;
+        workspaceTestsRun?: (rootPath: string, request: { framework: string; path?: string; selector?: string }) => Promise<{ runId: string; command: string; args: string[]; startedAt: number }>;
+        workspaceTestsCancel?: (runId: string) => Promise<boolean>;
+        onWorkspaceTestEvent?: (cb: (payload: ZoraiWorkspaceTestEvent) => void) => (() => void) | void;
         dbAppendCommandLog?: (entry: unknown) => Promise<boolean>;
         dbCompleteCommandLog?: (id: string, exitCode?: number | null, durationMs?: number | null) => Promise<boolean>;
         dbQueryCommandLog?: (opts?: { workspaceId?: string | null; paneId?: string | null; limit?: number | null }) => Promise<unknown[]>;
@@ -437,9 +619,14 @@ declare global {
         agentListTodos?: () => Promise<Record<string, ZoraiTodoItem[]> | unknown>;
         agentGetTodos?: (threadId: string) => Promise<{ thread_id: string; items: ZoraiTodoItem[] } | ZoraiTodoItem[] | unknown>;
         agentGetWorkContext?: (threadId: string) => Promise<{ thread_id: string; context: ZoraiThreadWorkContext } | ZoraiThreadWorkContext | null | unknown>;
+        agentGetFileOperationSnapshot?: (operationId: string) => Promise<{ operation_id: string; status: { operation_id: string; available: boolean; revertible: boolean; stale_paths: string[]; retained_bytes: number; entries: Array<{ path: string; before_hash: string | null; after_hash: string | null; before_existed: boolean; snapshot_file: string | null }>; reason: string | null } }>;
+        agentRevertFileOperation?: (operationId: string) => Promise<{ operation_id?: string; result?: { operation_id: string; reverted_paths: string[] }; ok?: boolean; error?: string }>;
+        agentGetThreadWorkspaceContext?: (threadId: string) => Promise<{ thread_id: string; context: unknown; updated: boolean }>;
+        agentSetThreadWorkspaceContext?: (threadId: string, context: unknown) => Promise<{ thread_id: string; context: unknown; updated: boolean; error?: string }>;
+        agentSpawnSubagent?: (threadId: string, request: { title: string; description: string; cwd?: string | null; session?: string | null; priority?: string; provider?: string; model?: string; reasoning_effort?: string; runtime?: string; max_depth?: number; budget?: { max_tokens?: number; max_wall_time_secs?: number } }) => Promise<{ ok: boolean; content?: string; error?: string }>;
         agentGetGitDiff?: (repoPath: string, filePath?: string | null) => Promise<{ repo_path: string; file_path?: string | null; diff: string } | string | unknown>;
         agentGetFilePreview?: (path: string, maxBytes?: number | null) => Promise<{ path: string; content: string; truncated: boolean; is_text: boolean } | null | unknown>;
-        agentStartGoalRun?: (payload: { goal: string; title?: string | null; sessionId?: string | null; priority?: string | null; threadId?: string | null; clientRequestId?: string | null; requiresApproval?: boolean; launchAssignments?: Array<{ role_id: string; enabled: boolean; provider: string; model: string; reasoning_effort?: string | null; inherit_from_main: boolean }> }) => Promise<ZoraiGoalRun | unknown>;
+        agentStartGoalRun?: (payload: { goal: string; title?: string | null; sessionId?: string | null; priority?: string | null; threadId?: string | null; targetAgentId?: string | null; clientRequestId?: string | null; requiresApproval?: boolean; launchAssignments?: Array<{ role_id: string; enabled: boolean; provider: string; model: string; reasoning_effort?: string | null; inherit_from_main: boolean }> }) => Promise<ZoraiGoalRun | unknown>;
         agentListGoalRuns?: () => Promise<ZoraiGoalRun[] | unknown>;
         agentGetGoalRun?: (goalRunId: string) => Promise<ZoraiGoalRun | unknown>;
         agentControlGoalRun?: (goalRunId: string, action: ZoraiGoalRunControlAction, stepIndex?: number | null) => Promise<boolean | { ok?: boolean; success?: boolean } | unknown>;
@@ -501,6 +688,27 @@ declare global {
         stopTerminalSession?: (paneId: string, killSession?: boolean) => Promise<boolean>;
         executeManagedCommand?: (paneId: string | null, payload: unknown) => Promise<boolean | { output?: string }>;
         agentSendMessage?: (threadId: string | null, content: string, sessionId?: string | null, contextMessages?: unknown[], contentBlocksJson?: string | null, targetAgentId?: string | null) => Promise<{ ok?: boolean; error?: string } | unknown>;
+        agentEnqueuePrompt?: (payload: {
+            threadId: string;
+            content: string;
+            contentBlocksJson?: string | null;
+            promptId?: string | null;
+        }) => Promise<{ thread_id?: string | null; prompts?: unknown[]; error?: string } | unknown>;
+        agentListPromptQueue?: (threadId?: string | null) => Promise<{ thread_id?: string | null; prompts?: unknown[]; error?: string } | unknown>;
+        agentUpdateQueuedPrompt?: (payload: {
+            threadId: string;
+            promptId: string;
+            content: string;
+            contentBlocksJson?: string | null;
+        }) => Promise<{ thread_id?: string | null; prompts?: unknown[]; error?: string } | unknown>;
+        agentCancelQueuedPrompt?: (payload: {
+            threadId: string;
+            promptId: string;
+        }) => Promise<{ thread_id?: string | null; prompts?: unknown[]; error?: string } | unknown>;
+        agentSendQueuedPromptNow?: (payload: {
+            threadId: string;
+            promptId: string;
+        }) => Promise<{ thread_id?: string | null; prompts?: unknown[]; error?: string } | unknown>;
         agentInternalDelegate?: (threadId: string | null, targetAgentId: string, content: string, sessionId?: string | null) => Promise<{ ok?: boolean; error?: string } | unknown>;
         agentThreadParticipantCommand?: (payload: {
             threadId: string;
@@ -536,7 +744,10 @@ declare global {
         ) => Promise<unknown | null>;
         agentPinThreadMessageForCompaction?: (threadId: string, messageId: string) => Promise<ZoraiThreadMessagePinResult | unknown>;
         agentUnpinThreadMessageForCompaction?: (threadId: string, messageId: string) => Promise<ZoraiThreadMessagePinResult | unknown>;
-        agentMessageFeedback?: (threadId: string, messageId: string, reaction: "up" | "down" | null) => Promise<unknown>;
+        agentMessageFeedback?: (threadId: string, messageId: string, reaction: "up" | "down" | null, absoluteMessageIndex?: number) => Promise<unknown>;
+        agentGetThreadExecutionProfile?: (threadId: string) => Promise<{ thread_id: string; profile: unknown; error?: string } | unknown>;
+        agentSetThreadExecutionProfile?: (threadId: string, profile: unknown) => Promise<{ thread_id: string; profile: unknown; error?: string } | unknown>;
+        agentForceCompact?: (threadId: string) => Promise<{ ok: boolean; error?: string } | unknown>;
         openAICodexAuthStatus?: (options?: { refresh?: boolean }) => Promise<ZoraiOpenAICodexAuthStatus>;
         openAICodexAuthLogin?: () => Promise<ZoraiOpenAICodexAuthLogin>;
         openAICodexAuthLogout?: () => Promise<{ ok: boolean }>;

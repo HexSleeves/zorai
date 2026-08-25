@@ -74,6 +74,8 @@ export type RemoteAgentMessageRecord = {
   weles_review?: AgentMessage["welesReview"] | null;
   input_tokens?: number | null;
   output_tokens?: number | null;
+  cost?: number | null;
+  cost_usd?: number | null;
   reasoning?: string | null;
   timestamp?: number | null;
   message_kind?: "normal" | "compaction_artifact";
@@ -101,6 +103,7 @@ export type RemoteAgentThreadRecord = {
   updated_at?: number | null;
   total_input_tokens?: number | null;
   total_output_tokens?: number | null;
+  total_cost_usd?: number | null;
   total_message_count?: number | null;
   loaded_message_start?: number | null;
   loaded_message_end?: number | null;
@@ -295,6 +298,11 @@ export function buildHydratedRemoteMessage(
     inputTokens: Number(message.input_tokens ?? 0),
     outputTokens: Number(message.output_tokens ?? 0),
     totalTokens: Number(message.input_tokens ?? 0) + Number(message.output_tokens ?? 0),
+    cost: typeof message.cost === "number" && Number.isFinite(message.cost)
+      ? message.cost
+      : typeof message.cost_usd === "number" && Number.isFinite(message.cost_usd)
+      ? message.cost_usd
+      : undefined,
     reasoning: typeof message.reasoning === "string" ? message.reasoning : undefined,
     isCompactionSummary: message.message_kind === "compaction_artifact",
     messageKind: message.message_kind ?? "normal",
@@ -304,6 +312,22 @@ export function buildHydratedRemoteMessage(
     isStreaming: false,
     feedback: message.feedback === "up" || message.feedback === "down" ? message.feedback : null,
   };
+}
+
+export function canonicalizeHydratedToolCalls(messages: AgentMessage[]): AgentMessage[] {
+  const standaloneCallIds = new Set(
+    messages
+      .filter((message) => message.role === "tool" && typeof message.toolCallId === "string")
+      .map((message) => message.toolCallId as string),
+  );
+  if (standaloneCallIds.size === 0) return messages;
+
+  return messages.map((message) => {
+    if (message.role !== "assistant" || !Array.isArray(message.toolCalls)) return message;
+    const remaining = message.toolCalls.filter((call) => !standaloneCallIds.has(call.id));
+    if (remaining.length === message.toolCalls.length) return message;
+    return { ...message, toolCalls: remaining.length > 0 ? remaining : undefined };
+  });
 }
 
 export function buildHydratedRemoteThread(
@@ -323,7 +347,9 @@ export function buildHydratedRemoteThread(
 
   const localThreadId = nextThreadId();
   const messages = Array.isArray(thread.messages)
-    ? thread.messages.map((message) => buildHydratedRemoteMessage(localThreadId, message))
+    ? canonicalizeHydratedToolCalls(
+      thread.messages.map((message) => buildHydratedRemoteMessage(localThreadId, message)),
+    )
     : [];
   const totalInputTokens = Number(thread.total_input_tokens ?? 0);
   const totalOutputTokens = Number(thread.total_output_tokens ?? 0);
@@ -391,6 +417,9 @@ export function buildHydratedRemoteThread(
       totalInputTokens,
       totalOutputTokens,
       totalTokens: totalInputTokens + totalOutputTokens,
+    totalCostUsd: typeof thread.total_cost_usd === "number" && Number.isFinite(thread.total_cost_usd)
+      ? thread.total_cost_usd
+      : null,
       compactionCount: messages.filter((message) => message.messageKind === "compaction_artifact").length,
       lastMessagePreview: messages[messages.length - 1]?.content?.slice(0, 100) ?? "",
       upstreamThreadId: typeof thread.upstream_thread_id === "string" ? thread.upstream_thread_id : null,
@@ -514,6 +543,10 @@ export function serializeThread(thread: AgentThread): AgentDbThreadRecord {
       upstreamAssistantId: thread.upstreamAssistantId ?? null,
       threadParticipants: thread.threadParticipants ?? [],
       queuedParticipantSuggestions: thread.queuedParticipantSuggestions ?? [],
+      profileProvider: thread.profileProvider ?? null,
+      profileModel: thread.profileModel ?? null,
+      profileReasoningEffort: thread.profileReasoningEffort ?? null,
+      profileContextWindowTokens: thread.profileContextWindowTokens ?? null,
     }),
   };
 }
@@ -603,6 +636,12 @@ export function deserializeThread(thread: AgentDbThreadRecord): AgentThread {
     queuedParticipantSuggestions: Array.isArray(metadata.queuedParticipantSuggestions)
       ? metadata.queuedParticipantSuggestions as AgentThread["queuedParticipantSuggestions"]
       : [],
+    profileProvider: typeof metadata.profileProvider === "string" ? metadata.profileProvider : null,
+    profileModel: typeof metadata.profileModel === "string" ? metadata.profileModel : null,
+    profileReasoningEffort: typeof metadata.profileReasoningEffort === "string" ? metadata.profileReasoningEffort : null,
+    profileContextWindowTokens: typeof metadata.profileContextWindowTokens === "number" && Number.isFinite(metadata.profileContextWindowTokens)
+      ? Math.max(1, Math.trunc(metadata.profileContextWindowTokens))
+      : null,
   };
 }
 

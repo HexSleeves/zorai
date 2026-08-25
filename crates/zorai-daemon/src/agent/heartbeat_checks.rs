@@ -12,9 +12,15 @@ impl AgentEngine {
         let now = now_millis();
         let threshold_ms = threshold_hours * 3600 * 1000;
         let todos = self.thread_todos.read().await;
+        let threads = self.threads.read().await;
         let stale: Vec<CheckDetail> = todos
-            .values()
-            .flat_map(|items| items.iter())
+            .iter()
+            .filter(|(thread_id, _)| {
+                threads
+                    .get(*thread_id)
+                    .is_none_or(|thread| !crate::agent::concierge::is_heartbeat_thread(thread))
+            })
+            .flat_map(|(_, items)| items.iter())
             .filter(|t| matches!(t.status, TodoStatus::Pending | TodoStatus::InProgress))
             .filter(|t| now.saturating_sub(t.updated_at) >= threshold_ms)
             .map(|t| {

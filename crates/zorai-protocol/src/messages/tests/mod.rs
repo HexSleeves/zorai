@@ -1481,6 +1481,7 @@ fn agent_get_thread_round_trip_preserves_message_page_arguments() {
         thread_id: "thread-1".to_string(),
         message_limit: Some(50),
         message_offset: Some(100),
+        collapse_tool_calls: true,
     };
 
     let bytes = bincode::serialize(&msg).unwrap();
@@ -1490,10 +1491,38 @@ fn agent_get_thread_round_trip_preserves_message_page_arguments() {
             thread_id,
             message_limit,
             message_offset,
+            collapse_tool_calls,
         } => {
             assert_eq!(thread_id, "thread-1");
             assert_eq!(message_limit, Some(50));
             assert_eq!(message_offset, Some(100));
+            assert!(collapse_tool_calls);
+        }
+        other => panic!("unexpected variant: {:?}", other),
+    }
+}
+
+#[test]
+fn agent_get_thread_defaults_collapse_tool_calls_to_false() {
+    let value = serde_json::json!({
+        "AgentGetThread": {
+            "thread_id": "thread-1",
+            "message_limit": 50,
+            "message_offset": 100,
+        }
+    });
+    let decoded: ClientMessage = serde_json::from_value(value).unwrap();
+    match decoded {
+        ClientMessage::AgentGetThread {
+            thread_id,
+            message_limit,
+            message_offset,
+            collapse_tool_calls,
+        } => {
+            assert_eq!(thread_id, "thread-1");
+            assert_eq!(message_limit, Some(50));
+            assert_eq!(message_offset, Some(100));
+            assert!(!collapse_tool_calls);
         }
         other => panic!("unexpected variant: {:?}", other),
     }
@@ -2287,12 +2316,57 @@ fn mlflow_tracing_protocol_variants_round_trip_at_append_only_tail() {
         DaemonMessage::AgentMlflowTracingHeaders {
             names: vec!["X-Test".to_string()],
         },
+        DaemonMessage::AgentPromptQueue {
+            thread_id: Some("thread-1".to_string()),
+            prompts: vec![QueuedPromptRecord {
+                id: "prompt-1".to_string(),
+                thread_id: "thread-1".to_string(),
+                content: "follow up".to_string(),
+                content_blocks_json: None,
+                created_at: 1,
+                position: 1,
+            }],
+        },
     ];
     for response in responses {
         let bytes = bincode::serialize(&response).unwrap();
         let decoded: DaemonMessage = bincode::deserialize(&bytes).unwrap();
         assert_eq!(
             bincode_variant_index(&response),
+            bincode_variant_index(&decoded)
+        );
+    }
+
+    let queue_requests = vec![
+        ClientMessage::AgentEnqueuePrompt {
+            thread_id: "thread-1".to_string(),
+            content: "follow up".to_string(),
+            content_blocks_json: None,
+            prompt_id: Some("prompt-1".to_string()),
+        },
+        ClientMessage::AgentListPromptQueue {
+            thread_id: Some("thread-1".to_string()),
+        },
+        ClientMessage::AgentUpdateQueuedPrompt {
+            thread_id: "thread-1".to_string(),
+            prompt_id: "prompt-1".to_string(),
+            content: "edited".to_string(),
+            content_blocks_json: None,
+        },
+        ClientMessage::AgentCancelQueuedPrompt {
+            thread_id: "thread-1".to_string(),
+            prompt_id: "prompt-1".to_string(),
+        },
+        ClientMessage::AgentSendQueuedPromptNow {
+            thread_id: "thread-1".to_string(),
+            prompt_id: "prompt-1".to_string(),
+        },
+    ];
+    for request in queue_requests {
+        let bytes = bincode::serialize(&request).unwrap();
+        let decoded: ClientMessage = bincode::deserialize(&bytes).unwrap();
+        assert_eq!(
+            bincode_variant_index(&request),
             bincode_variant_index(&decoded)
         );
     }

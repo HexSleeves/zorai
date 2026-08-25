@@ -317,6 +317,37 @@ where
             let msg = serde_json::json!({"type":"work-context-detail","data":{"thread_id":thread_id,"context":serde_json::from_str::<serde_json::Value>(&context_json).unwrap_or_default()}});
             emit_agent_event(&msg.to_string())?;
         }
+        Some(Ok(DaemonMessage::AgentThreadWorkspaceContext {
+            thread_id,
+            context_json,
+            updated,
+        })) => {
+            let msg = serde_json::json!({"type":"thread-workspace-context","data":{"thread_id":thread_id,"context":serde_json::from_str::<serde_json::Value>(&context_json).unwrap_or(serde_json::Value::Null),"updated":updated}});
+            emit_agent_event(&msg.to_string())?;
+        }
+        Some(Ok(DaemonMessage::AgentSubagentSpawned {
+            thread_id,
+            result_json,
+        })) => {
+            let result =
+                serde_json::from_str::<serde_json::Value>(&result_json).unwrap_or_default();
+            let msg = serde_json::json!({"type":"subagent-spawned","data":{"thread_id":thread_id,"result":result}});
+            emit_agent_event(&msg.to_string())?;
+        }
+        Some(Ok(DaemonMessage::AgentFileOperationSnapshot {
+            operation_id,
+            status_json,
+        })) => {
+            let msg = serde_json::json!({"type":"file-operation-snapshot","data":{"operation_id":operation_id,"status":serde_json::from_str::<serde_json::Value>(&status_json).unwrap_or_default()}});
+            emit_agent_event(&msg.to_string())?;
+        }
+        Some(Ok(DaemonMessage::AgentFileOperationReverted {
+            operation_id,
+            result_json,
+        })) => {
+            let msg = serde_json::json!({"type":"file-operation-reverted","data":{"operation_id":operation_id,"result":serde_json::from_str::<serde_json::Value>(&result_json).unwrap_or_default()}});
+            emit_agent_event(&msg.to_string())?;
+        }
         Some(Ok(DaemonMessage::GitDiff {
             repo_path,
             file_path,
@@ -344,6 +375,41 @@ where
         }
         Some(Ok(DaemonMessage::AgentMlflowTracingHeaders { names })) => {
             let msg = serde_json::json!({"type":"mlflow-tracing-headers","data":{"names":names}});
+            emit_agent_event(&msg.to_string())?;
+        }
+        Some(Ok(DaemonMessage::AgentPromptQueue { thread_id, prompts })) => {
+            let msg = serde_json::json!({
+                "type": "prompt-queue",
+                "data": {
+                    "thread_id": thread_id,
+                    "prompts": prompts,
+                }
+            });
+            emit_agent_event(&msg.to_string())?;
+        }
+        Some(Ok(DaemonMessage::AgentPromptQueueError { thread_id, message, prompts })) => {
+            let msg = serde_json::json!({
+                "type": "prompt-queue",
+                "data": {
+                    "thread_id": thread_id,
+                    "prompts": prompts,
+                    "error": message,
+                }
+            });
+            emit_agent_event(&msg.to_string())?;
+        }
+        Some(Ok(DaemonMessage::AgentThreadExecutionProfile {
+            thread_id,
+            profile_json,
+        })) => {
+            let msg = serde_json::json!({
+                "type": "thread-execution-profile",
+                "data": {
+                    "thread_id": thread_id,
+                    "profile": serde_json::from_str::<serde_json::Value>(&profile_json)
+                        .unwrap_or(serde_json::Value::Null),
+                }
+            });
             emit_agent_event(&msg.to_string())?;
         }
         Some(Ok(DaemonMessage::AgentConfigResponse { config_json })) => {

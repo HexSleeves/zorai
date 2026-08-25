@@ -743,6 +743,7 @@ async fn tool_start_goal_run(args: &Value) -> Result<Value> {
         launch_assignments,
         autonomy_level,
         client_surface: None,
+        target_agent_id: None,
         requires_approval,
     })
     .await?;

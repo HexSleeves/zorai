@@ -9,6 +9,7 @@ function registerCoreIpcHandlers(ipcMain, options) {
         createFsDirectory,
         deleteDataPath,
         deleteFsPath,
+        dialog,
         discordSendMessage,
         ensureZoraiDataDir,
         getAvailableShells,
@@ -41,6 +42,11 @@ function registerCoreIpcHandlers(ipcMain, options) {
         writeJsonFile,
         writeTextFile,
         windowState,
+        workspaceService,
+        startWorkspaceWatch,
+        stopWorkspaceWatch,
+        lspRuntime,
+        testRuntime,
     } = options;
 
     ipcMain.handle('getSocketPath', getSocketPath);
@@ -89,6 +95,55 @@ function registerCoreIpcHandlers(ipcMain, options) {
     ipcMain.handle('fs-path-info', (_event, targetPath) => getFsPathInfo(targetPath));
     ipcMain.handle('git-status', (_event, targetPath) => gitStatus(targetPath));
     ipcMain.handle('git-diff', (_event, targetPath, filePath) => gitDiff(targetPath, filePath));
+    ipcMain.handle('workspace-open', (_event, rootPath) => workspaceService.openWorkspace(rootPath));
+    ipcMain.handle('workspace-select-folder', async () => {
+        const selection = await dialog.showOpenDialog({
+            title: 'Open Folder',
+            properties: ['openDirectory'],
+        });
+        if (!selection || selection.canceled !== false || !Array.isArray(selection.filePaths) || selection.filePaths.length === 0) {
+            return { canceled: true, root: null };
+        }
+        const validated = await workspaceService.openWorkspace(selection.filePaths[0]);
+        return { canceled: false, root: validated };
+    });
+    ipcMain.handle('workspace-list-directory', (_event, rootPath, relativePath, runtimeOptions) => workspaceService.listWorkspaceDirectory(rootPath, relativePath, runtimeOptions));
+    ipcMain.handle('workspace-stat-file', (_event, rootPath, relativePath) => workspaceService.statWorkspaceFile(rootPath, relativePath));
+    ipcMain.handle('workspace-read-file', (_event, rootPath, relativePath, runtimeOptions) => workspaceService.readWorkspaceFile(rootPath, relativePath, runtimeOptions));
+    ipcMain.handle('workspace-write-file', (_event, rootPath, relativePath, content, expectedHash) => workspaceService.writeWorkspaceFile(rootPath, relativePath, content, expectedHash));
+    ipcMain.handle('workspace-create-directory', (_event, rootPath, relativePath) => workspaceService.createWorkspaceDirectory(rootPath, relativePath));
+    ipcMain.handle('workspace-rename-path', (_event, rootPath, fromPath, toPath) => workspaceService.renameWorkspacePath(rootPath, fromPath, toPath));
+    ipcMain.handle('workspace-delete-path', (_event, rootPath, relativePath, runtimeOptions) => workspaceService.deleteWorkspacePath(rootPath, relativePath, runtimeOptions));
+    ipcMain.handle('workspace-git-status', (_event, rootPath) => workspaceService.workspaceGitStatus(rootPath));
+    ipcMain.handle('workspace-git-overview', (_event, rootPath) => workspaceService.workspaceGitOverview(rootPath));
+    ipcMain.handle('workspace-git-commit', (_event, rootPath, message) => workspaceService.workspaceGitCommit(rootPath, message));
+    ipcMain.handle('workspace-git-history', (_event, rootPath, runtimeOptions) => workspaceService.workspaceGitHistory(rootPath, runtimeOptions));
+    ipcMain.handle('workspace-git-commit-detail', (_event, rootPath, commitHash) => workspaceService.workspaceGitCommitDetail(rootPath, commitHash));
+    ipcMain.handle('workspace-git-conflicts', (_event, rootPath) => workspaceService.workspaceGitConflicts(rootPath));
+    ipcMain.handle('workspace-git-list-worktrees', (_event, rootPath) => workspaceService.workspaceGitListWorktrees(rootPath));
+    ipcMain.handle('workspace-git-create-worktree', (_event, rootPath, runtimeOptions) => workspaceService.workspaceGitCreateWorktree(rootPath, runtimeOptions));
+    ipcMain.handle('workspace-git-remove-worktree', (_event, rootPath, worktreePath) => workspaceService.workspaceGitRemoveWorktree(rootPath, worktreePath));
+    ipcMain.handle('workspace-git-review-worktree', (_event, rootPath, worktreePath) => workspaceService.workspaceGitReviewWorktree(rootPath, worktreePath));
+    ipcMain.handle('workspace-git-integrate-worktree', (_event, rootPath, worktreePath, commitHashes) => workspaceService.workspaceGitIntegrateWorktree(rootPath, worktreePath, commitHashes));
+    ipcMain.handle('workspace-git-stage', (_event, rootPath, relativePath) => workspaceService.workspaceGitStage(rootPath, relativePath));
+    ipcMain.handle('workspace-git-unstage', (_event, rootPath, relativePath) => workspaceService.workspaceGitUnstage(rootPath, relativePath));
+    ipcMain.handle('workspace-git-discard', (_event, rootPath, relativePath) => workspaceService.workspaceGitDiscard(rootPath, relativePath));
+    ipcMain.handle('workspace-git-hunks', (_event, rootPath, relativePath, runtimeOptions) => workspaceService.workspaceGitHunks(rootPath, relativePath, runtimeOptions));
+    ipcMain.handle('workspace-git-apply-hunk', (_event, rootPath, relativePath, hunkId, action) => workspaceService.workspaceGitApplyHunk(rootPath, relativePath, hunkId, action));
+    ipcMain.handle('workspace-search', (_event, rootPath, query, runtimeOptions) => workspaceService.searchWorkspace(rootPath, query, runtimeOptions));
+    ipcMain.handle('workspace-git-diff', (_event, rootPath, relativePath, runtimeOptions) => workspaceService.workspaceGitDiff(rootPath, relativePath, runtimeOptions));
+    ipcMain.handle('workspace-git-show', (_event, rootPath, relativePath, revision) => workspaceService.workspaceGitShow(rootPath, relativePath, revision));
+    ipcMain.handle('workspace-watch-start', (event, rootPath, runtimeOptions) => startWorkspaceWatch(event.sender, rootPath, runtimeOptions));
+    ipcMain.handle('workspace-watch-stop', (_event, subscriptionId) => stopWorkspaceWatch(subscriptionId));
+    ipcMain.handle('workspace-lsp-status', (_event, rootPath, language) => lspRuntime.status(rootPath, language));
+    ipcMain.handle('workspace-lsp-open', (event, rootPath, relativePath, language, content, version) => lspRuntime.open(event.sender, rootPath, relativePath, language, content, version));
+    ipcMain.handle('workspace-lsp-change', (event, rootPath, relativePath, language, content, version) => lspRuntime.change(event.sender, rootPath, relativePath, language, content, version));
+    ipcMain.handle('workspace-lsp-request', (event, rootPath, relativePath, language, method, position) => lspRuntime.request(event.sender, rootPath, relativePath, language, method, position));
+    ipcMain.handle('workspace-lsp-close', (_event, rootPath, relativePath, language) => lspRuntime.close(rootPath, relativePath, language));
+    ipcMain.handle('workspace-lsp-unsubscribe', (event, rootPath, language) => lspRuntime.unsubscribe(event.sender, rootPath, language));
+    ipcMain.handle('workspace-tests-discover', (_event, rootPath, runtimeOptions) => testRuntime.discover(rootPath, runtimeOptions));
+    ipcMain.handle('workspace-tests-run', (event, rootPath, request) => testRuntime.run(event.sender, rootPath, request));
+    ipcMain.handle('workspace-tests-cancel', (_event, runId) => testRuntime.cancel(runId));
     ipcMain.handle('clipboard-read-text', () => options.clipboard.readText());
     ipcMain.handle('clipboard-write-text', (_event, text) => { options.clipboard.writeText(typeof text === 'string' ? text : ''); return true; });
     ipcMain.handle('terminal-start', terminalBridgeRuntime.startTerminalBridge);

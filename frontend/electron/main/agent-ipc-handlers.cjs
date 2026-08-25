@@ -124,7 +124,10 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
                 type: 'handoff-thread',
                 thread_id: payload?.threadId,
                 action: payload?.action,
-                target_agent_id: typeof payload?.targetAgentId === 'string' && payload.targetAgentId.trim() ? payload.targetAgentId.trim() : null,
+                target_agent_id: typeof (payload?.targetAgentId ?? payload?.target_agent_id) === 'string'
+                    && (payload.targetAgentId ?? payload.target_agent_id).trim()
+                    ? (payload.targetAgentId ?? payload.target_agent_id).trim()
+                    : null,
                 reason: typeof payload?.reason === 'string' ? payload.reason : '',
                 summary: typeof payload?.summary === 'string' ? payload.summary : '',
                 requested_by: 'user',
@@ -181,6 +184,7 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
                 thread_id: threadId,
                 message_limit: messageLimit,
                 message_offset: messageOffset,
+                collapse_tool_calls: true,
             }, 'thread-detail');
         } catch {
             return null;
@@ -208,12 +212,26 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
             return { ok: false, thread_id: threadId, message_id: messageId, error: err?.message || String(err) };
         }
     });
-    ipcMain.handle('agent-message-feedback', async (_event, threadId, messageId, reaction) => {
+    ipcMain.handle('agent-get-thread-execution-profile', async (_event, threadId) => {
+        try {
+            return await sendAgentQuery({ type: 'get-thread-execution-profile', thread_id: threadId }, 'thread-execution-profile');
+        } catch (err) { return { thread_id: threadId, profile: null, error: err?.message || String(err) }; }
+    });
+    ipcMain.handle('agent-set-thread-execution-profile', async (_event, threadId, profile) => {
+        try {
+            return await sendAgentQuery({ type: 'set-thread-execution-profile', thread_id: threadId, profile_json: typeof profile === 'string' ? profile : JSON.stringify(profile ?? null) }, 'thread-execution-profile', 15000);
+        } catch (err) { return { thread_id: threadId, profile: profile ?? null, error: err?.message || String(err) }; }
+    });
+    ipcMain.handle('agent-force-compact', async (_event, threadId) => { try { sendAgentCommand({ type: 'force-compact', thread_id: threadId }); return { ok: true }; } catch (err) { return { ok: false, error: err?.message || String(err) }; } });
+    ipcMain.handle('agent-message-feedback', async (_event, threadId, messageId, reaction, absoluteMessageIndex) => {
         try {
             sendAgentCommand({
                 type: 'message-feedback',
                 thread_id: threadId,
                 message_id: messageId,
+                absolute_message_index: Number.isInteger(absoluteMessageIndex) && absoluteMessageIndex >= 0
+                    ? absoluteMessageIndex
+                    : null,
                 reaction: reaction === 'up' || reaction === 'down' ? reaction : null,
             });
             return { ok: true };
@@ -246,9 +264,21 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
     ipcMain.handle('agent-list-todos', async () => { try { return await sendAgentQuery({ type: 'list-todos' }, 'todo-list'); } catch { return {}; } });
     ipcMain.handle('agent-get-todos', async (_event, threadId) => { try { return await sendAgentQuery({ type: 'get-todos', thread_id: threadId }, 'todo-detail'); } catch { return { thread_id: threadId, items: [] }; } });
     ipcMain.handle('agent-get-work-context', async (_event, threadId) => { try { return await sendAgentQuery({ type: 'get-work-context', thread_id: threadId }, 'work-context-detail'); } catch { return { thread_id: threadId, context: { thread_id: threadId, entries: [] } }; } });
+    ipcMain.handle('agent-get-file-operation-snapshot', async (_event, operationId) => { try { return await sendAgentQuery({ type: 'get-file-operation-snapshot', operation_id: operationId }, 'file-operation-snapshot'); } catch (err) { return { operation_id: operationId, status: { available: false, revertible: false, reason: err?.message || String(err), entries: [], stale_paths: [], retained_bytes: 0 } }; } });
+    ipcMain.handle('agent-revert-file-operation', async (_event, operationId) => { try { return await sendAgentQuery({ type: 'revert-file-operation', operation_id: operationId }, 'file-operation-reverted'); } catch (err) { return { ok: false, error: err?.message || String(err) }; } });
+    ipcMain.handle('agent-get-thread-workspace-context', async (_event, threadId) => { try { return await sendAgentQuery({ type: 'get-thread-workspace-context', thread_id: threadId }, 'thread-workspace-context'); } catch { return { thread_id: threadId, context: null, updated: false }; } });
+    ipcMain.handle('agent-set-thread-workspace-context', async (_event, threadId, context) => { try { return await sendAgentQuery({ type: 'set-thread-workspace-context', thread_id: threadId, context }, 'thread-workspace-context'); } catch (err) { return { thread_id: threadId, context: null, updated: false, error: err?.message || String(err) }; } });
+    ipcMain.handle('agent-spawn-subagent', async (_event, threadId, request) => {
+        try {
+            const data = await sendAgentQuery({ type: 'spawn-subagent', thread_id: threadId, args: request }, 'subagent-spawned', 30000);
+            return data?.result ?? data;
+        } catch (err) {
+            return { ok: false, error: err?.message || String(err) };
+        }
+    });
     ipcMain.handle('agent-get-git-diff', async (_event, repoPath, filePath) => { try { return await sendAgentQuery({ type: 'get-git-diff', repo_path: repoPath, file_path: typeof filePath === 'string' && filePath.trim() ? filePath.trim() : null }, 'git-diff'); } catch { return { repo_path: repoPath, file_path: filePath ?? null, diff: '' }; } });
     ipcMain.handle('agent-get-file-preview', async (_event, filePath, maxBytes) => { try { return await sendAgentQuery({ type: 'get-file-preview', path: filePath, max_bytes: Number.isFinite(maxBytes) ? Math.max(1024, Math.trunc(maxBytes)) : null }, 'file-preview'); } catch { return { path: filePath, content: '', truncated: false, is_text: false }; } });
-    ipcMain.handle('agent-start-goal-run', async (_event, payload) => { try { return await sendAgentQuery({ type: 'start-goal-run', goal: payload?.goal, title: typeof payload?.title === 'string' && payload.title.trim() ? payload.title.trim() : null, thread_id: typeof payload?.threadId === 'string' && payload.threadId.trim() ? payload.threadId.trim() : null, session_id: typeof payload?.sessionId === 'string' && payload.sessionId.trim() ? payload.sessionId.trim() : null, priority: typeof payload?.priority === 'string' && payload.priority.trim() ? payload.priority.trim() : null, client_request_id: typeof payload?.clientRequestId === 'string' && payload.clientRequestId.trim() ? payload.clientRequestId.trim() : null, launch_assignments: normalizeGoalLaunchAssignments(payload?.launchAssignments), requires_approval: payload?.requiresApproval !== false }, 'goal-run-started'); } catch (err) { return { ok: false, error: err?.message || String(err) }; } });
+    ipcMain.handle('agent-start-goal-run', async (_event, payload) => { try { return await sendAgentQuery({ type: 'start-goal-run', goal: payload?.goal, title: typeof payload?.title === 'string' && payload.title.trim() ? payload.title.trim() : null, thread_id: typeof payload?.threadId === 'string' && payload.threadId.trim() ? payload.threadId.trim() : null, session_id: typeof payload?.sessionId === 'string' && payload.sessionId.trim() ? payload.sessionId.trim() : null, priority: typeof payload?.priority === 'string' && payload.priority.trim() ? payload.priority.trim() : null, client_request_id: typeof payload?.clientRequestId === 'string' && payload.clientRequestId.trim() ? payload.clientRequestId.trim() : null, launch_assignments: normalizeGoalLaunchAssignments(payload?.launchAssignments), target_agent_id: typeof payload?.targetAgentId === 'string' && payload.targetAgentId.trim() ? payload.targetAgentId.trim() : null, requires_approval: payload?.requiresApproval !== false }, 'goal-run-started'); } catch (err) { return { ok: false, error: err?.message || String(err) }; } });
     ipcMain.handle('agent-list-goal-runs', async () => { try { return await sendAgentQuery({ type: 'list-goal-runs' }, 'goal-run-list'); } catch { return []; } });
     ipcMain.handle('agent-get-goal-run', async (_event, goalRunId) => { try { return await sendAgentQuery({ type: 'get-goal-run', goal_run_id: goalRunId }, 'goal-run-detail'); } catch { return null; } });
     ipcMain.handle('agent-control-goal-run', async (_event, goalRunId, action, stepIndex) => { try { return await sendAgentQuery({ type: 'control-goal-run', goal_run_id: goalRunId, action, step_index: Number.isFinite(stepIndex) ? Math.trunc(stepIndex) : null }, 'goal-run-controlled'); } catch { return { ok: false }; } });
@@ -288,6 +318,64 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
     ipcMain.handle('agent-list-mlflow-tracing-headers', async () => sendAgentQuery({ type: 'list-mlflow-tracing-headers' }, 'mlflow-tracing-headers'));
     ipcMain.handle('agent-set-mlflow-tracing-header', async (_event, name, value) => sendAgentQuery({ type: 'set-mlflow-tracing-header', name, value }, 'mlflow-tracing-headers'));
     ipcMain.handle('agent-delete-mlflow-tracing-header', async (_event, name) => sendAgentQuery({ type: 'delete-mlflow-tracing-header', name }, 'mlflow-tracing-headers'));
+    ipcMain.handle('agent-enqueue-prompt', async (_event, payload) => {
+        try {
+            return await sendAgentQuery({
+                type: 'enqueue-prompt',
+                thread_id: payload?.threadId ?? payload?.thread_id,
+                content: payload?.content ?? '',
+                content_blocks_json: typeof payload?.contentBlocksJson === 'string' ? payload.contentBlocksJson : payload?.content_blocks_json ?? null,
+                prompt_id: payload?.promptId ?? payload?.prompt_id ?? null,
+            }, 'prompt-queue', 15000);
+        } catch (err) {
+            return { thread_id: payload?.threadId ?? payload?.thread_id ?? null, prompts: [], error: err?.message || String(err) };
+        }
+    });
+    ipcMain.handle('agent-list-prompt-queue', async (_event, threadId) => {
+        try {
+            return await sendAgentQuery({
+                type: 'list-prompt-queue',
+                thread_id: typeof threadId === 'string' && threadId.trim() ? threadId.trim() : null,
+            }, 'prompt-queue', 15000);
+        } catch (err) {
+            return { thread_id: threadId ?? null, prompts: [], error: err?.message || String(err) };
+        }
+    });
+    ipcMain.handle('agent-update-queued-prompt', async (_event, payload) => {
+        try {
+            return await sendAgentQuery({
+                type: 'update-queued-prompt',
+                thread_id: payload?.threadId ?? payload?.thread_id,
+                prompt_id: payload?.promptId ?? payload?.prompt_id,
+                content: payload?.content ?? '',
+                content_blocks_json: typeof payload?.contentBlocksJson === 'string' ? payload.contentBlocksJson : payload?.content_blocks_json ?? null,
+            }, 'prompt-queue', 15000);
+        } catch (err) {
+            return { thread_id: payload?.threadId ?? payload?.thread_id ?? null, prompts: [], error: err?.message || String(err) };
+        }
+    });
+    ipcMain.handle('agent-cancel-queued-prompt', async (_event, payload) => {
+        try {
+            return await sendAgentQuery({
+                type: 'cancel-queued-prompt',
+                thread_id: payload?.threadId ?? payload?.thread_id,
+                prompt_id: payload?.promptId ?? payload?.prompt_id,
+            }, 'prompt-queue', 15000);
+        } catch (err) {
+            return { thread_id: payload?.threadId ?? payload?.thread_id ?? null, prompts: [], error: err?.message || String(err) };
+        }
+    });
+    ipcMain.handle('agent-send-queued-prompt-now', async (_event, payload) => {
+        try {
+            return await sendAgentQuery({
+                type: 'send-queued-prompt-now',
+                thread_id: payload?.threadId ?? payload?.thread_id,
+                prompt_id: payload?.promptId ?? payload?.prompt_id,
+            }, 'prompt-queue', 15000);
+        } catch (err) {
+            return { thread_id: payload?.threadId ?? payload?.thread_id ?? null, prompts: [], error: err?.message || String(err) };
+        }
+    });
     ipcMain.handle('agent-external-runtime-migration-status', async () => sendAgentQuery({ type: 'external-runtime-migration-status' }, 'external-runtime-migration', 15000));
     ipcMain.handle('agent-external-runtime-migration-preview', async (_event, runtime, configPath) => sendAgentQuery({
         type: 'external-runtime-migration-preview',

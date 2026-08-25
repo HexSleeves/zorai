@@ -6,6 +6,7 @@ import { getAgentBridge, shouldUseDaemonRuntime } from "@/lib/agentDaemonConfig"
 import { provisionAgentWorkspaceTerminals, provisionTerminalPaneInWorkspace, resolvePaneSessionId } from "@/lib/agentWorkspace";
 import { startGoalRun, goalRunSupportAvailable, type GoalRun } from "@/lib/goalRuns";
 import { useWorkspaceStore } from "@/lib/workspaceStore";
+import { useWorkspaceContextStore } from "@/lib/workspaceContextStore";
 import { appendDaemonSystemMessage, normalizeBridgePayload, reloadDaemonThreadIntoLocalState } from "./daemonHelpers";
 import { parseLeadingAgentDirective, type AgentDirective } from "./agentDirective";
 import { builtinAgentSetupCandidate, isBuiltinPersonaSetupError } from "./builtinAgentSetupPreflight";
@@ -434,10 +435,13 @@ export function useDaemonAgentActions({
       }
 
       let threadId = activeThreadId || daemonLocalThreadRef.current;
+      const boundWorkspaceRoot = threadId
+        ? useWorkspaceContextStore.getState().byThreadId[threadId]?.root ?? null
+        : null;
       if (!threadId) {
         const provision = await provisionAgentWorkspaceTerminals({
           title: text.slice(0, 50) || "Agent Conversation",
-          cwd: activeWorkspace?.cwd ?? null,
+          cwd: boundWorkspaceRoot ?? activeWorkspace?.cwd ?? null,
         });
         threadId = createThread({
           workspaceId: provision?.workspaceId ?? activeWorkspace?.id ?? null,
@@ -454,14 +458,14 @@ export function useDaemonAgentActions({
         const pane = await provisionTerminalPaneInWorkspace({
           workspaceId: thread.workspaceId,
           paneName: "Coordinator",
-          cwd: activeWorkspace?.cwd ?? null,
+          cwd: boundWorkspaceRoot ?? activeWorkspace?.cwd ?? null,
           reusePrimaryPane: true,
         });
         preferredSessionId = pane?.sessionId ?? null;
       } else if (!preferredSessionId) {
         const provision = await provisionAgentWorkspaceTerminals({
           title: thread?.title || text.slice(0, 50) || "Agent Conversation",
-          cwd: activeWorkspace?.cwd ?? null,
+          cwd: boundWorkspaceRoot ?? activeWorkspace?.cwd ?? null,
         });
         preferredSessionId = provision?.coordinatorSessionId ?? null;
       }
@@ -529,6 +533,22 @@ export function useDaemonAgentActions({
       }
 
       const targetAgentId = resolveNewThreadTargetAgent(thread, daemonThreadId);
+      const workspaceContext = useWorkspaceContextStore.getState().byThreadId[threadId];
+      if (workspaceContext && zorai.agentSetThreadWorkspaceContext) {
+        await zorai.agentSetThreadWorkspaceContext(daemonThreadId || threadId, workspaceContext);
+      }
+      if (
+        !daemonThreadId
+        && zorai.agentSetThreadExecutionProfile
+        && (thread?.profileProvider || thread?.profileModel)
+      ) {
+        await zorai.agentSetThreadExecutionProfile(threadId, {
+          provider: thread.profileProvider ?? null,
+          model: thread.profileModel ?? null,
+          reasoning_effort: thread.profileReasoningEffort ?? null,
+          context_window_tokens: thread.profileContextWindowTokens ?? null,
+        });
+      }
       await sendAgentMessage(
         daemonThreadId || threadId,
         text,
@@ -606,6 +626,9 @@ export function useDaemonAgentActions({
       title: goal.slice(0, 72),
       priority: "normal",
       threadId: effectiveThreadId,
+      targetAgentId: useAgentStore.getState().threads.find((thread) => thread.id === threadId)?.targetAgentId
+        ?? useAgentStore.getState().threads.find((thread) => thread.id === threadId)?.agent_name
+        ?? null,
       sessionId: provision?.coordinatorSessionId ?? null,
     });
 

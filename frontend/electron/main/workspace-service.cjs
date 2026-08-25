@@ -1,0 +1,751 @@
+const crypto = require('crypto');
+const fs = require('fs');
+const path = require('path');
+const { execFile, spawn } = require('child_process');
+const { promisify } = require('util');
+
+const execFileAsync = promisify(execFile);
+const DEFAULT_MAX_FILE_BYTES = 2 * 1024 * 1024;
+const GIT_MAX_BUFFER = 8 * 1024 * 1024;
+const IGNORED_DIRECTORY_NAMES = new Set([
+    '.git', 'node_modules', 'target', 'dist', 'build', '.venv', '__pycache__', '.next', '.cache',
+]);
+
+function workspaceError(code, message, details = {}) {
+    const error = new Error(message);
+    error.code = code;
+    Object.assign(error, details);
+    return error;
+}
+
+function sha256(content) {
+    return crypto.createHash('sha256').update(content).digest('hex');
+}
+
+function isWithinRoot(root, target) {
+    const relative = path.relative(root, target);
+    return relative === '' || (!relative.startsWith(`..${path.sep}`) && relative !== '..' && !path.isAbsolute(relative));
+}
+
+function canonicalWorkspaceRoot(rootPath) {
+    if (typeof rootPath !== 'string' || !rootPath.trim()) {
+        throw workspaceError('WORKSPACE_ROOT_REQUIRED', 'A workspace root is required.');
+    }
+    const resolved = path.resolve(rootPath.trim().replace(/^~(?=$|[\\/])/, require('os').homedir()));
+    let canonical;
+    try {
+        canonical = fs.realpathSync.native(resolved);
+    } catch {
+        throw workspaceError('WORKSPACE_ROOT_NOT_FOUND', `Workspace root does not exist: ${resolved}`);
+    }
+    if (!fs.statSync(canonical).isDirectory()) {
+        throw workspaceError('WORKSPACE_ROOT_NOT_DIRECTORY', `Workspace root is not a directory: ${canonical}`);
+    }
+    return canonical;
+}
+
+function resolveWorkspacePath(rootPath, relativePath = '', { allowMissing = false } = {}) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    if (typeof relativePath !== 'string' || path.isAbsolute(relativePath)) {
+        throw workspaceError('WORKSPACE_PATH_INVALID', 'Workspace paths must be relative.');
+    }
+    const normalized = path.normalize(relativePath || '.');
+    const candidate = path.resolve(root, normalized);
+    if (!isWithinRoot(root, candidate)) {
+        throw workspaceError('WORKSPACE_PATH_ESCAPE', `Path escapes workspace root: ${relativePath}`);
+    }
+
+    if (fs.existsSync(candidate)) {
+        const canonical = fs.realpathSync.native(candidate);
+        if (!isWithinRoot(root, canonical)) {
+            throw workspaceError('WORKSPACE_SYMLINK_ESCAPE', `Symlink escapes workspace root: ${relativePath}`);
+        }
+        return { root, absolutePath: canonical, relativePath: path.relative(root, canonical) };
+    }
+    if (!allowMissing) {
+        throw workspaceError('WORKSPACE_PATH_NOT_FOUND', `Workspace path does not exist: ${relativePath}`);
+    }
+
+    let existingParent = path.dirname(candidate);
+    while (!fs.existsSync(existingParent)) {
+        const next = path.dirname(existingParent);
+        if (next === existingParent) break;
+        existingParent = next;
+    }
+    const canonicalParent = fs.realpathSync.native(existingParent);
+    if (!isWithinRoot(root, canonicalParent)) {
+        throw workspaceError('WORKSPACE_SYMLINK_ESCAPE', `Parent symlink escapes workspace root: ${relativePath}`);
+    }
+    return { root, absolutePath: candidate, relativePath: path.relative(root, candidate) };
+}
+
+const LANGUAGE_BY_EXTENSION = {
+        '.c': 'c', '.h': 'c', '.cc': 'cpp', '.cpp': 'cpp', '.cxx': 'cpp', '.hpp': 'cpp', '.cs': 'csharp',
+        '.css': 'css', '.scss': 'scss', '.sass': 'scss', '.less': 'less', '.dart': 'dart', '.ex': 'elixir', '.exs': 'elixir',
+        '.fs': 'fsharp', '.fsx': 'fsharp', '.go': 'go', '.graphql': 'graphql', '.gql': 'graphql', '.groovy': 'java',
+        '.html': 'html', '.htm': 'html', '.java': 'java', '.js': 'javascript', '.mjs': 'javascript', '.cjs': 'javascript',
+        '.jsx': 'javascript', '.json': 'json', '.jsonc': 'json', '.kt': 'kotlin', '.kts': 'kotlin', '.lua': 'lua',
+        '.md': 'markdown', '.mdx': 'mdx', '.php': 'php', '.pl': 'perl', '.proto': 'proto', '.py': 'python', '.r': 'r',
+        '.rb': 'ruby', '.rs': 'rust', '.sh': 'shell', '.bash': 'shell', '.zsh': 'shell', '.sql': 'sql', '.swift': 'swift',
+        '.svelte': 'html', '.tf': 'hcl', '.tfvars': 'hcl', '.toml': 'ini', '.ts': 'typescript', '.mts': 'typescript',
+        '.cts': 'typescript', '.tsx': 'typescript', '.vue': 'html', '.xml': 'xml', '.yaml': 'yaml', '.yml': 'yaml', '.zig': 'cpp',
+    };
+const LANGUAGE_BY_NAME = {
+    dockerfile: 'dockerfile', containerfile: 'dockerfile', makefile: 'shell', gnumakefile: 'shell',
+    rakefile: 'ruby', gemfile: 'ruby', guardfile: 'ruby', procfile: 'shell',
+    '.bashrc': 'shell', '.bash_profile': 'shell', '.zshrc': 'shell', '.profile': 'shell',
+    '.editorconfig': 'ini', '.npmrc': 'ini', '.prettierrc': 'json', '.eslintrc': 'json',
+    'tsconfig.json': 'json', 'jsconfig.json': 'json', 'deno.json': 'json', 'deno.jsonc': 'json',
+};
+
+function languageForPath(filePath) {
+    const name = path.basename(filePath).toLowerCase();
+    return LANGUAGE_BY_NAME[name] || LANGUAGE_BY_EXTENSION[path.extname(name)] || 'plaintext';
+}
+
+function isProbablyBinary(buffer) {
+    const sample = buffer.subarray(0, Math.min(buffer.length, 8192));
+    return sample.includes(0);
+}
+
+async function openWorkspace(rootPath) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    return {
+        root,
+        name: path.basename(root),
+        gitRoot,
+        isGitRepository: gitRoot === root,
+    };
+}
+
+async function listWorkspaceDirectory(rootPath, relativePath = '', options = {}) {
+    const resolved = resolveWorkspacePath(rootPath, relativePath);
+    const stats = fs.statSync(resolved.absolutePath);
+    if (!stats.isDirectory()) throw workspaceError('WORKSPACE_NOT_DIRECTORY', `${relativePath} is not a directory.`);
+    const includeIgnored = options.includeIgnored === true;
+    const entries = await fs.promises.readdir(resolved.absolutePath, { withFileTypes: true });
+    return entries
+        .filter((entry) => includeIgnored || !IGNORED_DIRECTORY_NAMES.has(entry.name))
+        .map((entry) => {
+            const absolutePath = path.join(resolved.absolutePath, entry.name);
+            let itemStats = null;
+            try { itemStats = fs.statSync(absolutePath); } catch { itemStats = null; }
+            return {
+                name: entry.name,
+                path: path.relative(resolved.root, absolutePath),
+                isDirectory: entry.isDirectory(),
+                isSymbolicLink: entry.isSymbolicLink(),
+                sizeBytes: itemStats?.size ?? null,
+                modifiedAt: itemStats?.mtimeMs ?? null,
+            };
+        })
+        .sort((a, b) => Number(b.isDirectory) - Number(a.isDirectory) || a.name.localeCompare(b.name));
+}
+
+async function statWorkspaceFile(rootPath, relativePath) {
+    const resolved = resolveWorkspacePath(rootPath, relativePath);
+    const stats = await fs.promises.stat(resolved.absolutePath);
+    if (!stats.isFile()) throw workspaceError('WORKSPACE_NOT_FILE', `${relativePath} is not a file.`);
+    return { path: resolved.relativePath, sizeBytes: stats.size, modifiedAt: stats.mtimeMs };
+}
+
+async function readWorkspaceFile(rootPath, relativePath, options = {}) {
+    const resolved = resolveWorkspacePath(rootPath, relativePath);
+    const stats = await fs.promises.stat(resolved.absolutePath);
+    if (!stats.isFile()) throw workspaceError('WORKSPACE_NOT_FILE', `${relativePath} is not a file.`);
+    const maxBytes = Math.max(1, Math.min(Number(options.maxBytes) || DEFAULT_MAX_FILE_BYTES, 100 * 1024 * 1024));
+    if (stats.size > maxBytes) {
+        throw workspaceError('WORKSPACE_FILE_TOO_LARGE', `File is ${stats.size} bytes; limit is ${maxBytes}.`, { sizeBytes: stats.size, maxBytes });
+    }
+    const buffer = await fs.promises.readFile(resolved.absolutePath);
+    if (isProbablyBinary(buffer)) {
+        throw workspaceError('WORKSPACE_BINARY_FILE', 'Binary files cannot be opened in the text editor.');
+    }
+    const content = buffer.toString('utf8');
+    return {
+        path: resolved.relativePath,
+        content,
+        hash: sha256(buffer),
+        sizeBytes: buffer.length,
+        modifiedAt: stats.mtimeMs,
+        language: languageForPath(resolved.absolutePath),
+    };
+}
+
+async function writeWorkspaceFile(rootPath, relativePath, content, expectedHash = null) {
+    if (typeof content !== 'string') throw workspaceError('WORKSPACE_CONTENT_INVALID', 'File content must be text.');
+    const resolved = resolveWorkspacePath(rootPath, relativePath, { allowMissing: true });
+    let currentHash = null;
+    if (fs.existsSync(resolved.absolutePath)) {
+        const current = await fs.promises.readFile(resolved.absolutePath);
+        currentHash = sha256(current);
+        if (expectedHash !== null && expectedHash !== currentHash) {
+            throw workspaceError('WORKSPACE_WRITE_CONFLICT', 'File changed since it was opened.', { currentHash, expectedHash });
+        }
+    } else if (expectedHash !== null) {
+        throw workspaceError('WORKSPACE_WRITE_CONFLICT', 'File was removed since it was opened.', { currentHash: null, expectedHash });
+    }
+    await fs.promises.mkdir(path.dirname(resolved.absolutePath), { recursive: true });
+    const tempPath = path.join(path.dirname(resolved.absolutePath), `.${path.basename(resolved.absolutePath)}.zorai-${process.pid}-${Date.now()}.tmp`);
+    try {
+        await fs.promises.writeFile(tempPath, content, { encoding: 'utf8', flag: 'wx' });
+        await fs.promises.rename(tempPath, resolved.absolutePath);
+    } finally {
+        await fs.promises.rm(tempPath, { force: true }).catch(() => {});
+    }
+    return readWorkspaceFile(resolved.root, resolved.relativePath, { maxBytes: Math.max(DEFAULT_MAX_FILE_BYTES, Buffer.byteLength(content)) });
+}
+
+async function createWorkspaceDirectory(rootPath, relativePath) {
+    const resolved = resolveWorkspacePath(rootPath, relativePath, { allowMissing: true });
+    await fs.promises.mkdir(resolved.absolutePath, { recursive: false });
+    return { path: resolved.relativePath };
+}
+
+async function renameWorkspacePath(rootPath, fromRelativePath, toRelativePath) {
+    const from = resolveWorkspacePath(rootPath, fromRelativePath);
+    const to = resolveWorkspacePath(rootPath, toRelativePath, { allowMissing: true });
+    if (from.root !== to.root) throw workspaceError('WORKSPACE_ROOT_MISMATCH', 'Rename must remain in one workspace.');
+    await fs.promises.rename(from.absolutePath, to.absolutePath);
+    return { from: from.relativePath, to: to.relativePath };
+}
+
+async function deleteWorkspacePath(rootPath, relativePath, options = {}) {
+    const resolved = resolveWorkspacePath(rootPath, relativePath);
+    if (!resolved.relativePath) throw workspaceError('WORKSPACE_DELETE_ROOT', 'The workspace root cannot be deleted.');
+    const stats = await fs.promises.stat(resolved.absolutePath);
+    if (stats.isDirectory() && options.recursive !== true) {
+        throw workspaceError('WORKSPACE_RECURSIVE_REQUIRED', 'Deleting a directory requires recursive confirmation.');
+    }
+    await fs.promises.rm(resolved.absolutePath, { recursive: options.recursive === true, force: false });
+    return true;
+}
+
+async function resolveGitRoot(targetPath) {
+    try {
+        const { stdout } = await execFileAsync('git', ['rev-parse', '--show-toplevel'], { cwd: targetPath, encoding: 'utf8', timeout: 5000 });
+        return fs.realpathSync.native(stdout.trim());
+    } catch { return null; }
+}
+
+async function searchWorkspace(rootPath, query, options = {}) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const needle = typeof query === 'string' ? query.trim() : '';
+    if (!needle) return [];
+    const caseSensitive = options.caseSensitive === true;
+    const comparableNeedle = caseSensitive ? needle : needle.toLowerCase();
+    const maxResults = Math.max(1, Math.min(Number(options.maxResults) || 100, 500));
+    const maxFiles = Math.max(1, Math.min(Number(options.maxFiles) || 5000, 20000));
+    const results = [];
+    const pending = [root];
+    let visitedFiles = 0;
+
+    while (pending.length > 0 && results.length < maxResults && visitedFiles < maxFiles) {
+        const directory = pending.pop();
+        let entries;
+        try { entries = await fs.promises.readdir(directory, { withFileTypes: true }); } catch { continue; }
+        for (const entry of entries) {
+            if (results.length >= maxResults || visitedFiles >= maxFiles) break;
+            if (IGNORED_DIRECTORY_NAMES.has(entry.name) || entry.isSymbolicLink()) continue;
+            const absolutePath = path.join(directory, entry.name);
+            if (entry.isDirectory()) {
+                pending.push(absolutePath);
+                continue;
+            }
+            if (!entry.isFile()) continue;
+            visitedFiles += 1;
+            let stats;
+            try { stats = await fs.promises.stat(absolutePath); } catch { continue; }
+            if (stats.size > 1024 * 1024) continue;
+            let buffer;
+            try { buffer = await fs.promises.readFile(absolutePath); } catch { continue; }
+            if (isProbablyBinary(buffer)) continue;
+            const lines = buffer.toString('utf8').split(/\r?\n/);
+            for (let lineIndex = 0; lineIndex < lines.length && results.length < maxResults; lineIndex += 1) {
+                const comparableLine = caseSensitive ? lines[lineIndex] : lines[lineIndex].toLowerCase();
+                const columnIndex = comparableLine.indexOf(comparableNeedle);
+                if (columnIndex < 0) continue;
+                results.push({
+                    path: path.relative(root, absolutePath),
+                    line: lineIndex + 1,
+                    column: columnIndex + 1,
+                    preview: lines[lineIndex].trim().slice(0, 240),
+                });
+            }
+        }
+    }
+    return results;
+}
+
+async function workspaceGitStatus(rootPath) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot || !isWithinRoot(gitRoot, root)) return [];
+    const { stdout } = await execFileAsync('git', ['status', '--porcelain=v1', '-z', '--untracked-files=all'], {
+        cwd: root, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER,
+    });
+    const records = stdout.split('\0').filter(Boolean);
+    const result = [];
+    for (let index = 0; index < records.length; index += 1) {
+        const record = records[index];
+        const indexStatus = record[0];
+        const worktreeStatus = record[1];
+        let filePath = record.slice(3);
+        let previousPath = null;
+        if (indexStatus === 'R' || indexStatus === 'C') {
+            previousPath = filePath;
+            filePath = records[index + 1] || filePath;
+            index += 1;
+        }
+        result.push({ path: filePath, previousPath, indexStatus, worktreeStatus });
+    }
+    return result;
+}
+
+function parseGitWorktreeList(output) {
+    const worktrees = [];
+    let current = null;
+    for (const line of String(output || '').split(/\r?\n/)) {
+        if (line.startsWith('worktree ')) {
+            if (current) worktrees.push(current);
+            current = { path: line.slice('worktree '.length), head: null, branch: null, detached: false, bare: false, locked: false, prunable: false };
+        } else if (current && line.startsWith('HEAD ')) current.head = line.slice(5);
+        else if (current && line.startsWith('branch ')) current.branch = line.slice(7).replace(/^refs\/heads\//, '');
+        else if (current && line === 'detached') current.detached = true;
+        else if (current && line === 'bare') current.bare = true;
+        else if (current && line.startsWith('locked')) current.locked = true;
+        else if (current && line.startsWith('prunable')) current.prunable = true;
+    }
+    if (current) worktrees.push(current);
+    return worktrees;
+}
+
+async function workspaceGitListWorktrees(rootPath) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) return [];
+    const { stdout } = await execFileAsync('git', ['worktree', 'list', '--porcelain'], { cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER });
+    return parseGitWorktreeList(stdout);
+}
+
+async function workspaceGitCreateWorktree(rootPath, options = {}) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) throw workspaceError('WORKSPACE_NOT_GIT_REPOSITORY', 'Workspace is not inside a Git repository.');
+    const name = typeof options.name === 'string' ? options.name.trim() : '';
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$/.test(name)) {
+        throw workspaceError('WORKSPACE_WORKTREE_NAME_INVALID', 'Worktree name must use letters, numbers, dots, underscores, or dashes.');
+    }
+    const branch = typeof options.branch === 'string' ? options.branch.trim() : '';
+    if (!branch) throw workspaceError('WORKSPACE_WORKTREE_BRANCH_REQUIRED', 'A branch name is required.');
+    await execFileAsync('git', ['check-ref-format', '--branch', branch], { cwd: gitRoot, encoding: 'utf8', timeout: 5000 })
+        .catch(() => { throw workspaceError('WORKSPACE_WORKTREE_BRANCH_INVALID', `Invalid branch name: ${branch}`); });
+    const baseRef = typeof options.baseRef === 'string' && options.baseRef.trim() ? options.baseRef.trim() : 'HEAD';
+    await execFileAsync('git', ['rev-parse', '--verify', `${baseRef}^{commit}`], { cwd: gitRoot, encoding: 'utf8', timeout: 5000 })
+        .catch(() => { throw workspaceError('WORKSPACE_WORKTREE_BASE_INVALID', `Base revision does not resolve to a commit: ${baseRef}`); });
+    const container = path.join(path.dirname(gitRoot), `${path.basename(gitRoot)}-worktrees`);
+    await fs.promises.mkdir(container, { recursive: true });
+    const destination = path.join(container, name);
+    if (fs.existsSync(destination)) throw workspaceError('WORKSPACE_WORKTREE_EXISTS', `Worktree destination already exists: ${destination}`);
+    const branchExists = await execFileAsync('git', ['show-ref', '--verify', '--quiet', `refs/heads/${branch}`], { cwd: gitRoot, timeout: 5000 })
+        .then(() => true).catch(() => false);
+    const args = branchExists
+        ? ['worktree', 'add', destination, branch]
+        : ['worktree', 'add', '-b', branch, destination, baseRef];
+    await execFileAsync('git', args, { cwd: gitRoot, encoding: 'utf8', timeout: 60000, maxBuffer: GIT_MAX_BUFFER })
+        .catch((error) => { throw workspaceError('WORKSPACE_WORKTREE_CREATE_FAILED', error?.stderr?.trim() || error?.message || 'Git worktree creation failed.'); });
+    return { root: fs.realpathSync.native(destination), branch, baseRef, worktrees: await workspaceGitListWorktrees(gitRoot) };
+}
+
+async function resolveManagedWorktree(repoRoot, worktreePath) {
+    const candidate = canonicalWorkspaceRoot(worktreePath);
+    const containerPath = path.join(path.dirname(repoRoot), `${path.basename(repoRoot)}-worktrees`);
+    if (!fs.existsSync(containerPath)) throw workspaceError('WORKSPACE_WORKTREE_REMOVE_SCOPE', 'Managed worktree container does not exist.');
+    const container = fs.realpathSync.native(containerPath);
+    if (!isWithinRoot(container, candidate) || candidate === container || candidate === repoRoot) {
+        throw workspaceError('WORKSPACE_WORKTREE_REMOVE_SCOPE', 'Only sibling worktrees in the managed worktree container are allowed.');
+    }
+    const worktrees = await workspaceGitListWorktrees(repoRoot);
+    const registered = worktrees.find((entry) => path.resolve(entry.path) === candidate);
+    if (!registered) throw workspaceError('WORKSPACE_WORKTREE_NOT_REGISTERED', 'The selected directory is not a registered worktree for this repository.');
+    return { candidate, registered, worktrees };
+}
+
+async function workspaceGitReviewWorktree(rootPath, worktreePath) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) throw workspaceError('WORKSPACE_NOT_GIT_REPOSITORY', 'Workspace is not inside a Git repository.');
+    const { candidate, registered } = await resolveManagedWorktree(gitRoot, worktreePath);
+    const sourceStatus = await execFileAsync('git', ['status', '--porcelain'], { cwd: candidate, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER });
+    const targetStatus = await execFileAsync('git', ['status', '--porcelain'], { cwd: root, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER });
+    const sourceHead = registered.head || await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: candidate, encoding: 'utf8', timeout: 5000 }).then(({ stdout }) => stdout.trim());
+    const targetHead = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8', timeout: 5000 }).then(({ stdout }) => stdout.trim());
+    const mergeBase = await execFileAsync('git', ['merge-base', targetHead, sourceHead], { cwd: gitRoot, encoding: 'utf8', timeout: 5000 }).then(({ stdout }) => stdout.trim());
+    const commitsRaw = await execFileAsync('git', ['log', '--reverse', '--format=%H%x00%s', `${targetHead}..${sourceHead}`], { cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER }).then(({ stdout }) => stdout);
+    const commits = commitsRaw.split('\n').filter(Boolean).map((line) => {
+        const separator = line.indexOf('\0');
+        return { hash: separator >= 0 ? line.slice(0, separator) : line, subject: separator >= 0 ? line.slice(separator + 1) : '' };
+    });
+    const filesRaw = await execFileAsync('git', ['diff', '--name-status', `${mergeBase}..${sourceHead}`], { cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER }).then(({ stdout }) => stdout);
+    const files = filesRaw.split(/\r?\n/).filter(Boolean).map((line) => {
+        const [status, ...parts] = line.split('\t');
+        return { status, path: parts[parts.length - 1] || '', previousPath: parts.length > 1 ? parts[0] : null };
+    });
+    return {
+        source: { path: candidate, branch: registered.branch, head: sourceHead, clean: !sourceStatus.stdout.trim() },
+        target: { path: root, head: targetHead, clean: !targetStatus.stdout.trim() },
+        mergeBase,
+        commits,
+        files,
+        canIntegrate: !sourceStatus.stdout.trim() && !targetStatus.stdout.trim() && commits.length > 0,
+    };
+}
+
+async function workspaceGitIntegrateWorktree(rootPath, worktreePath, expectedCommitHashes) {
+    const review = await workspaceGitReviewWorktree(rootPath, worktreePath);
+    if (!review.source.clean) throw workspaceError('WORKSPACE_WORKTREE_DIRTY', 'The isolated worktree has uncommitted changes. Commit or discard them before integration.');
+    if (!review.target.clean) throw workspaceError('WORKSPACE_TARGET_DIRTY', 'The target worktree has uncommitted changes. Commit or stash them before integration.');
+    const expected = Array.isArray(expectedCommitHashes) ? expectedCommitHashes.map(String) : [];
+    const actual = review.commits.map((commit) => commit.hash);
+    if (expected.length === 0 || expected.length !== actual.length || expected.some((hash, index) => hash !== actual[index])) {
+        throw workspaceError('WORKSPACE_INTEGRATION_STALE', 'The isolated commit list changed. Refresh the review before integrating.');
+    }
+    try {
+        await execFileAsync('git', ['cherry-pick', ...actual], { cwd: review.target.path, encoding: 'utf8', timeout: 120000, maxBuffer: GIT_MAX_BUFFER });
+    } catch (error) {
+        await execFileAsync('git', ['cherry-pick', '--abort'], { cwd: review.target.path, encoding: 'utf8', timeout: 30000, maxBuffer: GIT_MAX_BUFFER }).catch(() => {});
+        throw workspaceError('WORKSPACE_INTEGRATION_CONFLICT', error?.stderr?.trim() || error?.message || 'Cherry-pick conflicted and was aborted.');
+    }
+    return {
+        integratedCommits: actual,
+        overview: await workspaceGitOverview(review.target.path),
+        status: await workspaceGitStatus(review.target.path),
+        review: await workspaceGitReviewWorktree(review.target.path, worktreePath),
+    };
+}
+
+async function workspaceGitRemoveWorktree(rootPath, worktreePath) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) throw workspaceError('WORKSPACE_NOT_GIT_REPOSITORY', 'Workspace is not inside a Git repository.');
+    const { candidate } = await resolveManagedWorktree(gitRoot, worktreePath);
+    const { stdout: status } = await execFileAsync('git', ['status', '--porcelain'], { cwd: candidate, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER });
+    if (status.trim()) throw workspaceError('WORKSPACE_WORKTREE_DIRTY', 'The worktree has uncommitted changes and cannot be removed.');
+    await execFileAsync('git', ['worktree', 'remove', candidate], { cwd: gitRoot, encoding: 'utf8', timeout: 60000, maxBuffer: GIT_MAX_BUFFER })
+        .catch((error) => { throw workspaceError('WORKSPACE_WORKTREE_REMOVE_FAILED', error?.stderr?.trim() || error?.message || 'Git worktree removal failed.'); });
+    return workspaceGitListWorktrees(gitRoot);
+}
+
+async function workspaceGitHistory(rootPath, options = {}) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) return [];
+    const limit = Math.max(1, Math.min(Number(options.limit) || 50, 200));
+    const { stdout } = await execFileAsync('git', ['log', `-${limit}`, '--date=iso-strict', '--format=%H%x00%h%x00%an%x00%ad%x00%s'], { cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER });
+    return stdout.split(/\r?\n/).filter(Boolean).map((line) => {
+        const [hash, shortHash, author, date, subject] = line.split('\0');
+        return { hash, shortHash, author, date, subject };
+    });
+}
+
+async function workspaceGitCommitDetail(rootPath, commitHash) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) throw workspaceError('WORKSPACE_NOT_GIT_REPOSITORY', 'Workspace is not inside a Git repository.');
+    const normalized = typeof commitHash === 'string' ? commitHash.trim() : '';
+    if (!/^[0-9a-fA-F]{7,64}$/.test(normalized)) throw workspaceError('WORKSPACE_COMMIT_INVALID', 'Invalid commit hash.');
+    const { stdout: metadata } = await execFileAsync('git', ['show', '-s', '--date=iso-strict', '--format=%H%x00%an%x00%ad%x00%B', normalized], { cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER });
+    const firstLineEnd = metadata.indexOf('\n');
+    const header = firstLineEnd >= 0 ? metadata.slice(0, firstLineEnd) : metadata;
+    const body = firstLineEnd >= 0 ? metadata.slice(firstLineEnd + 1).trim() : '';
+    const [hash, author, date, subject] = header.split('\0');
+    const { stdout: filesRaw } = await execFileAsync('git', ['show', '--name-status', '--format=', normalized], { cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER });
+    const files = filesRaw.split(/\r?\n/).filter(Boolean).map((line) => { const [status, ...parts] = line.split('\t'); return { status, path: parts[parts.length - 1] || '' }; });
+    return { hash, author, date, subject, body, files };
+}
+
+async function workspaceGitConflicts(rootPath) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) return [];
+    const { stdout } = await execFileAsync('git', ['diff', '--name-only', '--diff-filter=U'], { cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER });
+    return stdout.split(/\r?\n/).filter(Boolean).map((filePath) => ({ path: filePath }));
+}
+
+async function workspaceGitOverview(rootPath) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) return { isRepository: false, root, gitRoot: null, branch: null, upstream: null, ahead: 0, behind: 0, stagedFiles: 0, unstagedFiles: 0 };
+    const branch = await execFileAsync('git', ['branch', '--show-current'], { cwd: gitRoot, encoding: 'utf8', timeout: 5000 })
+        .then(({ stdout }) => stdout.trim() || null).catch(() => null);
+    const upstream = await execFileAsync('git', ['rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}'], { cwd: gitRoot, encoding: 'utf8', timeout: 5000 })
+        .then(({ stdout }) => stdout.trim() || null).catch(() => null);
+    let ahead = 0;
+    let behind = 0;
+    if (upstream) {
+        const counts = await execFileAsync('git', ['rev-list', '--left-right', '--count', `HEAD...${upstream}`], { cwd: gitRoot, encoding: 'utf8', timeout: 5000 })
+            .then(({ stdout }) => stdout.trim().split(/\s+/).map(Number)).catch(() => [0, 0]);
+        ahead = Number.isFinite(counts[0]) ? counts[0] : 0;
+        behind = Number.isFinite(counts[1]) ? counts[1] : 0;
+    }
+    const status = await workspaceGitStatus(root);
+    return {
+        isRepository: true,
+        root,
+        gitRoot,
+        branch,
+        upstream,
+        ahead,
+        behind,
+        stagedFiles: status.filter((entry) => entry.indexStatus.trim() && entry.indexStatus !== '?').length,
+        unstagedFiles: status.filter((entry) => entry.worktreeStatus.trim() || entry.indexStatus === '?').length,
+    };
+}
+
+async function workspaceGitCommit(rootPath, message) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) throw workspaceError('WORKSPACE_NOT_GIT_REPOSITORY', 'Workspace is not inside a Git repository.');
+    const normalizedMessage = typeof message === 'string' ? message.trim() : '';
+    if (!normalizedMessage) throw workspaceError('WORKSPACE_COMMIT_MESSAGE_REQUIRED', 'A commit message is required.');
+    if (normalizedMessage.length > 4096) throw workspaceError('WORKSPACE_COMMIT_MESSAGE_TOO_LONG', 'Commit message exceeds 4096 characters.');
+    const status = await workspaceGitStatus(root);
+    if (!status.some((entry) => entry.indexStatus.trim() && entry.indexStatus !== '?')) {
+        throw workspaceError('WORKSPACE_NOTHING_STAGED', 'There are no staged changes to commit.');
+    }
+    await execFileAsync('git', ['commit', '-m', normalizedMessage], {
+        cwd: gitRoot, encoding: 'utf8', timeout: 30000, maxBuffer: GIT_MAX_BUFFER,
+    }).catch((error) => {
+        throw workspaceError('WORKSPACE_GIT_COMMIT_FAILED', error?.stderr?.trim() || error?.message || 'Git commit failed.');
+    });
+    const { stdout: commit } = await execFileAsync('git', ['rev-parse', 'HEAD'], { cwd: gitRoot, encoding: 'utf8', timeout: 5000 });
+    const { stdout: subject } = await execFileAsync('git', ['log', '-1', '--pretty=%s'], { cwd: gitRoot, encoding: 'utf8', timeout: 5000 });
+    return { commit: commit.trim(), subject: subject.trim(), overview: await workspaceGitOverview(root), status: await workspaceGitStatus(root) };
+}
+
+async function workspaceGitStage(rootPath, relativePath) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) throw workspaceError('WORKSPACE_NOT_GIT_REPOSITORY', 'Workspace is not inside a Git repository.');
+    const resolved = resolveWorkspacePath(root, relativePath, { allowMissing: true });
+    await execFileAsync('git', ['add', '--', path.relative(gitRoot, resolved.absolutePath)], {
+        cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER,
+    });
+    return workspaceGitStatus(root);
+}
+
+async function workspaceGitUnstage(rootPath, relativePath) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) throw workspaceError('WORKSPACE_NOT_GIT_REPOSITORY', 'Workspace is not inside a Git repository.');
+    const resolved = resolveWorkspacePath(root, relativePath, { allowMissing: true });
+    const gitPath = path.relative(gitRoot, resolved.absolutePath);
+    await execFileAsync('git', ['restore', '--staged', '--', gitPath], {
+        cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER,
+    }).catch(async () => {
+        await execFileAsync('git', ['reset', 'HEAD', '--', gitPath], {
+            cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER,
+        });
+    });
+    return workspaceGitStatus(root);
+}
+
+async function workspaceGitDiscard(rootPath, relativePath) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) throw workspaceError('WORKSPACE_NOT_GIT_REPOSITORY', 'Workspace is not inside a Git repository.');
+    const resolved = resolveWorkspacePath(root, relativePath, { allowMissing: true });
+    const gitPath = path.relative(gitRoot, resolved.absolutePath);
+    const tracked = await execFileAsync('git', ['ls-files', '--error-unmatch', '--', gitPath], {
+        cwd: gitRoot, encoding: 'utf8', timeout: 5000,
+    }).then(() => true).catch(() => false);
+    if (!tracked) {
+        throw workspaceError('WORKSPACE_DISCARD_UNTRACKED', 'Untracked files must be deleted explicitly; discard only restores tracked files.');
+    }
+    await execFileAsync('git', ['restore', '--worktree', '--', gitPath], {
+        cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER,
+    });
+    return workspaceGitStatus(root);
+}
+
+function runGitWithInput(args, cwd, input) {
+    return new Promise((resolve, reject) => {
+        const child = spawn('git', args, { cwd, windowsHide: true, stdio: ['pipe', 'pipe', 'pipe'] });
+        const stdout = [];
+        const stderr = [];
+        child.stdout.on('data', (chunk) => stdout.push(chunk));
+        child.stderr.on('data', (chunk) => stderr.push(chunk));
+        child.once('error', reject);
+        child.once('close', (code) => {
+            const output = Buffer.concat(stdout).toString('utf8');
+            const errorOutput = Buffer.concat(stderr).toString('utf8');
+            if (code === 0) {
+                resolve(output);
+                return;
+            }
+            reject(workspaceError('WORKSPACE_GIT_APPLY_FAILED', errorOutput.trim() || `git exited with ${code}`, { exitCode: code }));
+        });
+        child.stdin.end(input, 'utf8');
+    });
+}
+
+function parseUnifiedDiffHunks(diff, relativePath, staged) {
+    if (typeof diff !== 'string' || !diff.trim()) return [];
+    const lines = diff.split('\n');
+    const firstHunk = lines.findIndex((line) => line.startsWith('@@ '));
+    if (firstHunk < 0) return [];
+    const header = lines.slice(0, firstHunk).join('\n');
+    const hunks = [];
+    let index = firstHunk;
+    while (index < lines.length) {
+        if (!lines[index].startsWith('@@ ')) {
+            index += 1;
+            continue;
+        }
+        const hunkLines = [lines[index]];
+        const headerMatch = lines[index].match(/^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@(.*)$/);
+        index += 1;
+        while (index < lines.length && !lines[index].startsWith('@@ ')) {
+            hunkLines.push(lines[index]);
+            index += 1;
+        }
+        while (hunkLines.length > 1 && hunkLines[hunkLines.length - 1] === '') hunkLines.pop();
+        const patch = `${header}\n${hunkLines.join('\n')}\n`;
+        const body = hunkLines.slice(1);
+        const additions = body.filter((line) => line.startsWith('+') && !line.startsWith('+++')).length;
+        const deletions = body.filter((line) => line.startsWith('-') && !line.startsWith('---')).length;
+        hunks.push({
+            id: sha256(Buffer.from(patch, 'utf8')),
+            index: hunks.length,
+            path: relativePath,
+            staged: Boolean(staged),
+            header: hunkLines[0],
+            section: headerMatch?.[5]?.trim() || '',
+            oldStart: Number(headerMatch?.[1] || 0),
+            oldLines: Number(headerMatch?.[2] || 1),
+            newStart: Number(headerMatch?.[3] || 0),
+            newLines: Number(headerMatch?.[4] || 1),
+            additions,
+            deletions,
+            preview: body.slice(0, 12).join('\n'),
+            patch,
+        });
+    }
+    return hunks;
+}
+
+async function workspaceGitHunks(rootPath, relativePath, options = {}) {
+    const diff = await workspaceGitDiff(rootPath, relativePath, { staged: options.staged === true });
+    return parseUnifiedDiffHunks(diff, relativePath, options.staged === true);
+}
+
+async function workspaceGitApplyHunk(rootPath, relativePath, hunkId, action) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) throw workspaceError('WORKSPACE_NOT_GIT_REPOSITORY', 'Workspace is not inside a Git repository.');
+    resolveWorkspacePath(root, relativePath, { allowMissing: true });
+    if (!['stage', 'unstage', 'discard'].includes(action)) {
+        throw workspaceError('WORKSPACE_HUNK_ACTION_INVALID', `Unsupported hunk action: ${action}`);
+    }
+    const staged = action === 'unstage';
+    const hunks = await workspaceGitHunks(root, relativePath, { staged });
+    const hunk = hunks.find((candidate) => candidate.id === hunkId);
+    if (!hunk) {
+        throw workspaceError('WORKSPACE_HUNK_STALE', 'The selected hunk no longer matches the current Git diff. Refresh and try again.');
+    }
+    const args = ['apply', '--recount', '--whitespace=nowarn'];
+    if (action === 'stage' || action === 'unstage') args.push('--cached');
+    if (action === 'unstage' || action === 'discard') args.push('--reverse');
+    args.push('-');
+    await runGitWithInput(args, gitRoot, hunk.patch);
+    return {
+        status: await workspaceGitStatus(root),
+        hunks: await workspaceGitHunks(root, relativePath, { staged }),
+    };
+}
+
+function gitPathFromWorkspace(gitRoot, absolutePath) {
+    return path.relative(gitRoot, absolutePath).split(path.sep).join('/');
+}
+
+async function gitStdout(args, cwd) {
+    const { stdout } = await execFileAsync('git', args, {
+        cwd, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER,
+    }).catch((error) => ({ stdout: typeof error?.stdout === 'string' ? error.stdout : '' }));
+    return stdout;
+}
+
+async function workspaceGitShow(rootPath, relativePath, revision = 'HEAD') {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot || !relativePath) return '';
+    const resolved = resolveWorkspacePath(root, relativePath, { allowMissing: true });
+    return gitStdout(['show', `${revision}:${gitPathFromWorkspace(gitRoot, resolved.absolutePath)}`], gitRoot);
+}
+
+async function workspaceGitDiff(rootPath, relativePath = null, options = {}) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) return '';
+    const args = ['diff', '--no-ext-diff', '--no-color'];
+    if (options.againstHead === true || options.againstHead === true) args.push('HEAD');
+    else if (options.staged === true) args.push('--cached');
+    if (relativePath) {
+        const resolved = resolveWorkspacePath(root, relativePath, { allowMissing: true });
+        args.push('--', gitPathFromWorkspace(gitRoot, resolved.absolutePath));
+    }
+    let stdout = await gitStdout(args, gitRoot);
+    if (!stdout && relativePath && (options.includeUntracked === true || options.includeUntracked === true)) {
+        const statuses = await workspaceGitStatus(root);
+        const resolved = resolveWorkspacePath(root, relativePath, { allowMissing: true });
+        const relative = gitPathFromWorkspace(root, resolved.absolutePath);
+        const match = statuses.find((entry) => {
+            const statusPath = String(entry.path || '').split(path.sep).join('/');
+            return statusPath === relative || statusPath.endsWith(`/${relative}`) || relative.endsWith(`/${statusPath}`);
+        });
+        if (match && (match.worktreeStatus === '?' || match.indexStatus === '?')) {
+            stdout = await gitStdout(
+                ['diff', '--no-index', '--no-ext-diff', '--no-color', '--', '/dev/null', resolved.absolutePath],
+                gitRoot,
+            );
+        }
+    }
+    return stdout;
+}
+
+module.exports = {
+    canonicalWorkspaceRoot,
+    createWorkspaceDirectory,
+    deleteWorkspacePath,
+    isWithinRoot,
+    listWorkspaceDirectory,
+    openWorkspace,
+    readWorkspaceFile,
+    renameWorkspacePath,
+    resolveWorkspacePath,
+    searchWorkspace,
+    statWorkspaceFile,
+    sha256,
+    parseGitWorktreeList,
+    parseUnifiedDiffHunks,
+    workspaceGitApplyHunk,
+    workspaceGitCommit,
+    workspaceGitCommitDetail,
+    workspaceGitConflicts,
+    workspaceGitCreateWorktree,
+    workspaceGitDiff,
+    workspaceGitDiscard,
+    workspaceGitShow,
+    workspaceGitHunks,
+    workspaceGitHistory,
+    workspaceGitIntegrateWorktree,
+    workspaceGitListWorktrees,
+    workspaceGitOverview,
+    workspaceGitRemoveWorktree,
+    workspaceGitReviewWorktree,
+    workspaceGitStage,
+    workspaceGitStatus,
+    workspaceGitUnstage,
+    writeWorkspaceFile,
+};

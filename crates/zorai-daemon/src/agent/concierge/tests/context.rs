@@ -20,6 +20,7 @@ fn sample_goal_run(
         completed_at: None,
         thread_id: Some(format!("thread-{id}")),
         root_thread_id: None,
+        supervision_thread_id: None,
         active_thread_id: None,
         execution_thread_ids: Vec::new(),
         session_id: None,

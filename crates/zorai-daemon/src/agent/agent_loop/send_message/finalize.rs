@@ -453,11 +453,9 @@ impl<'a> SendMessageRunner<'a> {
                 })
                 .and_then(|message| message.upstream_message.clone())
         };
-        self.engine
-            .finish_stream_cancellation(&self.tid, self.stream_generation)
-            .await;
         let outcome = SendMessageOutcome {
             thread_id: self.tid,
+            stream_generation: self.stream_generation,
             interrupted_for_approval: self.interrupted_for_approval,
             terminated_for_budget: self.terminated_for_budget,
             subagent_report: self.subagent_report,
@@ -466,6 +464,11 @@ impl<'a> SendMessageRunner<'a> {
             fresh_runner_retry: self.fresh_runner_retry,
             handoff_restart: self.handoff_restart,
         };
+        if outcome.fresh_runner_retry.is_none() {
+            self.engine
+                .finish_stream_cancellation(&outcome.thread_id, outcome.stream_generation)
+                .await;
+        }
         if let Err(error) = Box::pin(
             self.engine
                 .flush_deferred_visible_thread_continuations(&outcome.thread_id),

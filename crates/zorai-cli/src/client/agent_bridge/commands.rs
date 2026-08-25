@@ -98,12 +98,14 @@ where
             thread_id,
             message_limit,
             message_offset,
+            collapse_tool_calls,
         } => {
             framed
                 .send(ClientMessage::AgentGetThread {
                     thread_id,
                     message_limit,
                     message_offset,
+                    collapse_tool_calls,
                 })
                 .await?;
         }
@@ -244,6 +246,7 @@ where
                     launch_assignments: Vec::new(),
                     autonomy_level,
                     client_surface: Some(zorai_protocol::ClientSurface::Electron),
+                    target_agent_id: None,
                     requires_approval,
                 })
                 .await?;
@@ -390,6 +393,37 @@ where
         AgentBridgeCommand::GetWorkContext { thread_id } => {
             framed
                 .send(ClientMessage::AgentGetWorkContext { thread_id })
+                .await?;
+        }
+        AgentBridgeCommand::GetFileOperationSnapshot { operation_id } => {
+            framed
+                .send(ClientMessage::AgentGetFileOperationSnapshot { operation_id })
+                .await?;
+        }
+        AgentBridgeCommand::RevertFileOperation { operation_id } => {
+            framed
+                .send(ClientMessage::AgentRevertFileOperation { operation_id })
+                .await?;
+        }
+        AgentBridgeCommand::GetThreadWorkspaceContext { thread_id } => {
+            framed
+                .send(ClientMessage::AgentGetThreadWorkspaceContext { thread_id })
+                .await?;
+        }
+        AgentBridgeCommand::SetThreadWorkspaceContext { thread_id, context } => {
+            framed
+                .send(ClientMessage::AgentSetThreadWorkspaceContext {
+                    thread_id,
+                    context_json: serde_json::to_string(&context)?,
+                })
+                .await?;
+        }
+        AgentBridgeCommand::SpawnSubagent { thread_id, args } => {
+            framed
+                .send(ClientMessage::AgentSpawnSubagent {
+                    thread_id,
+                    args_json: serde_json::to_string(&args)?,
+                })
                 .await?;
         }
         AgentBridgeCommand::GetGitDiff {
@@ -983,6 +1017,84 @@ where
                 .send(ClientMessage::AgentGetDivergentSession { session_id })
                 .await?;
         }
+        AgentBridgeCommand::EnqueuePrompt {
+            thread_id,
+            content,
+            content_blocks_json,
+            prompt_id,
+        } => {
+            framed
+                .send(ClientMessage::AgentEnqueuePrompt {
+                    thread_id,
+                    content,
+                    content_blocks_json,
+                    prompt_id,
+                })
+                .await?;
+        }
+        AgentBridgeCommand::ListPromptQueue { thread_id } => {
+            framed
+                .send(ClientMessage::AgentListPromptQueue { thread_id })
+                .await?;
+        }
+        AgentBridgeCommand::UpdateQueuedPrompt {
+            thread_id,
+            prompt_id,
+            content,
+            content_blocks_json,
+        } => {
+            framed
+                .send(ClientMessage::AgentUpdateQueuedPrompt {
+                    thread_id,
+                    prompt_id,
+                    content,
+                    content_blocks_json,
+                })
+                .await?;
+        }
+        AgentBridgeCommand::CancelQueuedPrompt {
+            thread_id,
+            prompt_id,
+        } => {
+            framed
+                .send(ClientMessage::AgentCancelQueuedPrompt {
+                    thread_id,
+                    prompt_id,
+                })
+                .await?;
+        }
+        AgentBridgeCommand::SendQueuedPromptNow {
+            thread_id,
+            prompt_id,
+        } => {
+            framed
+                .send(ClientMessage::AgentSendQueuedPromptNow {
+                    thread_id,
+                    prompt_id,
+                })
+                .await?;
+        }
+        AgentBridgeCommand::GetThreadExecutionProfile { thread_id } => {
+            framed
+                .send(ClientMessage::AgentGetThreadExecutionProfile { thread_id })
+                .await?;
+        }
+        AgentBridgeCommand::SetThreadExecutionProfile {
+            thread_id,
+            profile_json,
+        } => {
+            framed
+                .send(ClientMessage::AgentSetThreadExecutionProfile {
+                    thread_id,
+                    profile_json,
+                })
+                .await?;
+        }
+        AgentBridgeCommand::ForceCompact { thread_id } => {
+            framed
+                .send(ClientMessage::AgentForceCompact { thread_id })
+                .await?;
+        }
         AgentBridgeCommand::Shutdown => {
             framed.send(ClientMessage::AgentUnsubscribe).await?;
             return Ok(false);
@@ -1437,10 +1549,12 @@ mod tests {
                 thread_id,
                 message_limit,
                 message_offset,
+                collapse_tool_calls,
             } => {
                 assert_eq!(thread_id, "thread-1");
                 assert_eq!(message_limit, Some(50));
                 assert_eq!(message_offset, Some(100));
+                assert!(!collapse_tool_calls);
             }
             other => panic!("expected AgentGetThread, got {other:?}"),
         }
@@ -1496,6 +1610,7 @@ mod tests {
                 thread_id: "thread-1".to_string(),
                 message_limit: None,
                 message_offset: None,
+                collapse_tool_calls: false,
             })
             .await
             .expect("direct send should succeed");
@@ -1505,6 +1620,7 @@ mod tests {
                 thread_id,
                 message_limit,
                 message_offset,
+                ..
             })) => {
                 assert_eq!(thread_id, "thread-1");
                 assert!(message_limit.is_none());

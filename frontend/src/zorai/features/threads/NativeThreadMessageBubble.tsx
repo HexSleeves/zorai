@@ -1,4 +1,4 @@
-import { memo, useState } from "react";
+import { memo, useEffect, useState } from "react";
 import { assistantMessageHasVisibleContent } from "@/components/agent-chat-panel/chat-view/helpers";
 import { MarkdownContent } from "@/components/agent-chat-panel/chat-view/markdown";
 import type { AgentMessage } from "@/lib/agentStore";
@@ -129,7 +129,7 @@ export const NativeThreadMessageBubble = memo(function NativeThreadMessageBubble
             <MessageActionIcon kind={copied ? "copied" : "copy"} />
           </button>
         ) : null}
-        {isAssistant && onFeedback ? (
+        {isAssistant && onFeedback && !message.isStreaming ? (
           <>
             <button
               type="button"
@@ -210,15 +210,51 @@ export const NativeThreadMessageBubble = memo(function NativeThreadMessageBubble
   && previous.onDelete === next.onDelete
 ));
 
+function formatThoughtDuration(startedAt: number, now: number): string {
+  const seconds = Math.max(0, Math.round((now - startedAt) / 1000));
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) {
+    return `${minutes}m ${seconds % 60}s`;
+  }
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
 function ThreadReasoningBlock({ content, streaming }: { content: string; streaming: boolean }) {
   const [open, setOpen] = useState(false);
+  const [startedAt] = useState(() => Date.now());
+  const [now, setNow] = useState(() => Date.now());
+
+  useEffect(() => {
+    if (!streaming) {
+      return;
+    }
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [streaming]);
+
+  const durationText = streaming
+    ? formatThoughtDuration(startedAt, now)
+    : formatStaticThoughtDuration(content);
+
   return (
     <details
-      className="zorai-message__reasoning"
+      className={`zorai-message__reasoning ${streaming ? "zorai-message__reasoning--streaming" : ""}`}
+      data-streaming={streaming ? "true" : undefined}
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <summary className="zorai-message__reasoning-toggle">Reasoning</summary>
+      <summary className="zorai-message__reasoning-toggle">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />
+          <path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9L19 15z" />
+        </svg>
+        <span>Thought for {durationText || "a moment"}</span>
+        {streaming ? <span className="zorai-message__reasoning-pulse" aria-hidden="true" /> : null}
+      </summary>
       {open ? (
         <div>
           <MarkdownContent content={content} streaming={streaming} />
@@ -226,6 +262,19 @@ function ThreadReasoningBlock({ content, streaming }: { content: string; streami
       ) : null}
     </details>
   );
+}
+
+function formatStaticThoughtDuration(content: string): string {
+  const words = content.trim().split(/\s+/).filter(Boolean).length;
+  if (words <= 0) {
+    return "";
+  }
+  const seconds = Math.max(1, Math.round(words / 12));
+  if (seconds < 60) {
+    return `${seconds}s`;
+  }
+  const minutes = Math.floor(seconds / 60);
+  return `${minutes}m ${seconds % 60}s`;
 }
 
 function MessageActionIcon({ kind, filled = false, animated = false }: { kind: "speak" | "pin" | "copy" | "copied" | "thumb-up" | "thumb-down" | "regenerate" | "delete"; filled?: boolean; animated?: boolean }) {

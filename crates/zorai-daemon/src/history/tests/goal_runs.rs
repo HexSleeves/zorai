@@ -97,6 +97,7 @@ fn sample_goal_run_record(id: &str, updated_at: u64) -> GoalRun {
         launch_assignment_snapshot: Vec::new(),
         runtime_assignment_list: Vec::new(),
         root_thread_id: None,
+        supervision_thread_id: None,
         active_thread_id: None,
         execution_thread_ids: Vec::new(),
     }
@@ -1900,6 +1901,7 @@ async fn goal_run_event_todo_snapshot_round_trips() -> Result<()> {
         launch_assignment_snapshot: Vec::new(),
         runtime_assignment_list: Vec::new(),
         root_thread_id: None,
+        supervision_thread_id: None,
         active_thread_id: None,
         execution_thread_ids: Vec::new(),
     };
@@ -3214,6 +3216,7 @@ async fn goal_run_extended_metadata_round_trips() -> Result<()> {
             None,
         )],
         root_thread_id: Some("thread-root".to_string()),
+        supervision_thread_id: Some("thread-supervision".to_string()),
         active_thread_id: Some("thread-active".to_string()),
         execution_thread_ids: vec![
             "thread-root".to_string(),
@@ -3365,6 +3368,10 @@ async fn goal_run_extended_metadata_round_trips() -> Result<()> {
         )]
     );
     assert_eq!(loaded.root_thread_id.as_deref(), Some("thread-root"));
+    assert_eq!(
+        loaded.supervision_thread_id.as_deref(),
+        Some("thread-supervision")
+    );
     assert_eq!(loaded.active_thread_id.as_deref(), Some("thread-active"));
     assert_eq!(
         loaded.execution_thread_ids,

@@ -547,7 +547,7 @@ impl SessionManager {
             let source = source.lock().await;
             (
                 source.shell().map(ToOwned::to_owned),
-                source.resolved_cwd().or(cwd_override),
+                cwd_override.or_else(|| source.resolved_cwd()),
                 source.workspace_id().map(ToOwned::to_owned),
                 source.cols(),
                 source.rows(),

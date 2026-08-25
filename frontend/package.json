@@ -1,7 +1,7 @@
 {
   "name": "zorai",
   "private": true,
-  "version": "0.9.48",
+  "version": "0.9.49",
   "description": "Daemon-first agentic runtime with AI-native workflows",
   "homepage": "https://zorai.app",
   "author": {
@@ -14,10 +14,12 @@
     "dev": "vite",
     "dev:electron": "npm run build && node scripts/dev-electron.cjs",
     "build": "tsc -b && vite build",
-    "build:electron": "tsc -b && vite build && electron-builder --win --linux",
-    "build:electron:linux": "tsc -b && vite build && electron-builder --linux AppImage deb",
-    "build:electron:windows": "tsc -b && vite build && electron-builder --win portable nsis",
-    "build:electron:macos": "tsc -b && vite build && electron-builder --mac dmg zip",
+    "stage:electron": "node scripts/stage-electron-resources.cjs",
+    "package:electron": "npm run build && npm run stage:electron",
+    "build:electron": "npm run package:electron && electron-builder --win --linux",
+    "build:electron:linux": "npm run package:electron && electron-builder --linux AppImage deb",
+    "build:electron:windows": "npm run package:electron && electron-builder --win portable nsis",
+    "build:electron:macos": "npm run package:electron && electron-builder --mac dmg zip",
     "preview": "vite preview",
     "lint": "eslint .",
     "test:unit": "vitest run"
@@ -25,6 +27,7 @@
   "dependencies": {
     "@hapi/boom": "^10.0.1",
     "@honcho-ai/sdk": "^2.0.1",
+    "@monaco-editor/react": "4.7.0",
     "@types/js-yaml": "^4.0.9",
     "@whiskeysockets/baileys": "^6.7.21",
     "@xterm/addon-canvas": "^0.7.0",
@@ -38,6 +41,7 @@
     "buffer": "^6.0.3",
     "discord.js": "^14.25.1",
     "js-yaml": "^4.1.1",
+    "monaco-editor": "0.52.2",
     "pino": "^9.14.0",
     "qrcode": "^1.5.4",
     "react": "^19.0.0",
@@ -46,7 +50,8 @@
     "react-resizable-panels": "^2.1.0",
     "remark-gfm": "^4.0.1",
     "zod": "^4.3.6",
-    "zustand": "^5.0.0"
+    "zustand": "^5.0.0",
+    "prettier": "3.6.2"
   },
   "devDependencies": {
     "@eslint/js": "^9.39.4",

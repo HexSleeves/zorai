@@ -6,8 +6,9 @@ describe("Zorai navigation", () => {
     expect(getDefaultZoraiView()).toBe("threads");
   });
 
-  it("exposes the agent-centric top-level destinations", () => {
+  it("exposes the agent-centric top-level destinations with Code above Threads", () => {
     expect(zoraiNavItems.map((item) => item.id)).toEqual([
+      "code",
       "threads",
       "goals",
       "workspaces",

@@ -387,6 +387,9 @@ impl AgentEngine {
             .unwrap_or(false);
         if should_remove {
             streams.remove(thread_id);
+            drop(streams);
+            self.wake_prompt_queue(thread_id);
+            return;
         }
     }
 
@@ -407,6 +410,13 @@ impl AgentEngine {
         entry.last_progress_at = now_millis();
         entry.last_progress_kind = kind;
         entry.last_progress_excerpt = excerpt.chars().take(180).collect();
+    }
+
+    pub(super) async fn stream_cancellation_requested(&self, thread_id: &str) -> bool {
+        let streams = self.stream_cancellations.lock().await;
+        streams
+            .get(thread_id)
+            .is_some_and(|entry| entry.token.is_cancelled())
     }
 
     pub async fn stop_stream(&self, thread_id: &str) -> bool {

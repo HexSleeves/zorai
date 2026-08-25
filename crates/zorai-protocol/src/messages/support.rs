@@ -1042,3 +1042,14 @@ pub struct WorkspaceNotice {
     pub actor: Option<WorkspaceActor>,
     pub created_at: u64,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct QueuedPromptRecord {
+    pub id: String,
+    pub thread_id: String,
+    pub content: String,
+    #[serde(default)]
+    pub content_blocks_json: Option<String>,
+    pub created_at: u64,
+    pub position: i64,
+}

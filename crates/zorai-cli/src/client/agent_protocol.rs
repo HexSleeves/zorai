@@ -71,6 +71,8 @@ pub(super) enum AgentBridgeCommand {
         message_limit: Option<usize>,
         #[serde(default)]
         message_offset: Option<usize>,
+        #[serde(default)]
+        collapse_tool_calls: bool,
     },
     DeleteThread {
         thread_id: String,
@@ -205,6 +207,23 @@ pub(super) enum AgentBridgeCommand {
     },
     GetWorkContext {
         thread_id: String,
+    },
+    GetFileOperationSnapshot {
+        operation_id: String,
+    },
+    RevertFileOperation {
+        operation_id: String,
+    },
+    GetThreadWorkspaceContext {
+        thread_id: String,
+    },
+    SetThreadWorkspaceContext {
+        thread_id: String,
+        context: serde_json::Value,
+    },
+    SpawnSubagent {
+        thread_id: String,
+        args: serde_json::Value,
     },
     GetGitDiff {
         repo_path: String,
@@ -495,6 +514,43 @@ pub(super) enum AgentBridgeCommand {
     #[serde(rename = "agent-get-statistics")]
     GetStatistics {
         window: zorai_protocol::AgentStatisticsWindow,
+    },
+    EnqueuePrompt {
+        thread_id: String,
+        content: String,
+        #[serde(default)]
+        content_blocks_json: Option<String>,
+        #[serde(default)]
+        prompt_id: Option<String>,
+    },
+    ListPromptQueue {
+        #[serde(default)]
+        thread_id: Option<String>,
+    },
+    UpdateQueuedPrompt {
+        thread_id: String,
+        prompt_id: String,
+        content: String,
+        #[serde(default)]
+        content_blocks_json: Option<String>,
+    },
+    CancelQueuedPrompt {
+        thread_id: String,
+        prompt_id: String,
+    },
+    SendQueuedPromptNow {
+        thread_id: String,
+        prompt_id: String,
+    },
+    GetThreadExecutionProfile {
+        thread_id: String,
+    },
+    SetThreadExecutionProfile {
+        thread_id: String,
+        profile_json: String,
+    },
+    ForceCompact {
+        thread_id: String,
     },
     Shutdown,
 }

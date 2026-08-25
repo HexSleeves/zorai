@@ -215,11 +215,14 @@ impl TuiModel {
 
     pub(crate) fn request_latest_thread_page(&mut self, thread_id: String, show_loading: bool) {
         self.request_thread_page(
-            thread_id,
+            thread_id.clone(),
             self.chat_history_delete_backfill_target_size(),
             0,
             show_loading,
         );
+        self.send_daemon_command(DaemonCommand::ListPromptQueue {
+            thread_id: Some(thread_id),
+        });
     }
 
     fn thread_needs_expanded_latest_page(&self, thread_id: &str) -> bool {

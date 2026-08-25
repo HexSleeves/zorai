@@ -16,6 +16,209 @@ function readFunctionSource(source: string, start: string, end: string): string 
 }
 
 describe("Zorai feature surfaces", () => {
+  it("reuses the native Threads conversation in the Code Agent pane", () => {
+    const codeSource = readFeature("./code/CodeView.tsx");
+    const threadsSource = readFeature("./threads/ThreadsView.tsx");
+
+    expect(codeSource).toContain('export { CodeAgentPane } from "./CodeAgentPane"');
+    const agentPaneSource = readFeature("./code/CodeAgentPane.tsx");
+    expect(agentPaneSource).toContain('<ThreadsView\n        variant="compact"');
+    expect(agentPaneSource).not.toContain("AgentChatPanelProvider");
+    expect(threadsSource).toContain('variant?: "full" | "compact"');
+    expect(threadsSource).toContain('<ThreadComposer showTargetSelector={variant === "compact"} compact={variant === "compact"} />');
+    expect(threadsSource).not.toContain("<ThreadComposer />");
+    expect(threadsSource).toContain("ThreadCompactSessionBar");
+    expect(threadsSource).toContain("canGoBackThread");
+    expect(threadsSource).toContain("goBackThread");
+    expect(threadsSource).toContain("Back to parent");
+    expect(readFeature("../styles/zorai.css")).toContain(".zorai-code-agent-thread-back");
+    expect(readFeature("./threads/ThreadCompactSessionBar.tsx")).toContain("Keep");
+    expect(readFeature("./threads/ThreadCompactSessionBar.tsx")).toContain("Reject");
+    expect(readFeature("./threads/ThreadCompactSessionBar.tsx")).toContain("Todos");
+    expect(readFeature("./threads/ThreadCompactSessionBar.tsx")).toContain("Agents");
+    expect(readFeature("../styles/zorai.css")).toContain(".zorai-compact-session");
+    expect(threadsSource).toContain("actualThreadResponderLabel(activeThread)");
+    expect(threadsSource).toContain("responderStack");
+    expect(threadsSource).toContain("useThreadReadStateStore");
+    expect(threadsSource).toContain("fetchAgentTasks");
+    expect(threadsSource).toContain("newestTaskCompletionAt");
+    expect(threadsSource).toContain("newestGoalCompletionAt");
+    expect(threadsSource).toContain("<ThreadComposer");
+    expect(threadsSource).toContain("buildDisplayItems(runtime.messages)");
+  });
+
+  it("portals the workspace Explorer into the Code rail while keeping one workbench owner", () => {
+    const codeSource = readFeature("./code/CodeView.tsx");
+    const workbenchSource = readFeature("../../components/WorkspaceWorkbench.tsx");
+    const shellSource = readFeature("../shell/ZoraiShell.tsx");
+    const styleSource = readFileSync(new URL("../styles/zorai.css", import.meta.url), "utf8");
+
+    expect(codeSource).toContain('id="zorai-code-explorer-host"');
+    expect(codeSource).toContain("<WorkspaceWorkbench openedRoot={boundRoot} />");
+    expect((codeSource.match(/<WorkspaceWorkbench/g) ?? [])).toHaveLength(1);
+    expect(workbenchSource).toContain('import { createPortal } from "react-dom"');
+    expect(workbenchSource).toContain('document.getElementById("zorai-code-explorer-host")');
+    expect(workbenchSource).toContain("createPortal(explorer, explorerPortalHost)");
+    expect(workbenchSource).toContain(": explorer}");
+    expect(workbenchSource).toContain("{!explorerPortalHost ? (");
+    expect(workbenchSource).toContain('className="zorai-code-workspace-actions"');
+    expect(workbenchSource).toContain('className="zorai-code-source-control"');
+    expect(shellSource).toContain('activeView === "code" ? "zorai-shell--code"');
+    expect(shellSource).toContain('activeView === "code" ? "Explorer" : activeItem.label');
+    expect(styleSource).toContain(".zorai-shell.zorai-shell--code");
+    expect(styleSource).toContain(".zorai-code-explorer-scroll");
+    expect(workbenchSource).toContain('<details className="zorai-code-files" open>');
+    expect(workbenchSource).not.toContain('<details className="zorai-code-open-editors" open>');
+    expect(workbenchSource).not.toContain('<details className="zorai-workspace-isolated-reviews" open>');
+    expect(workbenchSource).not.toContain('<details className="zorai-workspace-problems" open>');
+    expect(workbenchSource).not.toContain('<details className="zorai-workspace-conflicts" open>');
+    expect(workbenchSource).not.toContain('<details className="zorai-workspace-operation-changes" open>');
+    expect(workbenchSource).not.toContain('<details className="zorai-workspace-agent-changes" open>');
+    expect(workbenchSource).toContain("shouldRestoreWorkspaceDocument");
+    expect(workbenchSource).toContain("shouldPassthroughCodeCommand");
+    expect(workbenchSource).toContain("shouldPassthroughCodeCommand(command.id, event.target)");
+    expect(workbenchSource).toContain('setActiveEditorTabId(`file:${filePath}`)');
+    expect(workbenchSource).toContain("void openFile(filePath)");
+    expect(readFeature("./code/CodeTabs.tsx")).toContain("Unpin editor");
+    expect(readFeature("./code/CodeTabs.tsx")).toContain("Pin editor");
+    expect(styleSource).toContain(".zorai-workspace-editor .minimap");
+    expect(styleSource).toContain(".zorai-security-shield");
+    expect(styleSource).toContain(".zorai-effort-gauge");
+    expect(codeSource).not.toContain("zorai-view-header");
+    expect(codeSource).not.toContain("zorai-tool-tab-strip");
+  });
+
+  it("opens the Code Agent on first Code entry and preserves the shared conversation", () => {
+    const shellSource = readFeature("../shell/ZoraiShell.tsx");
+    const codeSource = readFeature("./code/CodeView.tsx");
+    const agentPaneSource = readFeature("./code/CodeAgentPane.tsx");
+    const historyMenuSource = readFeature("./code/CodeThreadHistoryMenu.tsx");
+
+    expect(shellSource).toContain("const codeAgentOpenedRef = useRef(false)");
+    expect(shellSource).toContain('if (activeView !== "code" || codeAgentOpenedRef.current) return');
+    expect(shellSource).toContain("setContextOpen(true)");
+    expect(codeSource).toContain('export { CodeAgentPane } from "./CodeAgentPane"');
+    expect(readFeature("./threads/ThreadComposer.tsx")).toContain('CodeThreadRuntimeSwitcher');
+    expect(readFeature("./threads/ThreadComposer.tsx")).toContain('variant="composer"');
+    expect(agentPaneSource).not.toContain('CodeContextWindowMeter');
+    expect(agentPaneSource).not.toContain('className="zorai-code-context-chips"');
+    expect(agentPaneSource).not.toContain('className="zorai-code-agent-toolbar"');
+    expect(historyMenuSource).toContain('aria-label="New project thread"');
+    expect(historyMenuSource).toContain('aria-label="Project thread history"');
+    expect(readFeature("./threads/ComposerContextCircle.tsx")).toContain('className="zorai-composer-context-circle"');
+    expect(readFeature("./threads/ThreadComposer.tsx")).toContain('ComposerContextCircle');
+  });
+
+  it("reserves editor hierarchy when no document is selected", () => {
+    const workbenchSource = readFeature("../../components/WorkspaceWorkbench.tsx");
+    const codeSource = readFeature("./code/CodeView.tsx");
+
+    expect(workbenchSource).toContain('className="zorai-workspace-breadcrumbs zorai-workspace-breadcrumbs--empty"');
+    expect(workbenchSource).toContain("No file selected");
+    expect(workbenchSource).toContain('className="zorai-workspace-statusbar"');
+    expect(workbenchSource).toContain("Ready · Select a file from Explorer");
+    expect(codeSource).not.toContain("export function CodeAgentPane");
+  });
+
+  it("renders accessible Code-only resize handles without changing other shell views", () => {
+    const shellSource = readFeature("../shell/ZoraiShell.tsx");
+    const handleSource = readFeature("./code/CodeResizeHandle.tsx");
+    const styleSource = readFileSync(new URL("../styles/zorai.css", import.meta.url), "utf8");
+
+    expect(shellSource).toContain('activeView === "code" && railOpen ? (');
+    expect(shellSource).toContain('<CodeResizeHandle\n            panel="explorer"');
+    expect(shellSource).toContain('activeView === "code" && contextOpen ? (');
+    expect(shellSource).toContain('<CodeResizeHandle\n            panel="agent"');
+    expect(shellSource).toContain('contextOpen ? "zorai-shell--context-open"');
+    expect(handleSource).toContain('role="separator"');
+    expect(handleSource).toContain('aria-orientation="vertical"');
+    expect(handleSource).toContain("event.button !== 0");
+    expect(handleSource).toContain("setPointerCapture");
+    expect(handleSource).toContain('event.key === "Home"');
+    expect(handleSource).toContain('event.key === "End"');
+    expect(handleSource).toContain("onDoubleClick={onReset}");
+    expect(styleSource).toContain("--zorai-code-explorer-width");
+    expect(shellSource).toContain("--zorai-code-agent-width");
+    expect(styleSource).toContain(".zorai-shell--code .zorai-context-panel");
+    expect(styleSource).toContain("width: 100%");
+    expect(styleSource).toContain(".zorai-shell.zorai-shell--code.zorai-shell--rail-collapsed.zorai-shell--context-open");
+    expect(styleSource).toContain("grid-template-columns: 56px minmax(0, 1fr)");
+    expect(styleSource).toContain(".zorai-code-thread-history");
+    expect(styleSource).toContain(".zorai-code-thread-status.is-amber");
+  });
+
+  it("uses a Code-scoped neutral black palette without blue or cyan surface washes", () => {
+    const styleSource = readFileSync(new URL("../styles/zorai.css", import.meta.url), "utf8");
+    const codePalette = readFunctionSource(
+      styleSource,
+      ".zorai-shell.zorai-shell--code {",
+      ".zorai-shell.zorai-shell--code.zorai-shell--rail-collapsed",
+    );
+
+    expect(codePalette).toContain("--zorai-bg: #030405");
+    expect(codePalette).toContain("--zorai-bg-panel: #070809");
+    expect(codePalette).toContain("--zorai-bg-surface: #0a0b0d");
+    expect(codePalette).toContain("--zorai-bg-elevated: #0d0f11");
+    expect(codePalette).toContain("--zorai-bg-active: #151719");
+    expect(codePalette).toContain("--zorai-border: #1b1d20");
+    expect(codePalette).toContain("--zorai-border-strong: #2a2d31");
+    expect(codePalette).toContain("--zorai-muted: #858b94");
+    expect(codePalette).toContain("background: var(--zorai-bg)");
+    expect(codePalette).not.toMatch(/radial-gradient|#(?:0a0f18|0f1520|141c28|212e3e)/i);
+
+    expect(styleSource).toContain(".zorai-shell--code .zorai-global-item--active");
+    expect(styleSource).toContain(".zorai-shell--code .zorai-workspace-statusbar");
+    expect(codePalette).not.toContain("var(--zorai-accent-secondary)");
+    expect(styleSource).toContain("background: color-mix(in srgb, var(--zorai-accent-secondary) 16%, var(--zorai-bg-panel))");
+  });
+
+  it("scopes the compact target selector to Code and keeps it pane-sized", () => {
+    const threadsSource = readFeature("./threads/ThreadsView.tsx");
+    const composerSource = readFeature("./threads/ThreadComposer.tsx");
+    const styleSource = readFileSync(new URL("../styles/zorai.css", import.meta.url), "utf8");
+
+    expect(composerSource).toContain("showTargetSelector = false");
+    expect(composerSource).toContain("compact = false");
+    expect(composerSource).toContain("showTargetSelector ? (");
+    expect(composerSource).not.toContain('<span className="sr-only">Message target</span>');
+    expect(composerSource).toContain("Choose thread owner");
+    expect(composerSource).toContain("Choose agent or subagent");
+    expect(composerSource).toContain('compact ? "zorai-thread-composer--compact" : ""');
+    expect(threadsSource).toContain('<ThreadComposer showTargetSelector={variant === "compact"} compact={variant === "compact"} />');
+    expect(styleSource).toContain(".zorai-thread-surface--compact.zorai-native-thread-surface");
+    expect(styleSource).toContain("grid-template-rows: auto minmax(0, 1fr) auto");
+    expect(styleSource).toContain(".zorai-thread-composer--compact .zorai-composer-target");
+  });
+
+  it("keeps Code project-thread creation and ownership isolated from global settings", () => {
+    const agentPaneSource = readFeature("./code/CodeAgentPane.tsx");
+    const composerSource = readFeature("./threads/ThreadComposer.tsx");
+
+    expect(agentPaneSource).toContain("actualThreadResponder(activeThread)");
+    expect(agentPaneSource).toContain("agentId: responder.id");
+    expect(agentPaneSource).toContain("agentName: responder.name");
+    expect(agentPaneSource).toContain("bindRoot(localId, root)");
+    expect(agentPaneSource).toContain("runtime.openThread(localId)");
+    expect(agentPaneSource).not.toContain("updateAgentSetting");
+    expect(composerSource).toContain("previousTargetThreadRef.current === activeThreadId");
+    expect(composerSource).toContain("previousTargetThreadRef.current = activeThreadId");
+    expect(composerSource).toContain("setComposerTarget(composerTargets[0])");
+    expect(composerSource).toContain("[activeThreadId, composerTargets, showTargetSelector]");
+    expect(composerSource).toContain("canAssignComposerOwnerDirectly");
+    expect(composerSource).toContain("setThreadOwner");
+    expect(composerSource).toContain("runtime.pushHandoff");
+    expect(composerSource).toContain("runtime.spawnSubagent");
+  });
+
+  it("integrates the read-through document cache and file-open trace", () => {
+    const source = readFeature("../../components/WorkspaceWorkbench.tsx");
+    expect(source).toContain("createCodeDocumentController");
+    expect(source).toContain("createCodeFileOpenTrace");
+    expect(source).toContain("controller.open(context.root, filePath");
+    expect(source).toContain("const cacheHit = Boolean(controller.get(context.root, filePath))");
+    expect(source).toContain('trace.mark("interactive")');
+  });
+
   it("keeps Goals native to the Zorai shell instead of embedding legacy task UI", () => {
     const source = readFeature("./goals/GoalsView.tsx");
 
@@ -23,7 +226,7 @@ describe("Zorai feature surfaces", () => {
     expect(source).toContain("zorai-goals-surface");
   });
 
-  it("keeps TUI goal workspace modes in native Goals", () => {
+  it("keeps goal workspace modes in native Goals", () => {
     const source = readFeature("./goals/goalWorkspaceModel.ts");
     const panelSource = readFeature("./goals/GoalWorkspacePanel.tsx");
 
@@ -38,9 +241,17 @@ describe("Zorai feature surfaces", () => {
     expect(source).toContain("targetFilePath");
     expect(panelSource).toContain("loadGoalProjectionFiles");
     expect(panelSource).toContain("openThreadFilePreview");
+    expect(panelSource).not.toContain("zorai-tui-pane");
+    expect(panelSource).toContain("zorai-ghost-button");
+    expect(panelSource).toContain("footerActions");
+    expect(panelSource).toContain("{action.label}");
+    expect(source).toContain('label: "Retry step"');
+    expect(source).toContain('label: "Rerun from here"');
+    expect(source).toContain('label: "Stop"');
+    expect(panelSource).not.toContain("[Actions]");
   });
 
-  it("enters a dedicated TUI-style goal view from mission control", () => {
+  it("enters a dedicated goal view from mission control", () => {
     const source = readFeature("./goals/GoalsView.tsx");
     const openThreadSource = readFeature("./threads/openThreadTarget.ts");
 
@@ -371,19 +582,27 @@ describe("Zorai feature surfaces", () => {
     const actionsStart = source.indexOf("zorai-composer-actions");
     const actionsSource = source.slice(actionsStart);
 
-    expect(actionsSource).toContain("runtime.isStreamingResponse");
-    expect(actionsSource).toContain("runtime.stopStreaming(runtime.activeThreadId)");
+    expect(actionsSource).toContain("isStreamingResponse");
+    expect(actionsSource).toContain("stopStreaming(activeRuntimeThreadId)");
     expect(actionsSource.indexOf("Stop generating")).toBeGreaterThan(-1);
     expect(actionsSource.indexOf("Send message")).toBeGreaterThan(-1);
   });
 
   it("queues messages while the agent is streaming", () => {
     const source = readFeature("./threads/ThreadComposer.tsx");
+    const queue = readFeature("./threads/ThreadComposerQueue.tsx");
+    const hook = readFeature("./threads/useDaemonPromptQueue.ts");
 
-    expect(source).toContain("queuedMessages");
+    expect(source).toContain("useDaemonPromptQueue");
     expect(source).toContain("queueCurrentInput");
-    expect(source).toContain("zorai-composer-queue");
     expect(source).toContain("Queue a follow-up");
+    expect(queue).toContain("zorai-composer-queue");
+    expect(hook).toContain("agentEnqueuePrompt");
+    expect(hook).toContain("agentListPromptQueue");
+    expect(hook).toContain("agentUpdateQueuedPrompt");
+    expect(hook).toContain("agentCancelQueuedPrompt");
+    expect(hook).toContain("agentSendQueuedPromptNow");
+    expect(hook).toContain("prompt_queue_update");
   });
 
   it("shows a thinking indicator while the agent streams", () => {
@@ -409,6 +628,7 @@ describe("Zorai feature surfaces", () => {
     // The thread header no longer embeds the runtime bar; it only summarizes it.
     expect(viewSource).not.toContain("ThreadRuntimeBar");
     expect(viewSource).toContain("ThreadRuntimeSummary");
+    expect(viewSource).not.toContain("ThreadEffortGauge");
 
     // The editable controls live in the context panel ("Show Context").
     expect(contextSource).toContain("ThreadRuntimeBar");
@@ -417,6 +637,7 @@ describe("Zorai feature surfaces", () => {
     expect(runtimeSource).toContain("Effort");
     expect(runtimeSource).toContain("Context");
     expect(runtimeSource).toContain("resolveThreadOwnerRuntimeProfile");
+    expect(runtimeSource).toContain("pendingApplyRef");
     expect(actionsSource).toContain("agentSetProviderModel");
     expect(actionsSource).toContain("agentSetTargetAgentProviderModel");
     expect(actionsSource).toContain("agentSetTargetAgentReasoningEffort");
@@ -437,8 +658,14 @@ describe("Zorai feature surfaces", () => {
     expect(speechSource).toContain("loadingMessageId");
     expect(viewSource).toContain("onSpeak");
     expect(readFeature("./threads/NativeThreadMessageBubble.tsx")).toContain("Read aloud");
-    expect(source).toContain("applyManagedSecurityLevel");
-    expect(source).toContain("Managed security mode");
+    expect(source).toContain("ManagedSecurityShield");
+    expect(source).toContain("ThreadEffortGauge");
+    expect(readFeature("./threads/ThreadEffortGauge.tsx")).toContain("createPortal");
+    expect(readFeature("./threads/ThreadEffortGauge.tsx")).toContain("document.body");
+    expect(readFeature("./threads/ManagedSecurityShield.tsx")).toContain("applyManagedSecurityLevel");
+    expect(readFeature("./threads/ManagedSecurityShield.tsx")).toContain("Managed security mode");
+    expect(readFeature("./threads/ManagedSecurityShield.tsx")).toContain("createPortal");
+    expect(readFeature("./threads/ManagedSecurityShield.tsx")).toContain("document.body");
     expect(readFeature("./threads/threadRuntimeActions.ts")).toContain("/managed_execution/security_level");
   });
 
@@ -459,10 +686,9 @@ describe("Zorai feature surfaces", () => {
     expect(source).toContain("ToolEventRow");
     expect(source).toContain('item.type === "tool"');
     expect(source).not.toContain("summarizeToolMessage");
-    expect(toolSource).toContain("toolStatusTone");
-    expect(readFeature("../../components/agent-chat-panel/chat-view/toolStatusTone.ts")).toContain("toolStatusTone");
-    expect(readFeature("../../components/agent-chat-panel/chat-view/toolStatusTone.ts")).toContain("var(--success)");
-    expect(readFeature("../../components/agent-chat-panel/chat-view/toolStatusTone.ts")).toContain("var(--warning)");
+    expect(toolSource).toContain("ToolStatusIcon");
+    expect(readFeature("../../components/agent-chat-panel/chat-view/ToolStatusIcon.tsx")).toContain("ToolStatusIcon");
+    expect(readFeature("../../components/agent-chat-panel/chat-view/ToolStatusIcon.tsx")).toContain("acp-tool-status-icon");
   });
 
   it("keeps thread context aligned with TUI tabs and daemon token context windows", () => {
@@ -658,7 +884,24 @@ describe("Zorai feature surfaces", () => {
     expect(noticeSource).toContain("continue from the parent thread");
     expect(composerSource).toContain("activeThreadBudgetExceededNotice");
     expect(composerSource).toContain("zorai-composer-budget-notice");
-    expect(composerSource).toContain("if (budgetNotice || runtime.isStreamingResponse) return");
+    expect(composerSource).toContain("if (budgetNotice || isStreamingResponse || targetPending) return");
     expect(composerSource).not.toContain("{budgetNotice ??");
+  });
+
+  it("keeps shell hygiene: normalized settings fallback, accessible context toggle, and no duplicate code subtitle", () => {
+    const shellSource = readFeature("../shell/ZoraiShell.tsx");
+    const contextSource = readFeature("../shell/ZoraiContextPanel.tsx");
+
+    // Settings navigation falls back to the normalized view instead of the raw detail.
+    expect(shellSource).toContain('if (!normalized.view) setActiveView("settings")');
+    // Context toggle is accessible in both collapsed and open states.
+    expect(contextSource).toContain("aria-expanded={false}");
+    expect(contextSource).toContain("aria-expanded={true}");
+    expect(contextSource).toContain('aria-controls="zorai-context-panel"');
+    expect(contextSource).toContain("aria-label={collapsedLabel}");
+    expect(contextSource).toContain('aria-label="Collapse context"');
+    // The Code Agent rail label no longer duplicates the context panel title.
+    expect(shellSource).toContain("subtitle={contextLabels.title === activeItem.railLabel ? undefined : activeItem.railLabel}");
+    expect(contextSource).toContain("subtitle !== title");
   });
 });

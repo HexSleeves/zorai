@@ -43,7 +43,8 @@ impl DaemonClient {
             | DaemonMessage::AgentWorkspaceTaskUpdated { .. }
             | DaemonMessage::AgentWorkspaceTaskDeleted { .. }
             | DaemonMessage::AgentWorkspaceNoticeList { .. }
-            | DaemonMessage::AgentWorkspaceError { .. }) => {
+            | DaemonMessage::AgentWorkspaceError { .. }
+            | DaemonMessage::AgentPromptQueue { .. }) => {
                 Self::handle_thread_workspace_daemon_messages(
                     message,
                     event_tx,

@@ -113,13 +113,25 @@ function createAgentDbBridgeRuntime(options) {
                 }
 
                 if (event.type === 'error') {
-                    const oldest = resolveOldestPending(agentBridge.pending);
-                    if (oldest) {
-                        const msg = event.message || event.data?.message || (typeof event.data === 'string' ? event.data : null) || 'agent bridge error';
-                        oldest.handler.reject(new Error(msg));
-                        agentBridge.pending.delete(oldest.reqId);
+                    // Prompt-queue enqueue errors now come as prompt-queue frames
+                    // (AgentPromptQueueError); only explicit error queries should
+                    // consume a generic error.
+                    const explicitErrorPending = resolveOldestPending(agentBridge.pending, (handler) => {
+                        const rt = handler.responseType;
+                        if (Array.isArray(rt)) return rt.includes('error');
+                        return rt === 'error';
+                    });
+                    if (explicitErrorPending) {
+                        const emsg = event.message || event.data?.message || (typeof event.data === 'string' ? event.data : null) || 'agent bridge error';
+                        explicitErrorPending.handler.reject(new Error(emsg));
+                        agentBridge.pending.delete(explicitErrorPending.reqId);
                         continue;
                     }
+                    const mainWindowForError = getMainWindow();
+                    if (mainWindowForError && !mainWindowForError.isDestroyed()) {
+                        mainWindowForError.webContents.send('agent-event', event);
+                    }
+                    continue;
                 }
 
                 if (event.type === 'plugin-oauth-complete') {
@@ -292,6 +304,13 @@ function createAgentDbBridgeRuntime(options) {
 
         const responseKey = Array.isArray(responseType) ? responseType.join('|') : responseType;
         const commandKey = JSON.stringify(command);
+        // prompt-queue is safe to run concurrently: each enqueue/list/update/cancel
+        // carries a distinct promptId/threadId and the daemon replies per-request.
+        // Serializing all prompt-queue calls on one responseType is the "huge delay"
+        // when you type 2 follow-ups during streaming.
+        const allowConcurrent = responseType === 'prompt-queue'
+            || (Array.isArray(responseType) && responseType.includes('prompt-queue'));
+        if (!allowConcurrent) {
         const pending = findPendingResponseType(bridge.pending, responseType);
         if (pending) {
             if (pending.commandKey === commandKey && pending.promise) {
@@ -301,6 +320,22 @@ function createAgentDbBridgeRuntime(options) {
                 () => sendAgentQuery(command, responseType, timeoutMs),
                 () => sendAgentQuery(command, responseType, timeoutMs),
             );
+        }
+        }
+        // De-duplicate identical concurrent prompt-queue calls instead of serializing.
+        if (allowConcurrent) {
+            for (const [, handler] of bridge.pending.entries()) {
+                if (handler.responseType === responseType && handler.commandKey === commandKey && handler.promise) {
+                    return handler.promise;
+                }
+                if (Array.isArray(handler.responseType) && Array.isArray(responseType)
+                    && handler.commandKey === commandKey
+                    && handler.responseType.length === responseType.length
+                    && handler.responseType.every((v, i) => v === responseType[i])
+                    && handler.promise) {
+                    return handler.promise;
+                }
+            }
         }
 
         const reqId = `${responseKey}_${Date.now()}_${Math.random()}`;

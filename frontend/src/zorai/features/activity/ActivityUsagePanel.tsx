@@ -1,3 +1,4 @@
+import { LoadingPanel, LoadingState } from "@/components/LoadingState";
 import { Children, useEffect, useState, type ReactNode } from "react";
 import { getBridge } from "@/lib/bridge";
 import { formatCount, formatDate, type SessionUsageRow, type UsageStats } from "./ActivityUsageStats";
@@ -68,7 +69,8 @@ export function UsagePanel({ stats }: { stats: UsageStats }) {
         ))}
       </div>
 
-      {loading ? <div className="zorai-empty-state">Loading historical statistics...</div> : null}
+      {loading && !snapshot ? <LoadingPanel label="Loading historical statistics…" /> : null}
+      {loading && snapshot ? <LoadingState size={14} label="Refreshing statistics" /> : null}
       {error ? <div className="zorai-empty-state">{error} Local loaded-message total: {formatTokenValue(stats.totals.totalTokens)} tok.</div> : null}
       {snapshot ? <StatisticsBody snapshot={snapshot} tab={tab} /> : null}
       <SessionUsageTable rows={stats.sessionRows} />

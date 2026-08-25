@@ -62,6 +62,7 @@ export interface AgentThread {
   totalInputTokens: number;
   totalOutputTokens: number;
   totalTokens: number;
+  totalCostUsd?: number | null;
   compactionCount: number;
   lastMessagePreview: string;
   upstreamThreadId?: string | null;

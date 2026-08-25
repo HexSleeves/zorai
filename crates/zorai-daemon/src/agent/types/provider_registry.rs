@@ -643,6 +643,15 @@ pub fn provider_uses_configurable_base_url(provider_id: &str) -> bool {
     matches!(provider_id, PROVIDER_ID_CUSTOM | PROVIDER_ID_AZURE_OPENAI)
 }
 
+/// Local/runtime catalogs (Ollama, LM Studio, Hugging Face) are fetched live.
+/// The static model list is a starter set, not an allowlist.
+pub fn provider_allows_unlisted_models(provider_id: &str) -> bool {
+    matches!(
+        provider_id,
+        PROVIDER_ID_OLLAMA | PROVIDER_ID_LMSTUDIO | PROVIDER_ID_HUGGINGFACE | PROVIDER_ID_CUSTOM
+    )
+}
+
 pub fn provider_base_url_is_customized(provider_id: &str, base_url: &str) -> bool {
     let trimmed = base_url.trim();
     if trimmed.is_empty() {

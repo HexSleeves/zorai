@@ -1,5 +1,5 @@
 use super::*;
-use zorai_shared::providers::{PROVIDER_ID_GROQ, PROVIDER_ID_OPENAI};
+use zorai_shared::providers::{PROVIDER_ID_GROQ, PROVIDER_ID_OLLAMA, PROVIDER_ID_OPENAI};
 
 #[tokio::test]
 async fn set_provider_model_json_updates_provider_and_model_atomically() {
@@ -203,6 +203,29 @@ async fn set_provider_model_json_rejects_invalid_model_without_changing_config()
     assert_eq!(before.provider, after.provider);
     assert_eq!(before.model, after.model);
     assert_eq!(before.base_url, after.base_url);
+}
+
+#[tokio::test]
+async fn set_provider_model_json_accepts_fetched_ollama_models_outside_the_static_catalog() {
+    let root = tempdir().unwrap();
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+
+    let mut config = engine.get_config().await;
+    config.api_key = "ollama".to_string();
+    config.provider = PROVIDER_ID_OLLAMA.to_string();
+    config.model = "llama3.1".to_string();
+    config.base_url = "http://localhost:11434/v1".to_string();
+    engine.set_config(config).await;
+
+    engine
+        .set_provider_model_json(PROVIDER_ID_OLLAMA, "deepseek-v4-flash:cloud")
+        .await
+        .expect("ollama should accept live/fetched model ids that are not in the starter catalog");
+
+    let updated = engine.get_config().await;
+    assert_eq!(updated.provider, PROVIDER_ID_OLLAMA);
+    assert_eq!(updated.model, "deepseek-v4-flash:cloud");
 }
 
 #[tokio::test]

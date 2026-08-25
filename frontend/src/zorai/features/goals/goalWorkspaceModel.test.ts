@@ -119,7 +119,7 @@ describe("goalWorkspaceModel", () => {
     expect(splitGoalStepTitle("Plain step")).toEqual({ confidence: null, title: "Plain step" });
   });
 
-  it("builds the TUI five-region dossier workspace", () => {
+  it("builds the dossier workspace without TUI chrome", () => {
     const model = buildGoalWorkspaceModel(baseRun, {
       mode: "dossier",
       expandedStepIds: new Set(["step-1"]),
@@ -139,21 +139,59 @@ describe("goalWorkspaceModel", () => {
       "Needs attention",
     ]);
     expect(model.planTitle).toBe("Plan");
-    expect(model.planRows.map((row) => row.text)).toContain("Goal Prompt  [Show]");
-    expect(model.planRows.map((row) => row.text)).toContain("[thread] Main agent  thread-main");
-    expect(model.planRows.map((row) => row.text)).toContain("1. Pin the contract and cut the landing ledger ˄");
-    expect(model.planRows.map((row) => row.text)).toContain("[x] Read harness/types.rs");
+    expect(model.planRows.map((row) => row.text)).toContain("Goal prompt");
+    expect(model.planRows.find((row) => row.id === "goal-prompt")?.meta).toBe("Show");
+    expect(model.planRows.map((row) => row.text)).toContain("Main agent");
+    expect(model.planRows.map((row) => row.text)).toContain("1. Pin the contract and cut the landing ledger");
+    expect(model.planRows.map((row) => row.text)).toContain("Read harness/types.rs");
     expect(model.centerTitle).toBe("Run timeline");
     expect(model.centerRows.map((row) => row.text)).toContain("goal todo updated");
     expect(model.detailTitle).toBe("Dossier");
     expect(model.detailSections.map((section) => section.title)).toContain("Selected Step");
     expect(model.detailSections.map((section) => section.title)).toContain("Execution Dossier");
-    expect(model.footerTitle).toBe("Step Actions");
-    expect(model.footerSegments.map((segment) => segment.text)).toContain("[Retry step] R");
-    expect(model.footerSegments.map((segment) => segment.text)).toContain("[Rerun from here] Shift+R");
+    expect(model.footerTitle).toBe("Step actions");
+    expect(model.selectedStepLabel).toContain("Pin the contract and cut the landing ledger");
+    expect(model.footerActions.map((action) => action.label)).toEqual([
+      "Pause",
+      "Stop",
+      "Retry step",
+      "Rerun from here",
+      "Refresh",
+    ]);
+    expect(model.footerActions.find((action) => action.id === "retry")?.enabled).toBe(true);
   });
 
-  it("switches center and detail panes by TUI mode", () => {
+  it("maps a selected flattened timeline row back to its owning event", () => {
+    const run: GoalRun = {
+      ...baseRun,
+      events: [
+        ...(baseRun.events ?? []),
+        {
+          id: "event-with-hyphens",
+          timestamp: 2,
+          phase: "execution",
+          message: "newest event",
+          details: "newest event details",
+          step_index: 0,
+          todo_snapshot: [],
+        },
+      ],
+    };
+    const model = buildGoalWorkspaceModel(run, { mode: "dossier", selectedCenterIndex: 1 });
+
+    expect(model.centerRows[1]).toMatchObject({
+      id: "event-with-hyphens-details",
+      eventId: "event-with-hyphens",
+      selected: true,
+    });
+    expect(model.centerRows.filter((row) => row.selected)).toHaveLength(1);
+    expect(model.detailSections.find((section) => section.title === "Selected Timeline Item")?.rows[0]).toMatchObject({
+      id: "event-with-hyphens",
+      text: "newest event",
+    });
+  });
+
+  it("switches center and detail panes by workspace mode", () => {
     expect(buildGoalWorkspaceModel(baseRun, { mode: "usage" }).centerTitle).toBe("Usage");
     expect(buildGoalWorkspaceModel(baseRun, { mode: "usage" }).detailTitle).toBe("Usage details");
     expect(buildGoalWorkspaceModel(baseRun, { mode: "active-agent" }).centerTitle).toBe("Active agent");
@@ -163,7 +201,7 @@ describe("goalWorkspaceModel", () => {
 
   it("marks linked threads and projection files as actionable targets", () => {
     const threads = buildGoalWorkspaceModel(baseRun, { mode: "threads" });
-    expect(threads.centerRows.find((row) => row.targetThreadId === "thread-active")?.text).toContain("[thread]");
+    expect(threads.centerRows.find((row) => row.targetThreadId === "thread-active")?.text).toContain("Main agent");
 
     const files = buildGoalWorkspaceModel(baseRun, {
       mode: "files",

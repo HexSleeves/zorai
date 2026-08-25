@@ -42,7 +42,16 @@ export function parseHandoffSystemEvent(content: string): HandoffSystemEvent | n
 
 export function buildDisplayItems(messages: AgentMessage[]): ChatDisplayItem[] {
   const items: ChatDisplayItem[] = [];
-  const groups = new Map<string, ToolEventGroup>();
+  let groups = new Map<string, ToolEventGroup>();
+  let pendingToolList: ToolEventGroup[] | null = null;
+
+  const flushToolList = () => {
+    if (pendingToolList && pendingToolList.length > 0) {
+      items.push({ type: "toolList", groups: pendingToolList });
+    }
+    pendingToolList = null;
+    groups = new Map<string, ToolEventGroup>();
+  };
 
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index];
@@ -51,6 +60,7 @@ export function buildDisplayItems(messages: AgentMessage[]): ChatDisplayItem[] {
     }
 
     if (message.role !== "tool") {
+      flushToolList();
       items.push({ type: "message", message });
       continue;
     }
@@ -70,7 +80,10 @@ export function buildDisplayItems(messages: AgentMessage[]): ChatDisplayItem[] {
         welesReview: message.welesReview,
       };
       groups.set(groupKey, initialGroup);
-      items.push({ type: "tool", group: initialGroup });
+      if (!pendingToolList) {
+        pendingToolList = [];
+      }
+      pendingToolList.push(initialGroup);
       continue;
     }
 
@@ -85,6 +98,8 @@ export function buildDisplayItems(messages: AgentMessage[]): ChatDisplayItem[] {
     existing.welesReview = mergeToolReviewMeta(existing.welesReview, message.welesReview);
     existing.createdAt = Math.min(existing.createdAt, message.createdAt);
   }
+
+  flushToolList();
 
   return items;
 }
@@ -131,6 +146,19 @@ export function filterDisplayItems(items: ChatDisplayItem[], searchQuery: string
         message.provider ?? "",
         message.model ?? "",
       ].join(" ").toLowerCase().includes(normalizedQuery);
+    }
+
+    if (item.type === "toolList") {
+      return item.groups
+        .map((group) => [
+          group.toolName,
+          group.toolArguments,
+          group.resultContent,
+          group.status,
+        ].join(" "))
+        .join(" ")
+        .toLowerCase()
+        .includes(normalizedQuery);
     }
 
     return [

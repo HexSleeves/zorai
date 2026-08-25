@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Zorai Code — proposed layout</title>
+<style>
+:root{color-scheme:dark;--bg:#080b10;--panel:#0d1118;--panel2:#111722;--line:#222b38;--text:#dce4ee;--muted:#7f8b9b;--cyan:#27d8ee;--blue:#4ca6ff;--green:#72d19b;--orange:#d6a55d}*{box-sizing:border-box}body{margin:0;background:#05070a;color:var(--text);font:13px Inter,ui-sans-serif,system-ui,sans-serif}.page{padding:28px;min-height:100vh}.eyebrow{color:var(--cyan);font-size:11px;font-weight:800;letter-spacing:.16em;text-transform:uppercase}.title{margin:7px 0 4px;font-size:25px}.sub{margin:0 0 20px;color:var(--muted);max-width:900px}.window{height:720px;min-height:620px;display:grid;grid-template-columns:56px 258px minmax(380px,1fr) 310px;border:1px solid #303a48;border-radius:11px;overflow:hidden;background:var(--bg);box-shadow:0 24px 80px #000a}.global{display:flex;flex-direction:column;align-items:center;background:#090d13;border-right:1px solid var(--line)}.brand{height:58px;width:100%;display:grid;place-items:center;border-bottom:1px solid var(--line);font-size:19px;font-weight:900;color:white}.railitem{position:relative;width:100%;height:52px;display:grid;place-items:center;color:#7e8998;font-size:19px;border:0;background:transparent}.railitem.active{color:var(--text);background:#111823}.railitem.active:before{content:"";position:absolute;left:0;top:8px;bottom:8px;width:2px;background:var(--cyan)}.railitem .tip{position:absolute;left:55px;display:none;padding:5px 8px;background:#171e28;border:1px solid var(--line);font-size:11px;white-space:nowrap;z-index:10}.railitem:hover .tip{display:block}.spacer{flex:1}.sidebar{min-width:0;display:flex;flex-direction:column;background:#0c1118;border-right:1px solid var(--line)}.sidehead{height:58px;display:flex;align-items:center;justify-content:space-between;padding:0 12px;border-bottom:1px solid var(--line)}.sidehead strong{font-size:11px;letter-spacing:.13em}.icons{color:var(--muted);letter-spacing:.35em}.project{padding:7px 10px;border-bottom:1px solid var(--line);color:#aab4c2;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.section{height:30px;display:flex;align-items:center;padding:0 10px;border-bottom:1px solid #1a222d;font-size:11px;font-weight:700}.tree{flex:1;min-height:0;overflow:auto;padding:5px 0;font:12px/25px ui-monospace,SFMono-Regular,Consolas,monospace}.row{height:25px;padding:0 10px;display:flex;gap:6px;white-space:nowrap}.row.sel{background:#172332}.folder{color:#91b8dc}.file{color:#a3abb7}.status{margin-left:auto;color:var(--green)}.sidefoot{height:30px;padding:6px 10px;border-top:1px solid var(--line);color:var(--muted);font-size:10px}.editor{min-width:0;display:flex;flex-direction:column;background:#090d12}.tabs{height:36px;min-height:36px;display:flex;overflow:hidden;border-bottom:1px solid var(--line);background:#0c1118}.tab{min-width:0;max-width:190px;flex:0 1 190px;height:36px;display:flex;align-items:center;gap:7px;padding:0 10px;border-right:1px solid var(--line);color:#8994a3;white-space:nowrap;overflow:hidden}.tab.active{background:#090d12;color:var(--text);border-top:2px solid var(--cyan)}.tab span{overflow:hidden;text-overflow:ellipsis}.tabmore{margin-left:auto;flex:0 0 34px;display:grid;place-items:center;background:#0c1118;color:var(--muted);border-left:1px solid var(--line)}.crumb{height:31px;padding:8px 12px;border-bottom:1px solid #171f29;color:#8793a2;font-size:11px}.code{flex:1;min-height:0;display:grid;grid-template-columns:48px 1fr;overflow:auto;background:linear-gradient(90deg,#0a0e13,#0b1016)}.nums{padding:14px 11px;text-align:right;color:#3f4b5a;font:12px/22px ui-monospace,monospace;border-right:1px solid #111923}.src{padding:14px 16px;white-space:pre;color:#c8d4e3;font:12px/22px ui-monospace,monospace}.kw{color:#cf8ef4}.fn{color:#59b9ff}.str{color:#a5d68a}.comment{color:#596677}.statusbar{height:25px;display:flex;align-items:center;justify-content:space-between;padding:0 10px;border-top:1px solid var(--line);background:#0c3340;color:#cbeef4;font-size:10px}.agent{min-width:0;display:flex;flex-direction:column;background:#0d121a;border-left:1px solid var(--line)}.agenthead{height:58px;display:flex;align-items:center;justify-content:space-between;padding:0 13px;border-bottom:1px solid var(--line)}.agenthead strong{display:block;font-size:12px}.agenthead span{display:block;margin-top:3px;color:var(--muted);font-size:10px}.badge{padding:4px 7px;border:1px solid #2b5960;border-radius:999px;color:var(--cyan);font-size:9px}.context{display:flex;gap:5px;flex-wrap:wrap;padding:8px 10px;border-bottom:1px solid var(--line)}.chip{padding:3px 6px;border:1px solid #26313f;border-radius:4px;color:#9da9b8;font-size:9px}.chat{flex:1;min-height:0;overflow:auto;padding:12px}.msg{margin-bottom:13px;padding:9px 10px;border:1px solid #202a36;border-radius:7px;background:#101720;line-height:1.45}.msg.agentmsg{border-color:#1f3940;background:#0e191e}.who{margin-bottom:5px;color:var(--cyan);font-size:9px;font-weight:800;letter-spacing:.1em}.composer{padding:10px;border-top:1px solid var(--line)}.input{min-height:76px;padding:9px;border:1px solid #334050;border-radius:7px;background:#090e14;color:#788595;font-size:11px}.sendrow{display:flex;justify-content:space-between;align-items:center;margin-top:7px;color:var(--muted);font-size:9px}.send{padding:5px 10px;border:0;border-radius:5px;background:var(--cyan);color:#031014;font-weight:800}.empty-note{margin-top:17px;padding:13px 15px;border:1px solid #26303d;border-radius:8px;background:#0d1219;color:#9aa6b5}.empty-note strong{color:var(--text)}.legend{display:flex;gap:18px;flex-wrap:wrap;margin-top:14px;color:#8591a0;font-size:11px}.legend b{color:var(--cyan)}
+</style>
+</head>
+<body><div class="page">
+<div class="eyebrow">Recommended direction · Code as a first-class Zorai workspace</div>
+<h1 class="title">VS Code structure, Zorai agent on the right</h1>
+<p class="sub">Threads remains the startup default. Code moves above Threads in the global rail. The contextual rail becomes the Explorer, the center is a constrained editor, and the existing Context slot becomes an agent scoped to this Code workspace/tab.</p>
+<div class="window">
+  <nav class="global">
+    <div class="brand">Z</div>
+    <button class="railitem active">⌘<span class="tip">Code</span></button>
+    <button class="railitem">◫<span class="tip">Threads · default on launch</span></button>
+    <button class="railitem">◎<span class="tip">Goals</span></button>
+    <button class="railitem">▦<span class="tip">Workspaces</span></button>
+    <button class="railitem">◈<span class="tip">Database</span></button>
+    <button class="railitem">⌁<span class="tip">Tools</span></button>
+    <div class="spacer"></div><button class="railitem">⚙</button>
+  </nav>
+  <aside class="sidebar">
+    <div class="sidehead"><strong>EXPLORER</strong><span class="icons">＋ ↻ ⋯</span></div>
+    <div class="project">⌄ ZORAI</div>
+    <div class="section">⌄ FILES</div>
+    <div class="tree">
+      <div class="row folder">⌄ frontend</div>
+      <div class="row folder" style="padding-left:25px">⌄ src</div>
+      <div class="row folder" style="padding-left:40px">⌄ zorai</div>
+      <div class="row folder" style="padding-left:55px">⌄ shell</div>
+      <div class="row file sel" style="padding-left:70px">◇ ZoraiShell.tsx <span class="status">M</span></div>
+      <div class="row file" style="padding-left:70px">◇ navigation.ts</div>
+      <div class="row folder" style="padding-left:40px">› components</div>
+      <div class="row file" style="padding-left:40px"># index.css</div>
+      <div class="row folder">› crates</div><div class="row file">◇ package.json</div>
+    </div>
+    <div class="sidefoot">main* · 4 changes</div>
+  </aside>
+  <main class="editor">
+    <div class="tabs">
+      <div class="tab active">◇ <span>ZoraiShell.tsx</span> ×</div>
+      <div class="tab">◇ <span>WorkspaceWorkbench.tsx</span> ×</div>
+      <div class="tab"># <span>zorai.css</span> ×</div>
+      <div class="tab">◇ <span>navigation.ts</span> ×</div>
+      <div class="tabmore">⌄</div>
+    </div>
+    <div class="crumb">frontend › src › zorai › shell › ZoraiShell.tsx</div>
+    <div class="code"><div class="nums">1<br>2<br>3<br>4<br>5<br>6<br>7<br>8<br>9<br>10<br>11<br>12<br>13<br>14<br>15</div><div class="src"><span class="kw">import</span> { useState } <span class="kw">from</span> <span class="str">"react"</span>;
+<span class="kw">import</span> { CodeView } <span class="kw">from</span> <span class="str">"../features/code/CodeView"</span>;
+
+<span class="kw">export function</span> <span class="fn">ZoraiShell</span>() {
+  <span class="kw">const</span> [activeView, setActiveView] = useState(<span class="str">"threads"</span>);
+
+  <span class="comment">// Code is global, while Threads remains startup default.</span>
+  <span class="kw">return</span> (
+    &lt;Shell&gt;
+      &lt;GlobalRail active={activeView} /&gt;
+      &lt;CodeView agentPane=<span class="str">"tab"</span> /&gt;
+    &lt;/Shell&gt;
+  );
+}</div></div>
+    <div class="statusbar"><span>main* · 0 errors · 1 warning</span><span>Ln 8, Col 7 · Spaces: 2 · TypeScript React</span></div>
+  </main>
+  <aside class="agent">
+    <div class="agenthead"><div><strong>Code Agent</strong><span>ZoraiShell.tsx · this Code tab</span></div><div class="badge">READY</div></div>
+    <div class="context"><span class="chip">ZoraiShell.tsx</span><span class="chip">selection 8–12</span><span class="chip">/zorai</span></div>
+    <div class="chat"><div class="msg"><div class="who">YOU</div>Move Code above Threads and make the explorer behave like VS Code.</div><div class="msg agentmsg"><div class="who">SVAROG · CODE AGENT</div>I’ll update the global navigation and keep Threads as the launch default. The active file and selection are already attached to this agent.</div></div>
+    <div class="composer"><div class="input">Ask the agent to inspect, edit, test, or explain this workspace…</div><div class="sendrow"><span>Agent for this Code tab</span><button class="send">Send</button></div></div>
+  </aside>
+</div>
+<div class="legend"><span><b>1</b> Code is above Threads</span><span><b>2</b> No top-level Tools wrapper or duplicate horizontal tool strip</span><span><b>3</b> Editor tabs stay single-row and compress/overflow</span><span><b>4</b> Explorer owns vertical scrolling</span><span><b>5</b> Right slot is a real file-aware agent</span></div>
+<div class="empty-note"><strong>Empty state:</strong> the Explorer shows one prominent “Open Folder…” button using the native directory picker. A path field is hidden under an optional “Open path manually” disclosure, not required for normal use.</div>
+</div></body></html>

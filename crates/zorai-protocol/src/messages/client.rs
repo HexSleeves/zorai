@@ -67,10 +67,10 @@ pub enum ClientMessage {
     AgentForceCompact { thread_id: String },
     AgentRetryStreamNow { thread_id: String },
     AgentListThreads { #[serde(default)] limit: Option<usize>, #[serde(default)] offset: Option<usize>, #[serde(default)] include_internal: bool, #[serde(default)] agent_filter: Option<String> },
-    AgentGetThread { thread_id: String, #[serde(default)] message_limit: Option<usize>, #[serde(default)] message_offset: Option<usize> },
+    AgentGetThread { thread_id: String, #[serde(default)] message_limit: Option<usize>, #[serde(default)] message_offset: Option<usize>, #[serde(default)] collapse_tool_calls: bool },
     AgentDeleteThread { thread_id: String },
     AgentAddTask { title: String, description: String, priority: String, command: Option<String>, session_id: Option<String>, scheduled_at: Option<u64>, #[serde(default)] dependencies: Vec<String> },
-    AgentStartGoalRun { goal: String, title: Option<String>, thread_id: Option<String>, session_id: Option<String>, priority: Option<String>, client_request_id: Option<String>, #[serde(default)] launch_assignments: Vec<GoalAgentAssignment>, #[serde(default)] autonomy_level: Option<String>, #[serde(default)] client_surface: Option<ClientSurface>, #[serde(default = "default_requires_approval")] requires_approval: bool },
+    AgentStartGoalRun { goal: String, title: Option<String>, thread_id: Option<String>, session_id: Option<String>, priority: Option<String>, client_request_id: Option<String>, #[serde(default)] launch_assignments: Vec<GoalAgentAssignment>, #[serde(default)] autonomy_level: Option<String>, #[serde(default)] client_surface: Option<ClientSurface>, #[serde(default)] target_agent_id: Option<String>, #[serde(default = "default_requires_approval")] requires_approval: bool },
     AgentCancelTask { task_id: String },
     AgentListTasks,
     AgentListRuns,
@@ -99,6 +99,11 @@ pub enum ClientMessage {
     AgentListTodos,
     AgentGetTodos { thread_id: String },
     AgentGetWorkContext { thread_id: String },
+    AgentGetFileOperationSnapshot { operation_id: String },
+    AgentRevertFileOperation { operation_id: String },
+    AgentGetThreadWorkspaceContext { thread_id: String },
+    AgentSetThreadWorkspaceContext { thread_id: String, context_json: String },
+    AgentSpawnSubagent { thread_id: String, args_json: String },
     AgentGetConfig,
     AgentGetEffectiveConfigState,
     AgentExternalRuntimeMigrationStatus,
@@ -276,4 +281,33 @@ pub enum ClientMessage {
     AgentListMlflowTracingHeaders,
     AgentSetMlflowTracingHeader { name: String, value: String },
     AgentDeleteMlflowTracingHeader { name: String },
+    AgentEnqueuePrompt {
+        thread_id: String,
+        content: String,
+        #[serde(default)]
+        content_blocks_json: Option<String>,
+        #[serde(default)]
+        prompt_id: Option<String>,
+    },
+    AgentListPromptQueue {
+        #[serde(default)]
+        thread_id: Option<String>,
+    },
+    AgentUpdateQueuedPrompt {
+        thread_id: String,
+        prompt_id: String,
+        content: String,
+        #[serde(default)]
+        content_blocks_json: Option<String>,
+    },
+    AgentCancelQueuedPrompt {
+        thread_id: String,
+        prompt_id: String,
+    },
+    AgentSendQueuedPromptNow {
+        thread_id: String,
+        prompt_id: String,
+    },
+    AgentGetThreadExecutionProfile { thread_id: String },
+    AgentSetThreadExecutionProfile { thread_id: String, profile_json: String },
 }

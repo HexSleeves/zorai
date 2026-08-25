@@ -1,3 +1,4 @@
+import { LoadingPanel } from "@/components/LoadingState";
 import { useEffect, useMemo, useState } from "react";
 import { fetchFilePreview, fetchGitDiff } from "@/lib/agentWorkContext";
 import { shortenHomePath } from "@/lib/workspaceStore";
@@ -104,7 +105,7 @@ export function ThreadFilePreviewOverlay() {
 
       <div className="zorai-file-preview-overlay__body">
         {error ? <div className="zorai-empty zorai-empty--danger">{error}</div> : null}
-        {loading ? <div className="zorai-empty">Loading preview...</div> : null}
+        {loading ? <LoadingPanel label="Loading file preview…" /> : null}
         {!loading && !error && sections.length === 0 ? (
           <div className="zorai-empty">No preview available for the selected file.</div>
         ) : null}

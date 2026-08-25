@@ -336,18 +336,24 @@ pub(crate) fn builtin_persona_setup_error(alias: &str) -> anyhow::Error {
 }
 
 pub(crate) fn internal_dm_thread_id(agent_a: &str, agent_b: &str) -> String {
-    let mut ids = [
-        canonical_agent_id(agent_a).to_string(),
-        canonical_agent_id(agent_b).to_string(),
-    ];
+    let mut ids = [agent_turn_scope_id(agent_a), agent_turn_scope_id(agent_b)];
     ids.sort();
     format!("{INTERNAL_DM_THREAD_PREFIX}{}:{}", ids[0], ids[1])
 }
 
+fn internal_agent_display_name(alias: &str) -> String {
+    let scoped = agent_turn_scope_id(alias);
+    if canonical_agent_id(alias) == MAIN_AGENT_ID && !is_main_agent_scope(alias) {
+        scoped
+    } else {
+        canonical_agent_name(alias).to_string()
+    }
+}
+
 pub(crate) fn internal_dm_thread_title(agent_a: &str, agent_b: &str) -> String {
     let mut names = [
-        canonical_agent_name(agent_a).to_string(),
-        canonical_agent_name(agent_b).to_string(),
+        internal_agent_display_name(agent_a),
+        internal_agent_display_name(agent_b),
     ];
     names.sort();
     format!("Internal DM · {} ↔ {}", names[0], names[1])
@@ -513,8 +519,8 @@ pub(crate) fn sender_name_for_task(task: Option<&AgentTask>) -> String {
 pub(crate) fn wrap_internal_message(sender: &str, recipient: &str, content: &str) -> String {
     format!(
         "Internal agent message from {} to {}.\nRespond directly to the request below and assume the recipient will relay or integrate your answer.\n\n{}",
-        canonical_agent_name(sender),
-        canonical_agent_name(recipient),
+        internal_agent_display_name(sender),
+        internal_agent_display_name(recipient),
         content.trim()
     )
 }
@@ -560,6 +566,17 @@ mod tests {
             internal_dm_thread_id(MAIN_AGENT_ALIAS, CONCIERGE_AGENT_ALIAS),
             format!("dm:{}:{}", CONCIERGE_AGENT_ID, MAIN_AGENT_ID)
         );
+    }
+
+    #[test]
+    fn internal_dm_thread_id_preserves_user_subagent_sender() {
+        let sender = "subagent-1781800311670";
+        assert_eq!(
+            internal_dm_thread_id(sender, WELES_AGENT_ID),
+            format!("dm:{sender}:{WELES_AGENT_ID}")
+        );
+        assert!(wrap_internal_message(sender, WELES_AGENT_ID, "inspect")
+            .starts_with("Internal agent message from subagent-1781800311670 to Weles."));
     }
 
     #[test]

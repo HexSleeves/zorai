@@ -1055,5 +1055,16 @@ pub(super) fn extended_schema_sql() -> &'static str {
             );
             CREATE INDEX IF NOT EXISTS idx_discoverable_guideline_documents_seen
                 ON discoverable_guideline_documents(last_seen_at DESC);
+
+            CREATE TABLE IF NOT EXISTS thread_prompt_queue (
+                id TEXT PRIMARY KEY,
+                thread_id TEXT NOT NULL,
+                position INTEGER NOT NULL,
+                content TEXT NOT NULL,
+                content_blocks_json TEXT,
+                created_at INTEGER NOT NULL
+            );
+            CREATE INDEX IF NOT EXISTS idx_prompt_queue_thread_pos
+                ON thread_prompt_queue(thread_id, position, created_at);
     "#
 }

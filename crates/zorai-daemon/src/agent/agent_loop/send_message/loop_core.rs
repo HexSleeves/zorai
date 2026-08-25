@@ -55,6 +55,22 @@ fn is_context_window_exceeded_failure(message: &str) -> bool {
 }
 
 impl<'a> SendMessageRunner<'a> {
+    fn clear_retry_status_on_progress(&mut self) {
+        if !self.retry_status_visible {
+            return;
+        }
+        let _ = self.engine.event_tx.send(AgentEvent::RetryStatus {
+            thread_id: self.tid.clone(),
+            phase: "cleared".to_string(),
+            attempt: 0,
+            max_retries: 0,
+            delay_ms: 0,
+            failure_class: String::new(),
+            message: String::new(),
+        });
+        self.retry_status_visible = false;
+    }
+
     fn resolve_claude_permission_mode(&self) -> Option<String> {
         let nonempty = |value: Option<&str>| {
             value
@@ -324,17 +340,10 @@ impl<'a> SendMessageRunner<'a> {
 
                     match chunk {
                         CompletionChunk::Delta { content, reasoning } => {
-                            if self.retry_status_visible {
-                                let _ = self.engine.event_tx.send(AgentEvent::RetryStatus {
-                                    thread_id: self.tid.clone(),
-                                    phase: "cleared".to_string(),
-                                    attempt: 0,
-                                    max_retries: 0,
-                                    delay_ms: 0,
-                                    failure_class: String::new(),
-                                    message: String::new(),
-                                });
-                                self.retry_status_visible = false;
+                            if !content.is_empty()
+                                || reasoning.as_ref().is_some_and(|value| !value.is_empty())
+                            {
+                                self.clear_retry_status_on_progress();
                             }
                             if first_token_at.is_none()
                                 && (!content.is_empty()
@@ -412,6 +421,7 @@ impl<'a> SendMessageRunner<'a> {
                         }
                         CompletionChunk::TransportFallback { .. } => {}
                         chunk @ CompletionChunk::Done { .. } => {
+                            self.clear_retry_status_on_progress();
                             self.engine
                                 .note_stream_progress(
                                     &self.tid,
@@ -424,6 +434,7 @@ impl<'a> SendMessageRunner<'a> {
                             break;
                         }
                         chunk @ CompletionChunk::ToolCalls { .. } => {
+                            self.clear_retry_status_on_progress();
                             self.engine
                                 .note_stream_progress(
                                     &self.tid,

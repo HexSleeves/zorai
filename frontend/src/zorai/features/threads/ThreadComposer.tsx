@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent, type DragEvent, type KeyboardEvent } from "react";
 import { useAgentChatPanelRuntime } from "@/components/agent-chat-panel/runtime/context";
 import {
   blobToBase64,
@@ -13,42 +13,90 @@ import {
 } from "@/components/agent-chat-panel/chat-view/composerMedia";
 import type { ComposerAttachment } from "@/components/agent-chat-panel/chat-view/types";
 import { useAgentStore } from "@/lib/agentStore";
+import { useWorkspaceContextStore } from "@/lib/workspaceContextStore";
 import { useComposerInputHistory } from "./composerInputHistory";
 import { applyComposerTextareaSize } from "./composerTextareaSize";
-import {
-  createQueuedComposerMessage,
-  queuedComposerLabel,
-  shouldDispatchQueuedFollowUp,
-  type QueuedComposerMessage,
-} from "./composerQueue";
+import { ThreadComposerQueue } from "./ThreadComposerQueue";
+import { useDaemonPromptQueue } from "./useDaemonPromptQueue";
 import { getBridge } from "@/lib/bridge";
 import { pushToast } from "@/lib/toastStore";
 import { activeThreadBudgetExceededNotice } from "./threadBudgetNotice";
-import { applyManagedSecurityLevel, managedSecurityLevels } from "./threadRuntimeActions";
+import { ManagedSecurityShield } from "./ManagedSecurityShield";
+import { ThreadEffortGauge } from "./ThreadEffortGauge";
+import { ComposerContextCircle } from "./ComposerContextCircle";
+import { CodeThreadRuntimeSwitcher } from "../code/CodeThreadRuntimeSwitcher";
 import { AttachmentTiles, composerAttachmentToTile } from "./attachmentTiles";
+import { buildHandoffDefaults, buildThreadAgentOptions } from "./threadHandoffModel";
+import {
+  canAssignComposerOwnerDirectly,
+  composerTargetValue,
+  parseComposerTarget,
+  resolveComposerSendRoute,
+  targetAfterAcceptedDispatch,
+  type ComposerTarget,
+} from "./composerTargetModel";
+import { BUILTIN_WORKSPACE_PERSONAS } from "../workspaces/workspaceActorPicker";
 
-export function ThreadComposer() {
+export function ThreadComposer({
+  showTargetSelector = false,
+  compact = false,
+}: {
+  showTargetSelector?: boolean;
+  compact?: boolean;
+} = {}) {
   const runtime = useAgentChatPanelRuntime();
   const agentSettings = useAgentStore((state) => state.agentSettings);
+  const activeThreadId = useAgentStore((state) => state.activeThreadId);
+  const workspaceContext = useWorkspaceContextStore((state) => activeThreadId ? state.byThreadId[activeThreadId] : undefined);
+  const toggleAttachedFile = useWorkspaceContextStore((state) => state.toggleAttachedFile);
+  const [contextPreviewOpen, setContextPreviewOpen] = useState(false);
+  const subAgents = useAgentStore((state) => state.subAgents);
+  const activeResponderId = runtime.activeThread?.threadHandoffState?.activeAgentId
+    ?? runtime.activeThread?.targetAgentId
+    ?? runtime.activeThread?.agent_name
+    ?? "swarog";
+  const handoffAgents = useMemo(() => buildThreadAgentOptions(
+    [
+      { id: "swarog", name: "Svarog" },
+      { id: "rarog", name: "Rarog" },
+      ...BUILTIN_WORKSPACE_PERSONAS.map((persona) => ({ id: persona.id, name: persona.label })),
+    ],
+    [],
+    activeResponderId,
+  ), [activeResponderId]);
+  const composerTargets: ComposerTarget[] = useMemo(() => [
+    { kind: "current", id: "current", label: runtime.activeThread?.agent_name || "Current responder" },
+    ...handoffAgents.map((agent) => ({ kind: "agent" as const, id: agent.id, label: agent.name })),
+    ...subAgents
+      .filter((agent) => agent.enabled && agent.id !== activeResponderId)
+      .map((agent) => ({ kind: "subagent" as const, id: agent.id, label: agent.name })),
+  ], [activeResponderId, handoffAgents, runtime.activeThread?.agent_name, subAgents]);
+  const [composerTarget, setComposerTarget] = useState<ComposerTarget>(composerTargets[0]);
+  const [targetPending, setTargetPending] = useState(false);
+  const [targetError, setTargetError] = useState<string | null>(null);
+  const inputRef = runtime.inputRef;
+  const sendMessage = runtime.sendMessage;
+  const isStreamingResponse = runtime.isStreamingResponse;
+  const activeRuntimeThreadId = runtime.activeThreadId;
+  const stopStreaming = runtime.stopStreaming;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [attachments, setAttachments] = useState<ComposerAttachment[]>([]);
-  const [dropActive, setDropActive] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [isTranscribing, setIsTranscribing] = useState(false);
-  const [queuedMessages, setQueuedMessages] = useState<QueuedComposerMessage[]>([]);
-  const [sendNowMessage, setSendNowMessage] = useState<QueuedComposerMessage | null>(null);
+  const [dropActive, setDropActive] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const discardCaptureRef = useRef(false);
-  const awaitingStreamStartRef = useRef(false);
   const history = useComposerInputHistory(runtime.input, runtime.setInput, runtime.inputRef);
   const budgetNotice = activeThreadBudgetExceededNotice(
     runtime.activeThread?.daemonThreadId,
     runtime.messages,
     runtime.spawnedAgentTree,
   );
+  const queue = useDaemonPromptQueue(runtime.activeThread?.daemonThreadId);
   const canSend = Boolean(runtime.input.trim() || attachments.length > 0);
+  const assignOwnerDirectly = canAssignComposerOwnerDirectly(runtime.activeThread, runtime.messages.length);
   const ttsAvailable = agentSettings.audio_tts_enabled && Boolean(getBridge()?.agentTextToSpeech);
   const updateAgentSetting = useAgentStore((state) => state.updateAgentSetting);
   const voiceCaptureAvailable = agentSettings.audio_stt_enabled
@@ -56,6 +104,15 @@ export function ThreadComposer() {
     && typeof MediaRecorder !== "undefined"
     && Boolean(navigator.mediaDevices?.getUserMedia)
     && Boolean(getBridge()?.agentSpeechToText);
+
+  const previousTargetThreadRef = useRef<string | null | undefined>(undefined);
+  useEffect(() => {
+    if (!showTargetSelector || previousTargetThreadRef.current === activeThreadId) return;
+    previousTargetThreadRef.current = activeThreadId;
+    setComposerTarget(composerTargets[0]);
+    setTargetError(null);
+    setTargetPending(false);
+  }, [activeThreadId, composerTargets, showTargetSelector]);
 
   useEffect(() => {
     return () => {
@@ -71,9 +128,9 @@ export function ThreadComposer() {
   }, []);
 
   useEffect(() => {
-    const el = runtime.inputRef.current;
+    const el = inputRef.current;
     if (el) applyComposerTextareaSize(el);
-  }, [runtime.input]);
+  }, [inputRef, runtime.input]);
 
   const appendFiles = async (files: File[]) => {
     if (files.length === 0) return;
@@ -81,12 +138,53 @@ export function ThreadComposer() {
     setAttachments((current) => [...current, ...loaded.filter((item): item is ComposerAttachment => Boolean(item))]);
   };
 
-  const sendCurrentInput = () => {
-    if (budgetNotice || runtime.isStreamingResponse) return;
+  const sendCurrentInput = async () => {
+    if (budgetNotice || isStreamingResponse || targetPending) return;
     const payload = buildAttachmentSendPayload(runtime.input, attachments);
     if (!payload.text && !payload.contentBlocksJson) return;
+    setTargetError(null);
+
+    const sendRoute = resolveComposerSendRoute(composerTarget, assignOwnerDirectly);
+    if (sendRoute.action === "assign-owner" && runtime.activeThread) {
+      useAgentStore.getState().setThreadOwner(runtime.activeThread.id, {
+        agentId: sendRoute.agentId,
+        agentName: sendRoute.agentName,
+      });
+      setComposerTarget({ kind: "current", id: "current", label: sendRoute.agentName });
+    } else if (sendRoute.action === "spawn-subagent") {
+      setTargetPending(true);
+      const result = await runtime.spawnSubagent({
+        title: composerTarget.label,
+        description: payload.text,
+        cwd: workspaceContext?.root ?? null,
+      });
+      setTargetPending(false);
+      if (!result.ok) {
+        setTargetError(result.error ?? "Subagent delegation failed.");
+        return;
+      }
+      history.remember(payload.text);
+      runtime.setInput("");
+      setAttachments([]);
+      setComposerTarget(targetAfterAcceptedDispatch(composerTarget));
+      return;
+    } else if (sendRoute.action === "handoff-agent") {
+      setTargetPending(true);
+      const defaults = buildHandoffDefaults(composerTarget.label);
+      const result = await runtime.pushHandoff({
+        targetAgentId: composerTarget.id,
+        reason: defaults.reason,
+        summary: defaults.summary,
+      });
+      setTargetPending(false);
+      if (!result.ok) {
+        setTargetError(result.error);
+        return;
+      }
+    }
+
     history.remember(payload.text);
-    runtime.sendMessage(payload);
+    sendMessage(payload);
     runtime.setInput("");
     setAttachments([]);
   };
@@ -96,58 +194,30 @@ export function ThreadComposer() {
     const payload = buildAttachmentSendPayload(runtime.input, attachments);
     if (!payload.text && !payload.contentBlocksJson) return;
     history.remember(payload.text);
-    setQueuedMessages((current) => [...current, createQueuedComposerMessage(payload)]);
-    runtime.setInput("");
+    void queue.enqueue(payload).then((ok) => {
+      if (!ok) return;
+      runtime.setInput("");
+      setAttachments([]);
+    });
+  };
+
+  const updateQueuedInput = () => {
+    if (!queue.editingId) return;
+    const payload = buildAttachmentSendPayload(runtime.input, attachments);
+    if (!payload.text && !payload.contentBlocksJson) return;
+    history.remember(payload.text);
+    void queue.updateQueued(queue.editingId, payload).then((ok) => {
+      if (!ok) return;
+      runtime.setInput("");
+      setAttachments([]);
+    });
+  };
+
+  const startEditQueued = (item: (typeof queue.queuedMessages)[number]) => {
+    queue.startEdit(item);
+    runtime.setInput(item.text);
     setAttachments([]);
   };
-
-  const removeQueuedMessage = (index: number) => {
-    setQueuedMessages((current) => current.filter((_, i) => i !== index));
-  };
-
-  const sendQueuedMessageNow = (index: number) => {
-    if (budgetNotice) return;
-    const queued = queuedMessages[index];
-    if (!queued) return;
-    setQueuedMessages((current) => current.filter((_, i) => i !== index));
-    if (runtime.isStreamingResponse) {
-      setSendNowMessage(queued);
-      runtime.stopStreaming(runtime.activeThreadId);
-      return;
-    }
-    awaitingStreamStartRef.current = true;
-    runtime.sendMessage(queued);
-  };
-
-  useEffect(() => {
-    if (budgetNotice) return;
-    if (runtime.isStreamingResponse) {
-      awaitingStreamStartRef.current = false;
-      return;
-    }
-    if (!shouldDispatchQueuedFollowUp({
-      isStreaming: runtime.isStreamingResponse,
-      awaitingStreamStart: awaitingStreamStartRef.current,
-      hasSendNow: Boolean(sendNowMessage),
-      queueLength: queuedMessages.length,
-    })) {
-      return;
-    }
-    awaitingStreamStartRef.current = true;
-    if (sendNowMessage) {
-      const payload = sendNowMessage;
-      setSendNowMessage(null);
-      runtime.sendMessage(payload);
-      return;
-    }
-    const [next, ...rest] = queuedMessages;
-    if (!next) {
-      awaitingStreamStartRef.current = false;
-      return;
-    }
-    setQueuedMessages(rest);
-    runtime.sendMessage(next);
-  }, [budgetNotice, queuedMessages, runtime.isStreamingResponse, runtime.sendMessage, sendNowMessage]);
 
   // Ctrl+M toggles voice recording from anywhere in the thread surface
   // (including while typing in the textarea — that's where you want it most).
@@ -168,10 +238,12 @@ export function ThreadComposer() {
     if (history.handleKeyDown(event)) return;
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
-      if (runtime.isStreamingResponse) {
+      if (isStreamingResponse) {
         queueCurrentInput();
+      } else if (queue.editingId) {
+        updateQueuedInput();
       } else {
-        sendCurrentInput();
+        void sendCurrentInput();
       }
     }
   };
@@ -276,7 +348,11 @@ export function ThreadComposer() {
 
   return (
     <div
-      className={["zorai-thread-composer", dropActive ? "zorai-thread-composer--drop" : ""].filter(Boolean).join(" ")}
+      className={[
+        "zorai-thread-composer",
+        compact ? "zorai-thread-composer--compact" : "",
+        dropActive ? "zorai-thread-composer--drop" : "",
+      ].filter(Boolean).join(" ")}
       onDragOver={(event) => {
         event.preventDefault();
         setDropActive(true);
@@ -285,6 +361,32 @@ export function ThreadComposer() {
       onDrop={onDrop}
       onPaste={onPaste}
     >
+      {workspaceContext ? (
+        <div className="zorai-composer-workspace-context">
+          <button type="button" className="zorai-composer-context-chip" onClick={() => setContextPreviewOpen((open) => !open)} title={workspaceContext.root}>
+            Workspace · {workspaceContext.root.split(/[\\/]/).slice(-1)[0]}
+          </button>
+          {workspaceContext.activeFile ? <span className="zorai-composer-context-chip">Active · {workspaceContext.activeFile}</span> : null}
+          {workspaceContext.selection && workspaceContext.activeFile ? <span className="zorai-composer-context-chip">Lines {workspaceContext.selection.startLine}-{workspaceContext.selection.endLine}</span> : null}
+          {workspaceContext.attachedFiles.map((filePath) => (
+            <span key={filePath} className="zorai-composer-context-chip zorai-composer-context-chip--attached">
+              {filePath}
+              <button type="button" aria-label={`Detach ${filePath}`} onClick={() => activeThreadId && toggleAttachedFile(activeThreadId, filePath)}>×</button>
+            </span>
+          ))}
+          {contextPreviewOpen ? (
+            <div className="zorai-composer-context-preview">
+              <strong>Effective daemon workspace context</strong>
+              <code>Workspace: {workspaceContext.root}</code>
+              {workspaceContext.activeFile ? <code>Active file: {workspaceContext.activeFile}</code> : null}
+              {workspaceContext.selection && workspaceContext.activeFile ? <code>Selection: {workspaceContext.activeFile}:{workspaceContext.selection.startLine}-{workspaceContext.selection.endLine}</code> : null}
+              {workspaceContext.attachedFiles.length > 0 ? <code>Explicit attachments: {workspaceContext.attachedFiles.join(", ")}</code> : null}
+              <span>File contents are read from disk by tools on demand; they are not injected automatically.</span>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       {attachments.length > 0 ? (
         <AttachmentTiles
           items={attachments.map(composerAttachmentToTile)}
@@ -296,36 +398,18 @@ export function ThreadComposer() {
         <p className="zorai-composer-budget-notice" role="alert">{budgetNotice}</p>
       ) : null}
 
-      {queuedMessages.length > 0 ? (
-        <div className="zorai-composer-queue">
-          {queuedMessages.map((queued, index) => (
-            <div key={queued.id} className="zorai-composer-queue__chip">
-              <span className="zorai-composer-queue__label">Queued {index + 1}</span>
-              <span className="zorai-composer-queue__text">{queuedComposerLabel(queued)}</span>
-              <button
-                type="button"
-                className="zorai-composer-queue__send-now"
-                title="Interrupt the current response and send this message now"
-                onClick={() => sendQueuedMessageNow(index)}
-              >
-                Send now
-              </button>
-              <button
-                type="button"
-                className="zorai-composer-queue__remove"
-                aria-label="Remove queued message"
-                onClick={() => removeQueuedMessage(index)}
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : null}
+      <ThreadComposerQueue
+        items={queue.queuedMessages}
+        editingId={queue.editingId}
+        onEdit={startEditQueued}
+        onSendNow={(id) => void queue.sendNow(id)}
+        onCancel={(id) => void queue.cancelQueued(id)}
+      />
 
+      {targetError ? <p className="zorai-composer-budget-notice" role="alert">{targetError}</p> : null}
       <div className="zorai-composer-box">
         <textarea
-          ref={runtime.inputRef}
+          ref={inputRef}
           value={runtime.input}
           onChange={(event) => {
             history.commit();
@@ -334,27 +418,52 @@ export function ThreadComposer() {
           }}
           onClick={() => history.commit()}
           onKeyDown={handleKeyDown}
-          placeholder={isTranscribing ? "Transcribing..." : isRecording ? "Recording..." : runtime.isStreamingResponse ? "Queue a follow-up…" : "Message Zorai..."}
+          placeholder={isTranscribing ? "Transcribing..." : isRecording ? "Recording..." : queue.editingId ? "Edit queued message…" : isStreamingResponse ? "Queue a follow-up…" : "Message Zorai..."}
           rows={3}
         />
 
         <div className="zorai-composer-actions">
           <div className="zorai-composer-actions__left">
-            <label className="zorai-composer-mode">
-              <select
-                className="zorai-input"
-                value={agentSettings.managed_security_level}
-                title="Managed security mode"
-                aria-label="Managed security mode"
-                onChange={(event) => {
-                  void applyManagedSecurityLevel(event.target.value as typeof agentSettings.managed_security_level);
-                }}
-              >
-                {managedSecurityLevels().map((level) => (
-                  <option key={level} value={level}>{level}</option>
-                ))}
-              </select>
-            </label>
+            {compact ? (
+              <CodeThreadRuntimeSwitcher thread={runtime.activeThread ?? null} variant="composer" />
+            ) : showTargetSelector ? (
+              <label className="zorai-composer-target">
+                <select
+                  className="zorai-input"
+                  aria-label={assignOwnerDirectly ? "Choose thread owner" : "Choose agent or subagent"}
+                  value={composerTargetValue(composerTarget)}
+                  disabled={targetPending || isStreamingResponse}
+                  onChange={(event) => {
+                    const next = parseComposerTarget(event.target.value, composerTargets);
+                    const route = resolveComposerSendRoute(next, assignOwnerDirectly);
+                    if (route.action === "assign-owner" && runtime.activeThread) {
+                      useAgentStore.getState().setThreadOwner(runtime.activeThread.id, {
+                        agentId: route.agentId,
+                        agentName: route.agentName,
+                      });
+                      setComposerTarget({ kind: "current", id: "current", label: route.agentName });
+                      setTargetError(null);
+                      return;
+                    }
+                    setComposerTarget(next);
+                  }}
+                >
+                  <optgroup label="Responder">
+                    {composerTargets.filter((target) => target.kind === "current").map((target) => <option key={composerTargetValue(target)} value={composerTargetValue(target)}>{target.label}</option>)}
+                  </optgroup>
+                  <optgroup label="Agents">
+                    {composerTargets.filter((target) => target.kind === "agent").map((target) => <option key={composerTargetValue(target)} value={composerTargetValue(target)}>{target.label}</option>)}
+                  </optgroup>
+                  <optgroup label={assignOwnerDirectly ? "Subagents" : "Delegate to subagent"}>
+                    {composerTargets.filter((target) => target.kind === "subagent").map((target) => <option key={composerTargetValue(target)} value={composerTargetValue(target)}>{target.label}</option>)}
+                  </optgroup>
+                </select>
+              </label>
+            ) : null}
+            <div className="zorai-composer-mode">
+              {runtime.activeThread ? <ThreadEffortGauge thread={runtime.activeThread} /> : null}
+              <ManagedSecurityShield />
+            </div>
             <input
               ref={fileInputRef}
               type="file"
@@ -413,7 +522,34 @@ export function ThreadComposer() {
           </div>
 
           <div className="zorai-composer-actions__right">
-            {runtime.isStreamingResponse ? (
+            <ComposerContextCircle thread={runtime.activeThread ?? null} messages={runtime.messages} />
+            {queue.editingId ? (
+              <>
+                <button
+                  type="button"
+                  className="zorai-composer-icon-button"
+                  title="Cancel edit"
+                  aria-label="Cancel edit"
+                  onClick={() => {
+                    queue.cancelEdit();
+                    runtime.setInput("");
+                    setAttachments([]);
+                  }}
+                >
+                  <ComposerIcon kind="stop" />
+                </button>
+                <button
+                  type="button"
+                  className="zorai-composer-icon-button zorai-composer-icon-button--send"
+                  title="Update queued message"
+                  aria-label="Update queued message"
+                  onClick={updateQueuedInput}
+                  disabled={!canSend}
+                >
+                  <ComposerIcon kind="queue" />
+                </button>
+              </>
+            ) : isStreamingResponse ? (
               <>
                 <button
                   type="button"
@@ -430,7 +566,7 @@ export function ThreadComposer() {
                   className="zorai-composer-icon-button zorai-composer-icon-button--stop"
                   title="Stop generating"
                   aria-label="Stop generating"
-                  onClick={() => runtime.stopStreaming(runtime.activeThreadId)}
+                  onClick={() => stopStreaming(activeRuntimeThreadId)}
                 >
                   <ComposerIcon kind="stop" />
                 </button>
@@ -441,7 +577,7 @@ export function ThreadComposer() {
                 className="zorai-composer-icon-button zorai-composer-icon-button--send"
                 title="Send message (Enter)"
                 aria-label="Send message"
-                onClick={sendCurrentInput}
+                onClick={() => void sendCurrentInput()}
                 disabled={!canSend}
               >
                 <ComposerIcon kind="send" />

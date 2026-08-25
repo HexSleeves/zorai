@@ -23,6 +23,7 @@ impl TuiModel {
         self.status_line = "Connected to daemon".to_string();
         self.send_daemon_command(DaemonCommand::Refresh);
         self.send_daemon_command(DaemonCommand::GetConfig);
+        self.send_daemon_command(DaemonCommand::ListPromptQueue { thread_id: None });
     }
 
     pub(in crate::app) fn handle_disconnected_event(&mut self) {

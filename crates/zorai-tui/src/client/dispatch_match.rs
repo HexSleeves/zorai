@@ -559,6 +559,26 @@ impl DaemonClient {
                     })
                     .await;
             }
+            "prompt_queue_update" => {
+                let thread_id = get_string(&event, "thread_id").unwrap_or_default();
+                let prompts = event
+                    .get("prompts")
+                    .cloned()
+                    .and_then(|raw| {
+                        serde_json::from_value::<Vec<zorai_protocol::QueuedPromptRecord>>(raw).ok()
+                    })
+                    .unwrap_or_default();
+                let _ = event_tx
+                    .send(ClientEvent::PromptQueue {
+                        thread_id: if thread_id.is_empty() {
+                            None
+                        } else {
+                            Some(thread_id)
+                        },
+                        prompts,
+                    })
+                    .await;
+            }
             "message_feedback_updated" => {
                 let thread_id = get_string(&event, "thread_id").unwrap_or_default();
                 let message_id = get_string(&event, "message_id").unwrap_or_default();

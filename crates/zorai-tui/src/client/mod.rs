@@ -121,6 +121,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn agent_prompt_queue_routes_to_prompt_queue_client_event() {
+        let (event_tx, mut event_rx) = mpsc::channel(8);
+        let cont = dispatch_for_test(
+            zorai_protocol::DaemonMessage::AgentPromptQueue {
+                thread_id: Some("thread-1".to_string()),
+                prompts: vec![zorai_protocol::QueuedPromptRecord {
+                    id: "prompt-1".to_string(),
+                    thread_id: "thread-1".to_string(),
+                    content: "later".to_string(),
+                    content_blocks_json: None,
+                    created_at: 1,
+                    position: 0,
+                }],
+            },
+            &event_tx,
+        )
+        .await;
+        assert!(cont);
+        match event_rx.recv().await.expect("expected PromptQueue") {
+            ClientEvent::PromptQueue { thread_id, prompts } => {
+                assert_eq!(thread_id.as_deref(), Some("thread-1"));
+                assert_eq!(prompts.len(), 1);
+                assert_eq!(prompts[0].content, "later");
+            }
+            other => panic!("expected PromptQueue, got {:?}", other),
+        }
+    }
+
+    #[tokio::test]
     async fn unhandled_daemon_message_does_not_panic_dispatcher() {
         let (event_tx, _event_rx) = mpsc::channel(8);
         let cont = dispatch_for_test(zorai_protocol::DaemonMessage::Pong, &event_tx).await;

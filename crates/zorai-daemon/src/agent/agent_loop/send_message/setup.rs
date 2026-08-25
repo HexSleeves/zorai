@@ -1,6 +1,7 @@
 use super::*;
 use crate::agent::llm_client::CopilotInitiator;
 use crate::agent::provider_resolution::apply_provider_model_override;
+use crate::agent::task_worktree::{select_isolated_task_session, IsolatedTaskSessionPlan};
 use std::path::Path;
 use zorai_protocol::SecurityLevel;
 
@@ -161,7 +162,36 @@ fn build_direct_thread_responder_config(
         crate::agent::agent_identity::resolve_agent_target(agent_scope_id, sub_agents);
     let resolved_scope = resolved_target.scope_id.as_str();
     if resolved_scope == MAIN_AGENT_ID {
-        return Ok(None);
+        let profile_provider =
+            nonempty(execution_profile.and_then(|profile| profile.provider.as_deref()));
+        let profile_model =
+            nonempty(execution_profile.and_then(|profile| profile.model.as_deref()));
+        let profile_reasoning_effort =
+            nonempty(execution_profile.and_then(|profile| profile.reasoning_effort.as_deref()));
+        let profile_context_window_tokens =
+            execution_profile.and_then(|profile| profile.context_window_tokens);
+        if profile_provider.is_none()
+            && profile_model.is_none()
+            && profile_reasoning_effort.is_none()
+            && profile_context_window_tokens.is_none()
+        {
+            return Ok(None);
+        }
+        return Ok(Some(DirectThreadResponderConfig {
+            agent_name: MAIN_AGENT_NAME.to_string(),
+            provider_id: profile_provider.unwrap_or_else(|| config.provider.clone()),
+            model: profile_model,
+            base_url: None,
+            reasoning_effort: profile_reasoning_effort,
+            context_window_tokens: profile_context_window_tokens,
+            huggingface_provider: None,
+            openrouter_provider_order: Vec::new(),
+            openrouter_provider_ignore: Vec::new(),
+            openrouter_allow_fallbacks: None,
+            system_prompt: config.system_prompt.clone(),
+            persona_prompt: String::new(),
+            tool_filter: None,
+        }));
     }
     if resolved_scope == CONCIERGE_AGENT_ID {
         let provider_id = config
@@ -403,6 +433,15 @@ fn spawn_background_community_scout(
             details: Some(details.to_string()),
         });
     });
+}
+
+fn retain_resolved_session(
+    resolved_session_id: Option<zorai_protocol::SessionId>,
+    compatible_source: Option<&zorai_protocol::SessionInfo>,
+) -> Option<zorai_protocol::SessionId> {
+    compatible_source
+        .map(|session| session.id)
+        .or(resolved_session_id)
 }
 
 impl<'a> SendMessageRunner<'a> {
@@ -755,8 +794,104 @@ impl<'a> SendMessageRunner<'a> {
         } else {
             None
         };
-        let preferred_session_id =
+        let mut preferred_session_id =
             resolve_preferred_session_id(&engine.session_manager, preferred_session_hint).await;
+        if let Some(task) = current_task_for_setup.as_ref() {
+            match engine.ensure_isolated_task_workspace(&tid, task).await {
+                Ok(Some(isolated)) => {
+                    let sessions = engine.session_manager.list().await;
+                    match select_isolated_task_session(
+                        &sessions,
+                        task.session_id.as_deref(),
+                        preferred_session_hint,
+                        &isolated.workspace_root,
+                        &isolated.root,
+                    ) {
+                        IsolatedTaskSessionPlan::Reuse(isolated_session) => {
+                            preferred_session_id = Some(isolated_session.id);
+                            let isolated_session_id = isolated_session.id.to_string();
+                            if task.session_id.as_deref() != Some(isolated_session_id.as_str()) {
+                                let _ = engine
+                                    .bind_task_isolated_session(task, isolated_session.id)
+                                    .await;
+                            }
+                        }
+                        IsolatedTaskSessionPlan::CloneFrom(source_session) => {
+                            match engine
+                                .session_manager
+                                .clone_session(
+                                    source_session.id,
+                                    source_session.workspace_id.clone(),
+                                    None,
+                                    None,
+                                    false,
+                                    Some(isolated.root.clone()),
+                                )
+                                .await
+                            {
+                                Ok((isolated_session_id, _, _)) => {
+                                    preferred_session_id = Some(isolated_session_id);
+                                    let _ = engine
+                                        .bind_task_isolated_session(task, isolated_session_id)
+                                        .await;
+                                    let _ = engine.event_tx.send(AgentEvent::WorkspaceCommand {
+                                        command: "attach_agent_terminal".to_string(),
+                                        args: serde_json::json!({
+                                            "session_id": isolated_session_id.to_string(),
+                                            "pane_name": format!("Isolated {}", task.title),
+                                            "cwd": isolated.root,
+                                            "task_id": task.id,
+                                            "goal_run_id": task.goal_run_id,
+                                            "branch": isolated.branch,
+                                            "worktree_created": isolated.created,
+                                        }),
+                                    });
+                                }
+                                Err(error) => {
+                                    preferred_session_id = retain_resolved_session(
+                                        preferred_session_id,
+                                        Some(&source_session),
+                                    );
+                                    tracing::warn!(
+                                        thread_id = %tid,
+                                        task_id = %task.id,
+                                        %error,
+                                        "failed to clone isolated task terminal"
+                                    );
+                                }
+                            }
+                        }
+                        IsolatedTaskSessionPlan::Unavailable => {
+                            preferred_session_id =
+                                retain_resolved_session(preferred_session_id, None);
+                            tracing::warn!(
+                                thread_id = %tid,
+                                task_id = %task.id,
+                                workspace_root = %isolated.workspace_root,
+                                "no project-compatible terminal is available for isolated task"
+                            );
+                        }
+                    }
+                }
+                Ok(None) => {
+                    if preferred_session_id.is_none() {
+                        preferred_session_id = engine
+                            .session_manager
+                            .list()
+                            .await
+                            .into_iter()
+                            .find(|session| session.workspace_id.is_some())
+                            .map(|session| session.id);
+                    }
+                }
+                Err(error) => tracing::warn!(
+                    thread_id = %tid,
+                    task_id = %task.id,
+                    %error,
+                    "failed to provision isolated task worktree"
+                ),
+            }
+        }
         let skill_preflight = if super::skill_preflight::should_run_skill_preflight_for_turn(
             record_operator,
             task_id.is_some(),
@@ -1077,6 +1212,12 @@ impl<'a> SendMessageRunner<'a> {
             engine.history.data_root(),
             &tid,
         ));
+        if let Some(workspace_context) = engine.get_thread_workspace_context(&tid).await {
+            if let Some(workspace_prompt) = workspace_context.prompt_block() {
+                system_prompt.push_str("\n\n");
+                system_prompt.push_str(&workspace_prompt);
+            }
+        }
         if let Some(goal_run_id) = current_task_snapshot
             .as_ref()
             .and_then(|task| task.goal_run_id.as_deref())
@@ -1376,6 +1517,39 @@ mod tests {
     use crate::agent::types::{ApiTransport, AuthSource, ProviderConfig};
     use crate::session_manager::SessionManager;
     use tempfile::tempdir;
+
+    fn session(id: &str, cwd: &str) -> zorai_protocol::SessionInfo {
+        zorai_protocol::SessionInfo {
+            id: uuid::Uuid::parse_str(id).expect("valid session id"),
+            title: Some("Agent lane".to_string()),
+            cwd: Some(cwd.to_string()),
+            cols: 120,
+            rows: 40,
+            created_at: 1,
+            workspace_id: Some("workspace".to_string()),
+            exit_code: None,
+            is_alive: true,
+            active_command: None,
+        }
+    }
+
+    #[test]
+    fn unavailable_isolation_keeps_resolved_turn_session() {
+        let turn = session("11111111-1111-1111-1111-111111111111", "/unrelated");
+
+        assert_eq!(retain_resolved_session(Some(turn.id), None), Some(turn.id));
+    }
+
+    #[test]
+    fn clone_failure_prefers_compatible_source_over_unrelated_turn_session() {
+        let turn = session("11111111-1111-1111-1111-111111111111", "/unrelated");
+        let source = session("22222222-2222-2222-2222-222222222222", "/repo");
+
+        assert_eq!(
+            retain_resolved_session(Some(turn.id), Some(&source)),
+            Some(source.id)
+        );
+    }
 
     #[tokio::test]
     async fn active_participant_responder_cannot_use_agent_fanout_tools() {
@@ -2100,6 +2274,31 @@ mod tests {
             responder.persona_prompt.contains("Dola"),
             "persona prompt should identify the targeted subagent"
         );
+    }
+
+    #[test]
+    fn main_responder_uses_explicit_thread_execution_profile() {
+        let mut config = AgentConfig::default();
+        config.provider = "openrouter".to_string();
+        config.model = "meta/muse-spark-1.2-contributor".to_string();
+        config.system_prompt = "Svarog system prompt".to_string();
+        let profile = ThreadExecutionProfile {
+            provider: Some("openai".to_string()),
+            model: Some("gpt-5.6-sol".to_string()),
+            reasoning_effort: Some("high".to_string()),
+            context_window_tokens: Some(400_000),
+        };
+
+        let responder =
+            build_direct_thread_responder_config(&config, MAIN_AGENT_ID, &[], Some(&profile))
+                .expect("main responder profile should resolve")
+                .expect("explicit main-thread profile should create an override");
+
+        assert_eq!(responder.agent_name, MAIN_AGENT_NAME);
+        assert_eq!(responder.provider_id, "openai");
+        assert_eq!(responder.model.as_deref(), Some("gpt-5.6-sol"));
+        assert_eq!(responder.reasoning_effort.as_deref(), Some("high"));
+        assert_eq!(responder.context_window_tokens, Some(400_000));
     }
 
     #[tokio::test]
@@ -2985,6 +3184,7 @@ mod tests {
             completed_at: None,
             thread_id: Some("thread-goal-1".to_string()),
             root_thread_id: None,
+            supervision_thread_id: None,
             active_thread_id: None,
             execution_thread_ids: Vec::new(),
             session_id: Some("session-1".to_string()),
@@ -3226,6 +3426,7 @@ mod tests {
             completed_at: None,
             thread_id: Some("thread-goal-clarification-blacklist".to_string()),
             root_thread_id: None,
+            supervision_thread_id: None,
             active_thread_id: None,
             execution_thread_ids: Vec::new(),
             session_id: Some("session-1".to_string()),

@@ -363,6 +363,7 @@ pub(crate) enum PendingPinnedShortcutLeader {
 pub(crate) struct QueuedPrompt {
     pub(crate) text: String,
     pub(crate) thread_id: Option<String>,
+    pub(crate) prompt_id: Option<String>,
     pub(crate) suggestion_id: Option<String>,
     pub(crate) participant_agent_id: Option<String>,
     pub(crate) participant_agent_name: Option<String>,
@@ -371,10 +372,12 @@ pub(crate) struct QueuedPrompt {
 }
 
 impl QueuedPrompt {
+    #[cfg(test)]
     pub(crate) fn new(text: impl Into<String>) -> Self {
         Self {
             text: text.into(),
             thread_id: None,
+            prompt_id: None,
             suggestion_id: None,
             participant_agent_id: None,
             participant_agent_name: None,
@@ -394,10 +397,24 @@ impl QueuedPrompt {
         Self {
             text: text.into(),
             thread_id: Some(thread_id.into()),
+            prompt_id: None,
             suggestion_id: Some(suggestion_id.into()),
             participant_agent_id: Some(participant_agent_id.into()),
             participant_agent_name: Some(participant_agent_name.into()),
             force_send,
+            copied_until_tick: None,
+        }
+    }
+
+    pub(crate) fn from_daemon(record: zorai_protocol::QueuedPromptRecord) -> Self {
+        Self {
+            text: record.content,
+            thread_id: Some(record.thread_id),
+            prompt_id: Some(record.id),
+            suggestion_id: None,
+            participant_agent_id: None,
+            participant_agent_name: None,
+            force_send: false,
             copied_until_tick: None,
         }
     }

@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { AgentMessage } from "@/lib/agentStore";
-import { finalizeThreadTurnMessages, threadTurnIsActive } from "@/components/agent-chat-panel/runtime/threadTurnState";
 import {
+  EMPTY_PROMPT_QUEUE,
   createQueuedComposerMessage,
   queuedComposerLabel,
-  shouldDispatchQueuedFollowUp,
+  queuedPromptsFromDaemon,
+  readPromptQueueResponse,
+  reconcileSentQueuedPromptMessages,
+  sameQueuedPrompts,
+  shouldApplyPromptQueueSnapshot,
 } from "./composerQueue";
+import { MAX_CACHED_PROMPT_QUEUES, selectThreadPromptQueue, usePromptQueueStore } from "./promptQueueStore";
 
 describe("queued composer follow-ups", () => {
   it("keeps media blocks on a queued payload instead of flattening to text", () => {
@@ -18,106 +22,124 @@ describe("queued composer follow-ups", () => {
     expect(queued.contentBlocksJson).toContain("image");
     expect(queued.localContentBlocks).toHaveLength(1);
     expect(queuedComposerLabel(queued)).toBe("(attachment)");
+    expect(queued.id.length).toBeGreaterThan(0);
   });
 
-  it("does not dispatch the next follow-up until the in-flight send has started streaming", () => {
-    expect(shouldDispatchQueuedFollowUp({
-      isStreaming: false,
-      awaitingStreamStart: false,
-      hasSendNow: false,
-      queueLength: 2,
-    })).toBe(true);
-
-    expect(shouldDispatchQueuedFollowUp({
-      isStreaming: false,
-      awaitingStreamStart: true,
-      hasSendNow: false,
-      queueLength: 1,
-    })).toBe(false);
-  });
-
-  it("holds the remaining queue while a send-now interrupt is waiting for the stream to close", () => {
-    expect(shouldDispatchQueuedFollowUp({
-      isStreaming: true,
-      awaitingStreamStart: false,
-      hasSendNow: true,
-      queueLength: 1,
-    })).toBe(false);
-  });
-
-  it("does not auto-send the next follow-up during the tool_call gap", () => {
-    const isStreaming = threadTurnIsActive([
+  it("hydrates daemon-owned queue records into composer chips", () => {
+    const prompts = queuedPromptsFromDaemon([
       {
-        id: "asst-1",
-        threadId: "thread-1",
-        createdAt: 1,
-        role: "assistant",
-        content: "",
-        inputTokens: 0,
-        outputTokens: 0,
-        totalTokens: 0,
-        isCompactionSummary: false,
-        isStreaming: false,
-      } satisfies AgentMessage,
-      {
-        id: "tool-1",
-        threadId: "thread-1",
-        createdAt: 2,
-        role: "tool",
-        content: "",
-        inputTokens: 0,
-        outputTokens: 0,
-        totalTokens: 0,
-        isCompactionSummary: false,
-        toolCallId: "call-1",
-        toolName: "read_file",
-        toolStatus: "requested",
-      } satisfies AgentMessage,
+        id: "prompt-1",
+        thread_id: "thread-a",
+        content: "stay on the migration",
+        content_blocks_json: '[{"type":"image"}]',
+      },
     ]);
-
-    expect(shouldDispatchQueuedFollowUp({
-      isStreaming,
-      awaitingStreamStart: false,
-      hasSendNow: true,
-      queueLength: 1,
-    })).toBe(false);
+    expect(prompts).toEqual([
+      {
+        id: "prompt-1",
+        text: "stay on the migration",
+        contentBlocksJson: '[{"type":"image"}]',
+      },
+    ]);
   });
 
-  it("dispatches the send-now follow-up after stop closes leftover tool rows", () => {
-    const isStreaming = threadTurnIsActive(finalizeThreadTurnMessages([
-      {
-        id: "asst-1",
-        threadId: "thread-1",
-        createdAt: 1,
-        role: "assistant",
-        content: "",
-        inputTokens: 0,
-        outputTokens: 0,
-        totalTokens: 0,
-        isCompactionSummary: false,
-        isStreaming: false,
-      } satisfies AgentMessage,
-      {
-        id: "tool-1",
-        threadId: "thread-1",
-        createdAt: 2,
-        role: "tool",
-        content: "",
-        inputTokens: 0,
-        outputTokens: 0,
-        totalTokens: 0,
-        isCompactionSummary: false,
-        toolCallId: "call-1",
-        toolName: "read_file",
-        toolStatus: "requested",
-      } satisfies AgentMessage,
-    ]));
+  it("does not let an older IPC snapshot resurrect prompts cleared by a daemon event", () => {
+    expect(shouldApplyPromptQueueSnapshot(4, 4)).toBe(true);
+    expect(shouldApplyPromptQueueSnapshot(4, 5)).toBe(false);
+  });
 
-    expect(shouldDispatchQueuedFollowUp({
-      isStreaming,
-      awaitingStreamStart: false,
-      hasSendNow: true,
-      queueLength: 0,
-    })).toBe(true);
+  it("shows a sent queued prompt before an assistant stream that raced ahead", () => {
+    const interruptedAssistant = {
+      id: "assistant-interrupted",
+      threadId: "local-thread",
+      createdAt: 5,
+      role: "assistant",
+      content: "old partial answer",
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      isCompactionSummary: false,
+      isStreaming: true,
+    } as const;
+    const streamingAssistant = {
+      id: "assistant-local",
+      threadId: "local-thread",
+      createdAt: 20,
+      role: "assistant",
+      content: "partial answer",
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      isCompactionSummary: false,
+      isStreaming: true,
+    } as const;
+    const messages = reconcileSentQueuedPromptMessages(
+      [interruptedAssistant, streamingAssistant],
+      "local-thread",
+      {
+        id: "prompt-1",
+        text: "send this now",
+        contentBlocksJson: '[{"type":"image","data_url":"data:image/png;base64,abc"}]',
+      },
+      10,
+      1,
+    );
+
+    expect(messages.map((message) => message.id)).toEqual([
+      "assistant-interrupted",
+      "queued-prompt:prompt-1",
+      "assistant-local",
+    ]);
+    expect(messages[1]).toMatchObject({
+      id: "queued-prompt:prompt-1",
+      content: "send this now",
+      contentBlocks: [{ type: "image" }],
+    });
+  });
+
+  it("does not duplicate a sent queued prompt during repeated reconciliation", () => {
+    const prompt = { id: "prompt-1", text: "send once" };
+    const once = reconcileSentQueuedPromptMessages([], "local-thread", prompt, 10);
+    const twice = reconcileSentQueuedPromptMessages(once, "local-thread", prompt, 11);
+    expect(twice).toBe(once);
+    expect(twice).toHaveLength(1);
+  });
+
+  it("reads a prompt-queue IPC payload without mixing other threads", () => {
+    const parsed = readPromptQueueResponse({
+      thread_id: "thread-a",
+      prompts: [{ id: "prompt-1", thread_id: "thread-a", content: "later" }],
+    });
+    expect(parsed.threadId).toBe("thread-a");
+    expect(parsed.prompts).toHaveLength(1);
+    expect(parsed.prompts[0]?.text).toBe("later");
+  });
+
+  it("keeps an empty thread queue referentially stable so React does not loop", () => {
+    usePromptQueueStore.setState({ byThreadId: {} });
+    const first = selectThreadPromptQueue(usePromptQueueStore.getState(), "thread-a");
+    const missing = selectThreadPromptQueue(usePromptQueueStore.getState(), undefined);
+    expect(first).toBe(EMPTY_PROMPT_QUEUE);
+    expect(missing).toBe(EMPTY_PROMPT_QUEUE);
+
+    usePromptQueueStore.getState().setQueue("thread-a", []);
+    expect(selectThreadPromptQueue(usePromptQueueStore.getState(), "thread-a")).toBe(EMPTY_PROMPT_QUEUE);
+    expect(sameQueuedPrompts(EMPTY_PROMPT_QUEUE, queuedPromptsFromDaemon([]))).toBe(true);
+  });
+
+  it("bounds thread queues and refreshes recency when a cached thread is touched", () => {
+    usePromptQueueStore.setState({ byThreadId: {} });
+    for (let index = 0; index < MAX_CACHED_PROMPT_QUEUES; index += 1) {
+      usePromptQueueStore.getState().setQueue(`thread-${index}`, []);
+    }
+
+    usePromptQueueStore.getState().setQueue("thread-0", []);
+    usePromptQueueStore.getState().setQueue("thread-new", []);
+
+    const cachedIds = Object.keys(usePromptQueueStore.getState().byThreadId);
+    expect(cachedIds).toHaveLength(MAX_CACHED_PROMPT_QUEUES);
+    expect(cachedIds).toContain("thread-0");
+    expect(cachedIds).toContain("thread-new");
+    expect(cachedIds).not.toContain("thread-1");
   });
 });
