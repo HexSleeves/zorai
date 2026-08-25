@@ -42,7 +42,7 @@ export function parseHandoffSystemEvent(content: string): HandoffSystemEvent | n
 
 export function buildDisplayItems(messages: AgentMessage[]): ChatDisplayItem[] {
   const items: ChatDisplayItem[] = [];
-  const groups = new Map<string, ToolEventGroup>();
+  let groups = new Map<string, ToolEventGroup>();
   let pendingToolList: ToolEventGroup[] | null = null;
 
   const flushToolList = () => {
@@ -50,6 +50,7 @@ export function buildDisplayItems(messages: AgentMessage[]): ChatDisplayItem[] {
       items.push({ type: "toolList", groups: pendingToolList });
     }
     pendingToolList = null;
+    groups = new Map<string, ToolEventGroup>();
   };
 
   for (let index = 0; index < messages.length; index += 1) {

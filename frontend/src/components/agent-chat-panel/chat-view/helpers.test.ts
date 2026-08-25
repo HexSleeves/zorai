@@ -82,6 +82,21 @@ describe("buildDisplayItems", () => {
     ]);
   });
 
+  it("keeps repeated tool call ids isolated across visible message boundaries", () => {
+    const items = buildDisplayItems([
+      message({ id: "assistant-1", content: "First step", createdAt: 1 }),
+      message({ id: "tool-1a", role: "tool", toolCallId: "reused-call", toolName: "apply_patch", toolStatus: "done", content: "first", createdAt: 2 }),
+      message({ id: "assistant-2", content: "Second step", createdAt: 3 }),
+      message({ id: "tool-1b", role: "tool", toolCallId: "reused-call", toolName: "apply_patch", toolStatus: "done", content: "second", createdAt: 4 }),
+    ]);
+
+    expect(items.map((item) => item.type)).toEqual(["message", "toolList", "message", "toolList"]);
+    const toolLists = items.filter((item) => item.type === "toolList");
+    expect(toolLists).toHaveLength(2);
+    expect(toolLists[0].groups[0].resultContent).toBe("first");
+    expect(toolLists[1].groups[0].resultContent).toBe("second");
+  });
+
   it("keeps reasoning when the assistant body is only a tool-call placeholder", () => {
     const items = buildDisplayItems([
       message({

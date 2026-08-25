@@ -341,6 +341,66 @@ describe("loadDaemonThreadPageIntoLocalState", () => {
     ]);
   });
 
+  it("replaces optimistic assistant commentary in place when persisted history arrives", async () => {
+    useAgentStore.setState({
+      messages: {
+        "local-active": [
+          {
+            ...makeMessage(10),
+            id: "msg_42",
+            role: "assistant",
+            content: "I will inspect this first.",
+          },
+          {
+            ...makeMessage(11),
+            id: "tool-live",
+            role: "tool",
+            content: "done",
+            toolName: "read_file",
+            toolCallId: "call-1",
+            toolStatus: "done",
+          },
+        ],
+      },
+    } as any);
+    agentGetThread.mockResolvedValue({
+      id: "daemon-1",
+      title: "Active thread",
+      agent_name: "Svarog",
+      messages: [
+        {
+          id: "assistant-persisted",
+          role: "assistant",
+          content: "I will inspect this first.",
+          timestamp: 10,
+        },
+        {
+          id: "tool-live",
+          role: "tool",
+          content: "done",
+          tool_name: "read_file",
+          tool_call_id: "call-1",
+          tool_status: "done",
+          timestamp: 11,
+        },
+      ],
+      total_message_count: 2,
+      loaded_message_start: 0,
+      loaded_message_end: 2,
+    });
+
+    await refreshDaemonThreadMessagesIntoLocalState({
+      daemonThreadId: "daemon-1",
+      setThreadTodos: vi.fn(),
+      setDaemonTodosByThread: vi.fn(),
+    });
+
+    expect(useAgentStore.getState().messages["local-active"]?.map((message) => message.id)).toEqual([
+      "assistant-persisted",
+      "tool-live",
+    ]);
+  });
+
   it("deduplicates queued local and persisted user messages during reload", async () => {
     useAgentStore.setState({
       messages: {
@@ -509,6 +569,47 @@ describe("trimDaemonThreadMessagesToLatestWindow", () => {
     expect(state.messages["local-active"]?.[49]?.id).toBe("message-119");
     expect(thread?.loadedMessageStart).toBe(70);
     expect(thread?.loadedMessageEnd).toBe(120);
+  });
+
+  it("counts a completed tool stack as one slot when a new user message arrives", () => {
+    const toolMessages = Array.from({ length: 40 }, (_, index) => ({
+      ...makeMessage(index + 21),
+      id: `tool-${index}`,
+      role: "tool" as const,
+      content: `tool result ${index}`,
+      toolCallId: `call-${Math.floor(index / 2)}`,
+      toolName: "apply_patch",
+      toolStatus: "done" as const,
+    }));
+    useAgentStore.setState({
+      threads: [{
+        ...makeThread("local-active", "daemon-1"),
+        messageCount: 44,
+        loadedMessageStart: 0,
+        loadedMessageEnd: 44,
+      }],
+      messages: {
+        "local-active": [
+          { ...makeMessage(19), id: "older-assistant", role: "assistant", content: "Starting work" },
+          { ...makeMessage(20), id: "approval", role: "user", content: "Approve" },
+          ...toolMessages,
+          { ...makeMessage(61), id: "final-answer", role: "assistant", content: "The job is done." },
+          { ...makeMessage(62), id: "new-user", role: "user", content: "Next question" },
+        ],
+      },
+    } as any);
+
+    const trimmed = trimDaemonThreadMessagesToLatestWindow({
+      localThreadId: "local-active",
+      messageLimit: 3,
+    });
+
+    const messages = useAgentStore.getState().messages["local-active"] ?? [];
+    expect(trimmed).toBe(true);
+    expect(messages).toHaveLength(42);
+    expect(messages[0]?.id).toBe("tool-0");
+    expect(messages.at(-2)?.id).toBe("final-answer");
+    expect(messages.at(-1)?.id).toBe("new-user");
   });
 
   it("does nothing when the loaded messages already fit the configured window", () => {

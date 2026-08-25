@@ -1,3 +1,4 @@
+import { LoadingState } from "@/components/LoadingState";
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type UIEvent } from "react";
 import { ToolEventRow } from "@/components/agent-chat-panel/chat-view/ToolEventRow";
 import { ToolEventList } from "@/components/agent-chat-panel/chat-view/ToolEventList";
@@ -30,9 +31,23 @@ import { ThreadRetryStatusBanner } from "./ThreadRetryStatusBanner";
 import { useThreadRetryStatus } from "./threadRetryStatus";
 import { resolveThreadOwnerRuntimeProfile } from "./threadOwnerRuntime";
 import type { ZoraiReturnTarget } from "../../shell/zoraiNavigationEvents";
+import { useThreadLoadingStore } from "./threadLoadingStore";
 import { threadReadKey, useThreadReadStateStore } from "./threadReadStateStore";
 
 export { ThreadsRail } from "./ThreadsRail";
+
+function ThreadConversationSkeleton({ embedded = false }: { embedded?: boolean }) {
+  return (
+    <div className={["zorai-thread-conversation-loader", embedded ? "zorai-thread-conversation-loader--embedded" : ""].filter(Boolean).join(" ")} role="status" aria-label="Loading conversation">
+      <LoadingState size={16} label="Loading conversation" />
+      <div className="zorai-thread-conversation-loader__messages" aria-hidden="true">
+        <div className="zorai-thread-message-skeleton zorai-thread-message-skeleton--assistant"><LoadingState variant="skeleton" lines={3} /></div>
+        <div className="zorai-thread-message-skeleton zorai-thread-message-skeleton--user"><LoadingState variant="skeleton" lines={2} /></div>
+        <div className="zorai-thread-message-skeleton zorai-thread-message-skeleton--assistant zorai-thread-message-skeleton--short"><LoadingState variant="skeleton" lines={2} /></div>
+      </div>
+    </div>
+  );
+}
 
 export function ThreadsView({
   returnTarget = null,
@@ -45,6 +60,7 @@ export function ThreadsView({
   variant?: "full" | "compact";
   compactHeaderActions?: ReactNode;
 } = {}) {
+  const threadOpening = useThreadLoadingStore((state) => state.pending > 0);
   const runtime = useAgentChatPanelRuntime();
   const [pinLimitResult, setPinLimitResult] = useState<ZoraiThreadMessagePinResult | null>(null);
   const [participantsOpen, setParticipantsOpen] = useState(false);
@@ -184,6 +200,10 @@ export function ThreadsView({
     }
   }, [activeThreadId, runtime.messages, runtime.trimThreadMessagesToLatestWindow]);
 
+  if (threadOpening && !runtime.activeThread) {
+    return <ThreadConversationSkeleton />;
+  }
+
   if (!runtime.activeThread) {
     return (
       <div className="zorai-empty-main">
@@ -293,7 +313,9 @@ export function ThreadsView({
 
       <div className="zorai-thread-chat">
         <div ref={scrollerRef} className="zorai-thread-chat-scroll" onScroll={(event) => void handleThreadScroll(event)}>
-        {runtime.messages.length === 0 ? (
+        {threadOpening ? (
+          <ThreadConversationSkeleton embedded />
+        ) : runtime.messages.length === 0 ? (
           <div className="zorai-thread-empty-state">
             {activeThread.messageCount > 0 || activeThread.lastMessagePreview ? (
               <>

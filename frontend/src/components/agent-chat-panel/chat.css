@@ -1026,12 +1026,13 @@
   max-width: 100%;
   box-sizing: border-box;
   padding: 10px 12px;
-  background: var(--zorai-bg-panel);
+  background: transparent;
   border-radius: 2px;
   overflow: auto;
   font-size: var(--text-sm-plus);
   line-height: 1.5;
   border: 1px solid var(--border);
+  border-radius: 8px;
 }
 
 .acp-md code {
@@ -1041,7 +1042,7 @@
 .acp-md pre code {
   font-size: inherit;
   overflow-wrap: anywhere;
-  color: var(--human);
+  color: var(--neutral-400);
 }
 
 .acp-md :not(pre) > code {
@@ -1068,14 +1069,14 @@
 
 .acp-md h1, .acp-md h2, .acp-md h3,
 .acp-md h4, .acp-md h5, .acp-md h6 {
-  margin: 8px 0 4px;
+  padding: 10px 0;
   font-weight: 700;
 }
 
-.acp-md h1 { font-size: var(--text-xl); }
-.acp-md h2 { font-size: var(--text-xl); }
+.acp-md h1 { font-size: var(--text-2xl); font-weight: 600; }
+.acp-md h2 { font-size: var(--text-xl); font-weight: 600; }
 .acp-md h3 { font-size: var(--text-lg); font-weight: 600; }
-.acp-md h4 { font-size: var(--text-base); font-weight: 600; }
+.acp-md h4 { font-size: var(--text-md); font-weight: 600; }
 .acp-md h5 { font-size: var(--text-base); font-weight: 600; }
 .acp-md h6 { font-size: var(--text-base); font-weight: 600; }
 

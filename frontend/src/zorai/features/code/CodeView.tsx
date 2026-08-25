@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { LoadingState } from "@/components/LoadingState";
 import { WorkspaceWorkbench } from "@/components/WorkspaceWorkbench";
 import { useAgentChatPanelRuntime } from "@/components/agent-chat-panel/runtime/context";
 import { useAgentStore } from "@/lib/agentStore";
@@ -62,12 +63,14 @@ export function CodeView({
   const bindRoot = useWorkspaceContextStore((state) => state.bindRoot);
   const lastRoot = useCodeWorkspaceBindingStore((state) => state.lastRoot);
   const [boundRoot, setBoundRoot] = useState<string | null>(lastRoot);
+  const [activatingRoot, setActivatingRoot] = useState(Boolean(lastRoot));
   const codeThreadLocalIdRef = useRef<string | null>(null);
   const activationGenRef = useRef(0);
 
   const activateRootThread = useCallback(async (root: ZoraiWorkspaceValidatedRoot) => {
     const generation = ++activationGenRef.current;
     const rootAtCall = root.root;
+    setActivatingRoot(true);
     try {
       const activeRuntime = runtimeRef.current;
       await useWorkspaceContextStore.getState().hydrate();
@@ -97,6 +100,8 @@ export function CodeView({
       bindRoot(localId, rootAtCall);
     } catch {
       // Root activation is best-effort; a later selection advances the generation.
+    } finally {
+      if (generation === activationGenRef.current) setActivatingRoot(false);
     }
   }, [bindRoot]);
 
@@ -132,7 +137,7 @@ export function CodeView({
   }, [activateRootThread, boundRoot]);
 
   return boundRoot ? (
-    <WorkspaceWorkbench openedRoot={boundRoot} />
+    activatingRoot ? <CodeSurfaceSkeleton label={`Opening ${displayRootName(boundRoot)}…`} /> : <WorkspaceWorkbench openedRoot={boundRoot} />
   ) : (
     <section className="zorai-code-surface zorai-code-surface--empty">
       <CodeEmptyState
@@ -140,6 +145,18 @@ export function CodeView({
         openPath={openPath}
         onRootSelected={handleRootSelected}
       />
+    </section>
+  );
+}
+
+function CodeSurfaceSkeleton({ label }: { label: string }) {
+  return (
+    <section className="zorai-code-loading" role="status" aria-label={label}>
+      <div className="zorai-code-loading__toolbar"><LoadingState size={16} label={label} /></div>
+      <div className="zorai-code-loading__tabs"><span /><span /><span /></div>
+      <div className="zorai-code-loading__editor">
+        {Array.from({ length: 12 }, (_, index) => <span key={index} style={{ width: `${34 + ((index * 17) % 52)}%` }} />)}
+      </div>
     </section>
   );
 }

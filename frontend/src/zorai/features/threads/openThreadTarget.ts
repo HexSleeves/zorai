@@ -4,6 +4,7 @@ import { findThreadByAuthoritativeIdentity } from "@/components/agent-chat-panel
 import { getAgentBridge } from "@/lib/agentDaemonConfig";
 import { PRIMARY_AGENT_NAME } from "@/lib/agentNames";
 import { buildHydratedRemoteThread, useAgentStore, type RemoteAgentThreadRecord } from "@/lib/agentStore";
+import { beginThreadLoading } from "./threadLoadingStore";
 import { resolveReactChatHistoryMessageLimit } from "@/lib/chatHistoryPageSize";
 
 export async function openThreadTarget(runtime: AgentChatPanelRuntimeValue, targetThreadId: string): Promise<boolean> {
@@ -17,23 +18,28 @@ export async function openThreadTarget(runtime: AgentChatPanelRuntimeValue, targ
     return true;
   }
 
-  const remoteThread = await fetchDaemonThread(target);
-  const raced = findThreadByAuthoritativeIdentity(useAgentStore.getState().threads, target);
-  if (raced) {
-    runtime.openThread(raced.id);
+  const finishLoading = beginThreadLoading();
+  try {
+    const remoteThread = await fetchDaemonThread(target);
+    const raced = findThreadByAuthoritativeIdentity(useAgentStore.getState().threads, target);
+    if (raced) {
+      runtime.openThread(raced.id);
+      return true;
+    }
+    if (!remoteThread) return false;
+
+    const hydrated = buildHydratedRemoteThread(
+      remoteThread,
+      useAgentStore.getState().agentSettings.agent_name || PRIMARY_AGENT_NAME,
+    );
+    if (!hydrated?.thread.daemonThreadId) return false;
+
+    insertHydratedThread(hydrated);
+    runtime.openThread(hydrated.thread.id);
     return true;
+  } finally {
+    finishLoading();
   }
-  if (!remoteThread) return false;
-
-  const hydrated = buildHydratedRemoteThread(
-    remoteThread,
-    useAgentStore.getState().agentSettings.agent_name || PRIMARY_AGENT_NAME,
-  );
-  if (!hydrated?.thread.daemonThreadId) return false;
-
-  insertHydratedThread(hydrated);
-  runtime.openThread(hydrated.thread.id);
-  return true;
 }
 
 async function fetchDaemonThread(daemonThreadId: string): Promise<RemoteAgentThreadRecord | null> {

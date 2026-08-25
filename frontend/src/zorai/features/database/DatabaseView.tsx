@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type MouseEvent } from "react";
+import { LoadingPanel, LoadingState } from "@/components/LoadingState";
 import { applyDatabaseSelectionDraftValue, buildDatabaseRowUpdates, databaseDraftKey, displayDatabaseValue, getDatabaseSelectedDraftKeys, getLastDatabasePageOffset, getNextDatabaseSort, isBlobPlaceholder, isDatabaseCellSelected, normalizeDatabasePageSize, sortDatabaseRowsForDisplay, type DatabaseCellCoordinate, type DatabaseCellSelection } from "./databaseModel";
 import { executeDatabaseSql, listDatabaseTables, queryDatabaseRows, updateDatabaseRows } from "./databaseBridge";
 import type { DatabaseSortState, DatabaseSqlResult, DatabaseTablePage, DatabaseTableSummary } from "./databaseTypes";
@@ -43,7 +44,7 @@ export function DatabaseRail({ activeTable, onSelectTable }: DatabaseRailProps) 
 
   return (
     <div className="zorai-rail-stack">
-      {loading ? <div className="zorai-empty">Loading tables...</div> : null}
+      {loading && tables.length === 0 ? <ThreadListSkeletonFallback /> : null}
       {tables.map((table) => (
         <button
           type="button"
@@ -62,6 +63,12 @@ export function DatabaseRail({ activeTable, onSelectTable }: DatabaseRailProps) 
       {!loading && tables.length === 0 ? <div className="zorai-empty">No database tables found.</div> : null}
     </div>
   );
+}
+
+function ThreadListSkeletonFallback() {
+  return <div className="zorai-database-table-skeleton" role="status" aria-label="Loading database tables">
+    {Array.from({ length: 5 }, (_, index) => <LoadingState key={index} variant="skeleton" lines={2} />)}
+  </div>;
 }
 
 export function DatabaseView({ activeTable }: DatabaseViewProps) {
@@ -387,7 +394,7 @@ export function DatabaseView({ activeTable }: DatabaseViewProps) {
           </tbody>
         </table>
         {!loading && page?.rows.length === 0 ? <div className="zorai-empty">No rows on this page.</div> : null}
-        {loading ? <div className="zorai-empty">Loading database rows...</div> : null}
+        {loading && !page ? <LoadingPanel label="Loading database rows…" /> : null}
       </div>
     </section>
   );

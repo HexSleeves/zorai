@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it } from "vitest";
 import { useAgentStore } from "@/lib/agentStore";
 import type { AgentMessage, AgentThread } from "@/lib/agentStore";
+import { applyDaemonRetryStatusEvent, getThreadRetryStatus } from "@/zorai/features/threads/threadRetryStatus";
 import {
+  clearRetryStatusForDaemonProgressEvent,
   hasOpenLocalAssistantStream,
   isAuxiliaryDaemonError,
   isThreadlessDaemonStreamEvent,
@@ -124,6 +126,25 @@ describe("resolveDaemonEventLocalThreadId", () => {
   });
 });
 
+
+describe("clearRetryStatusForDaemonProgressEvent", () => {
+  it("clears a stale retry banner as soon as tool work resumes", () => {
+    applyDaemonRetryStatusEvent({
+      thread_id: "daemon-b",
+      phase: "waiting",
+      attempt: 2,
+      max_retries: 0,
+      delay_ms: 30_000,
+      failure_class: "rate_limit",
+      message: "429",
+    });
+    expect(getThreadRetryStatus("daemon-b")).not.toBeNull();
+
+    clearRetryStatusForDaemonProgressEvent({ type: "tool_call", thread_id: "daemon-b" });
+
+    expect(getThreadRetryStatus("daemon-b")).toBeNull();
+  });
+});
 
 describe("isAuxiliaryDaemonError", () => {
   it("isolates message feedback failures from turn failures", () => {

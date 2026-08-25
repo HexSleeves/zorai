@@ -1,3 +1,4 @@
+import { LoadingState, ThreadListSkeleton } from "@/components/LoadingState";
 import { startTransition, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentChatPanelRuntime } from "@/components/agent-chat-panel/runtime/context";
 import { useAgentStore, type AgentThread } from "@/lib/agentStore";
@@ -144,7 +145,9 @@ export function ThreadsRail() {
         >
           New Thread
         </button>
-        <button type="button" className="zorai-ghost-button" onClick={refreshSelectedTab}>Refresh</button>
+        <button type="button" className="zorai-ghost-button" onClick={refreshSelectedTab} disabled={loadingTab !== null} aria-busy={loadingTab !== null}>
+          {loadingTab !== null ? <LoadingState size={14} label="Refreshing" /> : "Refresh"}
+        </button>
       </div>
       <input ref={searchInputRef} className="zorai-search-input" value={runtime.searchQuery} onChange={(event) => runtime.setSearchQuery(event.target.value)} placeholder="Search threads" />
       <div className="zorai-thread-filter-tabs" aria-label="Thread source filters">
@@ -157,7 +160,7 @@ export function ThreadsRail() {
             aria-busy={loadingTab === item.id}
           >
             {item.label}
-            {loadingTab === item.id ? <span className="zorai-thread-filter-tab__spinner" aria-hidden="true">◌</span> : null}
+            {loadingTab === item.id ? <LoadingState size={12} className="zorai-thread-filter-tab__spinner" /> : null}
           </button>
         ))}
       </div>
@@ -172,7 +175,7 @@ export function ThreadsRail() {
             <option value="">Agents & subagents</option>
             {agentFilterOptions.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
           </select>
-          {loadingTab?.startsWith("agent:") ? <span className="zorai-thread-filter-tab__spinner" aria-hidden="true">◌</span> : null}
+          {loadingTab?.startsWith("agent:") ? <LoadingState size={12} className="zorai-thread-filter-tab__spinner" /> : null}
         </div>
       ) : null}
       <div className="zorai-thread-date-filters" aria-label="Thread date filters">
@@ -186,9 +189,11 @@ export function ThreadsRail() {
           </>
         ) : null}
       </div>
-      <div className="zorai-thread-list">
-        {displayedThreads.length === 0 ? (
-          <div className="zorai-empty">{loadingTab ? "Loading threads." : "No threads match this search."}</div>
+      <div className="zorai-thread-list" aria-busy={loadingTab !== null}>
+        {loadingTab && daemonFilteredThreads === null ? (
+          <ThreadListSkeleton />
+        ) : displayedThreads.length === 0 ? (
+          <div className="zorai-empty">No threads match this search.</div>
         ) : displayedThreads.map((thread) => (
           <button
             type="button"

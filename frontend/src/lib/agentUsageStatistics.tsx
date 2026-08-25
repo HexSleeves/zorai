@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { getBridge } from "./bridge";
 import type React from "react";
+import { LoadingPanel, LoadingState } from "../components/LoadingState";
 import { ActionButton, EmptyPanel, MetricRibbon, SectionTitle } from "../components/agent-chat-panel/shared";
 
 const STATISTICS_WINDOWS: Array<{ value: ZoraiStatisticsWindow; label: string }> = [
@@ -86,7 +87,7 @@ export function AgentStatisticsView() {
         return (
             <div style={{ display: "grid", gap: "var(--space-3)" }}>
                 <SectionTitle title="Agent Statistics" subtitle="Loading daemon snapshot..." />
-                <EmptyPanel message="Fetching statistics from the daemon..." />
+                <LoadingPanel label="Fetching statistics from the daemon…" />
             </div>
         );
     }
@@ -100,7 +101,7 @@ export function AgentStatisticsView() {
                 <span style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>
                     {generatedAt ? `Generated ${generatedAt}` : "Generated time unavailable"}
                 </span>
-                {loading ? <span style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>Refreshing...</span> : null}
+                {loading ? <LoadingState size={14} label="Refreshing" /> : null}
             </div>
 
             {totalsItems.length > 0 ? <MetricRibbon items={totalsItems} /> : <EmptyPanel message="No totals available for this window." />}

@@ -9,7 +9,7 @@ import {
   serializeThread,
   shouldPersistHistory,
 } from "@/lib/agentStore/history";
-import { isSvarogOwner, RAROG_AGENT_ID, resolveThreadOwnerAgentId } from "./threadOwner";
+import { RAROG_AGENT_ID } from "./threadOwner";
 
 export const MIN_CONTEXT_WINDOW_TOKENS = 1_000;
 export const MAX_CONTEXT_WINDOW_TOKENS = 2_000_000;
@@ -41,10 +41,6 @@ export function managedSecurityLevels(): readonly ThreadManagedSecurityLevel[] {
   return MANAGED_SECURITY_LEVELS;
 }
 
-function ownerAgentId(thread: AgentThread): string {
-  return resolveThreadOwnerAgentId(thread, useAgentStore.getState().subAgents);
-}
-
 export function patchThreadProfile(
   threadId: string,
   patch: Partial<Pick<AgentThread, "profileProvider" | "profileModel" | "profileReasoningEffort" | "profileContextWindowTokens">>,
@@ -69,73 +65,51 @@ function daemonEffortValue(effort: string): string {
   return effort === "none" ? "" : effort;
 }
 
+async function patchDaemonThreadExecutionProfile(
+  thread: AgentThread,
+  patch: Record<string, unknown>,
+): Promise<void> {
+  const daemonThreadId = thread.daemonThreadId?.trim();
+  if (!daemonThreadId) return;
+  const bridge = getBridge();
+  const existing = await bridge?.agentGetThreadExecutionProfile?.(daemonThreadId).catch(() => null) as
+    | { profile?: Record<string, unknown> | null }
+    | null
+    | undefined;
+  const previous = existing?.profile && typeof existing.profile === "object" ? existing.profile : {};
+  const result = await bridge?.agentSetThreadExecutionProfile?.(daemonThreadId, {
+    ...previous,
+    ...patch,
+  }) as { error?: string } | undefined;
+  if (result?.error) throw new Error(result.error);
+}
+
 export async function applyThreadProviderModel(
   thread: AgentThread,
   providerId: string,
   model: string,
 ): Promise<void> {
-  const bridge = getBridge();
-  const ownerId = ownerAgentId(thread);
   const nextModel = model.trim() || getDefaultModelForProvider(providerId as AgentProviderId);
+  await patchDaemonThreadExecutionProfile(thread, {
+    provider: providerId,
+    model: nextModel,
+  });
   patchThreadProfile(thread.id, { profileProvider: providerId, profileModel: nextModel });
-  if (isSvarogOwner(ownerId)) {
-    await bridge?.agentSetProviderModel?.(providerId, nextModel);
-    const updateAgentSetting = useAgentStore.getState().updateAgentSetting;
-    const current = useAgentStore.getState().agentSettings[providerId as AgentProviderId] as Record<string, unknown> | undefined;
-    updateAgentSetting("active_provider", providerId as never);
-    updateAgentSetting(providerId as never, { ...(current ?? {}), model: nextModel } as never);
-  } else {
-    await bridge?.agentSetTargetAgentProviderModel?.(ownerId, providerId, nextModel);
-    if (ownerId === RAROG_AGENT_ID) {
-      await useAgentStore.getState().refreshConciergeConfig();
-    } else {
-      await useAgentStore.getState().refreshSubAgents();
-    }
-  }
 }
 
 export async function applyThreadReasoningEffort(thread: AgentThread, effort: string): Promise<void> {
-  const bridge = getBridge();
-  const ownerId = ownerAgentId(thread);
   const daemonEffort = daemonEffortValue(effort);
-  if (isSvarogOwner(ownerId)) {
-    const provider = useAgentStore.getState().agentSettings.active_provider;
-    await bridge?.agentSetConfigItem?.("/reasoning_effort", daemonEffort);
-    await bridge?.agentSetConfigItem?.(`/providers/${provider}/reasoning_effort`, daemonEffort);
-    await bridge?.agentSetConfigItem?.(`/${provider}/reasoning_effort`, daemonEffort);
-    useAgentStore.getState().updateAgentSetting("reasoning_effort", (effort || "none") as never);
-  } else {
-    await bridge?.agentSetTargetAgentReasoningEffort?.(ownerId, daemonEffort);
-    if (ownerId === RAROG_AGENT_ID) {
-      await useAgentStore.getState().refreshConciergeConfig();
-    } else {
-      await useAgentStore.getState().refreshSubAgents();
-    }
-  }
+  await patchDaemonThreadExecutionProfile(thread, {
+    reasoning_effort: daemonEffort || null,
+  });
   patchThreadProfile(thread.id, { profileReasoningEffort: daemonEffort || null });
 }
 
 export async function applyThreadContextWindow(thread: AgentThread, tokens: number): Promise<void> {
   const clamped = clampContextWindowTokens(tokens);
-  const ownerId = ownerAgentId(thread);
-  const bridge = getBridge();
-  if (isSvarogOwner(ownerId)) {
-    const provider = useAgentStore.getState().agentSettings.active_provider;
-    await bridge?.agentSetConfigItem?.("/context_window_tokens", clamped);
-    await bridge?.agentSetConfigItem?.(`/providers/${provider}/context_window_tokens`, clamped);
-    await bridge?.agentSetConfigItem?.(`/${provider}/context_window_tokens`, clamped);
-    const updateAgentSetting = useAgentStore.getState().updateAgentSetting;
-    const current = useAgentStore.getState().agentSettings[provider] as Record<string, unknown> | undefined;
-    updateAgentSetting("context_window_tokens", clamped);
-    updateAgentSetting(provider as never, { ...(current ?? {}), context_window_tokens: clamped } as never);
-  } else {
-    await bridge?.agentSetTargetAgentContextWindow?.(ownerId, clamped);
-    if (ownerId === RAROG_AGENT_ID) {
-      await useAgentStore.getState().refreshConciergeConfig();
-    } else {
-      await useAgentStore.getState().refreshSubAgents();
-    }
-  }
+  await patchDaemonThreadExecutionProfile(thread, {
+    context_window_tokens: clamped,
+  });
   patchThreadProfile(thread.id, { profileContextWindowTokens: clamped });
 }
 

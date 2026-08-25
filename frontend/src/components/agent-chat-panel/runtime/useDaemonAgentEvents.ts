@@ -92,6 +92,15 @@ export function isAuxiliaryDaemonError(event: unknown): boolean {
   return candidate.message.startsWith("message_feedback:");
 }
 
+export function clearRetryStatusForDaemonProgressEvent(event: unknown): void {
+  if (!event || typeof event !== "object") return;
+  const candidate = event as { type?: unknown; thread_id?: unknown };
+  if (!["delta", "reasoning", "tool_call", "tool_result", "done"].includes(String(candidate.type ?? ""))) {
+    return;
+  }
+  clearThreadRetryStatus(typeof candidate.thread_id === "string" ? candidate.thread_id : null);
+}
+
 export function useDaemonAgentEvents({
   agentBackend,
   activePaneId,
@@ -283,6 +292,8 @@ export function useDaemonAgentEvents({
         daemonThreadIdRef.current,
         { allowThreadlessFallback },
       );
+
+      clearRetryStatusForDaemonProgressEvent(event);
 
       switch (event.type) {
         case "delta": {

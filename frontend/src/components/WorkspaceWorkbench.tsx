@@ -1,4 +1,5 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { LoadingState } from "@/components/LoadingState";
 import { createPortal } from "react-dom";
 import { getBridge } from "@/lib/bridge";
 import { useAgentStore } from "@/lib/agentStore";
@@ -61,6 +62,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
   const setIsolatedWorktreeState = useWorkspaceContextStore((state) => state.setIsolatedWorktreeState);
   const [rootInput, setRootInput] = useState(context?.root ?? activeWorkspace?.cwd ?? "");
   const [rootEntries, setRootEntries] = useState<ZoraiWorkspaceEntry[]>([]);
+  const [rootLoading, setRootLoading] = useState(true);
   const [explorerRefreshToken, setExplorerRefreshToken] = useState(0);
   const [gitStatus, setGitStatus] = useState<ZoraiWorkspaceGitStatus[]>([]);
   const [gitOverview, setGitOverview] = useState<ZoraiWorkspaceGitOverview | null>(null);
@@ -136,16 +138,21 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
   const refreshRoot = useCallback(async (root = context?.root) => {
     if (!root || !bridge?.workspaceListDirectory) return;
     const generation = ++refreshGenRef.current;
-    const state = await loadWorkspaceRootState({ ...bridge, workspaceListDirectory: bridge.workspaceListDirectory }, root);
-    const currentRoot = activeThreadId ? useWorkspaceContextStore.getState().byThreadId[activeThreadId]?.root : undefined;
-    if (generation !== refreshGenRef.current || (currentRoot && currentRoot !== root)) return;
-    setRootEntries(state.entries);
-    setGitStatus(state.statuses);
-    setGitOverview(state.overview);
-    setGitWorktrees(state.worktrees);
-    setGitHistory(state.history);
-    setGitConflicts(state.conflicts);
-    setExplorerRefreshToken((token) => token + 1);
+    setRootLoading(true);
+    try {
+      const state = await loadWorkspaceRootState({ ...bridge, workspaceListDirectory: bridge.workspaceListDirectory }, root);
+      const currentRoot = activeThreadId ? useWorkspaceContextStore.getState().byThreadId[activeThreadId]?.root : undefined;
+      if (generation !== refreshGenRef.current || (currentRoot && currentRoot !== root)) return;
+      setRootEntries(state.entries);
+      setGitStatus(state.statuses);
+      setGitOverview(state.overview);
+      setGitWorktrees(state.worktrees);
+      setGitHistory(state.history);
+      setGitConflicts(state.conflicts);
+      setExplorerRefreshToken((token) => token + 1);
+    } finally {
+      if (generation === refreshGenRef.current) setRootLoading(false);
+    }
   }, [bridge, context?.root, activeThreadId]);
 
   useEffect(() => { void useWorkspaceContextStore.getState().hydrate(); }, []);
@@ -1023,6 +1030,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
   }, []);
 
   if (!activeThreadId) return <div className="zorai-tool-empty"><strong>Select a thread</strong><span>Workspace roots and editor context are bound to an agent thread.</span></div>;
+  if (rootLoading) return <WorkspaceLoadingSkeleton root={openedRoot ?? context?.root ?? rootInput} />;
 
   const explorer = (
       <aside className="zorai-workspace-explorer">
@@ -1398,6 +1406,16 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     <div className={explorerPortalHost ? "zorai-workspace-workbench zorai-workspace-workbench--portaled" : "zorai-workspace-workbench"}>
       {explorerPortalHost ? createPortal(explorer, explorerPortalHost) : explorer}
       {editor}
+    </div>
+  );
+}
+
+function WorkspaceLoadingSkeleton({ root }: { root: string }) {
+  return (
+    <div className="zorai-code-loading zorai-code-loading--workspace" role="status" aria-label="Loading code workspace">
+      <div className="zorai-code-loading__toolbar"><LoadingState size={16} label={`Indexing ${root.split(/[\\/]/).filter(Boolean).slice(-1)[0] ?? "workspace"}…`} /></div>
+      <div className="zorai-code-loading__tabs"><span /><span /><span /></div>
+      <div className="zorai-code-loading__editor">{Array.from({ length: 12 }, (_, index) => <span key={index} style={{ width: `${34 + ((index * 17) % 52)}%` }} />)}</div>
     </div>
   );
 }

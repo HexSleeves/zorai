@@ -286,7 +286,10 @@ export function trimDaemonThreadMessagesToLatestWindow({
       return {};
     }
 
-    const keptMessages = currentMessages.slice(-limit);
+    const keptMessages = latestLogicalMessageWindow(currentMessages, limit);
+    if (keptMessages.length === currentMessages.length) {
+      return {};
+    }
     const loadedMessageEnd = thread.loadedMessageEnd ?? thread.messageCount ?? currentMessages.length;
     const loadedMessageStart = Math.max(0, loadedMessageEnd - keptMessages.length);
     didTrim = true;
@@ -307,6 +310,23 @@ export function trimDaemonThreadMessagesToLatestWindow({
   return didTrim;
 }
 
+function latestLogicalMessageWindow(messages: AgentMessage[], logicalLimit: number): AgentMessage[] {
+  if (logicalLimit <= 0 || messages.length === 0) return messages;
+  let slots = 0;
+  let start = messages.length;
+  let previousWasTool = false;
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const isTool = messages[index].role === "tool";
+    if (!isTool || !previousWasTool) {
+      slots += 1;
+      if (slots > logicalLimit) break;
+    }
+    start = index;
+    previousWasTool = isTool;
+  }
+  return messages.slice(start);
+}
+
 function mergeMessagesForLiveRefresh(
   existing: AgentMessage[],
   persisted: AgentMessage[],
@@ -318,7 +338,7 @@ function mergeMessagesForLiveRefresh(
   );
   if (liveTailStart < 0) {
     return canonicalizeHydratedToolCalls(
-      reconcileEquivalentUserMessages(mergeMessages(existing, persisted)),
+      reconcileEquivalentUserMessages(mergeLiveMessages(existing, persisted)),
     );
   }
 
@@ -327,10 +347,48 @@ function mergeMessagesForLiveRefresh(
   // Insert newly persisted rows before that live suffix; appending the fetched
   // page after it makes history trimming discard the active turn.
   const messages = mergeMessages(
-    existing.slice(0, liveTailStart),
-    mergeMessages(persisted, existing.slice(liveTailStart)),
+    mergeLiveMessages(existing.slice(0, liveTailStart), persisted),
+    existing.slice(liveTailStart),
   );
   return canonicalizeHydratedToolCalls(reconcileEquivalentUserMessages(messages));
+}
+
+function mergeLiveMessages(existing: AgentMessage[], persisted: AgentMessage[]): AgentMessage[] {
+  const persistedById = new Map(persisted.map((message) => [message.id, message]));
+  const consumed = new Set<string>();
+  const merged = existing.map((message) => {
+    const exact = persistedById.get(message.id);
+    if (exact) {
+      consumed.add(exact.id);
+      return exact;
+    }
+    if (!isOptimisticLocalMessage(message)) return message;
+    const authoritative = persisted.find((candidate) =>
+      !consumed.has(candidate.id) && messagesAreEquivalent(message, candidate)
+    );
+    if (!authoritative) return message;
+    consumed.add(authoritative.id);
+    return authoritative;
+  });
+  return mergeMessages(merged, persisted.filter((message) => !consumed.has(message.id)));
+}
+
+function isOptimisticLocalMessage(message: AgentMessage): boolean {
+  return message.id.startsWith("queued-prompt:") || /^msg_\d+$/.test(message.id);
+}
+
+function messagesAreEquivalent(left: AgentMessage, right: AgentMessage): boolean {
+  if (left.role !== right.role) return false;
+  if (left.role === "assistant") {
+    const hasIdentity = Boolean(left.content.trim() || left.reasoning?.trim());
+    return hasIdentity
+      && left.content === right.content
+      && (left.reasoning ?? "") === (right.reasoning ?? "");
+  }
+  if (left.role === "user") {
+    return userMessageEquivalenceKey(left) === userMessageEquivalenceKey(right);
+  }
+  return false;
 }
 
 function reconcileEquivalentUserMessages(messages: AgentMessage[]): AgentMessage[] {
@@ -347,7 +405,7 @@ function reconcileEquivalentUserMessages(messages: AgentMessage[]): AgentMessage
 }
 
 function isOptimisticLocalUserMessage(message: AgentMessage): boolean {
-  return message.id.startsWith("queued-prompt:") || /^msg_\d+$/.test(message.id);
+  return message.role === "user" && isOptimisticLocalMessage(message);
 }
 
 function userMessageEquivalenceKey(message: AgentMessage): string {

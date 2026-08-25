@@ -165,16 +165,7 @@ export function CodeThreadRuntimeSwitcher({ thread, variant = "toolbar" }: Props
         const bridge = getBridge() as unknown as {
           agentGetThreadExecutionProfile?: (id: string) => Promise<unknown>;
           agentSetThreadExecutionProfile?: (id: string, profile: unknown) => Promise<unknown>;
-          agentSetTargetAgentProviderModel?: (agentId: string, provider: string, model: string) => Promise<unknown>;
         };
-        // For subagents/personas the canonical store is target-agent config; for Svarog/any it's thread profile
-        const isBuiltinPersona = Boolean(
-          BUILTIN_WORKSPACE_PERSONAS.some((p) => p.id.toLowerCase() === targetLower) ||
-          subAgents.some((s) => s.id.toLowerCase() === targetLower),
-        );
-        if (isBuiltinPersona && targetLower !== "swarog") {
-          await bridge?.agentSetTargetAgentProviderModel?.(agentId, nextProvider, nextModel);
-        }
         const existing = await bridge?.agentGetThreadExecutionProfile?.(daemonId).catch(() => null) as { profile?: Record<string, unknown> | null } | null | unknown;
         const prev = existing && typeof existing === "object" && "profile" in (existing as Record<string, unknown>)
           ? ((existing as Record<string, unknown>).profile as Record<string, unknown> | null)

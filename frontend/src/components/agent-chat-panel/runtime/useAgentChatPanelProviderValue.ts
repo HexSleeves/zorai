@@ -4,6 +4,7 @@ import { getAgentDbApi } from "@/lib/agentStore/history";
 import { getAgentBridge, shouldUseDaemonRuntime } from "@/lib/agentDaemonConfig";
 import { fetchAgentRuns, isSubagentRun, type AgentRun } from "@/lib/agentRuns";
 import { fetchThreadTodos } from "@/lib/agentTodos";
+import { beginThreadLoading } from "@/zorai/features/threads/threadLoadingStore";
 import { resolveReactChatHistoryMessageLimit } from "@/lib/chatHistoryPageSize";
 import { deriveSpawnedAgentTree } from "@/lib/spawnedAgentTree";
 import type { SpawnedAgentTree } from "@/lib/spawnedAgentTree";
@@ -852,6 +853,8 @@ export function useAgentChatPanelProviderValue(): {
     direction: "latest" | "older",
   ): Promise<boolean> => {
     const runThreadPageLoad = async (): Promise<boolean> => {
+      const finishLoading = direction === "latest" ? beginThreadLoading() : () => {};
+      try {
       const thread = useAgentStore.getState().threads.find((entry) => entry.id === threadId);
       const daemonThreadId = thread?.daemonThreadId;
       if (!daemonThreadId || !getAgentBridge()?.agentGetThread) {
@@ -887,6 +890,9 @@ export function useAgentChatPanelProviderValue(): {
         setThreadTodos,
         setDaemonTodosByThread,
       });
+      } finally {
+        finishLoading();
+      }
     };
 
     const nextLoad = threadPageLoadChainRef.current

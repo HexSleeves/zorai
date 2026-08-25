@@ -1,13 +1,8 @@
-/**
- * Animated loading indicators with three variants:
- * spinner, skeleton, and progress bar.
- * Pure CSS animations matching the design system.
- */
-
 interface SpinnerProps {
   variant?: "spinner";
   size?: number;
   label?: string;
+  className?: string;
 }
 
 interface SkeletonProps {
@@ -15,34 +10,31 @@ interface SkeletonProps {
   width?: string | number;
   height?: string | number;
   lines?: number;
+  className?: string;
 }
 
 interface ProgressProps {
   variant: "progress";
   value: number; // 0-100
   label?: string;
+  className?: string;
 }
 
 type LoadingStateProps = SpinnerProps | SkeletonProps | ProgressProps;
 
 export function LoadingState(props: LoadingStateProps) {
   const variant = props.variant ?? "spinner";
+  const className = ["zorai-loading-state", props.className].filter(Boolean).join(" ");
 
   if (variant === "skeleton") {
     const { width = "100%", height = 14, lines = 3 } = props as SkeletonProps;
     return (
-      <div style={{ display: "grid", gap: 8 }}>
+      <div className={`${className} zorai-loading-skeleton`} role="presentation">
         {Array.from({ length: lines }, (_, i) => (
           <div
             key={i}
-            style={{
-              width: i === lines - 1 ? "60%" : width,
-              height,
-              borderRadius: "var(--radius-md)",
-              background: "var(--bg-secondary)",
-              backgroundSize: "200% 100%",
-              animation: "shimmer 1.5s infinite ease-in-out",
-            }}
+            className="zorai-loading-skeleton__line"
+            style={{ width: i === lines - 1 ? "60%" : width, height }}
           />
         ))}
       </div>
@@ -53,52 +45,28 @@ export function LoadingState(props: LoadingStateProps) {
     const { value, label } = props as ProgressProps;
     const clamped = Math.max(0, Math.min(100, value));
     return (
-      <div style={{ display: "grid", gap: 6 }}>
-        {label && (
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: "var(--text-xs)", color: "var(--text-secondary)" }}>
-            <span>{label}</span>
-            <span>{Math.round(clamped)}%</span>
-          </div>
-        )}
-        <div
-          style={{
-            height: 6,
-            borderRadius: "var(--radius-full)",
-            background: "var(--bg-tertiary)",
-            overflow: "hidden",
-          }}
-        >
-          <div
-            style={{
-              height: "100%",
-              width: `${clamped}%`,
-              borderRadius: "var(--radius-full)",
-              background: "var(--accent)",
-              boxShadow: "none",
-              transition: "width 0.3s ease",
-            }}
-          />
-        </div>
+      <div className={`${className} zorai-loading-progress`} role="status" aria-live="polite">
+        {label && <div className="zorai-loading-progress__label"><span>{label}</span><span>{Math.round(clamped)}%</span></div>}
+        <div className="zorai-loading-progress__track"><div className="zorai-loading-progress__bar" style={{ width: `${clamped}%` }} /></div>
       </div>
     );
   }
 
-  // Default: spinner
   const { size = 20, label } = props as SpinnerProps;
   return (
-    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-      <div
-        style={{
-          width: size,
-          height: size,
-          border: "2px solid var(--bg-tertiary)",
-          borderTopColor: "var(--accent)",
-          borderRadius: "50%",
-          animation: "spin 0.7s linear infinite",
-          flexShrink: 0,
-        }}
-      />
-      {label && <span style={{ fontSize: "var(--text-xs)", color: "var(--text-secondary)" }}>{label}</span>}
+    <div className={`${className} zorai-loading-spinner`} role="status" aria-live="polite">
+      <span className="zorai-loading-spinner__ring" style={{ width: size, height: size }} aria-hidden="true" />
+      {label && <span className="zorai-loading-spinner__label">{label}</span>}
     </div>
   );
+}
+
+export function LoadingPanel({ label = "Loading…", className = "" }: { label?: string; className?: string }) {
+  return <div className={["zorai-loading-panel", className].filter(Boolean).join(" ")}><LoadingState label={label} /></div>;
+}
+
+export function ThreadListSkeleton({ rows = 5 }: { rows?: number }) {
+  return <div className="zorai-thread-list-skeleton" aria-label="Loading threads" role="status">
+    {Array.from({ length: rows }, (_, index) => <LoadingState key={index} variant="skeleton" lines={3} className="zorai-thread-list-skeleton__row" />)}
+  </div>;
 }
