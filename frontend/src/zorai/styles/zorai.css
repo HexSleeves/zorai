@@ -3653,12 +3653,165 @@ button.zorai-composer-context-chip { cursor: pointer; }
   min-height: 30px;
   display: flex;
   align-items: center;
+  gap: 6px;
   padding: 0 10px;
   border-bottom: 1px solid var(--zorai-border);
   color: var(--zorai-muted);
   font-size: var(--text-xs);
   text-transform: uppercase;
   letter-spacing: .08em;
+}
+
+.zorai-code-project > strong {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.zorai-code-project-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+}
+
+.zorai-code-project-btn {
+  width: 22px;
+  min-width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--zorai-muted);
+  cursor: pointer;
+}
+
+.zorai-code-project-btn:hover:not(:disabled),
+.zorai-code-project-btn:focus-visible {
+  border-color: var(--zorai-border-strong, var(--zorai-border));
+  background: var(--zorai-bg-active, transparent);
+  color: var(--zorai-text);
+}
+
+.zorai-code-project-btn:focus-visible {
+  outline: 1px solid var(--zorai-text);
+  outline-offset: 1px;
+}
+
+.zorai-code-project-btn:disabled {
+  opacity: .35;
+  cursor: not-allowed;
+}
+
+.zorai-code-project-btn svg {
+  width: 13px;
+  height: 13px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.zorai-code-project-recent {
+  position: relative;
+  display: inline-flex;
+}
+
+.zorai-code-recent-menu {
+  position: absolute;
+  z-index: 90;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 240px;
+  max-width: 360px;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px;
+  border: 1px solid var(--zorai-border);
+  border-radius: 6px;
+  background: var(--zorai-bg-elevated, #141414);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .45);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.zorai-code-recent-empty {
+  padding: 8px 10px;
+  color: var(--zorai-muted);
+  font-size: 11px;
+}
+
+.zorai-code-recent-item {
+  display: flex;
+  align-items: stretch;
+  gap: 2px;
+  border-radius: 4px;
+}
+
+.zorai-code-recent-item.is-current .zorai-code-recent-item-open strong::after {
+  content: " ●";
+  color: var(--zorai-accent, #4ade80);
+  margin-left: 4px;
+}
+
+.zorai-code-recent-item-open {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 6px 8px;
+  border: 0;
+  background: transparent;
+  color: var(--zorai-text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.zorai-code-recent-item-open:hover {
+  background: var(--zorai-bg-active, rgba(255, 255, 255, .06));
+}
+
+.zorai-code-recent-item-open strong {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--zorai-text);
+}
+
+.zorai-code-recent-item-open span {
+  font-size: 10px;
+  color: var(--zorai-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  width: 100%;
+  white-space: nowrap;
+}
+
+.zorai-code-recent-item-remove {
+  flex: 0 0 auto;
+  width: 22px;
+  padding: 0 4px;
+  border: 0;
+  background: transparent;
+  color: var(--zorai-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.zorai-code-recent-item-remove:hover {
+  color: var(--zorai-text);
+  background: var(--zorai-bg-active, rgba(255, 255, 255, .06));
 }
 
 .zorai-code-open-editors,

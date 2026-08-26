@@ -10,6 +10,7 @@ import type { editor as MonacoEditorApi } from "monaco-editor";
 import { CodeTabs } from "@/zorai/features/code/CodeTabs";
 import { shouldRestoreWorkspaceDocument } from "@/zorai/features/code/workspaceDocumentRestore";
 import { useWorkspaceEditorRequestStore } from "@/lib/workspaceEditorRequestStore";
+import { openExternalFileInWorkspace } from "@/zorai/features/code/workspaceExternalFile";
 import { CodeQuickOpen } from "@/zorai/features/code/CodeQuickOpen";
 import { CodeCommandPalette } from "@/zorai/features/code/CodeCommandPalette";
 import { CODE_COMMANDS, matchesCodeBinding, shouldPassthroughCodeCommand, type CodeCommandId } from "@/zorai/features/code/codeCommands";
@@ -37,7 +38,7 @@ import { loadWorkspaceRootState, runWorkspacePathMutation } from "@/zorai/featur
 const WorkspaceCodeEditor = lazy(() => import("@/components/WorkspaceCodeEditor").then((module) => ({ default: module.WorkspaceCodeEditor })));
 const WorkspaceDiffEditor = lazy(() => import("@/components/WorkspaceCodeEditor").then((module) => ({ default: module.WorkspaceDiffEditor })));
 
-type OpenDocument = ZoraiWorkspaceFile & { original: string; dirty: boolean; gitBaseContent?: string; externalContent?: string; externalHash?: string };
+type OpenDocument = ZoraiWorkspaceFile & { original: string; dirty: boolean; gitBaseContent?: string; externalContent?: string; externalHash?: string; external?: { absolutePath: string } };
 
 function statusLabel(entry?: ZoraiWorkspaceGitStatus) {
   if (!entry) return "";
@@ -551,13 +552,86 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     if (!editorRequest || editorRequest.threadId !== activeThreadId) return;
     if (editorRequest.token === handledEditorRequestTokenRef.current) return;
     handledEditorRequestTokenRef.current = editorRequest.token;
+    if (editorRequest.external) {
+      void openExternalFile(editorRequest.path);
+      return;
+    }
     void openFile(editorRequest.path, undefined, editorRequest.view);
   }, [activeThreadId, editorRequest]);
 
+  const openExternalFile = async (absolutePath: string) => {
+    if (!activeThreadId || !bridge?.readFsText) return;
+    setError(null);
+    try {
+      const seed = await openExternalFileInWorkspace(
+        { readFsText: bridge.readFsText, getFsPathInfo: bridge.getFsPathInfo },
+        absolutePath,
+      );
+      setDocuments((current) => {
+        const existing = current[seed.path];
+        const doc: OpenDocument = {
+          path: seed.path,
+          content: existing?.content ?? seed.content,
+          original: existing?.original ?? seed.content,
+          hash: "",
+          language: seed.language,
+          sizeBytes: seed.sizeBytes,
+          modifiedAt: seed.modifiedAt,
+          dirty: existing?.dirty ?? false,
+          external: { absolutePath: seed.path },
+        };
+        return { ...current, [seed.path]: doc };
+      });
+      setActiveFile(activeThreadId, seed.path);
+      setActiveEditorTabId(`file:${seed.path}`);
+      setMode("edit");
+    } catch (reason: any) {
+      setError(reason?.message ?? String(reason));
+    }
+  };
+
   const saveDocument = async (path: string): Promise<boolean> => {
-    if (!activeThreadId || !context?.root || !bridge?.workspaceWriteFile) return false;
+    if (!activeThreadId) return false;
     const document = documents[path];
     if (!document || !document.dirty) return true;
+    // External (unrooted) documents: bypass workspace IPC and write via fs
+    // bridge. No expectedHash — the workspace hash contract is scoped to the
+    // workspace service and doesn't apply to an absolute host path.
+    if (document.external) {
+      if (!bridge?.writeFsText) return false;
+      let content = applyCodeSaveTransforms(document.content, {
+        trimTrailingWhitespace: editorSettings.trimTrailingWhitespaceOnSave,
+        finalNewline: editorSettings.finalNewlineOnSave,
+      });
+      if (editorSettings.formatOnSave && prettierParserForLanguage(document.language) && !reducedModePathsRef.current.has(path)) {
+        try { content = await formatCodeText(content, document.language); }
+        catch (reason) {
+          const message = reason instanceof Error ? reason.message : String(reason);
+          setError(`Format on save failed: ${message}`);
+          return false;
+        }
+      }
+      setSaving(true);
+      try {
+        await bridge.writeFsText(document.external.absolutePath, content);
+        setDocuments((current) => {
+          const latest = current[path];
+          if (!latest) return current;
+          return { ...current, [path]: { ...latest, content, original: content, dirty: false } };
+        });
+        autoSaveControllerRef.current.cancel(path);
+        setError(null);
+        setDirtyCloseError(null);
+        return true;
+      } catch (reason: any) {
+        const message = reason?.message ?? String(reason);
+        setError(message);
+        setDirtyCloseError(message);
+        return false;
+      } finally { setSaving(false); }
+    }
+
+    if (!context?.root || !bridge?.workspaceWriteFile) return false;
     let content = applyCodeSaveTransforms(document.content, {
       trimTrailingWhitespace: editorSettings.trimTrailingWhitespaceOnSave,
       finalNewline: editorSettings.finalNewlineOnSave,
@@ -1055,9 +1129,24 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
             ) : null}
             <details className="zorai-code-open-editors">
               <summary>Open Editors ({context.openFiles.length})</summary>
-              {context.openFiles.map((filePath) => (
-                <button type="button" key={filePath} className={filePath === context.activeFile ? "active" : ""} onClick={() => void openFile(filePath)}>{filePath.split(/[\\/]/).slice(-1)[0]}</button>
-              ))}
+              {context.openFiles.map((filePath) => {
+                const doc = documents[filePath];
+                const isExternal = doc?.external !== undefined;
+                const reactivate = () => {
+                  if (isExternal) {
+                    setActiveFile(activeThreadId, filePath);
+                    setActiveEditorTabId(`file:${filePath}`);
+                    setMode("edit");
+                    return;
+                  }
+                  void openFile(filePath);
+                };
+                return (
+                  <button type="button" key={filePath} className={filePath === context.activeFile ? "active" : ""} onClick={reactivate} title={isExternal ? filePath : undefined}>
+                    {isExternal ? `${filePath.split(/[\\/]/).slice(-1)[0]} ⬈` : filePath.split(/[\\/]/).slice(-1)[0]}
+                  </button>
+                );
+              })}
             </details>
             <details className="zorai-code-files" open>
               <summary className="zorai-code-files-heading">
