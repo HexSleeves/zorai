@@ -156,6 +156,19 @@ describe("agentStore spawned thread navigation", () => {
     expect(useAgentStore.getState().activeThreadId).toBe(createdThreadId);
     expect((useAgentStore.getState() as any).threadHistoryStack).toEqual([]);
   });
+
+  it("can materialize a background thread without stealing the active conversation", () => {
+    resetStoreState([makeThread("thread-a"), makeThread("thread-b")], "thread-b", ["thread-a"]);
+
+    const createdThreadId = useAgentStore.getState().createThread({
+      title: "discord mariuszkurman",
+      activate: false,
+    });
+
+    expect(useAgentStore.getState().activeThreadId).toBe("thread-b");
+    expect((useAgentStore.getState() as any).threadHistoryStack).toEqual(["thread-a"]);
+    expect(useAgentStore.getState().threads.some((thread) => thread.id === createdThreadId)).toBe(true);
+  });
 });
 
 describe("agentStore generated thread titles", () => {

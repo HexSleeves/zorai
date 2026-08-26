@@ -72,6 +72,7 @@ export interface AgentState {
     title?: string;
     agentId?: string | null;
     agentName?: string | null;
+    activate?: boolean;
   }) => string;
   deleteThread: (id: string) => void;
   setActiveThread: (id: string | null) => void;

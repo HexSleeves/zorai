@@ -1327,14 +1327,6 @@ pub(crate) async fn dispatch_part4(
             thread_id,
             profile_json,
         } => {
-            if agent.is_thread_streaming(&thread_id).await {
-                framed
-                    .send(DaemonMessage::Error {
-                        message: "thread_runtime_switch_blocked:thread_is_streaming".to_string(),
-                    })
-                    .await?;
-                return Ok(true);
-            }
             let trimmed = profile_json.trim();
             let parsed: Option<crate::agent::types::ThreadExecutionProfile> = if trimmed.is_empty()
                 || trimmed == "null"
@@ -1353,7 +1345,11 @@ pub(crate) async fn dispatch_part4(
                     }
                 }
             };
-            // Persist + broadcast so the persisted thread row reloads with it.
+            // Execution setup snapshots the active profile before opening a stream. Updating
+            // this map during a turn therefore leaves that in-flight job untouched while making
+            // the new assignment authoritative for the next job as soon as the stream finishes
+            // (including user cancellation). Persist + broadcast immediately so every client
+            // observes the pending/next profile instead of retaining stale owner settings.
             if let Some(profile) = parsed.clone() {
                 let mut map = agent.thread_execution_profiles.write().await;
                 if profile.provider.is_none()

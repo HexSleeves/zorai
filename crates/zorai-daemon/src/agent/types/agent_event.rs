@@ -213,6 +213,10 @@ pub enum AgentEvent {
         sender: String,
         content: String,
         channel: String,
+        /// Daemon thread already bound to this gateway channel, when known.
+        /// Absent on the first message after `!new` / `!reset` until a new thread is created.
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        thread_id: Option<String>,
     },
     /// Gateway platform connection status change (per D-05/GATE-05).
     GatewayStatus {

@@ -22,6 +22,61 @@ export function handleThreadTitleUpdatedEvent({ event }: { event: any }) {
   useAgentStore.getState().updateThreadTitle(threadId, title);
 }
 
+function findLocalThreadIdByDaemonId(daemonThreadId: string): string | null {
+  return useAgentStore.getState().threads.find((thread) => thread.daemonThreadId === daemonThreadId)?.id ?? null;
+}
+
+function appendGatewayTurn(addMessage: any, threadId: string, userMessages: any[]) {
+  for (const buffered of userMessages) {
+    addMessage(threadId, buffered);
+  }
+  addMessage(threadId, {
+    role: "assistant",
+    content: "",
+    provider: "daemon",
+    model: "daemon",
+    inputTokens: 0,
+    outputTokens: 0,
+    totalTokens: 0,
+    isCompactionSummary: false,
+    isStreaming: true,
+  });
+}
+
+function takePendingGatewayMessages(pendingGatewayMessagesRef: { current: any[] }) {
+  const pending = pendingGatewayMessagesRef.current;
+  pendingGatewayMessagesRef.current = [];
+  return pending;
+}
+
+function materializeDedicatedLocalThread({
+  daemonThreadId,
+  title,
+  createThread,
+  setThreadDaemonId,
+  paneId,
+}: {
+  daemonThreadId: string;
+  title: string;
+  createThread?: ReturnType<typeof useAgentStore.getState>["createThread"];
+  setThreadDaemonId?: ReturnType<typeof useAgentStore.getState>["setThreadDaemonId"];
+  paneId?: string | null;
+}): string {
+  const existing = findLocalThreadIdByDaemonId(daemonThreadId);
+  if (existing) return existing;
+  const workspace = useWorkspaceStore.getState();
+  const hasOpenConversation = Boolean(useAgentStore.getState().activeThreadId);
+  const localId = (createThread ?? useAgentStore.getState().createThread)({
+    workspaceId: workspace.activeWorkspaceId,
+    surfaceId: workspace.activeSurface()?.id ?? null,
+    paneId: paneId ?? workspace.activePaneId(),
+    title,
+    activate: !hasOpenConversation,
+  });
+  (setThreadDaemonId ?? useAgentStore.getState().setThreadDaemonId)(localId, daemonThreadId);
+  return localId;
+}
+
 export function handleThreadCreatedEvent({
   event,
   activePaneId,
@@ -37,51 +92,52 @@ export function handleThreadCreatedEvent({
   setView,
 }: any) {
   if (!event.thread_id) return;
-  const isOurThread = !daemonLocalThreadRef.current
-    || daemonThreadIdRef.current === null
-    || event.thread_id === daemonThreadIdRef.current;
-  if (isOurThread) {
-    daemonThreadIdRef.current = event.thread_id;
-  }
-  if (daemonLocalThreadRef.current && isOurThread) {
-    setThreadDaemonId(daemonLocalThreadRef.current, event.thread_id);
-  }
-  if (daemonLocalThreadRef.current) return;
 
-  const workspaceId = useWorkspaceStore.getState().activeWorkspaceId;
-  const surfaceId = useWorkspaceStore.getState().activeSurface()?.id ?? null;
-  const paneId = useWorkspaceStore.getState().activePaneId();
-  const localId = createThread({
-    workspaceId,
-    surfaceId,
-    paneId: activePaneId ?? paneId,
+  const existingLocalId = findLocalThreadIdByDaemonId(event.thread_id);
+  if (existingLocalId) {
+    const pending = takePendingGatewayMessages(pendingGatewayMessagesRef);
+    if (pending.length > 0) {
+      appendGatewayTurn(addMessage, existingLocalId, pending);
+    }
+    return;
+  }
+
+  const pendingGatewayMessages = pendingGatewayMessagesRef.current;
+  const currentLocalId = daemonLocalThreadRef.current as string | null;
+  const currentDaemonId = daemonThreadIdRef.current as string | null;
+  const isOurBoundThread = currentDaemonId === event.thread_id;
+  const isOurUnboundLocalThread = Boolean(currentLocalId)
+    && currentDaemonId === null
+    && pendingGatewayMessages.length === 0;
+
+  if (isOurBoundThread || isOurUnboundLocalThread) {
+    daemonThreadIdRef.current = event.thread_id;
+    if (currentLocalId) {
+      setThreadDaemonId(currentLocalId, event.thread_id);
+    }
+    return;
+  }
+
+  const hasOpenConversation = Boolean(currentLocalId);
+  const localId = materializeDedicatedLocalThread({
+    daemonThreadId: event.thread_id,
     title: event.title || "Gateway conversation",
+    createThread,
+    setThreadDaemonId,
+    paneId: activePaneId,
   });
-  daemonLocalThreadRef.current = localId;
-  setThreadDaemonId(localId, event.thread_id);
-  setActiveThread(localId);
-  setView("chat");
+  if (!hasOpenConversation) {
+    daemonLocalThreadRef.current = localId;
+    setActiveThread(localId);
+    setView("chat");
+  }
   if (event.thread_id) {
     void fetchThreadTodos(event.thread_id).then((items) => {
       setThreadTodos(localId, items);
       setDaemonTodosByThread((current: Record<string, AgentTodoItem[]>) => ({ ...current, [event.thread_id]: items }));
     });
   }
-  for (const buffered of pendingGatewayMessagesRef.current) {
-    addMessage(localId, buffered);
-  }
-  pendingGatewayMessagesRef.current = [];
-  addMessage(localId, {
-    role: "assistant",
-    content: "",
-    provider: "daemon",
-    model: "daemon",
-    inputTokens: 0,
-    outputTokens: 0,
-    totalTokens: 0,
-    isCompactionSummary: false,
-    isStreaming: true,
-  });
+  appendGatewayTurn(addMessage, localId, takePendingGatewayMessages(pendingGatewayMessagesRef));
 }
 
 export function handleTaskUpdateEvent({ event, activePaneId, activeWorkspace, addNotification }: any) {
@@ -338,7 +394,7 @@ export function handleWorkspaceCommand(event: any) {
   }
 }
 
-export function handleGatewayIncomingEvent({ event, addMessage, daemonLocalThreadRef, pendingGatewayMessagesRef }: any) {
+export function handleGatewayIncomingEvent({ event, addMessage, pendingGatewayMessagesRef }: any) {
   const gatewayMessage = {
     role: "user" as const,
     content: `[${event.platform} — ${event.sender}]: ${event.content}`,
@@ -347,20 +403,17 @@ export function handleGatewayIncomingEvent({ event, addMessage, daemonLocalThrea
     totalTokens: 0,
     isCompactionSummary: false,
   };
-  const threadId = daemonLocalThreadRef.current;
+  const daemonThreadId = typeof event.thread_id === "string" && event.thread_id.trim()
+    ? event.thread_id
+    : null;
+  const threadId = daemonThreadId
+    ? materializeDedicatedLocalThread({
+      daemonThreadId,
+      title: `${event.platform} ${event.sender}`.trim() || "Gateway conversation",
+    })
+    : null;
   if (threadId) {
-    addMessage(threadId, gatewayMessage);
-    addMessage(threadId, {
-      role: "assistant",
-      content: "",
-      provider: "daemon",
-      model: "daemon",
-      inputTokens: 0,
-      outputTokens: 0,
-      totalTokens: 0,
-      isCompactionSummary: false,
-      isStreaming: true,
-    });
+    appendGatewayTurn(addMessage, threadId, [gatewayMessage]);
     return;
   }
   pendingGatewayMessagesRef.current.push(gatewayMessage);

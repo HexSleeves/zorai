@@ -10,6 +10,18 @@ fn reset_commands_require_bang_prefix() {
 }
 
 #[test]
+fn gateway_incoming_event_carries_existing_thread_binding() {
+    let source = fs::read_to_string(
+        repo_root().join("crates/zorai-daemon/src/agent/gateway_loop/message_flow.rs"),
+    )
+    .expect("read message_flow.rs");
+    assert!(
+        source.contains("thread_id: existing_thread.clone()"),
+        "GatewayIncoming must carry the bound daemon thread so the UI does not dump the message on whatever thread is currently open"
+    );
+}
+
+#[test]
 fn gateway_route_requests_support_commands_and_natural_language() {
     assert_eq!(
         classify_gateway_route_request("!svarog"),
