@@ -74,7 +74,12 @@ export type ToolEventGroup = {
   welesReview?: WelesReviewMeta;
 };
 
+export type ToolEventAttribution = {
+  authorAgentName?: string;
+  createdAt: number;
+};
+
 export type ChatDisplayItem =
   | { type: "message"; message: AgentMessage }
   | { type: "tool"; group: ToolEventGroup }
-  | { type: "toolList"; key: string; groups: ToolEventGroup[] };
+  | { type: "toolList"; key: string; groups: ToolEventGroup[]; attribution?: ToolEventAttribution };

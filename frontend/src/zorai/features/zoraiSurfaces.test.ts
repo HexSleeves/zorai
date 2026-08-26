@@ -84,6 +84,9 @@ describe("Zorai feature surfaces", () => {
     expect(styleSource).toContain(".zorai-workspace-editor .minimap");
     expect(styleSource).toContain(".zorai-security-shield");
     expect(styleSource).toContain(".zorai-effort-gauge");
+    expect(workbenchSource).toContain("loadedRootRef.current !== root");
+    expect(workbenchSource).toContain("}, [bridge]);");
+    expect(workbenchSource).not.toContain("}, [bridge, context?.root, activeThreadId]);");
     expect(codeSource).not.toContain("zorai-view-header");
     expect(codeSource).not.toContain("zorai-tool-tab-strip");
   });
@@ -198,6 +201,8 @@ describe("Zorai feature surfaces", () => {
     expect(agentPaneSource).toContain("agentId: responder.id");
     expect(agentPaneSource).toContain("agentName: responder.name");
     expect(agentPaneSource).toContain("bindRoot(localId, root)");
+    expect(agentPaneSource).toContain("bindRoot(entry.localThread.id, root)");
+    expect(agentPaneSource).toContain("bindRoot(openedId, root)");
     expect(agentPaneSource).toContain("runtime.openThread(localId)");
     expect(agentPaneSource).not.toContain("updateAgentSetting");
     expect(composerSource).toContain("previousTargetThreadRef.current === activeThreadId");
@@ -609,6 +614,9 @@ describe("Zorai feature surfaces", () => {
     const source = readFeature("./threads/ThreadsView.tsx");
 
     expect(source).toContain("ThinkingIndicator");
+    expect(source).toContain("streamingContinuesAttributedToolSet");
+    expect(source).toContain("continueAttributedTurn={streamingContinuesAttributedToolSet}");
+    expect(source).toContain("continueAttributedTurn ? null : <strong>{agentName}</strong>");
     expect(source).toContain("zorai-thinking");
     expect(source).toContain("runtime.isStreamingResponse");
     // Assistant fallback name should come from the thread's agent, not hardcoded "Zorai".
@@ -812,7 +820,8 @@ describe("Zorai feature surfaces", () => {
     expect(railSource).toContain("openThreadTarget");
     expect(railSource).not.toContain("runtime.openThread(thread.id)");
     expect(railSource).toContain("DEFAULT_THREAD_DATE_FILTER");
-    expect(railSource).toContain("Loading threads.");
+    expect(railSource).toContain("useState<ThreadFilterTab | null>(tab)");
+    expect(railSource).toContain("ThreadListSkeleton");
     expect(railSource).toContain("loadedAgentFilterRef.current == null ? 0");
     expect(railSource).toContain("refreshSubAgents");
     expect(source).toContain("onScroll");
@@ -823,7 +832,8 @@ describe("Zorai feature surfaces", () => {
     expect(railSource).toContain("fixedThreadTabs");
     expect(railSource).toContain("agentFilterOptions");
     expect(railSource).toContain("Agents & subagents");
-    expect(source).toContain("Loading messages");
+    expect(source).toContain("shouldShowConversationSkeleton");
+    expect(source).not.toContain("Loading messages");
     expect(railSource).not.toContain("threadTabs.map");
     expect(railSource).toContain("dateFilters");
     expect(railSource).toContain("includeInternal: true");
@@ -833,6 +843,7 @@ describe("Zorai feature surfaces", () => {
     expect(railSource).toContain("[daemonAgentFilter, fetchKey, fetchThreadList, tab]");
     expect(railSource).not.toContain("[daemonAgentFilter, runtime, tab]");
     expect(runtimeSource).toContain("loadThreadPage");
+    expect(runtimeSource.indexOf("const finishLoading")).toBeLessThan(runtimeSource.indexOf("const runThreadPageLoad"));
     expect(runtimeSource).toContain("latestLoadedThreadIdRef");
     expect(runtimeSource).toContain("loadThreadPage(activeThreadId, \"latest\")");
     expect(runtimeSource).toContain("localThreadId: threadId");

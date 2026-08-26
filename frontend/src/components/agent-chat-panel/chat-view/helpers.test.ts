@@ -82,7 +82,31 @@ describe("buildDisplayItems", () => {
     ]);
   });
 
-  it("keeps hidden assistant tool-call batches as separate tool lists", () => {
+  it("hides contentful assistant tool-call envelopes and renders only tools plus the final answer", () => {
+    const items = buildDisplayItems([
+      message({ id: "user", role: "user", content: "Investigate", createdAt: 1 }),
+      message({
+        id: "assistant-progress",
+        role: "assistant",
+        content: "Acknowledged—this is an unfinished progress fragment. Expected behavior follows.",
+        toolCalls: [{ id: "call-1", name: "read_file", arguments: "{}" }],
+        authorAgentName: "Svarog",
+        createdAt: 2,
+      }),
+      message({ id: "tool", role: "tool", toolCallId: "call-1", toolName: "read_file", toolStatus: "done", content: "file", createdAt: 3 }),
+      message({ id: "final", role: "assistant", content: "The final answer.", createdAt: 4 }),
+    ]);
+
+    const renderedMessages = items
+      .filter((item) => item.type === "message")
+      .map((item) => item.message.content);
+    expect(renderedMessages).toEqual(["Investigate", "The final answer."]);
+    const toolLists = items.filter((item) => item.type === "toolList");
+    expect(toolLists).toHaveLength(1);
+    expect(toolLists[0].attribution).toEqual({ authorAgentName: "Svarog", createdAt: 2 });
+  });
+
+  it("combines hidden assistant tool-call batches into one user-turn tool list", () => {
     const items = buildDisplayItems([
       message({ id: "user", role: "user", content: "Investigate", createdAt: 1 }),
       message({
@@ -104,9 +128,8 @@ describe("buildDisplayItems", () => {
     ]);
 
     const toolLists = items.filter((item) => item.type === "toolList");
-    expect(toolLists).toHaveLength(2);
-    expect(toolLists[0].groups.map((group) => group.toolName)).toEqual(["read_file"]);
-    expect(toolLists[1].groups.map((group) => group.toolName)).toEqual(["search_files"]);
+    expect(toolLists).toHaveLength(1);
+    expect(toolLists[0].groups.map((group) => group.toolName)).toEqual(["read_file", "search_files"]);
   });
 
   it("assigns distinct stable identities to tool lists when a provider reuses call ids across user turns", () => {

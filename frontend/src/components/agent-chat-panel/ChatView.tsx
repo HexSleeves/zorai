@@ -332,7 +332,14 @@ export function ChatView({
 
         {filteredDisplayItems.map((item) => {
           if (item.type === "toolList") {
-            return <ToolEventList key={item.key} groups={item.groups} />;
+            return (
+              <ToolEventList
+                key={item.key}
+                groups={item.groups}
+                attribution={item.attribution}
+                fallbackAuthorName={activeThread?.agent_name}
+              />
+            );
           }
           if (item.type === "tool") {
             return <ToolEventRow key={`tool_${item.group.key}`} group={item.group} />;

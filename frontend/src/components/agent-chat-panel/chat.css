@@ -754,6 +754,24 @@
   min-width: 0;
 }
 
+.acp-tool-list__attribution {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: var(--text-sm);
+  padding: 0 8px;
+}
+
+.acp-tool-list__attribution strong {
+  color: var(--accent);
+}
+
+.acp-tool-list__attribution time {
+  margin-left: auto;
+}
+
 .acp-tool-list__header {
   display: flex;
   align-items: center;

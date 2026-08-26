@@ -642,6 +642,13 @@ select.zorai-input:disabled option {
   -webkit-line-clamp: 8;
 }
 
+.zorai-goal-item__text--expanded {
+  display: block;
+  overflow: visible;
+  white-space: pre-wrap;
+  -webkit-line-clamp: unset;
+}
+
 .zorai-goal-item__text-toggle {
   width: fit-content;
   color: var(--zorai-accent);

@@ -1,6 +1,6 @@
 import type { AgentMessage, AgentTodoItem } from "../../../lib/agentStore";
 import { mergeToolReviewMeta } from "../toolReviewPresentation";
-import type { ChatDisplayItem, ToolEventGroup } from "./types";
+import type { ChatDisplayItem, ToolEventAttribution, ToolEventGroup } from "./types";
 
 const HANDOFF_EVENT_MARKER = "[[handoff_event]]";
 
@@ -45,6 +45,8 @@ export function buildDisplayItems(messages: AgentMessage[]): ChatDisplayItem[] {
   let groups = new Map<string, ToolEventGroup>();
   let pendingToolList: ToolEventGroup[] | null = null;
   let pendingToolListKey: string | null = null;
+  let pendingToolAttribution: ToolEventAttribution | undefined;
+  let nextToolAttribution: ToolEventAttribution | undefined;
 
   const flushToolList = () => {
     if (pendingToolList && pendingToolList.length > 0) {
@@ -52,22 +54,33 @@ export function buildDisplayItems(messages: AgentMessage[]): ChatDisplayItem[] {
         type: "toolList",
         key: pendingToolListKey ?? `tool-list:${pendingToolList[0].key}`,
         groups: pendingToolList,
+        attribution: pendingToolAttribution,
       });
     }
     pendingToolList = null;
     pendingToolListKey = null;
+    pendingToolAttribution = undefined;
     groups = new Map<string, ToolEventGroup>();
   };
 
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index];
+    if (isAssistantToolCallEnvelope(message)) {
+      if (!pendingToolList) {
+        nextToolAttribution = {
+          authorAgentName: message.authorAgentName,
+          createdAt: message.createdAt,
+        };
+      }
+      continue;
+    }
     if (isToolPlaceholderAssistantMessage(message, messages[index - 1], messages[index + 1])) {
-      flushToolList();
       continue;
     }
 
     if (message.role !== "tool") {
       flushToolList();
+      nextToolAttribution = undefined;
       items.push({ type: "message", message });
       continue;
     }
@@ -90,6 +103,8 @@ export function buildDisplayItems(messages: AgentMessage[]): ChatDisplayItem[] {
       if (!pendingToolList) {
         pendingToolList = [];
         pendingToolListKey = `tool-list:${message.id}`;
+        pendingToolAttribution = nextToolAttribution;
+        nextToolAttribution = undefined;
       }
       pendingToolList.push(initialGroup);
       continue;
@@ -115,6 +130,12 @@ export function buildDisplayItems(messages: AgentMessage[]): ChatDisplayItem[] {
 export function assistantMessageHasVisibleContent(content: string): boolean {
   const text = content.trim();
   return text !== "" && text !== "Calling tools...";
+}
+
+function isAssistantToolCallEnvelope(message: AgentMessage): boolean {
+  return message.role === "assistant"
+    && Array.isArray(message.toolCalls)
+    && message.toolCalls.length > 0;
 }
 
 function isToolPlaceholderAssistantMessage(

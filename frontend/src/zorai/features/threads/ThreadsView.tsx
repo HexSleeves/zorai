@@ -32,7 +32,7 @@ import { ThreadRetryStatusBanner } from "./ThreadRetryStatusBanner";
 import { useThreadRetryStatus } from "./threadRetryStatus";
 import { resolveThreadOwnerRuntimeProfile } from "./threadOwnerRuntime";
 import type { ZoraiReturnTarget } from "../../shell/zoraiNavigationEvents";
-import { useThreadLoadingStore } from "./threadLoadingStore";
+import { shouldShowConversationSkeleton, useThreadLoadingStore } from "./threadLoadingStore";
 import { threadReadKey, useThreadReadStateStore } from "./threadReadStateStore";
 
 export { ThreadsRail } from "./ThreadsRail";
@@ -61,7 +61,7 @@ export function ThreadsView({
   variant?: "full" | "compact";
   compactHeaderActions?: ReactNode;
 } = {}) {
-  const threadOpening = useThreadLoadingStore((state) => state.pending > 0);
+  const threadLoadingPending = useThreadLoadingStore((state) => state.pending);
   const runtime = useAgentChatPanelRuntime();
   const [pinLimitResult, setPinLimitResult] = useState<ZoraiThreadMessagePinResult | null>(null);
   const [participantsOpen, setParticipantsOpen] = useState(false);
@@ -71,6 +71,9 @@ export function ThreadsView({
   const viewMountedAtRef = useRef(Date.now());
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const displayItems = useMemo(() => buildDisplayItems(runtime.messages), [runtime.messages]);
+  const lastDisplayItem = displayItems[displayItems.length - 1];
+  const streamingContinuesAttributedToolSet = lastDisplayItem?.type === "toolList"
+    && Boolean(lastDisplayItem.attribution);
   const activeOperations = useMemo(() => runtime.messages.flatMap((message) => {
     const activity = classifyThreadActivityMessage(message);
     return activity?.kind === "operation"
@@ -195,7 +198,17 @@ export function ThreadsView({
     endProgrammaticThreadHistoryScroll();
   }, [activeThreadId, runtime.messages]);
 
-  if (threadOpening && !runtime.activeThread) {
+  const showConversationSkeleton = shouldShowConversationSkeleton({
+    pending: threadLoadingPending,
+    hasActiveThread: Boolean(runtime.activeThread),
+    loadedMessageCount: runtime.messages.length,
+    knownHistory: Boolean(
+      runtime.activeThread
+      && (runtime.activeThread.messageCount > 0 || runtime.activeThread.lastMessagePreview),
+    ),
+  });
+
+  if (showConversationSkeleton && !runtime.activeThread) {
     return <ThreadConversationSkeleton />;
   }
 
@@ -308,26 +321,24 @@ export function ThreadsView({
 
       <div className="zorai-thread-chat">
         <div ref={scrollerRef} className="zorai-thread-chat-scroll" onScroll={(event) => void handleThreadScroll(event)}>
-        {threadOpening ? (
+        {showConversationSkeleton ? (
           <ThreadConversationSkeleton embedded />
         ) : runtime.messages.length === 0 ? (
           <div className="zorai-thread-empty-state">
-            {activeThread.messageCount > 0 || activeThread.lastMessagePreview ? (
-              <>
-                <strong>Loading messages</strong>
-                <span>Fetching the latest history for this thread.</span>
-              </>
-            ) : (
-              <>
-                <div className="zorai-brand-mark"><span>Z</span></div>
-                <strong>Start a Zorai thread</strong>
-                <span>Ask for a plan, delegate work, or turn a request into a goal.</span>
-              </>
-            )}
+            <div className="zorai-brand-mark"><span>Z</span></div>
+            <strong>Start a Zorai thread</strong>
+            <span>Ask for a plan, delegate work, or turn a request into a goal.</span>
           </div>
         ) : displayItems.map((item) => {
           if (item.type === "toolList") {
-            return <ToolEventList key={item.key} groups={item.groups} />;
+            return (
+              <ToolEventList
+                key={item.key}
+                groups={item.groups}
+                attribution={item.attribution}
+                fallbackAuthorName={runtime.activeThread?.agent_name}
+              />
+            );
           }
           if (item.type === "tool") {
             return <ToolEventRow key={`tool_${item.group.key}`} group={item.group} />;
@@ -388,7 +399,10 @@ export function ThreadsView({
             onStop={() => runtime.stopStreaming(runtime.activeThreadId)}
           />
         ) : runtime.isStreamingResponse ? (
-          <ThinkingIndicator agentName={runtime.activeThread.agent_name} />
+          <ThinkingIndicator
+            agentName={runtime.activeThread.agent_name}
+            continueAttributedTurn={streamingContinuesAttributedToolSet}
+          />
         ) : null}
         <div ref={runtime.messagesEndRef} />
         </div>
@@ -504,12 +518,23 @@ function ThreadRuntimeSummary({ thread }: { thread: AgentThread }) {
   );
 }
 
-function ThinkingIndicator({ agentName }: { agentName: string }) {
+function ThinkingIndicator({
+  agentName,
+  continueAttributedTurn = false,
+}: {
+  agentName: string;
+  continueAttributedTurn?: boolean;
+}) {
   return (
-    <div className="zorai-thinking" role="status" aria-live="polite">
+    <div
+      className={["zorai-thinking", continueAttributedTurn ? "zorai-thinking--continued" : ""].filter(Boolean).join(" ")}
+      role="status"
+      aria-live="polite"
+      aria-label={continueAttributedTurn ? `${agentName} is still working` : undefined}
+    >
       <div className="zorai-thinking__body">
         <div className="zorai-thinking__label">
-          <strong>{agentName}</strong>
+          {continueAttributedTurn ? null : <strong>{agentName}</strong>}
           <span className="zorai-thinking__dots" aria-hidden="true">
             <span />
             <span />

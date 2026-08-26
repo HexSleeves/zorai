@@ -21,3 +21,15 @@ export function beginThreadLoading(): () => void {
     useThreadLoadingStore.getState().end();
   };
 }
+
+export function shouldShowConversationSkeleton(input: {
+  pending: number;
+  hasActiveThread: boolean;
+  loadedMessageCount: number;
+  knownHistory: boolean;
+}): boolean {
+  if (input.pending > 0) return true;
+  if (input.loadedMessageCount > 0) return false;
+  if (!input.hasActiveThread) return false;
+  return input.knownHistory;
+}

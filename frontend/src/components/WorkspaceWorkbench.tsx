@@ -135,14 +135,22 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
   const statusMap = useMemo(() => new Map(gitStatus.map((entry) => [entry.path, statusLabel(entry)])), [gitStatus]);
 
   const refreshGenRef = useRef(0);
-  const refreshRoot = useCallback(async (root = context?.root) => {
+  const loadedRootRef = useRef<string | null>(null);
+  const activeThreadIdRef = useRef(activeThreadId);
+  const contextRootRef = useRef(context?.root);
+  activeThreadIdRef.current = activeThreadId;
+  contextRootRef.current = context?.root;
+  const refreshRoot = useCallback(async (root = contextRootRef.current) => {
     if (!root || !bridge?.workspaceListDirectory) return;
     const generation = ++refreshGenRef.current;
-    setRootLoading(true);
+    if (loadedRootRef.current !== root) setRootLoading(true);
     try {
       const state = await loadWorkspaceRootState({ ...bridge, workspaceListDirectory: bridge.workspaceListDirectory }, root);
-      const currentRoot = activeThreadId ? useWorkspaceContextStore.getState().byThreadId[activeThreadId]?.root : undefined;
+      const currentRoot = activeThreadIdRef.current
+        ? useWorkspaceContextStore.getState().byThreadId[activeThreadIdRef.current]?.root
+        : undefined;
       if (generation !== refreshGenRef.current || (currentRoot && currentRoot !== root)) return;
+      loadedRootRef.current = root;
       setRootEntries(state.entries);
       setGitStatus(state.statuses);
       setGitOverview(state.overview);
@@ -153,7 +161,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     } finally {
       if (generation === refreshGenRef.current) setRootLoading(false);
     }
-  }, [bridge, context?.root, activeThreadId]);
+  }, [bridge]);
 
   useEffect(() => { void useWorkspaceContextStore.getState().hydrate(); }, []);
   useEffect(() => {

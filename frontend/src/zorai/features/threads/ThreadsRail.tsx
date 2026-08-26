@@ -30,7 +30,7 @@ export function ThreadsRail() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
   const [daemonFilteredThreads, setDaemonFilteredThreads] = useState<AgentThread[] | null>(null);
-  const [loadingTab, setLoadingTab] = useState<ThreadFilterTab | null>(null);
+  const [loadingTab, setLoadingTab] = useState<ThreadFilterTab | null>(tab);
   const pendingFetchIdRef = useRef(0);
   const loadedAgentFilterRef = useRef<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);

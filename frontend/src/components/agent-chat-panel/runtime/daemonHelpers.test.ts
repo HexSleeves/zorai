@@ -185,6 +185,55 @@ describe("loadDaemonThreadPageIntoLocalState", () => {
     ]);
   });
 
+  it("keeps a queued optimistic image row when latest-page replace starts after local insertion", async () => {
+    useAgentStore.setState({
+      threads: [{
+        ...makeThread("local-active", "daemon-1"),
+        messageCount: 2,
+        loadedMessageStart: 0,
+        loadedMessageEnd: 2,
+      }],
+      messages: {
+        "local-active": [
+          makeMessage(0),
+          {
+            ...makeMessage(1),
+            id: "queued-prompt:prompt-image",
+            role: "user",
+            content: "queued image",
+            contentBlocks: [{ type: "image", source: "data:image/png;base64,abc" }],
+          },
+        ],
+      },
+      activeThreadId: "local-active",
+    } as any);
+    agentGetThread.mockResolvedValue({
+      id: "daemon-1",
+      title: "Stale latest page",
+      agent_name: "Svarog",
+      messages: [{ id: "message-0", role: "user", content: "message 0", timestamp: 0 }],
+      total_message_count: 1,
+      loaded_message_start: 0,
+      loaded_message_end: 1,
+    });
+
+    await loadDaemonThreadPageIntoLocalState({
+      daemonThreadId: "daemon-1",
+      localThreadId: "local-active",
+      messageLimit: 50,
+      messageOffset: 0,
+      mergeMode: "replace",
+      setThreadTodos: vi.fn(),
+      setDaemonTodosByThread: vi.fn(),
+    });
+
+    expect(useAgentStore.getState().messages["local-active"]?.map((message) => message.id)).toEqual([
+      "message-0",
+      "queued-prompt:prompt-image",
+    ]);
+    expect(useAgentStore.getState().messages["local-active"]?.[1]?.contentBlocks).toHaveLength(1);
+  });
+
   it("removes hydrated assistant tool-call arrays represented by standalone tool rows", () => {
     const hydrated = buildHydratedRemoteThread({
       id: "daemon-tool-thread",
@@ -462,6 +511,64 @@ describe("loadDaemonThreadPageIntoLocalState", () => {
     ]);
   });
 
+  it("reconciles an optimistic image prompt even when an old live tool row splits the suffix", async () => {
+    useAgentStore.setState({
+      threads: [{
+        ...makeThread("local-active", "daemon-1"),
+        messageCount: 5,
+        loadedMessageStart: 0,
+        loadedMessageEnd: 2,
+      }],
+      messages: {
+        "local-active": [
+          { ...makeMessage(1), id: "last-answer", role: "assistant", content: "Previous answer" },
+          { ...makeMessage(2), id: "old-live-tool", role: "tool", content: "", toolCallId: "old-call", toolName: "read_file", toolStatus: "requested" },
+          {
+            ...makeMessage(3),
+            id: "msg_42",
+            role: "user",
+            content: "What is in this image?",
+            contentBlocks: [{ type: "image", source: "data:image/png;base64,abc" }],
+            createdAt: 10_000,
+          },
+          { ...makeMessage(4), id: "stopped-assistant", role: "assistant", content: "(stopped)", isStreaming: false },
+        ],
+      },
+      activeThreadId: "local-active",
+    } as any);
+    agentGetThread.mockResolvedValue({
+      id: "daemon-1",
+      title: "Active thread",
+      agent_name: "Svarog",
+      messages: [
+        { id: "last-answer", role: "assistant", content: "Previous answer", timestamp: 1 },
+        { id: "persisted-user-image", role: "user", content: "What is in this image?", timestamp: 10_050 },
+      ],
+      total_message_count: 2,
+      loaded_message_start: 0,
+      loaded_message_end: 2,
+    });
+
+    await refreshDaemonThreadMessagesIntoLocalState({
+      daemonThreadId: "daemon-1",
+      setThreadTodos: vi.fn(),
+      setDaemonTodosByThread: vi.fn(),
+    });
+
+    const messages = useAgentStore.getState().messages["local-active"] ?? [];
+    const userMessages = messages.filter((message) => message.role === "user");
+    expect(userMessages).toHaveLength(1);
+    expect(userMessages[0]).toMatchObject({
+      id: "persisted-user-image",
+      contentBlocks: [{ type: "image", source: "data:image/png;base64,abc" }],
+    });
+    expect(messages.map((message) => message.id)).toEqual([
+      "last-answer",
+      "persisted-user-image",
+      "stopped-assistant",
+    ]);
+  });
+
   it("replaces optimistic assistant commentary in place when persisted history arrives", async () => {
     useAgentStore.setState({
       messages: {
@@ -519,6 +626,44 @@ describe("loadDaemonThreadPageIntoLocalState", () => {
     expect(useAgentStore.getState().messages["local-active"]?.map((message) => message.id)).toEqual([
       "assistant-persisted",
       "tool-live",
+    ]);
+  });
+
+  it("preserves local image blocks when the same authoritative id refreshes again", async () => {
+    useAgentStore.setState({
+      messages: {
+        "local-active": [{
+          ...makeMessage(10),
+          id: "persisted-user-image",
+          role: "user",
+          content: "Second message with image.",
+          contentBlocks: [{ type: "image", source: "data:image/png;base64,abc" }],
+        }],
+      },
+    } as any);
+    agentGetThread.mockResolvedValue({
+      id: "daemon-1",
+      title: "Active thread",
+      agent_name: "Svarog",
+      messages: [{
+        id: "persisted-user-image",
+        role: "user",
+        content: "Second message with image.",
+        timestamp: 10,
+      }],
+      total_message_count: 1,
+      loaded_message_start: 0,
+      loaded_message_end: 1,
+    });
+
+    await refreshDaemonThreadMessagesIntoLocalState({
+      daemonThreadId: "daemon-1",
+      setThreadTodos: vi.fn(),
+      setDaemonTodosByThread: vi.fn(),
+    });
+
+    expect(useAgentStore.getState().messages["local-active"]?.[0]?.contentBlocks).toEqual([
+      { type: "image", source: "data:image/png;base64,abc" },
     ]);
   });
 

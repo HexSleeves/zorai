@@ -300,7 +300,14 @@ function RowList({
             aria-label={row.indicatorLabel}
           />
           <span className="zorai-goal-item__body">
-            <span className="zorai-goal-item__text">{text}</span>
+            <span
+              className={[
+                "zorai-goal-item__text",
+                expanded ? "zorai-goal-item__text--expanded" : "",
+              ].filter(Boolean).join(" ")}
+            >
+              {text}
+            </span>
             {longText ? (
               <span
                 className="zorai-goal-item__text-toggle"
