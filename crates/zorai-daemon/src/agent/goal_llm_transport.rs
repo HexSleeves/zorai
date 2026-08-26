@@ -422,21 +422,4 @@ impl AgentEngine {
             }
         }
     }
-
-    pub(in crate::agent) async fn goal_thread_latest_assistant_content(
-        &self,
-        thread_id: &str,
-    ) -> Option<String> {
-        match self.history.latest_assistant_message(thread_id).await {
-            Ok(Some(message)) => Some(message.content.trim().to_string()),
-            Ok(None) => None,
-            Err(error) => {
-                tracing::warn!(
-                    thread_id = %thread_id,
-                    "failed to load latest assistant message content for goal finalization: {error}"
-                );
-                None
-            }
-        }
-    }
 }

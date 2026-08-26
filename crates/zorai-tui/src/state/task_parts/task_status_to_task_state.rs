@@ -362,4 +362,6 @@ pub struct TaskState {
     pub(crate) heartbeat_items: Vec<HeartbeatItem>,
     pub(crate) last_digest: Option<HeartbeatDigestVm>,
     pub(crate) goal_thread_ids_cache: std::cell::RefCell<Option<(u64, Vec<String>)>>,
+    pub(crate) goal_thread_ids_by_run_cache:
+        std::cell::RefCell<std::collections::HashMap<String, (u64, Vec<String>)>>,
 }

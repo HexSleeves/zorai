@@ -9,6 +9,7 @@ import { useWorkspaceStore } from "@/lib/workspaceStore";
 import { useWorkspaceContextStore } from "@/lib/workspaceContextStore";
 import { appendDaemonSystemMessage, normalizeBridgePayload, reloadDaemonThreadIntoLocalState } from "./daemonHelpers";
 import { parseLeadingAgentDirective, type AgentDirective } from "./agentDirective";
+import { waitForThreadStopBarrier } from "./threadStopBarrier";
 import { builtinAgentSetupCandidate, isBuiltinPersonaSetupError } from "./builtinAgentSetupPreflight";
 import { resolveNewThreadTargetAgent } from "./newThreadTargetAgent";
 import type { BuiltinAgentSetupState } from "./types";
@@ -474,6 +475,8 @@ export function useDaemonAgentActions({
         setActiveThread(threadId);
       }
       if (!threadId) return;
+
+      await waitForThreadStopBarrier(threadId);
 
       addMessage(threadId, {
         role: "user",

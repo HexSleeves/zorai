@@ -327,7 +327,7 @@ export function ThreadsView({
           </div>
         ) : displayItems.map((item) => {
           if (item.type === "toolList") {
-            return <ToolEventList key={`toollist_${item.groups[0]?.key ?? "empty"}`} groups={item.groups} />;
+            return <ToolEventList key={item.key} groups={item.groups} />;
           }
           if (item.type === "tool") {
             return <ToolEventRow key={`tool_${item.group.key}`} group={item.group} />;

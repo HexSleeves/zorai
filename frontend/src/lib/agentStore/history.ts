@@ -315,19 +315,67 @@ export function buildHydratedRemoteMessage(
 }
 
 export function canonicalizeHydratedToolCalls(messages: AgentMessage[]): AgentMessage[] {
-  const standaloneCallIds = new Set(
-    messages
-      .filter((message) => message.role === "tool" && typeof message.toolCallId === "string")
-      .map((message) => message.toolCallId as string),
-  );
-  if (standaloneCallIds.size === 0) return messages;
+  const canonicalized = canonicalizeStandaloneToolRows(messages);
+  let turnStandaloneCallIds = new Set<string>();
 
-  return messages.map((message) => {
-    if (message.role !== "assistant" || !Array.isArray(message.toolCalls)) return message;
-    const remaining = message.toolCalls.filter((call) => !standaloneCallIds.has(call.id));
-    if (remaining.length === message.toolCalls.length) return message;
-    return { ...message, toolCalls: remaining.length > 0 ? remaining : undefined };
-  });
+  for (let index = canonicalized.length - 1; index >= 0; index -= 1) {
+    const message = canonicalized[index];
+    if (message.role === "user") {
+      turnStandaloneCallIds = new Set<string>();
+      continue;
+    }
+    if (message.role === "tool" && typeof message.toolCallId === "string") {
+      turnStandaloneCallIds.add(message.toolCallId);
+      continue;
+    }
+    if (message.role !== "assistant" || !Array.isArray(message.toolCalls)) continue;
+
+    const remaining = message.toolCalls.filter((call) => !turnStandaloneCallIds.has(call.id));
+    if (remaining.length !== message.toolCalls.length) {
+      canonicalized[index] = {
+        ...message,
+        toolCalls: remaining.length > 0 ? remaining : undefined,
+      };
+    }
+  }
+
+  return canonicalized;
+}
+
+function canonicalizeStandaloneToolRows(messages: AgentMessage[]): AgentMessage[] {
+  const canonicalized: AgentMessage[] = [];
+  let toolsByCallId = new Map<string, number>();
+
+  for (const message of messages) {
+    if (message.role === "user") {
+      toolsByCallId = new Map<string, number>();
+      canonicalized.push(message);
+      continue;
+    }
+    if (message.role !== "tool" || !message.toolCallId) {
+      canonicalized.push(message);
+      continue;
+    }
+
+    const existingIndex = toolsByCallId.get(message.toolCallId);
+    if (existingIndex == null) {
+      toolsByCallId.set(message.toolCallId, canonicalized.length);
+      canonicalized.push(message);
+      continue;
+    }
+
+    const existing = canonicalized[existingIndex];
+    canonicalized[existingIndex] = {
+      ...existing,
+      toolName: message.toolName || existing.toolName,
+      toolArguments: message.toolArguments || existing.toolArguments,
+      toolStatus: message.toolStatus || (message.content ? "done" : existing.toolStatus),
+      content: message.content || existing.content,
+      welesReview: message.welesReview ?? existing.welesReview,
+    };
+  }
+
+  return canonicalized;
 }
 
 export function buildHydratedRemoteThread(

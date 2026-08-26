@@ -44,18 +44,25 @@ export function buildDisplayItems(messages: AgentMessage[]): ChatDisplayItem[] {
   const items: ChatDisplayItem[] = [];
   let groups = new Map<string, ToolEventGroup>();
   let pendingToolList: ToolEventGroup[] | null = null;
+  let pendingToolListKey: string | null = null;
 
   const flushToolList = () => {
     if (pendingToolList && pendingToolList.length > 0) {
-      items.push({ type: "toolList", groups: pendingToolList });
+      items.push({
+        type: "toolList",
+        key: pendingToolListKey ?? `tool-list:${pendingToolList[0].key}`,
+        groups: pendingToolList,
+      });
     }
     pendingToolList = null;
+    pendingToolListKey = null;
     groups = new Map<string, ToolEventGroup>();
   };
 
   for (let index = 0; index < messages.length; index += 1) {
     const message = messages[index];
     if (isToolPlaceholderAssistantMessage(message, messages[index - 1], messages[index + 1])) {
+      flushToolList();
       continue;
     }
 
@@ -82,6 +89,7 @@ export function buildDisplayItems(messages: AgentMessage[]): ChatDisplayItem[] {
       groups.set(groupKey, initialGroup);
       if (!pendingToolList) {
         pendingToolList = [];
+        pendingToolListKey = `tool-list:${message.id}`;
       }
       pendingToolList.push(initialGroup);
       continue;

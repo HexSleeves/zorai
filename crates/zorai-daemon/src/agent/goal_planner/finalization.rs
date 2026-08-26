@@ -169,7 +169,7 @@ impl AgentEngine {
         .await
     }
 
-    async fn resume_existing_goal_final_review(
+    pub(in crate::agent) async fn resume_existing_goal_final_review(
         &self,
         snapshot: &GoalRun,
         review_task: &AgentTask,
@@ -205,7 +205,10 @@ impl AgentEngine {
         Ok(())
     }
 
-    async fn latest_goal_final_review_task(&self, goal_run_id: &str) -> Option<AgentTask> {
+    pub(in crate::agent) async fn latest_goal_final_review_task(
+        &self,
+        goal_run_id: &str,
+    ) -> Option<AgentTask> {
         self.list_tasks_filtered(&crate::history::AgentTaskListQuery {
             id: None,
             status: None,
@@ -449,7 +452,7 @@ impl AgentEngine {
             .await;
         }
         self.emit_goal_run_update(&updated, Some("Final review passed".into()));
-        self.complete_goal_run(goal_run_id).await
+        Box::pin(self.complete_goal_run(goal_run_id)).await
     }
 
     pub(in crate::agent) async fn handle_goal_run_final_review_failure(

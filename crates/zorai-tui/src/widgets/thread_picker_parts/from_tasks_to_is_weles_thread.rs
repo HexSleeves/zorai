@@ -82,6 +82,7 @@ impl ThreadPickerStatusIndex {
         index
     }
 
+    #[cfg(test)]
     pub(super) fn from_state(chat: &ChatState, tasks: &TaskState) -> Self {
         Self::from_state_for_threads(chat, tasks, chat.threads())
     }

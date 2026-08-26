@@ -23,7 +23,7 @@ export function ThreadActivityRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [statuses, setStatuses] = useState<Record<string, OperationStatusView>>({});
-  const [_busyId, setBusyId] = useState<string | null>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const generationRef = useRef(0);
   const pollStepRef = useRef(0);
@@ -134,6 +134,40 @@ export function ThreadActivityRow({
         <time>{formatActivityTime(createdAt)}</time>
       </button>
 
+      {activity.kind === "operation" && operations.length > 0 ? (
+        <div className="zorai-thread-activity__operations">
+          {operations.map((operation) => {
+            const state = operationState(operation);
+            const pending = busyId === operation.operationId;
+            const cancellable = state === "accepted" || state === "started";
+            return (
+              <div className="zorai-operation-row" key={operation.operationId}>
+                <span className={`zorai-status-pill zorai-status-pill--${state}`}>{state}</span>
+                <code title={operation.operationId}>{operation.operationId}</code>
+                {operation.tool ? <span>{operation.tool}</span> : null}
+                <button
+                  type="button"
+                  className="zorai-ghost-button"
+                  disabled={pending || operation.operationId === "unknown"}
+                  onClick={() => void refresh(operation.operationId)}
+                >
+                  {pending ? "Working…" : "Refresh"}
+                </button>
+                {cancellable ? (
+                  <button
+                    type="button"
+                    className="zorai-ghost-button"
+                    disabled={pending || operation.operationId === "unknown"}
+                    onClick={() => void cancel(operation.operationId)}
+                  >
+                    Cancel
+                  </button>
+                ) : null}
+              </div>
+            );
+          })}
+        </div>
+      ) : null}
       {error ? <p className="zorai-inline-error" role="alert">{error}</p> : null}
       {expanded ? <pre className="zorai-thread-activity__raw">{activity.rawText}</pre> : null}
     </article>

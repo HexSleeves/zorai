@@ -82,6 +82,48 @@ describe("buildDisplayItems", () => {
     ]);
   });
 
+  it("keeps hidden assistant tool-call batches as separate tool lists", () => {
+    const items = buildDisplayItems([
+      message({ id: "user", role: "user", content: "Investigate", createdAt: 1 }),
+      message({
+        id: "assistant-batch-1",
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "call-a", name: "read_file", arguments: "{}" }],
+        createdAt: 2,
+      }),
+      message({ id: "tool-a", role: "tool", toolCallId: "call-a", toolName: "read_file", toolStatus: "done", content: "first", createdAt: 3 }),
+      message({
+        id: "assistant-batch-2",
+        role: "assistant",
+        content: "",
+        toolCalls: [{ id: "call-b", name: "search_files", arguments: "{}" }],
+        createdAt: 4,
+      }),
+      message({ id: "tool-b", role: "tool", toolCallId: "call-b", toolName: "search_files", toolStatus: "done", content: "second", createdAt: 5 }),
+    ]);
+
+    const toolLists = items.filter((item) => item.type === "toolList");
+    expect(toolLists).toHaveLength(2);
+    expect(toolLists[0].groups.map((group) => group.toolName)).toEqual(["read_file"]);
+    expect(toolLists[1].groups.map((group) => group.toolName)).toEqual(["search_files"]);
+  });
+
+  it("assigns distinct stable identities to tool lists when a provider reuses call ids across user turns", () => {
+    const items = buildDisplayItems([
+      message({ id: "user-1", role: "user", content: "First", createdAt: 1 }),
+      message({ id: "tool-1", role: "tool", toolCallId: "reused-call", toolName: "read_file", toolStatus: "done", content: "first", createdAt: 2 }),
+      message({ id: "user-2", role: "user", content: "Second", createdAt: 3 }),
+      message({ id: "tool-2", role: "tool", toolCallId: "reused-call", toolName: "read_file", toolStatus: "done", content: "second", createdAt: 4 }),
+    ]);
+
+    const toolLists = items.filter((item) => item.type === "toolList");
+    expect(toolLists).toHaveLength(2);
+    expect(toolLists[0].key).not.toBe(toolLists[1].key);
+    expect(toolLists[0].key).toContain("tool-1");
+    expect(toolLists[1].key).toContain("tool-2");
+  });
+
   it("keeps repeated tool call ids isolated across visible message boundaries", () => {
     const items = buildDisplayItems([
       message({ id: "assistant-1", content: "First step", createdAt: 1 }),

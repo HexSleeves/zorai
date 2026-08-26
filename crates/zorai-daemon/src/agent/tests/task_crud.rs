@@ -1520,6 +1520,114 @@ async fn stopping_goal_run_records_operator_stop_resume_decision() {
 }
 
 #[tokio::test]
+async fn pausing_goal_suspends_recursive_tasks_and_resume_restores_without_duplication() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let goal_run_id = "goal-pause-tree";
+    let root_task_id = "task-pause-root";
+    let child_task_id = "task-pause-child";
+    let root_thread = "thread-pause-root";
+    let child_thread = "thread-pause-child";
+    let mut goal = sample_supervised_goal_run(goal_run_id, root_task_id, "approval-pause");
+    goal.status = GoalRunStatus::Running;
+    goal.awaiting_approval_id = None;
+    goal.thread_id = Some(root_thread.to_string());
+    goal.execution_thread_ids = vec![child_thread.to_string()];
+    engine.goal_runs.lock().await.push_back(goal);
+    sample_awaiting_task(&engine, goal_run_id, root_task_id, "approval-pause").await;
+    {
+        let mut tasks = engine.tasks.lock().await;
+        let root = tasks
+            .iter_mut()
+            .find(|task| task.id == root_task_id)
+            .unwrap();
+        root.status = TaskStatus::InProgress;
+        root.thread_id = Some(root_thread.to_string());
+        root.awaiting_approval_id = None;
+        let mut child = root.clone();
+        child.id = child_task_id.to_string();
+        child.goal_run_id = None;
+        child.parent_task_id = Some(root_task_id.to_string());
+        child.parent_thread_id = Some(root_thread.to_string());
+        child.thread_id = Some(child_thread.to_string());
+        tasks.push_back(child);
+    }
+    engine.persist_tasks().await;
+    let (_, root_token, _) = engine.begin_stream_cancellation(root_thread).await;
+    let (_, child_token, _) = engine.begin_stream_cancellation(child_thread).await;
+
+    assert!(
+        engine
+            .control_goal_run(goal_run_id, "pause", None, None)
+            .await
+    );
+    assert!(root_token.is_cancelled());
+    assert!(child_token.is_cancelled());
+    for id in [root_task_id, child_task_id] {
+        let task = engine
+            .list_tasks_filtered(&crate::history::AgentTaskListQuery {
+                id: Some(id.to_string()),
+                status: None,
+                statuses: Vec::new(),
+                source: None,
+                thread_id: None,
+                thread_ids: Vec::new(),
+                goal_run_id: None,
+                parent_task_id: None,
+                awaiting_approval_id: None,
+                supervisor_config_present: false,
+                exclude_terminal_statuses: false,
+                order_by_recent_activity_desc: false,
+                limit: Some(1),
+                ids: Vec::new(),
+                parent_task_ids: Vec::new(),
+            })
+            .await
+            .into_iter()
+            .next()
+            .unwrap();
+        assert_eq!(task.status, TaskStatus::Blocked);
+        assert!(task
+            .blocked_reason
+            .as_deref()
+            .is_some_and(|reason| reason.starts_with("goal_paused:")));
+    }
+
+    assert!(
+        engine
+            .control_goal_run(goal_run_id, "resume", None, None)
+            .await
+    );
+    for id in [root_task_id, child_task_id] {
+        let task = engine
+            .list_tasks_filtered(&crate::history::AgentTaskListQuery {
+                id: Some(id.to_string()),
+                status: None,
+                statuses: Vec::new(),
+                source: None,
+                thread_id: None,
+                thread_ids: Vec::new(),
+                goal_run_id: None,
+                parent_task_id: None,
+                awaiting_approval_id: None,
+                supervisor_config_present: false,
+                exclude_terminal_statuses: false,
+                order_by_recent_activity_desc: false,
+                limit: Some(1),
+                ids: Vec::new(),
+                parent_task_ids: Vec::new(),
+            })
+            .await
+            .into_iter()
+            .next()
+            .unwrap();
+        assert_eq!(task.status, TaskStatus::Queued);
+        assert!(task.blocked_reason.is_none());
+    }
+}
+
+#[tokio::test]
 async fn stopping_goal_run_cancels_all_related_goal_tasks_and_streams() {
     let root = tempdir().expect("temp dir");
     let manager = SessionManager::new_test(root.path()).await;
@@ -1566,6 +1674,20 @@ async fn stopping_goal_run_cancels_all_related_goal_tasks_and_streams() {
         engine.begin_stream_cancellation(active_thread_id).await;
     let (_child_generation, child_token, _child_retry) =
         engine.begin_stream_cancellation(child_thread_id).await;
+    let generic_wakeup = engine
+        .schedule_wakeup_with_context(
+            child_thread_id,
+            60_000,
+            1,
+            "child generic wakeup",
+            "generic",
+            None,
+        )
+        .await
+        .expect("valid child wakeup");
+    engine
+        .register_operation_wakeup(child_thread_id, "bash_command", "operation-child", true)
+        .await;
 
     let changed = engine
         .control_goal_run(goal_run_id, "stop", None, None)
@@ -1626,6 +1748,12 @@ async fn stopping_goal_run_cancels_all_related_goal_tasks_and_streams() {
         child_token.is_cancelled(),
         "child stream should be cancelled"
     );
+    assert!(!engine
+        .timer_wakeups
+        .lock()
+        .await
+        .contains_key(&generic_wakeup.id));
+    assert_eq!(engine.pending_operation_wakeup_count().await, 0);
 }
 
 #[tokio::test]

@@ -196,6 +196,7 @@ export async function loadDaemonThreadPageIntoLocalState({
       (thread) => thread.daemonThreadId === daemonThreadId,
     )?.id;
   if (!localThreadId) return false;
+  const messagesAtRequestStart = stateBeforeLoad.messages[localThreadId] ?? [];
 
   const remotePayload = await zorai.agentGetThread(daemonThreadId, {
     messageLimit: messageLimit ?? resolveReactChatHistoryMessageLimit(
@@ -251,6 +252,8 @@ export async function loadDaemonThreadPageIntoLocalState({
         [localThreadId]: mergeMode === "prepend"
           ? mergeMessages(reloadedMessages, state.messages[localThreadId] ?? [])
           : mergeMode === "append"
+          ? mergeMessagesForLiveRefresh(state.messages[localThreadId] ?? [], reloadedMessages)
+          : state.messages[localThreadId] !== messagesAtRequestStart
           ? mergeMessagesForLiveRefresh(state.messages[localThreadId] ?? [], reloadedMessages)
           : reloadedMessages,
       },

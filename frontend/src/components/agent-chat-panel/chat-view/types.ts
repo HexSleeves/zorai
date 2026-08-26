@@ -77,4 +77,4 @@ export type ToolEventGroup = {
 export type ChatDisplayItem =
   | { type: "message"; message: AgentMessage }
   | { type: "tool"; group: ToolEventGroup }
-  | { type: "toolList"; groups: ToolEventGroup[] };
+  | { type: "toolList"; key: string; groups: ToolEventGroup[] };

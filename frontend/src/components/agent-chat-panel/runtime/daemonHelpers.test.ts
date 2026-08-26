@@ -125,6 +125,66 @@ describe("loadDaemonThreadPageIntoLocalState", () => {
     expect(useAgentStore.getState().messages["local-stale"]).toEqual([]);
   });
 
+  it("does not let a delayed latest-page response erase a new user turn and its tool set", async () => {
+    let resolveThread: (value: unknown) => void = () => {};
+    agentGetThread.mockImplementationOnce(() => new Promise((resolve) => {
+      resolveThread = resolve;
+    }));
+    useAgentStore.setState({
+      threads: [{
+        ...makeThread("local-active", "daemon-1"),
+        messageCount: 2,
+        loadedMessageStart: 0,
+        loadedMessageEnd: 2,
+      }],
+      messages: {
+        "local-active": [makeMessage(0), makeMessage(1)],
+      },
+      activeThreadId: "local-active",
+    } as any);
+
+    const loading = loadDaemonThreadPageIntoLocalState({
+      daemonThreadId: "daemon-1",
+      localThreadId: "local-active",
+      messageLimit: 50,
+      messageOffset: 0,
+      mergeMode: "replace",
+      setThreadTodos: vi.fn(),
+      setDaemonTodosByThread: vi.fn(),
+    });
+
+    useAgentStore.setState((state) => ({
+      messages: {
+        ...state.messages,
+        "local-active": [
+          ...(state.messages["local-active"] ?? []),
+          { ...makeMessage(2), id: "new-user", role: "user", content: "new turn" },
+          { ...makeMessage(3), id: "new-tool", role: "tool", content: "new result", toolCallId: "call-new", toolName: "read_file", toolStatus: "done" },
+        ],
+      },
+    }));
+    resolveThread({
+      id: "daemon-1",
+      title: "Stale response",
+      agent_name: "Svarog",
+      messages: [
+        { id: "message-0", role: "user", content: "message 0", timestamp: 0 },
+        { id: "message-1", role: "assistant", content: "message 1", timestamp: 1 },
+      ],
+      total_message_count: 2,
+      loaded_message_start: 0,
+      loaded_message_end: 2,
+    });
+    await loading;
+
+    expect(useAgentStore.getState().messages["local-active"]?.map((message) => message.id)).toEqual([
+      "message-0",
+      "message-1",
+      "new-user",
+      "new-tool",
+    ]);
+  });
+
   it("removes hydrated assistant tool-call arrays represented by standalone tool rows", () => {
     const hydrated = buildHydratedRemoteThread({
       id: "daemon-tool-thread",
@@ -150,6 +210,67 @@ describe("loadDaemonThreadPageIntoLocalState", () => {
 
     expect(hydrated?.messages[0]?.toolCalls).toBeUndefined();
     expect(hydrated?.messages[1]?.toolCallId).toBe("call-1");
+  });
+
+  it("does not let a later turn's reused tool call id erase an earlier assistant tool-call array", () => {
+    const hydrated = buildHydratedRemoteThread({
+      id: "daemon-reused-tool-thread",
+      title: "Reused tool ids",
+      messages: [
+        {
+          id: "assistant-first",
+          role: "assistant",
+          content: "First call",
+          tool_calls: [{ id: "reused-call", name: "read_file", arguments: "{\"path\":\"first\"}" }],
+          timestamp: 1,
+        },
+        {
+          id: "user-second",
+          role: "user",
+          content: "Second turn",
+          timestamp: 2,
+        },
+        {
+          id: "tool-second",
+          role: "tool",
+          content: "second result",
+          tool_call_id: "reused-call",
+          tool_name: "read_file",
+          timestamp: 3,
+        },
+      ],
+    }, "Svarog");
+
+    expect(hydrated?.messages[0]?.toolCalls).toEqual([
+      { id: "reused-call", name: "read_file", arguments: "{\"path\":\"first\"}" },
+    ]);
+  });
+
+  it("removes duplicate standalone tool rows persisted after the final assistant answer", () => {
+    const hydrated = buildHydratedRemoteThread({
+      id: "daemon-duplicate-after-final",
+      title: "Duplicate tools after final",
+      messages: [
+        { id: "user", role: "user", content: "Do the work", timestamp: 1 },
+        { id: "tool-request", role: "tool", content: "", tool_call_id: "call-1", tool_name: "read_file", tool_status: "requested", timestamp: 2 },
+        { id: "tool-result", role: "tool", content: "done", tool_call_id: "call-1", tool_name: "read_file", tool_status: "done", timestamp: 3 },
+        { id: "final", role: "assistant", content: "Finished.", timestamp: 4 },
+        { id: "tool-request-copy", role: "tool", content: "", tool_call_id: "call-1", tool_name: "read_file", tool_status: "requested", timestamp: 5 },
+        { id: "tool-result-copy", role: "tool", content: "done", tool_call_id: "call-1", tool_name: "read_file", tool_status: "done", timestamp: 6 },
+      ],
+    }, "Svarog");
+
+    expect(hydrated?.messages.map((message) => message.id)).toEqual([
+      "user",
+      "tool-request",
+      "final",
+    ]);
+    expect(hydrated?.messages[1]).toMatchObject({
+      toolCallId: "call-1",
+      toolStatus: "done",
+      content: "done",
+    });
+    expect(hydrated?.messages.at(-1)?.id).toBe("final");
   });
 
   it("refreshes daemon thread metadata without replacing visible messages", async () => {

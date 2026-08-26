@@ -36,6 +36,7 @@ import {
 } from "./threadHistoryScroll";
 import { useLegacyAgentMessaging } from "./useLegacyAgentMessaging";
 import { finalizeStreamingAssistantMessages, threadTurnIsActive } from "./threadTurnState";
+import { beginThreadStopBarrier, completeThreadStopBarrier } from "./threadStopBarrier";
 import type {
   AgentChatPanelRuntimeValue,
   AgentChatPanelView,
@@ -421,7 +422,13 @@ export function useAgentChatPanelProviderValue(): {
       const zorai = getAgentBridge();
       const daemonThreadId = daemonThreadIdRef.current;
       if (daemonThreadId && zorai?.agentStopStream) {
-        void zorai.agentStopStream(daemonThreadId);
+        beginThreadStopBarrier(targetThreadId);
+        void zorai.agentStopStream(daemonThreadId).then((result) => {
+          const accepted = result && typeof result === "object" && "ok" in result
+            ? result.ok !== false
+            : result !== false;
+          if (!accepted) completeThreadStopBarrier(targetThreadId);
+        }).catch(() => completeThreadStopBarrier(targetThreadId));
       }
     }
 

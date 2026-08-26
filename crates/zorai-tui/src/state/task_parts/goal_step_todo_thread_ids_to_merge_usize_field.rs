@@ -1,64 +1,86 @@
 use super::task_status_to_task_state::*;
 pub(super) fn goal_step_todo_thread_ids(state: &TaskState, run: &GoalRun) -> Vec<String> {
-    let mut thread_ids = Vec::new();
-    let mut task_ids = Vec::new();
+    use std::collections::{HashMap, HashSet, VecDeque};
+
+    let mut thread_ids = HashSet::new();
+    let mut task_ids = HashSet::new();
+    let mut thread_queue = VecDeque::new();
+    let mut task_queue = VecDeque::new();
+    let mut children_by_task: HashMap<&str, Vec<&AgentTask>> = HashMap::new();
+    let mut children_by_thread: HashMap<&str, Vec<&AgentTask>> = HashMap::new();
+    let mut tasks_by_id: HashMap<&str, &AgentTask> = HashMap::new();
+
+    let mut add_thread = |id: &str, ids: &mut HashSet<String>, queue: &mut VecDeque<String>| {
+        if !id.is_empty() && ids.insert(id.to_string()) {
+            queue.push_back(id.to_string());
+        }
+    };
+    let mut add_task = |id: &str, ids: &mut HashSet<String>, queue: &mut VecDeque<String>| {
+        if !id.is_empty() && ids.insert(id.to_string()) {
+            queue.push_back(id.to_string());
+        }
+    };
+
+    for task in state.tasks() {
+        tasks_by_id.insert(task.id.as_str(), task);
+        if let Some(parent_task_id) = task.parent_task_id.as_deref() {
+            children_by_task
+                .entry(parent_task_id)
+                .or_default()
+                .push(task);
+        }
+        if let Some(parent_thread_id) = task.parent_thread_id.as_deref() {
+            children_by_thread
+                .entry(parent_thread_id)
+                .or_default()
+                .push(task);
+        }
+        if task.goal_run_id.as_deref() == Some(run.id.as_str()) {
+            add_task(&task.id, &mut task_ids, &mut task_queue);
+        }
+    }
 
     for thread_id in run
         .active_thread_id
         .iter()
         .chain(run.root_thread_id.iter())
         .chain(run.thread_id.iter())
+        .chain(run.execution_thread_ids.iter())
     {
-        push_unique_id(&mut thread_ids, thread_id);
-    }
-    for thread_id in &run.execution_thread_ids {
-        push_unique_id(&mut thread_ids, thread_id);
-    }
-    for task in state
-        .tasks()
-        .iter()
-        .filter(|task| task.goal_run_id.as_deref() == Some(run.id.as_str()))
-    {
-        push_unique_id(&mut task_ids, &task.id);
-        if let Some(thread_id) = task.thread_id.as_deref() {
-            push_unique_id(&mut thread_ids, thread_id);
-        }
+        add_thread(thread_id, &mut thread_ids, &mut thread_queue);
     }
     if let Some(goal_threads) = state.goal_thread_ids.get(&run.id) {
         for thread_id in goal_threads {
-            push_unique_id(&mut thread_ids, thread_id);
+            add_thread(thread_id, &mut thread_ids, &mut thread_queue);
         }
     }
-    loop {
-        let mut changed = false;
-        for task in state.tasks() {
-            let belongs_to_goal = task.goal_run_id.as_deref() == Some(run.id.as_str())
-                || task
-                    .parent_task_id
-                    .as_deref()
-                    .is_some_and(|parent_task_id| task_ids.iter().any(|id| id == parent_task_id))
-                || task
-                    .parent_thread_id
-                    .as_deref()
-                    .is_some_and(|parent_thread_id| {
-                        thread_ids.iter().any(|id| id == parent_thread_id)
-                    });
-            if !belongs_to_goal {
+
+    while !task_queue.is_empty() || !thread_queue.is_empty() {
+        while let Some(task_id) = task_queue.pop_front() {
+            let Some(task) = tasks_by_id.get(task_id.as_str()).copied() else {
                 continue;
-            }
-
-            changed |= push_unique_id(&mut task_ids, &task.id);
-
+            };
             if let Some(thread_id) = task.thread_id.as_deref() {
-                changed |= push_unique_id(&mut thread_ids, thread_id);
+                add_thread(thread_id, &mut thread_ids, &mut thread_queue);
+            }
+            if let Some(children) = children_by_task.get(task_id.as_str()) {
+                for child in children {
+                    add_task(&child.id, &mut task_ids, &mut task_queue);
+                }
             }
         }
-        if !changed {
-            break;
+        while let Some(thread_id) = thread_queue.pop_front() {
+            if let Some(children) = children_by_thread.get(thread_id.as_str()) {
+                for child in children {
+                    add_task(&child.id, &mut task_ids, &mut task_queue);
+                }
+            }
         }
     }
 
-    thread_ids
+    let mut result = thread_ids.into_iter().collect::<Vec<_>>();
+    result.sort();
+    result
 }
 
 pub(super) fn push_unique_id(ids: &mut Vec<String>, id: &str) -> bool {

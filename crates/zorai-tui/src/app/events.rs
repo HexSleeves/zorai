@@ -245,37 +245,6 @@ impl TuiModel {
         epoch
     }
 
-    fn visible_goal_animation_epoch(&self, tick: u64) -> Option<u64> {
-        let MainPaneView::Task(target) = &self.main_pane_view else {
-            return None;
-        };
-        let goal_run_id = target_goal_run_id(self, target)?;
-        let status = self.tasks.goal_run_by_id(&goal_run_id)?.status.clone();
-
-        match target {
-            sidebar::SidebarItemTarget::GoalRun { .. }
-                if matches!(
-                    status,
-                    Some(task::GoalRunStatus::Planning | task::GoalRunStatus::Running)
-                ) =>
-            {
-                Some(tick / 4)
-            }
-            _ if matches!(
-                status,
-                Some(
-                    task::GoalRunStatus::Planning
-                        | task::GoalRunStatus::Running
-                        | task::GoalRunStatus::AwaitingApproval
-                )
-            ) =>
-            {
-                Some(tick / 4)
-            }
-            _ => None,
-        }
-    }
-
     fn maybe_refresh_spawned_sidebar_tasks(&mut self) {
         let Some(active_thread_id) = self.chat.active_thread_id() else {
             return;

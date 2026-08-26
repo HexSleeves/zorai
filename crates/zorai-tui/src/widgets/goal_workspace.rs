@@ -2526,6 +2526,7 @@ fn goal_thread_entries(
         .tasks()
         .iter()
         .filter(|task| task.goal_run_id.as_deref() == Some(run.id.as_str()))
+        .take(256)
     {
         if let Some(thread_id) = task.thread_id.clone() {
             push_entry(
@@ -2535,7 +2536,7 @@ fn goal_thread_entries(
             );
         }
     }
-    for thread_id in tasks.goal_thread_ids(&run.id) {
+    for thread_id in tasks.goal_thread_ids(&run.id).into_iter().take(512) {
         push_entry(
             "Live goal thread".to_string(),
             thread_id,

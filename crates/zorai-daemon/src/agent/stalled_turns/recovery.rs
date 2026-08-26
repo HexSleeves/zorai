@@ -18,6 +18,14 @@ impl AgentEngine {
         &self,
         candidate: &StalledTurnCandidate,
     ) -> Result<()> {
+        if let Some(goal_run_id) = candidate.goal_run_id.as_deref() {
+            if self.get_goal_run(goal_run_id).await.is_some_and(|goal| {
+                goal.status == GoalRunStatus::Paused || goal.status.is_terminal()
+            }) {
+                tracing::debug!(goal_run_id, thread_id = %candidate.thread_id, "skipping stalled-turn retry for paused or terminal goal");
+                return Ok(());
+            }
+        }
         let attempt = candidate.retries_sent.saturating_add(1);
         let recovery_message = stalled_turn_system_message(candidate, attempt);
         {
