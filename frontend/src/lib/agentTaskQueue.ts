@@ -44,6 +44,7 @@ export interface AgentQueueTask {
     dependencies?: string[];
     command?: string | null;
     session_id?: string | null;
+    goal_run_id?: string | null;
     goal_run_title?: string | null;
     goal_step_id?: string | null;
     goal_step_title?: string | null;

@@ -575,6 +575,7 @@ async fn metacognitive_warning_repeated_tool_calls_remain_advisory() {
             lane_id: None,
             last_error: None,
             logs: Vec::new(),
+            completion_contract: None,
             tool_whitelist: None,
             tool_blacklist: None,
             override_provider: None,

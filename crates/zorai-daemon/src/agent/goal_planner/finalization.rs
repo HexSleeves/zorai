@@ -1,8 +1,5 @@
 use super::*;
 
-const FINAL_REVIEW_VERDICT_WAIT_ATTEMPTS: usize = 5;
-const FINAL_REVIEW_VERDICT_WAIT_MS: u64 = 50;
-
 fn all_goal_steps_completed(goal_run: &GoalRun) -> bool {
     !goal_run.steps.is_empty()
         && goal_run
@@ -44,12 +41,14 @@ fn final_review_prompt(goal_run: &GoalRun) -> String {
         .join("\n");
     format!(
         "Perform the final review for goal `{}`.\n\n\
-         Return the first line exactly as `VERDICT: PASS` or `VERDICT: FAIL`.\n\
+         You must call `submit_goal_final_review` exactly once before finishing.\n\
+         Do not write an inline VERDICT marker; plain assistant text cannot advance or fail the goal.\n\
+         The tool call is the authoritative daemon transition and must use verdict `pass` or `fail` with a concrete explanation.\n\
+         For `pass`, include `verifier` and `coverage`; include `gaps` when anything was not independently exercised.\n\
          Do not query zorai goal/task status through the CLI or API: this prompt is the daemon-owned final-review snapshot and is authoritative for plan, step, and artifact requirements.\n\
          Inspect only delivered outputs and the explicit completion-marker paths when independent confirmation is needed.\n\
-         Finish with the verdict response; do not leave the task result empty after collecting evidence.\n\
-         PASS only when all planned steps are complete, all goal todos are complete, every step has a completion markdown artifact, and the delivered work matches the plan.\n\
-         FAIL when any step is incomplete, any todo remains unchecked, a completion marker is missing, or the delivered work does not satisfy the plan.\n\n\
+         Call the tool with `pass` only when all planned steps are complete, all goal todos are complete, every step has a completion markdown artifact, and the delivered work matches the plan.\n\
+         Call the tool with `fail` when any step is incomplete, any todo remains unchecked, a completion marker is missing, or the delivered work does not satisfy the plan.\n\n\
          Goal:\n{}\n\n\
          Planned summary:\n{}\n\n\
          Completed steps:\n{}",
@@ -206,18 +205,95 @@ impl AgentEngine {
         Ok(())
     }
 
+    async fn latest_goal_final_review_task(&self, goal_run_id: &str) -> Option<AgentTask> {
+        self.list_tasks_filtered(&crate::history::AgentTaskListQuery {
+            id: None,
+            status: None,
+            statuses: Vec::new(),
+            source: Some(GOAL_FINAL_REVIEW_SOURCE.to_string()),
+            thread_id: None,
+            thread_ids: Vec::new(),
+            goal_run_id: Some(goal_run_id.to_string()),
+            parent_task_id: None,
+            awaiting_approval_id: None,
+            supervisor_config_present: false,
+            exclude_terminal_statuses: false,
+            order_by_recent_activity_desc: true,
+            limit: Some(1),
+            ids: Vec::new(),
+            parent_task_ids: Vec::new(),
+        })
+        .await
+        .into_iter()
+        .next()
+    }
+
     async fn enqueue_goal_final_review(&self, snapshot: &GoalRun) -> Result<()> {
         let active_tasks = self.active_goal_tasks(&snapshot.id).await;
         if let Some(review_task) = active_tasks
             .iter()
             .find(|task| task.source == GOAL_FINAL_REVIEW_SOURCE)
         {
-            self.resume_existing_goal_final_review(snapshot, review_task)
+            let review_task = if review_task.tool_whitelist.as_ref().is_some_and(|tools| {
+                !tools
+                    .iter()
+                    .any(|tool| tool == zorai_protocol::tool_names::SUBMIT_GOAL_FINAL_REVIEW)
+            }) {
+                let mut updated = review_task.clone();
+                updated
+                    .tool_whitelist
+                    .get_or_insert_with(Vec::new)
+                    .push(zorai_protocol::tool_names::SUBMIT_GOAL_FINAL_REVIEW.to_string());
+                self.history.upsert_agent_task(&updated).await?;
+                {
+                    let mut tasks = self.tasks.lock().await;
+                    if let Some(live) = tasks.iter_mut().find(|task| task.id == updated.id) {
+                        *live = updated.clone();
+                    }
+                }
+                updated
+            } else {
+                review_task.clone()
+            };
+            self.resume_existing_goal_final_review(snapshot, &review_task)
                 .await?;
             return Ok(());
         }
 
         let review_description = final_review_prompt(snapshot);
+        if let Some(existing) = self.latest_goal_final_review_task(&snapshot.id).await {
+            match existing.status {
+                TaskStatus::Queued
+                | TaskStatus::InProgress
+                | TaskStatus::Blocked
+                | TaskStatus::FailedAnalyzing
+                | TaskStatus::AwaitingApproval => {
+                    self.resume_existing_goal_final_review(snapshot, &existing)
+                        .await?;
+                    return Ok(());
+                }
+                TaskStatus::Completed | TaskStatus::BudgetExceeded => {
+                    if self.final_review_record(&existing).await?.is_some() {
+                        self.handle_goal_run_final_review_completion(&snapshot.id, &existing)
+                            .await?;
+                    } else {
+                        self.fail_goal_run(
+                            &snapshot.id,
+                            "completed final-review task did not call submit_goal_final_review",
+                            "final_review_protocol",
+                            existing.thread_id.clone(),
+                        )
+                        .await;
+                    }
+                    return Ok(());
+                }
+                TaskStatus::Failed | TaskStatus::Cancelled => {
+                    self.handle_goal_run_final_review_failure(&snapshot.id, &existing)
+                        .await?;
+                    return Ok(());
+                }
+            }
+        }
         let review_task = self
             .enqueue_task(
                 format!("Final review: {}", snapshot.title),
@@ -234,6 +310,14 @@ impl AgentEngine {
                 None,
             )
             .await;
+        let review_task = {
+            let mut updated = review_task;
+            updated
+                .tool_whitelist
+                .get_or_insert_with(Vec::new)
+                .push(zorai_protocol::tool_names::SUBMIT_GOAL_FINAL_REVIEW.to_string());
+            updated
+        };
 
         let synthetic_step = GoalRunStep {
             id: "final-review".to_string(),
@@ -241,8 +325,9 @@ impl AgentEngine {
             title: "Final review".to_string(),
             instructions: review_description,
             kind: GoalRunStepKind::Reason,
-            success_criteria: "Return VERDICT: PASS only when the goal is truly complete."
-                .to_string(),
+            success_criteria:
+                "Call submit_goal_final_review exactly once; plain text is not a verdict."
+                    .to_string(),
             session_id: snapshot.session_id.clone(),
             status: GoalRunStepStatus::InProgress,
             task_id: Some(review_task.id.clone()),
@@ -289,30 +374,13 @@ impl AgentEngine {
         Ok(())
     }
 
-    async fn final_review_output(&self, task: &AgentTask) -> Option<String> {
-        if let Some(result) = task
-            .result
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())
-        {
-            return Some(result.to_string());
-        }
-        let thread_id = task.thread_id.as_deref()?;
-        for attempt in 0..FINAL_REVIEW_VERDICT_WAIT_ATTEMPTS {
-            if let Some(output) = self.goal_thread_latest_assistant_content(thread_id).await {
-                if parse_goal_review_verdict(&output).is_some() {
-                    return Some(output);
-                }
-            }
-            if attempt + 1 < FINAL_REVIEW_VERDICT_WAIT_ATTEMPTS {
-                tokio::time::sleep(std::time::Duration::from_millis(
-                    FINAL_REVIEW_VERDICT_WAIT_MS,
-                ))
-                .await;
-            }
-        }
-        None
+    async fn final_review_record(&self, task: &AgentTask) -> Result<Option<GoalFinalReviewRecord>> {
+        let raw = self
+            .history
+            .get_consolidation_state(&goal_final_review_verdict_state_key(&task.id))
+            .await?;
+        raw.map(|value| serde_json::from_str(&value).map_err(Into::into))
+            .transpose()
     }
 
     pub(in crate::agent) async fn handle_goal_run_final_review_completion(
@@ -324,15 +392,9 @@ impl AgentEngine {
             .get_goal_run(goal_run_id)
             .await
             .context("goal run missing during final review completion")?;
-        let review_output = self.final_review_output(task).await.or_else(|| {
-            task.last_error
-                .as_deref()
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .map(str::to_string)
-        });
-        let Some(review_output) = review_output else {
-            let error = "final review completed without a parseable VERDICT: PASS or VERDICT: FAIL in its task result or reviewer thread";
+        let review_record = self.final_review_record(task).await?;
+        let Some(review_record) = review_record else {
+            let error = "final review completed without calling submit_goal_final_review";
             self.fail_goal_run(
                 goal_run_id,
                 error,
@@ -342,10 +404,7 @@ impl AgentEngine {
             .await;
             return Ok(());
         };
-        if !matches!(
-            parse_goal_review_verdict(&review_output),
-            Some(GoalReviewVerdict::Pass)
-        ) {
+        if !matches!(review_record.verdict, GoalStepReviewVerdict::Pass) {
             self.handle_goal_run_final_review_failure(goal_run_id, task)
                 .await?;
             return Ok(());
@@ -356,6 +415,7 @@ impl AgentEngine {
         if let Some(parent) = marker_path.parent() {
             tokio::fs::create_dir_all(parent).await?;
         }
+        let review_output = serde_json::to_string_pretty(&review_record)?;
         tokio::fs::write(&marker_path, format!("{review_output}\n")).await?;
 
         let updated = {
@@ -373,7 +433,7 @@ impl AgentEngine {
             goal_run.events.push(make_goal_run_event(
                 "final_review",
                 "final review passed",
-                Some(review_output.clone()),
+                Some(review_record.explanation.clone()),
             ));
             goal_run.clone()
         };

@@ -254,7 +254,7 @@ async fn execute_tool_weles_blocked_bash_command_returns_pending_approval() {
 }
 
 #[tokio::test]
-async fn execute_tool_weles_blocked_yolo_bash_command_executes_flag_only() {
+async fn execute_tool_yolo_bash_command_bypasses_weles_supervision() {
     let recorded_bodies = Arc::new(Mutex::new(std::collections::VecDeque::new()));
     let root = tempdir().expect("tempdir should succeed");
     let manager = SessionManager::new_test(root.path()).await;
@@ -322,10 +322,20 @@ async fn execute_tool_weles_blocked_yolo_bash_command_executes_flag_only() {
     );
     let review = result
         .weles_review
-        .expect("yolo bash should expose Weles metadata");
-    assert_eq!(review.verdict, crate::agent::types::WelesVerdict::FlagOnly);
-    assert_eq!(review.security_override_mode.as_deref(), Some("yolo"));
-    assert_eq!(review.audit_id.as_deref(), Some("audit-weles-bash-yolo"));
+        .expect("yolo execution should retain direct-allow metadata");
+    assert!(!review.weles_reviewed);
+    assert_eq!(review.verdict, crate::agent::types::WelesVerdict::Allow);
+    assert_eq!(review.security_override_mode, None);
+    assert_eq!(review.audit_id, None);
+
+    let dm_thread_id = crate::agent::agent_identity::internal_dm_thread_id(
+        crate::agent::agent_identity::MAIN_AGENT_ID,
+        crate::agent::agent_identity::WELES_AGENT_ID,
+    );
+    assert!(
+        !engine.threads.read().await.contains_key(&dm_thread_id),
+        "YOLO must not create a WELES supervision thread"
+    );
 }
 
 #[tokio::test]
@@ -480,6 +490,63 @@ async fn execute_tool_unavailable_guarded_review_blocks_closed_normally_and_degr
             .and_then(|value| value.as_str()),
         Some("none")
     );
+}
+
+#[tokio::test]
+async fn spawn_weles_governance_is_out_of_band_and_rejects_yolo() {
+    let root = tempdir().expect("tempdir should succeed");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let parent = engine
+        .enqueue_task(
+            "goal step".to_string(),
+            "work".to_string(),
+            "normal",
+            None,
+            None,
+            Vec::new(),
+            None,
+            "goal_step",
+            Some("goal-1".to_string()),
+            None,
+            Some("thread-goal".to_string()),
+            None,
+        )
+        .await;
+
+    let task = super::spawn_weles_internal_subagent(
+        &engine,
+        "thread-goal",
+        Some(&parent.id),
+        crate::agent::agent_identity::WELES_GOVERNANCE_SCOPE,
+        "bash_command",
+        &serde_json::json!({"command": "printf safe"}),
+        SecurityLevel::Moderate,
+        &[],
+    )
+    .await
+    .expect("non-yolo governance spawn should succeed");
+
+    assert_eq!(task.goal_run_id, None);
+    assert_eq!(task.goal_step_id, None);
+    assert_eq!(task.parent_task_id, None);
+    assert_eq!(task.parent_thread_id.as_deref(), Some("thread-goal"));
+
+    let before = engine.list_tasks().await.len();
+    let error = super::spawn_weles_internal_subagent(
+        &engine,
+        "thread-goal",
+        Some(&parent.id),
+        crate::agent::agent_identity::WELES_GOVERNANCE_SCOPE,
+        "bash_command",
+        &serde_json::json!({"command": "printf yolo"}),
+        SecurityLevel::Yolo,
+        &[],
+    )
+    .await
+    .expect_err("YOLO must not spawn tool-call supervision");
+    assert!(error.to_string().contains("YOLO mode disables"));
+    assert_eq!(engine.list_tasks().await.len(), before);
 }
 
 #[tokio::test]

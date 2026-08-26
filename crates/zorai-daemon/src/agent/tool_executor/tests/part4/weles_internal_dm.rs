@@ -50,6 +50,24 @@ async fn execute_tool_routes_weles_runtime_review_over_internal_dm_thread() {
         );
     }
 
+    let parent_task = engine
+        .enqueue_task(
+            "Goal verifier".to_string(),
+            "Submit a structured verdict without being stranded by synchronous governance"
+                .to_string(),
+            "normal",
+            None,
+            None,
+            Vec::new(),
+            None,
+            crate::agent::GOAL_VERIFICATION_SOURCE,
+            Some("goal-weles-runtime-review".to_string()),
+            None,
+            Some(thread_id.to_string()),
+            Some("daemon".to_string()),
+        )
+        .await;
+
     let tool_call = ToolCall::with_default_weles_review(
         "tool-weles-internal-dm".to_string(),
         ToolFunction {
@@ -66,7 +84,7 @@ async fn execute_tool_routes_weles_runtime_review_over_internal_dm_thread() {
         &tool_call,
         &engine,
         thread_id,
-        None,
+        Some(&parent_task.id),
         &manager,
         None,
         &event_tx,
@@ -129,6 +147,25 @@ async fn execute_tool_routes_weles_runtime_review_over_internal_dm_thread() {
             .len(),
         1,
         "operator thread should not receive the internal WELES exchange"
+    );
+    drop(threads);
+
+    let child_tasks = engine
+        .list_tasks()
+        .await
+        .into_iter()
+        .filter(|task| task.parent_task_id.as_deref() == Some(parent_task.id.as_str()))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        child_tasks.len(),
+        1,
+        "one governance child should be recorded"
+    );
+    assert!(
+        child_tasks
+            .iter()
+            .all(|task| task.status.is_terminal()),
+        "synchronous governance children must be terminal before tool execution returns: {child_tasks:?}"
     );
 }
 
@@ -436,6 +473,7 @@ async fn workspace_review_weles_task_uses_dedicated_review_thread() {
             lane_id: None,
             last_error: None,
             logs: Vec::new(),
+            completion_contract: None,
             tool_whitelist: None,
             tool_blacklist: None,
             context_budget_tokens: None,
@@ -604,6 +642,7 @@ async fn workspace_review_weles_task_rehomes_internal_dm_thread_to_dedicated_rev
             lane_id: None,
             last_error: None,
             logs: Vec::new(),
+            completion_contract: None,
             tool_whitelist: None,
             tool_blacklist: None,
             context_budget_tokens: None,

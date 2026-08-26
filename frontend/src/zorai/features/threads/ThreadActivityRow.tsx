@@ -23,7 +23,7 @@ export function ThreadActivityRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const [statuses, setStatuses] = useState<Record<string, OperationStatusView>>({});
-  const [busyId, setBusyId] = useState<string | null>(null);
+  const [_busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const generationRef = useRef(0);
   const pollStepRef = useRef(0);
@@ -133,53 +133,6 @@ export function ThreadActivityRow({
         <strong>{title}</strong>
         <time>{formatActivityTime(createdAt)}</time>
       </button>
-
-      {activity.kind === "operation" ? (
-        <div className="zorai-thread-activity__operations">
-          {activity.operations.map((operation, index) => {
-            const status = statuses[operation.operationId];
-            const state = status?.state ?? operation.state;
-            const terminal = state === "completed" || state === "failed";
-            const actionable = operation.operationId !== "unknown";
-            return (
-              <div
-                key={`${operation.operationId}:${index}`}
-                id={`zorai-operation-${operation.operationId}`}
-                className="zorai-operation-row"
-              >
-                {state && state !== "unknown" ? <span className={`zorai-status-pill zorai-status-pill--${state}`}>{state}</span> : null}
-                {operation.operationId && operation.operationId !== "unknown" ? <code>{operation.operationId}</code> : null }
-                {operation.tool ? <span className="zorai-operation-tool">{operation.tool}</span> : null}
-                {actionable ? (
-                  <div className="zorai-card-actions">
-                    <button
-                      type="button"
-                      className="zorai-ghost-button"
-                      disabled={busyId === operation.operationId}
-                      onClick={() => {
-                        pollStepRef.current = 0;
-                        void refresh(operation.operationId);
-                      }}
-                    >
-                      Refresh
-                    </button>
-                    {!terminal ? (
-                      <button
-                        type="button"
-                        className="zorai-ghost-button"
-                        disabled={busyId === operation.operationId}
-                        onClick={() => void cancel(operation.operationId)}
-                      >
-                        {busyId === operation.operationId ? "Cancelling…" : "Cancel"}
-                      </button>
-                    ) : null}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })}
-        </div>
-      ) : null}
 
       {error ? <p className="zorai-inline-error" role="alert">{error}</p> : null}
       {expanded ? <pre className="zorai-thread-activity__raw">{activity.rawText}</pre> : null}

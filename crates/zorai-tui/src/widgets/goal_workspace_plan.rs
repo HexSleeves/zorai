@@ -194,6 +194,57 @@ fn build_rows_inner(
             confidence_span_index,
         });
 
+        if active {
+            if let Some(task) = tasks
+                .tasks()
+                .iter()
+                .filter(|task| task.goal_run_id.as_deref() == Some(goal_run_id))
+                .filter(|task| {
+                    task.goal_step_title.as_deref().is_some_and(|title| {
+                        super::goal_step_title_matches(&step.title, Some(title))
+                    }) || step.task_id.as_deref() == Some(task.id.as_str())
+                })
+                .min_by_key(|task| match task.status {
+                    Some(TaskStatus::InProgress) => 0,
+                    Some(TaskStatus::AwaitingApproval | TaskStatus::Blocked) => 1,
+                    Some(TaskStatus::Queued) => 2,
+                    _ => 3,
+                })
+            {
+                let activity = match task.status {
+                    Some(TaskStatus::InProgress) => format!("working {}%", task.progress),
+                    Some(TaskStatus::AwaitingApproval) => "awaiting approval".to_string(),
+                    Some(TaskStatus::Blocked) => "blocked".to_string(),
+                    Some(TaskStatus::Queued) => "queued".to_string(),
+                    Some(TaskStatus::Completed) => "done".to_string(),
+                    Some(TaskStatus::Failed | TaskStatus::BudgetExceeded) => "failed".to_string(),
+                    Some(TaskStatus::FailedAnalyzing) => "analyzing failure".to_string(),
+                    Some(TaskStatus::Cancelled) => "cancelled".to_string(),
+                    None => "working".to_string(),
+                };
+                rows.push(GoalWorkspacePlanRow {
+                    line: Line::from(vec![
+                        Span::raw("    "),
+                        Span::styled("● ", theme.accent_primary),
+                        Span::styled(activity, theme.fg_active),
+                        Span::styled("  ", theme.fg_dim),
+                        Span::styled(task.title.clone(), theme.fg_dim),
+                    ]),
+                    selection: task.thread_id.clone().map(|thread_id| {
+                        crate::state::goal_workspace::GoalPlanSelection::MainThread { thread_id }
+                    }),
+                    target: task
+                        .thread_id
+                        .clone()
+                        .map(GoalWorkspaceHitTarget::PlanMainThread),
+                    marker_state: None,
+                    marker_span_index: None,
+                    confidence: None,
+                    confidence_span_index: None,
+                });
+            }
+        }
+
         if expanded {
             let empty: Vec<_> = Vec::new();
             let todos = todos_by_step
@@ -221,6 +272,39 @@ fn build_rows_inner(
                     confidence: None,
                     confidence_span_index: None,
                 });
+            }
+            if !step.instructions.trim().is_empty() {
+                for line in wrap_plain_text(&step.instructions, 48) {
+                    rows.push(GoalWorkspacePlanRow {
+                        line: Line::from(vec![Span::raw("    "), Span::styled(line, theme.fg_dim)]),
+                        selection: None,
+                        target: None,
+                        marker_state: None,
+                        marker_span_index: None,
+                        confidence: None,
+                        confidence_span_index: None,
+                    });
+                }
+            }
+            if let Some(summary) = step
+                .summary
+                .as_deref()
+                .filter(|value| !value.trim().is_empty())
+            {
+                for line in wrap_plain_text(summary, 48) {
+                    rows.push(GoalWorkspacePlanRow {
+                        line: Line::from(vec![
+                            Span::raw("    "),
+                            Span::styled(line, theme.fg_active),
+                        ]),
+                        selection: None,
+                        target: None,
+                        marker_state: None,
+                        marker_span_index: None,
+                        confidence: None,
+                        confidence_span_index: None,
+                    });
+                }
             }
         }
     }

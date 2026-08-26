@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { fetchAgentTasks, type AgentQueueTask } from "@/lib/agentTaskQueue";
 import { getDataDir, listPersistedDir } from "@/lib/persistence";
 import { useThreadFilePreview } from "../threads/ThreadFilePreviewContext";
 import {
@@ -32,8 +33,10 @@ export function GoalWorkspacePanel({
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [selectedCenterIndex, setSelectedCenterIndex] = useState(0);
   const [promptExpanded, setPromptExpanded] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [expandedStepIds, setExpandedStepIds] = useState<Set<string>>(() => new Set());
   const [projectionFiles, setProjectionFiles] = useState<GoalProjectionFile[]>([]);
+  const [goalTasks, setGoalTasks] = useState<AgentQueueTask[]>([]);
   const { openThreadFilePreview } = useThreadFilePreview();
 
   useEffect(() => {
@@ -53,6 +56,29 @@ export function GoalWorkspacePanel({
     };
   }, [run?.id]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!run?.id) {
+      setGoalTasks((current) => (current.length === 0 ? current : []));
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const refreshTasks = async () => {
+      const tasks = await fetchAgentTasks();
+      if (!cancelled) {
+        setGoalTasks(tasks.filter((task) => task.goal_run_id === run.id));
+      }
+    };
+    void refreshTasks();
+    const timer = window.setInterval(() => void refreshTasks(), 2_000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [run?.id]);
+
   const model = useMemo(() => run ? buildGoalWorkspaceModel(run, {
     mode,
     selectedStepId,
@@ -60,7 +86,9 @@ export function GoalWorkspacePanel({
     promptExpanded,
     expandedStepIds,
     projectionFiles,
-  }) : null, [expandedStepIds, mode, projectionFiles, promptExpanded, run, selectedCenterIndex, selectedStepId]);
+    tasks: goalTasks,
+    detailsExpanded: moreOpen,
+  }) : null, [expandedStepIds, goalTasks, mode, moreOpen, projectionFiles, promptExpanded, run, selectedCenterIndex, selectedStepId]);
 
   const control = async (action: GoalRunControlAction) => {
     if (!run || !model) return;
@@ -133,41 +161,6 @@ export function GoalWorkspacePanel({
 
   return (
     <div className="zorai-goal-workspace-shell" aria-label="Goal workspace">
-      <nav className="zorai-goal-tabs" aria-label="Goal workspace modes">
-        {model.tabs.map((tab) => (
-          <button
-            type="button"
-            key={tab.id}
-            className={["zorai-goal-tab", tab.active ? "zorai-goal-tab--active" : ""].filter(Boolean).join(" ")}
-            onClick={() => {
-              setMode(tab.id);
-              setSelectedCenterIndex(0);
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </nav>
-
-      <div className="zorai-goal-workspace-grid">
-        <Pane title={model.planTitle} className="zorai-goal-plan-pane">
-          <RowList rows={model.planRows} onRowClick={handlePlanRowClick} />
-        </Pane>
-
-        <Pane title={model.centerTitle}>
-          <RowList
-            rows={model.centerRows}
-            onRowClick={(row, index) => {
-              setSelectedCenterIndex(index);
-              handleTargetRow(row);
-            }}
-          />
-        </Pane>
-
-        <Pane title={model.detailTitle}>
-          <SectionList sections={model.detailSections} onRowClick={handleTargetRow} />
-        </Pane>
-      </div>
 
       <section className="zorai-panel zorai-goal-toolbar">
         <div>
@@ -189,28 +182,61 @@ export function GoalWorkspacePanel({
         </div>
       </section>
 
+      <div className="zorai-goal-workspace-grid zorai-goal-workspace-grid--single">
+        <section className="zorai-panel zorai-goal-pane zorai-goal-plan-pane">
+          <div className="zorai-section-label">Steps and live progress</div>
+          <div className="zorai-goal-pane__body">
+            <RowList rows={model.planRows} onRowClick={handlePlanRowClick} />
+          </div>
+        </section>
+      </div>
+
+      <section className="zorai-goal-more">
+        <button
+          type="button"
+          className="zorai-ghost-button zorai-goal-more__toggle"
+          aria-expanded={moreOpen}
+          onClick={() => setMoreOpen((current) => !current)}
+        >
+          {moreOpen ? "Hide run details" : "More details"}
+        </button>
+        {moreOpen ? (
+          <div className="zorai-goal-more__content">
+            <nav className="zorai-goal-tabs" aria-label="Goal detail modes">
+              {model.tabs.map((tab) => (
+                <button
+                  type="button"
+                  key={tab.id}
+                  className={["zorai-goal-tab", tab.active ? "zorai-goal-tab--active" : ""].filter(Boolean).join(" ")}
+                  onClick={() => {
+                    setMode(tab.id);
+                    setSelectedCenterIndex(0);
+                  }}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+            <section className="zorai-panel zorai-goal-detail-drawer">
+              <div className="zorai-section-label">{model.centerTitle}</div>
+              <RowList
+                rows={model.centerRows.slice(0, 40)}
+                onRowClick={(row, index) => {
+                  setSelectedCenterIndex(index);
+                  handleTargetRow(row);
+                }}
+              />
+              <SectionList sections={model.detailSections} onRowClick={handleTargetRow} />
+            </section>
+          </div>
+        ) : null}
+      </section>
+
       <div className="zorai-goal-workspace-status">
         <span className="zorai-status-pill">{formatGoalRunStatus(run.status)}</span>
         <span>{summarizeGoalRunStep(run)}</span>
       </div>
     </div>
-  );
-}
-
-function Pane({
-  title,
-  className,
-  children,
-}: {
-  title: string;
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className={["zorai-panel zorai-goal-pane", className ?? ""].filter(Boolean).join(" ")}>
-      <div className="zorai-section-label">{title}</div>
-      <div className="zorai-goal-pane__body">{children}</div>
-    </section>
   );
 }
 
@@ -235,9 +261,21 @@ function RowList({
           style={{ paddingLeft: `${10 + (row.depth ?? 0) * 16}px` }}
           onClick={() => onRowClick?.(row, index)}
         >
+          <span
+            className={[
+              "zorai-goal-indicator",
+              row.working ? "zorai-goal-indicator--working" : "",
+            ].filter(Boolean).join(" ")}
+            aria-label={row.indicatorLabel}
+          />
           <span className="zorai-goal-item__body">
             <span className="zorai-goal-item__text">{row.text}</span>
             {row.meta ? <span className="zorai-goal-item__meta">{row.meta}</span> : null}
+            {typeof row.progress === "number" ? (
+              <span className="zorai-goal-progress" aria-label={`${row.indicatorLabel ?? "Progress"} ${row.progress}%`}>
+                <span className="zorai-goal-progress__bar" style={{ width: `${Math.max(0, Math.min(100, row.progress))}%` }} />
+              </span>
+            ) : null}
           </span>
         </button>
       ))}

@@ -233,6 +233,7 @@ async fn policy_halt_aborts_before_guarded_tool_execution_and_persists_failure_t
             lane_id: None,
             last_error: None,
             logs: Vec::new(),
+            completion_contract: None,
             tool_whitelist: None,
             tool_blacklist: None,
             override_provider: None,

@@ -92,6 +92,7 @@ async fn post_tool_policy_checkpoint_pivots_for_non_error_stuckness_with_runtime
             lane_id: None,
             last_error: None,
             logs: Vec::new(),
+            completion_contract: None,
             tool_whitelist: None,
             tool_blacklist: None,
             override_provider: None,

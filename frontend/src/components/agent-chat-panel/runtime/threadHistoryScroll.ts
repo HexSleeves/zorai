@@ -10,6 +10,7 @@ let olderLoadInFlight = false;
 let olderHistoryExhausted = false;
 let olderLoadCooldownUntil = 0;
 let scheduledOlderLoad: ReturnType<typeof setTimeout> | null = null;
+let paginationGeneration = 0;
 
 export function setFollowThreadHistoryBottom(follow: boolean): void {
   followBottom = follow;
@@ -33,13 +34,19 @@ export function shouldIgnoreThreadHistoryScroll(): boolean {
   return ignoreScroll;
 }
 
-export function resetThreadHistoryScrollStateForTest(): void {
-  followBottom = true;
+export function resetThreadHistoryPagination(): void {
+  paginationGeneration += 1;
   ignoreScroll = false;
   olderLoadInFlight = false;
   olderHistoryExhausted = false;
   olderLoadCooldownUntil = 0;
   cancelScheduledOlderThreadHistoryLoad();
+}
+
+export function resetThreadHistoryScrollStateForTest(): void {
+  followBottom = true;
+  ignoreScroll = false;
+  resetThreadHistoryPagination();
 }
 
 export function resolveThreadHistoryScrollAction(params: {
@@ -119,6 +126,7 @@ async function runOlderThreadHistoryLoad(
   if (scroller.scrollTop > THREAD_HISTORY_SCROLL_THRESHOLD_PX) return;
 
   olderLoadInFlight = true;
+  const loadGeneration = paginationGeneration;
   beginProgrammaticThreadHistoryScroll();
   const previousHeight = scroller.scrollHeight;
   const previousTop = scroller.scrollTop;
@@ -126,8 +134,11 @@ async function runOlderThreadHistoryLoad(
   try {
     loaded = await loadOlder();
   } finally {
-    olderLoadInFlight = false;
+    if (loadGeneration === paginationGeneration) {
+      olderLoadInFlight = false;
+    }
   }
+  if (loadGeneration !== paginationGeneration) return;
   if (!loaded) {
     olderHistoryExhausted = true;
     endProgrammaticThreadHistoryScroll();
@@ -137,6 +148,9 @@ async function runOlderThreadHistoryLoad(
   afterLayout(() => {
     scroller.scrollTop = scroller.scrollHeight - previousHeight + previousTop;
     endProgrammaticThreadHistoryScroll();
+    if (scroller.scrollTop <= THREAD_HISTORY_SCROLL_THRESHOLD_PX) {
+      scheduleOlderThreadHistoryLoad(scroller, loadOlder, olderLoadCooldownUntil);
+    }
   });
 }
 

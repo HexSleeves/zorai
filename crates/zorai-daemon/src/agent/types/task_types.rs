@@ -140,6 +140,230 @@ impl TaskStatus {
     }
 }
 
+pub const SUBAGENT_REPORT_REQUIREMENT_DESCRIPTION: &str = "usable subagent outcome report";
+pub const CHILD_RESULT_INTEGRATION_REQUIREMENT_PREFIX: &str = "integrate child result: ";
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ChildReportState {
+    #[default]
+    Unavailable,
+    Usable,
+    Empty,
+    Truncated,
+    Failed,
+}
+
+#[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ParentNotificationState {
+    #[default]
+    NotRequired,
+    Pending,
+    Delivered,
+}
+
+/// Durable state at the spawned-child/parent integration boundary. This is
+/// stored with the child task so a daemon restart can replay a pending parent
+/// notification without guessing whether the child report was usable.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ChildResultContract {
+    #[serde(default)]
+    pub terminal_status: Option<TaskStatus>,
+    #[serde(default)]
+    pub terminal_version: u32,
+    #[serde(default)]
+    pub report_state: ChildReportState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub summary: Option<String>,
+    #[serde(default)]
+    pub summary_chars: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub report_error: Option<String>,
+    #[serde(default)]
+    pub artifact_refs: Vec<String>,
+    #[serde(default)]
+    pub open_ask_ids: Vec<String>,
+    #[serde(default)]
+    pub asks_reconciled: bool,
+    #[serde(default)]
+    pub parent_notification: ParentNotificationState,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_notification_error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub parent_notified_at: Option<u64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub integration_acknowledged_at: Option<u64>,
+}
+
+impl ChildResultContract {
+    pub fn is_usable(&self) -> bool {
+        self.report_state == ChildReportState::Usable
+            && self
+                .summary
+                .as_deref()
+                .is_some_and(|summary| !summary.trim().is_empty())
+            && self.asks_reconciled
+            && self.open_ask_ids.is_empty()
+    }
+}
+
+/// One daemon-owned deliverable or verification obligation in a task's
+/// durable completion contract.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TaskCompletionRequirement {
+    pub description: String,
+    #[serde(default)]
+    pub completed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<String>,
+}
+
+/// Durable authority for deciding whether a task may become `completed`.
+/// Absence on `AgentTask` denotes a legacy implicit contract.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct TaskCompletionContract {
+    #[serde(default = "default_completion_contract_version")]
+    pub version: u32,
+    #[serde(default)]
+    pub objective: String,
+    #[serde(default)]
+    pub required_deliverables: Vec<TaskCompletionRequirement>,
+    #[serde(default)]
+    pub completed_actions: Vec<String>,
+    #[serde(default)]
+    pub outstanding_promised_actions: Vec<String>,
+    #[serde(default)]
+    pub pending_operations: Vec<String>,
+    #[serde(default)]
+    pub verification_requirements: Vec<TaskCompletionRequirement>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub blocked_reason: Option<String>,
+    /// The last terminal transition recorded for this contract, including
+    /// legitimate failed, cancelled, and budget-exhausted outcomes.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_status: Option<TaskStatus>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub child_result: Option<ChildResultContract>,
+}
+
+fn default_completion_contract_version() -> u32 {
+    1
+}
+
+impl Default for TaskCompletionContract {
+    fn default() -> Self {
+        Self {
+            version: default_completion_contract_version(),
+            objective: String::new(),
+            required_deliverables: Vec::new(),
+            completed_actions: Vec::new(),
+            outstanding_promised_actions: Vec::new(),
+            pending_operations: Vec::new(),
+            verification_requirements: Vec::new(),
+            blocked_reason: None,
+            terminal_status: None,
+            child_result: None,
+        }
+    }
+}
+
+impl TaskCompletionContract {
+    /// Build the explicit contract attached to every newly enqueued task.
+    /// Legacy rows remain distinguishable because only deserialization of an
+    /// absent field yields `None`.
+    pub fn for_new_task(objective: impl Into<String>, source: &str) -> Self {
+        let mut contract = Self {
+            objective: objective.into(),
+            ..Self::default()
+        };
+        if source == "subagent" {
+            contract
+                .required_deliverables
+                .push(TaskCompletionRequirement {
+                    description: SUBAGENT_REPORT_REQUIREMENT_DESCRIPTION.into(),
+                    completed: false,
+                    evidence: None,
+                });
+        }
+        contract
+    }
+
+    pub fn satisfy_requirement(&mut self, description: &str, evidence: impl Into<String>) {
+        let evidence = evidence.into();
+        for requirement in self
+            .required_deliverables
+            .iter_mut()
+            .chain(self.verification_requirements.iter_mut())
+            .filter(|requirement| requirement.description == description)
+        {
+            requirement.completed = true;
+            requirement.evidence = Some(evidence.clone());
+        }
+    }
+
+    pub fn require_child_result_integration(&mut self, child_task_id: &str) {
+        let description = format!("{CHILD_RESULT_INTEGRATION_REQUIREMENT_PREFIX}{child_task_id}");
+        if self
+            .required_deliverables
+            .iter()
+            .all(|requirement| requirement.description != description)
+        {
+            self.required_deliverables.push(TaskCompletionRequirement {
+                description,
+                completed: false,
+                evidence: None,
+            });
+        }
+    }
+
+    pub fn acknowledge_child_result_integration(
+        &mut self,
+        child_task_id: &str,
+        evidence: impl Into<String>,
+    ) {
+        self.satisfy_requirement(
+            &format!("{CHILD_RESULT_INTEGRATION_REQUIREMENT_PREFIX}{child_task_id}"),
+            evidence,
+        );
+    }
+
+    pub fn open_completion_reasons(&self) -> Vec<String> {
+        let mut reasons = Vec::new();
+        reasons.extend(
+            self.required_deliverables
+                .iter()
+                .filter(|item| !item.completed)
+                .map(|item| format!("required deliverable: {}", item.description)),
+        );
+        reasons.extend(
+            self.outstanding_promised_actions
+                .iter()
+                .map(|item| format!("promised action: {item}")),
+        );
+        reasons.extend(
+            self.pending_operations
+                .iter()
+                .map(|item| format!("pending operation: {item}")),
+        );
+        reasons.extend(
+            self.verification_requirements
+                .iter()
+                .filter(|item| !item.completed)
+                .map(|item| format!("required verification: {}", item.description)),
+        );
+        if let Some(reason) = self
+            .blocked_reason
+            .as_deref()
+            .map(str::trim)
+            .filter(|reason| !reason.is_empty())
+        {
+            reasons.push(format!("blocked: {reason}"));
+        }
+        reasons
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
 pub enum TaskPriority {
@@ -193,6 +417,17 @@ pub struct GoalVerdictEvidence {
     /// Set by daemon at persist time; not trusted from the tool caller.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub is_new_best: Option<bool>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct GoalFinalReviewRecord {
+    pub task_id: String,
+    pub goal_run_id: String,
+    pub verdict: GoalStepReviewVerdict,
+    pub explanation: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<GoalVerdictEvidence>,
+    pub submitted_at: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -282,6 +517,10 @@ pub struct AgentTask {
     pub last_error: Option<String>,
     #[serde(default)]
     pub logs: Vec<AgentTaskLogEntry>,
+
+    /// Explicit completion authority. `None` preserves legacy behavior.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub completion_contract: Option<TaskCompletionContract>,
 
     /// Restrict which tools this sub-agent may call. `None` = all tools allowed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -387,6 +626,57 @@ pub struct AgentRun {
 }
 
 impl AgentTask {
+    pub fn completion_blockers(&self) -> Vec<String> {
+        let mut blockers = self
+            .completion_contract
+            .as_ref()
+            .map(TaskCompletionContract::open_completion_reasons)
+            .unwrap_or_default();
+        if self.is_spawned_subagent() {
+            if let Some(result) = self
+                .completion_contract
+                .as_ref()
+                .and_then(|contract| contract.child_result.as_ref())
+            {
+                if !result.open_ask_ids.is_empty() || !result.asks_reconciled {
+                    blockers.push("unreconciled child asks".to_string());
+                }
+                if result.report_state != ChildReportState::Usable {
+                    blockers.push(format!(
+                        "child report is {:?}, not usable",
+                        result.report_state
+                    ));
+                }
+            }
+        }
+        blockers
+    }
+
+    /// Central guard for terminal task transitions. Open obligations reject
+    /// only successful completion; failed, cancelled, and other legitimate
+    /// terminal outcomes remain available for incomplete work.
+    pub fn transition_to_terminal(
+        &mut self,
+        requested: TaskStatus,
+        now: u64,
+    ) -> Result<(), Vec<String>> {
+        debug_assert!(requested.is_terminal());
+        if requested == TaskStatus::Completed {
+            let reasons = self.completion_blockers();
+            if !reasons.is_empty() {
+                return Err(reasons);
+            }
+        }
+
+        self.status = requested;
+        self.progress = 100;
+        self.completed_at = Some(now);
+        if let Some(contract) = self.completion_contract.as_mut() {
+            contract.terminal_status = Some(requested);
+        }
+        Ok(())
+    }
+
     pub(crate) fn is_internal_weles_review(&self) -> bool {
         self.sub_agent_def_id.as_deref()
             == Some(crate::agent::agent_identity::WELES_BUILTIN_SUBAGENT_ID)
@@ -413,4 +703,170 @@ fn default_max_task_retries() -> u32 {
 
 fn default_task_runtime() -> String {
     "daemon".into()
+}
+
+#[cfg(test)]
+mod completion_contract_tests {
+    use super::*;
+
+    fn explicit_task() -> AgentTask {
+        serde_json::from_value(serde_json::json!({
+            "id": "contract-task",
+            "title": "Contract task",
+            "description": "exercise completion contract",
+            "status": "in_progress",
+            "created_at": 1,
+            "completion_contract": { "objective": "ship verified output" }
+        }))
+        .expect("minimal task fixture should deserialize with defaults")
+    }
+
+    #[test]
+    fn completion_rejects_open_deliverables_promises_operations_and_verification() {
+        let mut task = explicit_task();
+        let contract = task.completion_contract.as_mut().unwrap();
+        contract
+            .required_deliverables
+            .push(TaskCompletionRequirement {
+                description: "artifact".into(),
+                completed: false,
+                evidence: None,
+            });
+        contract
+            .outstanding_promised_actions
+            .push("run formatter".into());
+        contract.pending_operations.push("operation-1".into());
+        contract
+            .verification_requirements
+            .push(TaskCompletionRequirement {
+                description: "focused test".into(),
+                completed: false,
+                evidence: None,
+            });
+
+        let reasons = task
+            .transition_to_terminal(TaskStatus::Completed, 10)
+            .expect_err("premature completion must be rejected");
+        assert_eq!(task.status, TaskStatus::InProgress);
+        assert_eq!(task.completed_at, None);
+        assert_eq!(reasons.len(), 4);
+    }
+
+    #[test]
+    fn completion_succeeds_after_deliverables_and_verification_are_satisfied() {
+        let mut task = explicit_task();
+        let contract = task.completion_contract.as_mut().unwrap();
+        contract
+            .required_deliverables
+            .push(TaskCompletionRequirement {
+                description: "artifact".into(),
+                completed: true,
+                evidence: Some("artifact.txt".into()),
+            });
+        contract.completed_actions.push("implemented change".into());
+        contract
+            .verification_requirements
+            .push(TaskCompletionRequirement {
+                description: "focused test".into(),
+                completed: true,
+                evidence: Some("cargo test: pass".into()),
+            });
+
+        task.transition_to_terminal(TaskStatus::Completed, 10)
+            .expect("satisfied contract should complete");
+        assert_eq!(task.status, TaskStatus::Completed);
+        assert_eq!(task.completed_at, Some(10));
+        assert_eq!(
+            task.completion_contract.unwrap().terminal_status,
+            Some(TaskStatus::Completed)
+        );
+    }
+
+    #[test]
+    fn open_contract_preserves_non_success_terminal_paths() {
+        for status in [
+            TaskStatus::Failed,
+            TaskStatus::Cancelled,
+            TaskStatus::BudgetExceeded,
+        ] {
+            let mut task = explicit_task();
+            task.completion_contract
+                .as_mut()
+                .unwrap()
+                .pending_operations
+                .push("still-running".into());
+            task.transition_to_terminal(status, 10)
+                .expect("non-success terminal transition must remain legal");
+            assert_eq!(task.status, status);
+        }
+    }
+
+    #[test]
+    fn blocked_transition_preserves_contract_and_can_later_fail_or_cancel() {
+        let mut task = explicit_task();
+        task.completion_contract
+            .as_mut()
+            .unwrap()
+            .pending_operations
+            .push("background-build".into());
+        task.status = TaskStatus::Blocked;
+        task.blocked_reason = Some("waiting for background-build".into());
+        assert_eq!(task.completion_blockers().len(), 1);
+        assert_eq!(task.completed_at, None);
+
+        task.transition_to_terminal(TaskStatus::Failed, 10)
+            .expect("blocked tasks with open work must retain legitimate failure paths");
+        assert_eq!(task.status, TaskStatus::Failed);
+        assert_eq!(
+            task.completion_contract.as_ref().unwrap().terminal_status,
+            Some(TaskStatus::Failed)
+        );
+    }
+
+    #[test]
+    fn child_failed_unavailable_and_budget_exhausted_states_do_not_allow_success() {
+        for (status, report_state) in [
+            (TaskStatus::Failed, ChildReportState::Failed),
+            (TaskStatus::Cancelled, ChildReportState::Unavailable),
+            (TaskStatus::BudgetExceeded, ChildReportState::Truncated),
+        ] {
+            let mut task = explicit_task();
+            task.source = "subagent".into();
+            task.status = TaskStatus::InProgress;
+            let mut contract = TaskCompletionContract::for_new_task("child work", "subagent");
+            contract.child_result = Some(ChildResultContract {
+                terminal_status: Some(status),
+                terminal_version: 1,
+                report_state,
+                asks_reconciled: true,
+                parent_notification: ParentNotificationState::Pending,
+                ..ChildResultContract::default()
+            });
+            task.completion_contract = Some(contract);
+
+            let reasons = task
+                .transition_to_terminal(TaskStatus::Completed, 10)
+                .expect_err("non-usable child terminal states must not become successful");
+            assert!(reasons.iter().any(|reason| reason.contains("not usable")));
+            task.transition_to_terminal(status, 11)
+                .expect("explicit non-success terminal outcome must remain representable");
+            assert_eq!(task.status, status);
+        }
+    }
+
+    #[test]
+    fn legacy_task_without_contract_keeps_backward_compatible_completion() {
+        let mut task: AgentTask = serde_json::from_value(serde_json::json!({
+            "id": "legacy-task",
+            "title": "Legacy task",
+            "description": "created before contracts",
+            "status": "in_progress",
+            "created_at": 1
+        }))
+        .expect("legacy task should deserialize");
+        assert!(task.completion_contract.is_none());
+        task.transition_to_terminal(TaskStatus::Completed, 10)
+            .expect("legacy completion should remain permissive");
+        assert_eq!(task.status, TaskStatus::Completed);
+    }
 }

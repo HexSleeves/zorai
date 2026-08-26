@@ -439,6 +439,12 @@ impl AgentEngine {
         } else {
             default_max_retries
         };
+        // New rows always carry an explicit objective. Only records loaded
+        // from the pre-contract schema retain `None` legacy semantics.
+        let completion_contract = Some(TaskCompletionContract::for_new_task(
+            description.clone(),
+            source,
+        ));
         let task = AgentTask {
             id: id.clone(),
             title,
@@ -482,6 +488,7 @@ impl AgentEngine {
             compensation_summary: None,
             lane_id: None,
             last_error: None,
+            completion_contract,
             tool_whitelist: None,
             tool_blacklist: None,
             context_budget_tokens: None,

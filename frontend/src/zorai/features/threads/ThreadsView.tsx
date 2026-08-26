@@ -8,6 +8,7 @@ import {
   beginProgrammaticThreadHistoryScroll,
   consumeThreadHistoryScroll,
   endProgrammaticThreadHistoryScroll,
+  resetThreadHistoryPagination,
   setFollowThreadHistoryBottom,
   shouldFollowThreadHistoryBottom,
 } from "@/components/agent-chat-panel/runtime/threadHistoryScroll";
@@ -69,7 +70,6 @@ export function ThreadsView({
   const subAgents = useAgentStore((state) => state.subAgents);
   const viewMountedAtRef = useRef(Date.now());
   const scrollerRef = useRef<HTMLDivElement | null>(null);
-  const previousMessageCountRef = useRef(runtime.messages.length);
   const displayItems = useMemo(() => buildDisplayItems(runtime.messages), [runtime.messages]);
   const activeOperations = useMemo(() => runtime.messages.flatMap((message) => {
     const activity = classifyThreadActivityMessage(message);
@@ -181,24 +181,19 @@ export function ThreadsView({
   }, [activeReadMessages, activeReadThread, readTasks, runtime.goalRunsForTrace]);
 
   useEffect(() => {
+    resetThreadHistoryPagination();
     setFollowThreadHistoryBottom(true);
     setPinnedToBottom(true);
   }, [activeThreadId]);
 
   useEffect(() => {
-    const previousCount = previousMessageCountRef.current;
-    previousMessageCountRef.current = runtime.messages.length;
     const scroller = scrollerRef.current;
     if (!scroller || !activeThreadId || !shouldFollowThreadHistoryBottom()) return;
 
     beginProgrammaticThreadHistoryScroll();
     scroller.scrollTop = scroller.scrollHeight;
     endProgrammaticThreadHistoryScroll();
-
-    if (runtime.messages.length > previousCount) {
-      runtime.trimThreadMessagesToLatestWindow(activeThreadId);
-    }
-  }, [activeThreadId, runtime.messages, runtime.trimThreadMessagesToLatestWindow]);
+  }, [activeThreadId, runtime.messages]);
 
   if (threadOpening && !runtime.activeThread) {
     return <ThreadConversationSkeleton />;

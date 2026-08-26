@@ -6,6 +6,72 @@ use tempfile::tempdir;
 use tokio_util::codec::Encoder;
 
 #[tokio::test]
+async fn production_enqueue_activates_completion_contracts_for_runtime_cohorts() {
+    let root = tempdir().expect("tempdir should succeed");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+
+    let mut task_ids = Vec::new();
+    for source in ["goal_run", "workspace_runtime", "subagent"] {
+        let task = engine
+            .enqueue_task(
+                format!("{source} contract"),
+                format!("Complete the {source} objective"),
+                "normal",
+                None,
+                None,
+                Vec::new(),
+                None,
+                source,
+                (source == "goal_run").then(|| "goal-contract".to_string()),
+                None,
+                Some("thread-contract".to_string()),
+                Some("daemon".to_string()),
+            )
+            .await;
+        let contract = task
+            .completion_contract
+            .as_ref()
+            .expect("new production tasks must have an explicit contract");
+        assert_eq!(contract.objective, task.description);
+        if source == "subagent" {
+            assert_eq!(contract.open_completion_reasons().len(), 1);
+            assert!(
+                contract.open_completion_reasons()[0].contains("usable subagent outcome report")
+            );
+        } else {
+            assert!(contract.open_completion_reasons().is_empty());
+        }
+        task_ids.push(task.id.clone());
+    }
+
+    engine.tasks.lock().await.clear();
+    let persisted = engine
+        .list_tasks_filtered(&crate::history::AgentTaskListQuery {
+            id: None,
+            status: None,
+            statuses: Vec::new(),
+            source: None,
+            thread_id: None,
+            thread_ids: Vec::new(),
+            goal_run_id: None,
+            parent_task_id: None,
+            awaiting_approval_id: None,
+            supervisor_config_present: false,
+            exclude_terminal_statuses: false,
+            order_by_recent_activity_desc: false,
+            limit: None,
+            ids: task_ids,
+            parent_task_ids: Vec::new(),
+        })
+        .await;
+    assert_eq!(persisted.len(), 3);
+    assert!(persisted
+        .iter()
+        .all(|task| task.completion_contract.is_some()));
+}
+
+#[tokio::test]
 async fn compaction_scope_snapshot_resolves_persisted_task_by_id() {
     let root = tempdir().expect("tempdir should succeed");
     let manager = SessionManager::new_test(root.path()).await;
@@ -425,6 +491,7 @@ async fn sample_awaiting_task(
         lane_id: None,
         last_error: None,
         logs: Vec::new(),
+        completion_contract: None,
         tool_whitelist: None,
         tool_blacklist: None,
         context_budget_tokens: None,
@@ -510,6 +577,7 @@ async fn approval_resolution_clears_thread_skill_gate_when_task_is_approved() {
         lane_id: None,
         last_error: None,
         logs: Vec::new(),
+        completion_contract: None,
         tool_whitelist: None,
         tool_blacklist: None,
         context_budget_tokens: None,
@@ -610,6 +678,7 @@ async fn unrelated_task_approval_does_not_clear_thread_skill_gate() {
         lane_id: None,
         last_error: None,
         logs: Vec::new(),
+        completion_contract: None,
         tool_whitelist: None,
         tool_blacklist: None,
         context_budget_tokens: None,
@@ -712,6 +781,7 @@ async fn denied_task_approval_converts_thread_skill_gate_to_bypassable_state() {
         lane_id: None,
         last_error: None,
         logs: Vec::new(),
+        completion_contract: None,
         tool_whitelist: None,
         tool_blacklist: None,
         context_budget_tokens: None,
@@ -1172,6 +1242,7 @@ async fn create_and_revoke_task_approval_rule_tracks_pending_task_command() {
         lane_id: None,
         last_error: None,
         logs: Vec::new(),
+        completion_contract: None,
         tool_whitelist: None,
         tool_blacklist: None,
         context_budget_tokens: None,
@@ -2388,6 +2459,7 @@ async fn list_tasks_capped_for_ipc_truncates_oversized_task_logs() {
             details: None,
             attempt: 0,
         }],
+        completion_contract: None,
         tool_whitelist: None,
         tool_blacklist: None,
         context_budget_tokens: None,
@@ -2451,6 +2523,7 @@ async fn list_tasks_capped_for_ipc_truncates_oversized_task_logs() {
             details: None,
             attempt: 0,
         }],
+        completion_contract: None,
         tool_whitelist: None,
         tool_blacklist: None,
         context_budget_tokens: None,
@@ -2908,6 +2981,7 @@ async fn delete_goal_run_removes_goal_and_related_tasks() {
         lane_id: None,
         last_error: None,
         logs: Vec::new(),
+        completion_contract: None,
         tool_whitelist: None,
         tool_blacklist: None,
         context_budget_tokens: None,
@@ -2980,6 +3054,7 @@ async fn delete_goal_run_removes_goal_and_related_tasks() {
             lane_id: None,
             last_error: None,
             logs: Vec::new(),
+            completion_contract: None,
             tool_whitelist: None,
             tool_blacklist: None,
             context_budget_tokens: None,

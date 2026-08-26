@@ -832,6 +832,13 @@ pub(super) async fn apply_schema_migrations<E: super::db::DbExecutor + ?Sized>(
     ensure_column(&mut *exec, "agent_tasks", "success_criteria", "TEXT").await?;
     ensure_column(&mut *exec, "agent_tasks", "max_duration_secs", "INTEGER").await?;
     ensure_column(&mut *exec, "agent_tasks", "supervisor_config_json", "TEXT").await?;
+    ensure_column(
+        &mut *exec,
+        "agent_tasks",
+        "completion_contract_json",
+        "TEXT",
+    )
+    .await?;
     ensure_column(&mut *exec, "agent_tasks", "deleted_at", "INTEGER").await?;
     ensure_column(
         &mut *exec,

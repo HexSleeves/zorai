@@ -175,6 +175,20 @@ pub(crate) fn add_available_tools_part_d(
             "offset": { "type": "integer", "minimum": 0, "description": "Zero-based pagination offset over goal runs sorted by updated_at descending (default: 0)" }
         }
     })));
+    tools.push(tool_def(tool_names::SUBMIT_GOAL_FINAL_REVIEW, "Submit the authoritative final goal review through a daemon transition. Plain assistant text cannot complete a final review.", serde_json::json!({
+        "type": "object",
+        "properties": {
+            "verdict": { "type": "string", "enum": ["pass", "fail"], "description": "pass only when the complete goal plan, todos, artifacts, and delivered work satisfy the objective" },
+            "explanation": { "type": "string", "description": "Concrete final-review explanation; for fail, list required fixes" },
+            "verifier": { "type": "string", "description": "Required for pass: what concretely ran or was inspected" },
+            "coverage": { "type": "string", "description": "Required for pass: final goal scope actually verified" },
+            "gaps": { "type": "string", "description": "Optional uncovered scope" },
+            "scores": { "type": "object", "additionalProperties": { "type": "number" } },
+            "task_id": { "type": "string", "description": "Optional final-review task ID when hidden context is unavailable" },
+            "goal_run_id": { "type": "string", "description": "Optional guard; must match the final-review task" }
+        },
+        "required": ["verdict", "explanation"]
+    })));
     tools.push(tool_def(tool_names::SUBMIT_GOAL_STEP_VERDICT, "Submit the authoritative pass/fail verdict that advances or requeues the current goal step.", serde_json::json!({
         "type": "object",
         "properties": {

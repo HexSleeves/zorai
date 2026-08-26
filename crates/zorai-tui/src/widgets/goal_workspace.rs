@@ -175,10 +175,51 @@ pub fn render_with_selection(
         return;
     };
 
+    let center_inner = Block::default()
+        .borders(Borders::ALL)
+        .inner(layout.timeline);
+    let detail_inner = Block::default().borders(Borders::ALL).inner(layout.details);
+    let details_visible = state.mode() != GoalWorkspaceMode::Goal;
+    // The normal goal view is intentionally one explicit plan/progress pane.
+    // Historical and specialist modes reveal the auxiliary panes on demand.
+    let center_rows = details_visible.then(|| {
+        center_rows(
+            tasks,
+            goal_run_id,
+            state,
+            center_inner.width as usize,
+            theme,
+            tick_counter,
+        )
+    });
+    let detail_rows = details_visible.then(|| {
+        detail_lines(
+            tasks,
+            goal_run_id,
+            state,
+            detail_inner.width as usize,
+            theme,
+        )
+    });
+
     render_summary(frame, layout.summary, state, theme);
+    let plan_area = if details_visible {
+        layout.plan
+    } else {
+        Rect {
+            x: layout.plan.x,
+            y: layout.plan.y,
+            width: layout
+                .details
+                .x
+                .saturating_add(layout.details.width)
+                .saturating_sub(layout.plan.x),
+            height: layout.plan.height,
+        }
+    };
     render_plan(
         frame,
-        layout.plan,
+        plan_area,
         tasks,
         goal_run_id,
         state,
@@ -186,16 +227,11 @@ pub fn render_with_selection(
         tick_counter,
         mouse_selection,
     );
-    render_center_pane(
-        frame,
-        layout.timeline,
-        tasks,
-        goal_run_id,
-        state,
-        theme,
-        tick_counter,
-    );
-    render_details(frame, layout.details, tasks, goal_run_id, state, theme);
+    if let (Some(center_rows), Some(detail_rows)) = (center_rows.as_deref(), detail_rows.as_deref())
+    {
+        render_center_pane(frame, layout.timeline, state, theme, center_rows);
+        render_details(frame, layout.details, state, theme, detail_rows);
+    }
     render_step_footer(frame, layout.footer, tasks, goal_run_id, state, theme);
 }
 
@@ -658,11 +694,9 @@ fn render_placeholder(frame: &mut Frame, area: Rect, title: &str, body: &str, th
 fn render_center_pane(
     frame: &mut Frame,
     area: Rect,
-    tasks: &TaskState,
-    goal_run_id: &str,
     state: &GoalWorkspaceState,
     theme: &ThemeTokens,
-    tick_counter: u64,
+    center_rows: &[WorkspaceVisualRow],
 ) {
     let block = Block::default()
         .title(center_pane_title(state.mode()))
@@ -675,17 +709,9 @@ fn render_center_pane(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let selected_target = center_targets(tasks, goal_run_id, state)
+    let selected_target = distinct_workspace_targets(center_rows)
         .get(state.selected_timeline_row())
         .cloned();
-    let center_rows = center_rows(
-        tasks,
-        goal_run_id,
-        state,
-        inner.width as usize,
-        theme,
-        tick_counter,
-    );
     let mut lines = center_rows
         .iter()
         .map(|row| row.line.clone())
@@ -695,7 +721,7 @@ fn render_center_pane(
     }
     let selected_style = selected_row_style(state.focused_pane() == GoalWorkspacePane::Timeline);
     let scroll = resolved_timeline_scroll(
-        center_visual_targets(tasks, goal_run_id, state, inner.width as usize).len(),
+        workspace_visual_targets(center_rows, inner.width as usize).len(),
         inner.height as usize,
         state,
     );
@@ -715,10 +741,9 @@ fn render_center_pane(
 fn render_details(
     frame: &mut Frame,
     area: Rect,
-    tasks: &TaskState,
-    goal_run_id: &str,
     state: &GoalWorkspaceState,
     theme: &ThemeTokens,
+    detail_rows: &[(usize, Option<GoalWorkspaceHitTarget>, Line<'static>)],
 ) {
     let block = Block::default()
         .title(detail_pane_title(state.mode()))
@@ -732,8 +757,9 @@ fn render_details(
     frame.render_widget(block, area);
 
     let mut target_index = 0usize;
-    let mut lines = detail_lines(tasks, goal_run_id, state, inner.width as usize, theme)
-        .into_iter()
+    let mut lines = detail_rows
+        .iter()
+        .cloned()
         .map(|(_, target, line)| {
             if target.is_some() {
                 let current_target_index = target_index;
@@ -758,7 +784,7 @@ fn render_details(
         )));
     }
     let scroll = resolved_detail_scroll(
-        detail_visual_targets(tasks, goal_run_id, state, inner.width as usize).len(),
+        detail_visual_targets_from_lines(detail_rows, inner.width as usize).len(),
         inner.height as usize,
         state,
     );
@@ -2371,11 +2397,11 @@ fn attention_items(run: &crate::state::task::GoalRun) -> Vec<AttentionItem> {
 
 fn runtime_assignments(
     run: &crate::state::task::GoalRun,
-) -> Vec<crate::state::task::GoalAgentAssignment> {
+) -> &[crate::state::task::GoalAgentAssignment] {
     if !run.runtime_assignment_list.is_empty() {
-        run.runtime_assignment_list.clone()
+        &run.runtime_assignment_list
     } else {
-        run.launch_assignment_snapshot.clone()
+        &run.launch_assignment_snapshot
     }
 }
 
@@ -2384,12 +2410,7 @@ fn selected_event<'a>(
     goal_run_id: &str,
     state: &GoalWorkspaceState,
 ) -> Option<(usize, &'a crate::state::task::GoalRunEvent)> {
-    let selected_target = center_targets(tasks, goal_run_id, state)
-        .get(state.selected_timeline_row())
-        .cloned()?;
-    let GoalWorkspaceHitTarget::TimelineRow(event_index) = selected_target else {
-        return None;
-    };
+    let event_index = state.selected_timeline_row();
     let run = tasks.goal_run_by_id(goal_run_id)?;
     run.events
         .iter()
@@ -2822,11 +2843,35 @@ fn selected_goal_projection_file(
     }
 }
 
+thread_local! {
+    static GOAL_PROJECTION_FILES_CACHE: std::cell::RefCell<
+        std::collections::HashMap<String, (std::time::Instant, Vec<GoalProjectionFileEntry>)>
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+const GOAL_PROJECTION_FILES_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(1);
+
 fn goal_projection_files(goal_run_id: &str) -> Vec<GoalProjectionFileEntry> {
+    if let Some(files) = GOAL_PROJECTION_FILES_CACHE.with(|cache| {
+        cache
+            .borrow()
+            .get(goal_run_id)
+            .filter(|(loaded_at, _)| loaded_at.elapsed() < GOAL_PROJECTION_FILES_CACHE_TTL)
+            .map(|(_, files)| files.clone())
+    }) {
+        return files;
+    }
     let Ok(data_dir) = zorai_protocol::ensure_zorai_data_dir() else {
         return Vec::new();
     };
-    goal_projection_files_in_root(&data_dir.join("goals").join(goal_run_id))
+    let files = goal_projection_files_in_root(&data_dir.join("goals").join(goal_run_id));
+    GOAL_PROJECTION_FILES_CACHE.with(|cache| {
+        cache.borrow_mut().insert(
+            goal_run_id.to_string(),
+            (std::time::Instant::now(), files.clone()),
+        );
+    });
+    files
 }
 
 fn goal_projection_files_in_root(goal_root: &Path) -> Vec<GoalProjectionFileEntry> {
@@ -3349,20 +3394,51 @@ fn plan_visual_row_targets(
     rows
 }
 
+fn distinct_workspace_targets(rows: &[WorkspaceVisualRow]) -> Vec<GoalWorkspaceHitTarget> {
+    let mut targets = Vec::new();
+    for row in rows {
+        let Some(target) = row.target.as_ref() else {
+            continue;
+        };
+        if targets.last() != Some(target) {
+            targets.push(target.clone());
+        }
+    }
+    targets
+}
+
+fn workspace_visual_targets(
+    visual_rows: &[WorkspaceVisualRow],
+    width: usize,
+) -> Vec<Option<GoalWorkspaceHitTarget>> {
+    let mut rows = Vec::new();
+    for row in visual_rows {
+        let height = wrapped_visual_height(&row.line, width);
+        rows.extend(std::iter::repeat(row.target.clone()).take(height));
+    }
+    rows
+}
+
+fn detail_visual_targets_from_lines(
+    detail_rows: &[(usize, Option<GoalWorkspaceHitTarget>, Line<'static>)],
+    width: usize,
+) -> Vec<Option<GoalWorkspaceHitTarget>> {
+    let mut rows = Vec::new();
+    for (_, target, line) in detail_rows {
+        let height = wrapped_visual_height(line, width);
+        rows.extend(std::iter::repeat(target.clone()).take(height));
+    }
+    rows
+}
+
 fn center_visual_targets(
     tasks: &TaskState,
     goal_run_id: &str,
     state: &GoalWorkspaceState,
     width: usize,
 ) -> Vec<Option<GoalWorkspaceHitTarget>> {
-    let mut rows = Vec::new();
-    for row in center_rows(tasks, goal_run_id, state, width, &ThemeTokens::default(), 0) {
-        let height = wrapped_visual_height(&row.line, width);
-        for _ in 0..height {
-            rows.push(row.target.clone());
-        }
-    }
-    rows
+    let visual_rows = center_rows(tasks, goal_run_id, state, width, &ThemeTokens::default(), 0);
+    workspace_visual_targets(&visual_rows, width)
 }
 
 fn detail_visual_targets(
@@ -3371,15 +3447,8 @@ fn detail_visual_targets(
     state: &GoalWorkspaceState,
     width: usize,
 ) -> Vec<Option<GoalWorkspaceHitTarget>> {
-    let mut rows = Vec::new();
-    for (_, target, line) in detail_lines(tasks, goal_run_id, state, width, &ThemeTokens::default())
-    {
-        let height = wrapped_visual_height(&line, width);
-        for _ in 0..height {
-            rows.push(target.clone());
-        }
-    }
-    rows
+    let detail_rows = detail_lines(tasks, goal_run_id, state, width, &ThemeTokens::default());
+    detail_visual_targets_from_lines(&detail_rows, width)
 }
 
 #[cfg(test)]

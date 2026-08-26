@@ -162,6 +162,7 @@ fn weles_governance_prompt_prepends_core_and_appends_operator_suffix() {
         lane_id: None,
         last_error: Some("previous policy timeout".to_string()),
         logs: Vec::new(),
+        completion_contract: None,
         tool_whitelist: None,
         tool_blacklist: None,
         context_budget_tokens: None,

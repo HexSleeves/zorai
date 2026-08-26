@@ -100,6 +100,7 @@ fn sample_task(id: &str) -> AgentTask {
         lane_id: None,
         last_error: None,
         logs: vec![],
+        completion_contract: None,
         tool_whitelist: None,
         tool_blacklist: None,
         context_budget_tokens: None,

@@ -226,6 +226,7 @@ async fn make_test_engine(
         aline_startup_test_repo_roots: Mutex::new(Vec::new()),
         aline_startup_last_summary: Mutex::new(None),
         circuit_breakers,
+        provider_availability_signals: RwLock::new(HashMap::new()),
         config_notify: tokio::sync::Notify::new(),
         config_runtime_projection: Mutex::new(ConfigRuntimeProjection::default()),
         learned_check_weights: RwLock::new(HashMap::new()),

@@ -464,6 +464,52 @@ async fn agent_list_threads_with_explicit_limit_reads_bounded_recent_threads_fro
 }
 
 #[tokio::test]
+async fn agent_filtered_thread_list_honors_client_limit() {
+    let mut conn = spawn_test_connection().await;
+    for index in 0..12 {
+        conn.agent
+            .history
+            .create_thread(&zorai_protocol::AgentDbThread {
+                id: format!("agent-filtered-thread-{index:03}"),
+                workspace_id: None,
+                surface_id: None,
+                pane_id: None,
+                agent_name: Some("svarog".to_string()),
+                title: format!("Svarog thread {index:03}"),
+                created_at: index,
+                updated_at: index,
+                message_count: 0,
+                total_tokens: 0,
+                last_preview: String::new(),
+                metadata_json: None,
+            })
+            .await
+            .expect("persist filtered thread");
+    }
+
+    conn.framed
+        .send(ClientMessage::AgentListThreads {
+            limit: Some(5),
+            offset: Some(0),
+            include_internal: false,
+            agent_filter: Some("svarog".to_string()),
+        })
+        .await
+        .expect("request bounded filtered threads");
+
+    match conn.recv().await {
+        DaemonMessage::AgentThreadList { threads_json } => {
+            let threads: Vec<crate::agent::types::AgentThread> =
+                serde_json::from_str(&threads_json).expect("decode threads");
+            assert_eq!(threads.len(), 5);
+        }
+        other => panic!("expected agent thread list, got {other:?}"),
+    }
+
+    conn.shutdown().await;
+}
+
+#[tokio::test]
 async fn agent_list_threads_without_limit_reads_all_thread_summaries_from_db() {
     let mut conn = spawn_test_connection().await;
     let total_threads = 133;

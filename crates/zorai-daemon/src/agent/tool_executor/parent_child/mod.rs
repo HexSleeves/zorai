@@ -91,7 +91,7 @@ fn split_ask_key(key: &str) -> Option<(&str, &str)> {
         .filter(|(child_id, ask_id)| !child_id.is_empty() && !ask_id.is_empty())
 }
 
-async fn list_ask_records(
+pub(crate) async fn list_ask_records(
     agent: &AgentEngine,
     child_task_id: &str,
 ) -> Result<Vec<(String, AskParentRecord)>> {

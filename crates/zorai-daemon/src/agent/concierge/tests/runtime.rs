@@ -219,6 +219,7 @@ async fn generate_welcome_survives_low_confidence_goal_plan_approval_resume() {
         lane_id: None,
         last_error: None,
         logs: Vec::new(),
+        completion_contract: None,
         tool_whitelist: None,
         tool_blacklist: None,
         context_budget_tokens: None,
