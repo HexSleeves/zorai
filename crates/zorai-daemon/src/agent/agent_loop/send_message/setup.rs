@@ -1,7 +1,7 @@
 use super::*;
 use crate::agent::llm_client::CopilotInitiator;
 use crate::agent::provider_resolution::apply_provider_model_override;
-use crate::agent::task_worktree::{select_isolated_task_session, IsolatedTaskSessionPlan};
+use crate::agent::task_worktree::{IsolatedTaskSessionPlan, select_isolated_task_session};
 use std::path::Path;
 use zorai_protocol::SecurityLevel;
 
@@ -249,40 +249,55 @@ fn build_direct_thread_responder_config(
     };
     Ok(Some(DirectThreadResponderConfig {
         agent_name: resolved_target.agent_name,
-        provider_id: matched_def
-            .as_ref()
-            .and_then(|def| nonempty(Some(def.provider.as_str())))
+        provider_id: profile_provider
+            .clone()
+            .or_else(|| {
+                matched_def
+                    .as_ref()
+                    .and_then(|def| nonempty(Some(def.provider.as_str())))
+            })
             .or_else(|| {
                 builtin_persona_overrides
                     .and_then(|overrides| nonempty(overrides.provider.as_deref()))
             })
-            .or_else(|| profile_provider.clone())
             .unwrap_or_else(|| config.provider.clone()),
-        model: matched_def
-            .as_ref()
-            .and_then(|def| nonempty(Some(def.model.as_str())))
+        model: profile_model
+            .clone()
+            .or_else(|| {
+                matched_def
+                    .as_ref()
+                    .and_then(|def| nonempty(Some(def.model.as_str())))
+            })
             .or_else(|| {
                 builtin_persona_overrides.and_then(|overrides| nonempty(overrides.model.as_deref()))
+            }),
+        base_url: if profile_provider.is_some() {
+            None
+        } else {
+            matched_def
+                .as_ref()
+                .and_then(|def| nonempty(def.base_url.as_deref()))
+        },
+        reasoning_effort: profile_reasoning_effort
+            .clone()
+            .or_else(|| {
+                matched_def
+                    .as_ref()
+                    .and_then(|def| nonempty(def.reasoning_effort.as_deref()))
             })
-            .or_else(|| profile_model.clone()),
-        base_url: matched_def
-            .as_ref()
-            .and_then(|def| nonempty(def.base_url.as_deref())),
-        reasoning_effort: matched_def
-            .as_ref()
-            .and_then(|def| nonempty(def.reasoning_effort.as_deref()))
             .or_else(|| {
                 builtin_persona_overrides
                     .and_then(|overrides| nonempty(overrides.reasoning_effort.as_deref()))
+            }),
+        context_window_tokens: profile_context_window_tokens
+            .or_else(|| {
+                matched_def
+                    .as_ref()
+                    .and_then(|def| def.context_window_tokens)
             })
-            .or_else(|| profile_reasoning_effort.clone()),
-        context_window_tokens: matched_def
-            .as_ref()
-            .and_then(|def| def.context_window_tokens)
             .or_else(|| {
                 builtin_persona_overrides.and_then(|overrides| overrides.context_window_tokens)
-            })
-            .or(profile_context_window_tokens),
+            }),
         huggingface_provider: matched_def
             .as_ref()
             .and_then(|def| def.huggingface_provider.clone()),
@@ -2245,12 +2260,8 @@ mod tests {
             .await
             .expect("identity-only parent continuation should initialize");
             assert!(
-                continued
-                    .system_prompt
-                    .contains("## Subagent Supervision")
-                    && continued
-                        .system_prompt
-                        .contains("## Available Sub-Agents"),
+                continued.system_prompt.contains("## Subagent Supervision")
+                    && continued.system_prompt.contains("## Available Sub-Agents"),
                 "{source} continuations that only read identity must not switch into child report-back"
             );
         }
@@ -2315,6 +2326,54 @@ mod tests {
             responder.persona_prompt.contains("Dola"),
             "persona prompt should identify the targeted subagent"
         );
+    }
+
+    #[test]
+    fn subagent_responder_uses_explicit_thread_execution_profile() {
+        let mut config = AgentConfig::default();
+        config.provider = "openai".to_string();
+        config.model = "gpt-main".to_string();
+        let sub_agents = vec![SubAgentDefinition {
+            id: "kimus".to_string(),
+            name: "Kimus".to_string(),
+            description: "Executor".to_string(),
+            system_prompt: "Handle delegated work.".to_string(),
+            provider: "alibaba-token-plan".to_string(),
+            model: "qwen3.8-max-preview".to_string(),
+            enabled: true,
+            builtin: false,
+            immutable_identity: false,
+            disable_allowed: true,
+            delete_allowed: true,
+            protected_reason: None,
+            reasoning_effort: Some("medium".to_string()),
+            api_transport: None,
+            context_window_tokens: Some(128_000),
+            openrouter_provider_order: Vec::new(),
+            openrouter_provider_ignore: Vec::new(),
+            openrouter_allow_fallbacks: None,
+            huggingface_provider: None,
+            base_url: None,
+            created_at: 1,
+        }];
+        let profile = ThreadExecutionProfile {
+            provider: Some("ollama".to_string()),
+            model: Some("kimi-k3:cloud".to_string()),
+            reasoning_effort: Some("high".to_string()),
+            context_window_tokens: Some(256_000),
+        };
+
+        let responder =
+            build_direct_thread_responder_config(&config, "kimus", &sub_agents, Some(&profile))
+                .expect("config build should succeed")
+                .expect("subagent should produce a direct responder config");
+
+        assert_eq!(responder.agent_name, "Kimus");
+        assert_eq!(responder.provider_id, "ollama");
+        assert_eq!(responder.model.as_deref(), Some("kimi-k3:cloud"));
+        assert_eq!(responder.reasoning_effort.as_deref(), Some("high"));
+        assert_eq!(responder.context_window_tokens, Some(256_000));
+        assert_eq!(responder.system_prompt, "Handle delegated work.");
     }
 
     #[test]

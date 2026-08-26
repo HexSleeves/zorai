@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from "react";
-import { buildHydratedRemoteMessage, buildHydratedRemoteThread, canonicalizeHydratedToolCalls, useAgentStore } from "@/lib/agentStore";
+import { buildHydratedRemoteMessage, buildHydratedRemoteThread, useAgentStore } from "@/lib/agentStore";
 import type {
   AgentMessage,
   AgentProviderConfig,
@@ -17,6 +17,7 @@ import type { Workspace } from "@/lib/types";
 import type { WelesHealthState } from "@/lib/agentStore/types";
 import { findTaskWorkspaceLocation } from "../tasks-view/helpers";
 import { formatSkillWorkflowNotice } from "./skillWorkflowNotice";
+import { reconcileThreadMessages } from "./threadMessageReducer";
 
 type RemoteAgentThread = {
   id: string;
@@ -196,7 +197,6 @@ export async function loadDaemonThreadPageIntoLocalState({
       (thread) => thread.daemonThreadId === daemonThreadId,
     )?.id;
   if (!localThreadId) return false;
-  const messagesAtRequestStart = stateBeforeLoad.messages[localThreadId] ?? [];
 
   const remotePayload = await zorai.agentGetThread(daemonThreadId, {
     messageLimit: messageLimit ?? resolveReactChatHistoryMessageLimit(
@@ -249,14 +249,10 @@ export async function loadDaemonThreadPageIntoLocalState({
       ? state.messages
       : {
         ...state.messages,
-        [localThreadId]: mergeMode === "prepend"
-          ? mergeMessages(reloadedMessages, state.messages[localThreadId] ?? [])
-          : mergeMode === "append"
-          ? mergeMessagesForLiveRefresh(state.messages[localThreadId] ?? [], reloadedMessages)
-          : state.messages[localThreadId] !== messagesAtRequestStart
-            || (state.messages[localThreadId] ?? []).some(isPendingLocalUserMessage)
-          ? mergeMessagesForLiveRefresh(state.messages[localThreadId] ?? [], reloadedMessages)
-          : reloadedMessages,
+        [localThreadId]: reconcileThreadMessages(
+          state.messages[localThreadId] ?? [],
+          reloadedMessages,
+        ),
       },
   }));
 
@@ -329,159 +325,6 @@ function latestLogicalMessageWindow(messages: AgentMessage[], logicalLimit: numb
     previousWasTool = isTool;
   }
   return messages.slice(start);
-}
-
-function mergeMessagesForLiveRefresh(
-  existing: AgentMessage[],
-  persisted: AgentMessage[],
-): AgentMessage[] {
-  const persistedIds = new Set(persisted.map((message) => message.id));
-  const liveTailStart = existing.findIndex((message) =>
-    message.isStreaming === true
-    || (message.role === "tool" && !persistedIds.has(message.id))
-  );
-  if (liveTailStart < 0) {
-    return canonicalizeHydratedToolCalls(
-      reconcileEquivalentUserMessages(mergeLiveMessages(existing, persisted)),
-    );
-  }
-
-  // A reload event can arrive while the current turn still has ephemeral tool
-  // rows or an assistant stream that the daemon page does not contain yet.
-  // Insert newly persisted rows before that live suffix; appending the fetched
-  // page after it makes history trimming discard the active turn.
-  let persistedPrefix = mergeLiveMessages(existing.slice(0, liveTailStart), persisted);
-  const liveSuffix: AgentMessage[] = [];
-  for (const message of existing.slice(liveTailStart)) {
-    const exact = persisted.find((candidate) => candidate.id === message.id);
-    if (exact) {
-      persistedPrefix = persistedPrefix.map((candidate) =>
-        candidate.id === exact.id
-          ? mergeAuthoritativeMessageWithLocalContent(candidate, message)
-          : candidate
-      );
-      continue;
-    }
-    const authoritative = isOptimisticLocalMessage(message)
-      ? persisted.find((candidate) => messagesAreEquivalent(message, candidate))
-      : undefined;
-    if (authoritative) {
-      persistedPrefix = persistedPrefix.map((candidate) =>
-        candidate.id === authoritative.id
-          ? mergeAuthoritativeMessageWithLocalContent(candidate, message)
-          : candidate
-      );
-      continue;
-    }
-    if (isStaleLiveToolAcrossTurn(message, persisted)) continue;
-    liveSuffix.push(message);
-  }
-  const messages = mergeMessages(persistedPrefix, liveSuffix);
-  return canonicalizeHydratedToolCalls(reconcileEquivalentUserMessages(messages));
-}
-
-function mergeLiveMessages(existing: AgentMessage[], persisted: AgentMessage[]): AgentMessage[] {
-  const persistedById = new Map(persisted.map((message) => [message.id, message]));
-  const consumed = new Set<string>();
-  const merged = existing.map((message) => {
-    const exact = persistedById.get(message.id);
-    if (exact) {
-      consumed.add(exact.id);
-      return mergeAuthoritativeMessageWithLocalContent(exact, message);
-    }
-    if (!isOptimisticLocalMessage(message)) return message;
-    const authoritative = persisted.find((candidate) =>
-      !consumed.has(candidate.id) && messagesAreEquivalent(message, candidate)
-    );
-    if (!authoritative) return message;
-    consumed.add(authoritative.id);
-    return mergeAuthoritativeMessageWithLocalContent(authoritative, message);
-  });
-  return mergeMessages(merged, persisted.filter((message) => !consumed.has(message.id)));
-}
-
-function isStaleLiveToolAcrossTurn(message: AgentMessage, persisted: AgentMessage[]): boolean {
-  if (message.role !== "tool") return false;
-  const messageTimestamp = normalizeMessageTimestamp(message.createdAt);
-  return persisted.some((candidate) =>
-    candidate.role === "user"
-    && normalizeMessageTimestamp(candidate.createdAt) > messageTimestamp
-  );
-}
-
-function isPendingLocalUserMessage(message: AgentMessage): boolean {
-  return message.role === "user" && isOptimisticLocalMessage(message);
-}
-
-function isOptimisticLocalMessage(message: AgentMessage): boolean {
-  return message.id.startsWith("queued-prompt:") || /^msg_\d+$/.test(message.id);
-}
-
-function messagesAreEquivalent(left: AgentMessage, right: AgentMessage): boolean {
-  if (left.role !== right.role) return false;
-  if (left.role === "assistant") {
-    const hasIdentity = Boolean(left.content.trim() || left.reasoning?.trim());
-    return hasIdentity
-      && left.content === right.content
-      && (left.reasoning ?? "") === (right.reasoning ?? "");
-  }
-  if (left.role === "user") {
-    return left.content.trim() === right.content.trim()
-      && Math.abs(normalizeMessageTimestamp(left.createdAt) - normalizeMessageTimestamp(right.createdAt)) <= 120_000;
-  }
-  return false;
-}
-
-function mergeAuthoritativeMessageWithLocalContent(
-  authoritative: AgentMessage,
-  local: AgentMessage,
-): AgentMessage {
-  const authoritativeBlocks = authoritative.contentBlocks ?? [];
-  const localBlocks = local.contentBlocks ?? [];
-  return {
-    ...authoritative,
-    contentBlocks: authoritativeBlocks.length > 0
-      ? authoritativeBlocks
-      : localBlocks.length > 0
-      ? localBlocks
-      : undefined,
-  };
-}
-
-function normalizeMessageTimestamp(timestamp: number): number {
-  return timestamp < 10_000_000_000 ? timestamp * 1_000 : timestamp;
-}
-
-function reconcileEquivalentUserMessages(messages: AgentMessage[]): AgentMessage[] {
-  const authoritativeKeys = new Set(
-    messages
-      .filter((message) => message.role === "user" && !isOptimisticLocalUserMessage(message))
-      .map(userMessageEquivalenceKey),
-  );
-  return messages.filter((message) =>
-    message.role !== "user"
-    || !isOptimisticLocalUserMessage(message)
-    || !authoritativeKeys.has(userMessageEquivalenceKey(message))
-  );
-}
-
-function isOptimisticLocalUserMessage(message: AgentMessage): boolean {
-  return message.role === "user" && isOptimisticLocalMessage(message);
-}
-
-function userMessageEquivalenceKey(message: AgentMessage): string {
-  return JSON.stringify([message.content.trim(), message.contentBlocks ?? null]);
-}
-
-function mergeMessages(prefix: AgentMessage[], existing: AgentMessage[]): AgentMessage[] {
-  const seen = new Set<string>();
-  const merged: AgentMessage[] = [];
-  for (const message of [...prefix, ...existing]) {
-    if (seen.has(message.id)) continue;
-    seen.add(message.id);
-    merged.push(message);
-  }
-  return merged;
 }
 
 export async function hydrateDaemonThreadIntoLocalState({

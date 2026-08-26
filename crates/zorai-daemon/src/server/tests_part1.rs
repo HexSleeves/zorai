@@ -136,9 +136,16 @@ fn gateway_incoming_events_forward_without_thread_subscription() {
         sender: "alice".to_string(),
         content: "hello".to_string(),
         channel: "alice@s.whatsapp.net".to_string(),
+        thread_id: Some("thread-gateway".to_string()),
     };
     let client_threads = HashSet::new();
     assert!(super::should_forward_agent_event(&event, &client_threads));
+
+    let unrelated = HashSet::from(["thread-other".to_string()]);
+    assert!(
+        super::should_forward_agent_event(&event, &unrelated),
+        "gateway incoming must still reach clients that are not subscribed to the bound thread so a dedicated local thread can be materialized"
+    );
 }
 
 #[test]
@@ -245,6 +252,7 @@ fn oversized_global_agent_event_downgrades_to_workflow_notice() {
         sender: "bot".to_string(),
         content: "x".repeat(zorai_protocol::MAX_IPC_FRAME_SIZE_BYTES + 1024),
         channel: "C123".to_string(),
+        thread_id: None,
     };
 
     let (event_json, truncated) =

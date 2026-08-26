@@ -581,7 +581,7 @@ export function useDaemonAgentEvents({
           });
           break;
         case "gateway_incoming":
-          handleGatewayIncomingEvent({ event, addMessage, daemonLocalThreadRef, pendingGatewayMessagesRef });
+          handleGatewayIncomingEvent({ event, addMessage, pendingGatewayMessagesRef });
           break;
       }
     });

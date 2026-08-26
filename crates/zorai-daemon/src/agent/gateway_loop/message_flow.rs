@@ -142,6 +142,7 @@ impl AgentEngine {
             sender: msg.sender.clone(),
             content: msg.content.clone(),
             channel: msg.channel.clone(),
+            thread_id: existing_thread.clone(),
         });
         let (run_concierge_triage, full_agent_scope): (bool, Option<String>) =
             if let Some(request) = route_request {

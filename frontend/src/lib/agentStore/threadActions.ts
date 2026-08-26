@@ -106,16 +106,17 @@ export function createThreadActions(
         upstreamAssistantId: null,
       };
       set((state) => {
+        const activate = opts.activate !== false;
         const next = {
           threads: [thread, ...state.threads],
           messages: { ...state.messages, [id]: [] },
           todos: { ...state.todos, [id]: [] },
-          activeThreadId: id,
-          threadHistoryStack: [],
+          activeThreadId: activate ? id : state.activeThreadId,
+          threadHistoryStack: activate ? [] : state.threadHistoryStack,
         };
         if (shouldPersistCurrentHistory(get().agentSettings)) {
           persistDaemonThreadMap(next.threads);
-          scheduleJsonWrite(AGENT_ACTIVE_THREAD_FILE, { activeThreadId: id });
+          scheduleJsonWrite(AGENT_ACTIVE_THREAD_FILE, { activeThreadId: next.activeThreadId });
           void getAgentDbApi()?.dbCreateThread?.(serializeThread(thread));
         }
         return next;
