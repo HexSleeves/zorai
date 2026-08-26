@@ -36,6 +36,7 @@ import {
 } from "./threadHistoryScroll";
 import { useLegacyAgentMessaging } from "./useLegacyAgentMessaging";
 import { finalizeStreamingAssistantMessages, threadTurnIsActive } from "./threadTurnState";
+import { beginThreadStopBarrier, completeThreadStopBarrier } from "./threadStopBarrier";
 import type {
   AgentChatPanelRuntimeValue,
   AgentChatPanelView,
@@ -421,7 +422,13 @@ export function useAgentChatPanelProviderValue(): {
       const zorai = getAgentBridge();
       const daemonThreadId = daemonThreadIdRef.current;
       if (daemonThreadId && zorai?.agentStopStream) {
-        void zorai.agentStopStream(daemonThreadId);
+        beginThreadStopBarrier(targetThreadId);
+        void zorai.agentStopStream(daemonThreadId).then((result) => {
+          const accepted = result && typeof result === "object" && "ok" in result
+            ? result.ok !== false
+            : result !== false;
+          if (!accepted) completeThreadStopBarrier(targetThreadId);
+        }).catch(() => completeThreadStopBarrier(targetThreadId));
       }
     }
 
@@ -852,11 +859,16 @@ export function useAgentChatPanelProviderValue(): {
     threadId: string,
     direction: "latest" | "older",
   ): Promise<boolean> => {
+    const thread = useAgentStore.getState().threads.find((entry) => entry.id === threadId);
+    const finishLoading = direction === "latest"
+      && thread?.daemonThreadId
+      && getAgentBridge()?.agentGetThread
+      ? beginThreadLoading()
+      : () => {};
     const runThreadPageLoad = async (): Promise<boolean> => {
-      const finishLoading = direction === "latest" ? beginThreadLoading() : () => {};
       try {
-      const thread = useAgentStore.getState().threads.find((entry) => entry.id === threadId);
-      const daemonThreadId = thread?.daemonThreadId;
+      const currentThread = useAgentStore.getState().threads.find((entry) => entry.id === threadId);
+      const daemonThreadId = currentThread?.daemonThreadId;
       if (!daemonThreadId || !getAgentBridge()?.agentGetThread) {
         return false;
       }
@@ -873,7 +885,6 @@ export function useAgentChatPanelProviderValue(): {
         });
       }
 
-      const currentThread = useAgentStore.getState().threads.find((entry) => entry.id === threadId);
       const loadedStart = currentThread?.loadedMessageStart ?? 0;
       const currentMessages = useAgentStore.getState().messages[threadId] ?? [];
       const totalMessages = currentThread?.messageCount ?? currentMessages.length;

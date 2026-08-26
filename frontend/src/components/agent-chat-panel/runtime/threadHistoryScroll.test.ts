@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   consumeThreadHistoryScroll,
+  resetThreadHistoryPagination,
   resetThreadHistoryScrollStateForTest,
   resolveThreadHistoryScrollAction,
   setFollowThreadHistoryBottom,
@@ -85,7 +86,6 @@ describe("consumeThreadHistoryScroll", () => {
 
     consumeThreadHistoryScroll({ scroller, loadOlder });
     await vi.advanceTimersByTimeAsync(THREAD_HISTORY_OLDER_LOAD_DEBOUNCE_MS);
-    expect(loadOlder).toHaveBeenCalledTimes(1);
     await Promise.resolve();
     await vi.advanceTimersByTimeAsync(0);
 
@@ -96,6 +96,36 @@ describe("consumeThreadHistoryScroll", () => {
     consumeThreadHistoryScroll({ scroller: makeScroller(200), loadOlder });
     consumeThreadHistoryScroll({ scroller, loadOlder });
     await vi.advanceTimersByTimeAsync(THREAD_HISTORY_OLDER_LOAD_DEBOUNCE_MS);
+    expect(loadOlder).toHaveBeenCalledTimes(2);
+  });
+
+  it("continues paging while prepended tool rows do not move the viewport away from the top", async () => {
+    vi.useFakeTimers();
+    const scroller = makeScroller(0);
+    const loadOlder = vi.fn()
+      .mockResolvedValueOnce(true)
+      .mockResolvedValueOnce(false);
+
+    consumeThreadHistoryScroll({ scroller, loadOlder });
+    await vi.advanceTimersByTimeAsync(THREAD_HISTORY_OLDER_LOAD_DEBOUNCE_MS);
+    await vi.runAllTimersAsync();
+
+    expect(loadOlder).toHaveBeenCalledTimes(2);
+  });
+
+  it("resets exhausted pagination when the active thread changes", async () => {
+    vi.useFakeTimers();
+    const scroller = makeScroller(8);
+    const loadOlder = vi.fn(async () => false);
+
+    consumeThreadHistoryScroll({ scroller, loadOlder });
+    await vi.advanceTimersByTimeAsync(THREAD_HISTORY_OLDER_LOAD_DEBOUNCE_MS);
+    await Promise.resolve();
+
+    resetThreadHistoryPagination();
+    consumeThreadHistoryScroll({ scroller, loadOlder });
+    await vi.advanceTimersByTimeAsync(THREAD_HISTORY_OLDER_LOAD_DEBOUNCE_MS);
+
     expect(loadOlder).toHaveBeenCalledTimes(2);
   });
 });

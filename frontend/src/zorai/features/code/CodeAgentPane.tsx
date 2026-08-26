@@ -172,6 +172,7 @@ export function CodeAgentPane() {
 
   const selectProjectThread = async (entry: CodeThreadHistoryEntry) => {
     setError(null);
+    if (root) bindRoot(entry.localThread.id, root);
     const target = entry.thread.daemonThreadId ?? entry.localThread.daemonThreadId;
     const opened = target
       ? await openThreadTarget(runtime, target)
@@ -180,6 +181,8 @@ export function CodeAgentPane() {
       setError("This project thread is no longer available.");
       return;
     }
+    const openedId = useAgentStore.getState().activeThreadId;
+    if (root && openedId) bindRoot(openedId, root);
     if (root && target) {
       useCodeWorkspaceBindingStore.getState().recordProjectThread(root, target);
     }

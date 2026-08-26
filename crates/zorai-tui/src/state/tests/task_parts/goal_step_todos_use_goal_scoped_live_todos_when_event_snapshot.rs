@@ -130,6 +130,30 @@ fn goal_thread_ids_include_spawned_descendants_of_goal_threads() {
         ]
     );
     assert!(state.thread_belongs_to_goal_run("goal-1", "thread-spawned"));
+
+    // Cached result is stable until a state revision changes.
+    assert_eq!(
+        state.goal_thread_ids("goal-1"),
+        vec![
+            "thread-goal-active".to_string(),
+            "thread-spawned".to_string()
+        ]
+    );
+    state.reduce(TaskAction::TaskUpdate(AgentTask {
+        id: "grandchild".into(),
+        title: "Grandchild".into(),
+        thread_id: Some("thread-grandchild".into()),
+        parent_task_id: Some("spawned-task".into()),
+        ..Default::default()
+    }));
+    assert_eq!(
+        state.goal_thread_ids("goal-1"),
+        vec![
+            "thread-goal-active".to_string(),
+            "thread-grandchild".to_string(),
+            "thread-spawned".to_string()
+        ]
+    );
 }
 
 #[test]

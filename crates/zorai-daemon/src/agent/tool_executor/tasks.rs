@@ -774,6 +774,124 @@ pub(crate) async fn execute_list_goal_runs(
     .unwrap_or_else(|_| "{}".to_string()))
 }
 
+pub(crate) async fn execute_submit_goal_final_review(
+    args: &serde_json::Value,
+    agent: &AgentEngine,
+    current_task_id: Option<&str>,
+) -> Result<String> {
+    let explicit_task_id = args
+        .get("task_id")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    let task_id = current_task_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .or(explicit_task_id)
+        .ok_or_else(|| {
+            anyhow::anyhow!("submit_goal_final_review requires a current final-review task")
+        })?;
+    if let (Some(current), Some(explicit)) = (current_task_id, explicit_task_id) {
+        if current != explicit {
+            anyhow::bail!(
+                "task_id mismatch: current task is '{current}' but tool received '{explicit}'"
+            );
+        }
+    }
+
+    let verdict = match args
+        .get("verdict")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .map(str::to_ascii_lowercase)
+        .as_deref()
+    {
+        Some("pass") => GoalStepReviewVerdict::Pass,
+        Some("fail") => GoalStepReviewVerdict::Fail,
+        Some(other) => anyhow::bail!("unsupported verdict '{other}'; expected 'pass' or 'fail'"),
+        None => anyhow::bail!("missing 'verdict' argument"),
+    };
+    let explanation = args
+        .get("explanation")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("missing non-empty 'explanation' argument"))?
+        .to_string();
+    let evidence = super::super::parse_goal_verdict_evidence(args)?;
+    if matches!(verdict, GoalStepReviewVerdict::Pass) {
+        super::super::validate_pass_verdict_evidence(evidence.as_ref())?;
+    }
+
+    let task = task_by_id_for_tool_scope(agent, task_id)
+        .await
+        .ok_or_else(|| anyhow::anyhow!("task {task_id} not found"))?;
+    if task.source != super::super::GOAL_FINAL_REVIEW_SOURCE {
+        anyhow::bail!(
+            "submit_goal_final_review can only be used by final-review tasks; current task source is '{}'",
+            task.source
+        );
+    }
+    let goal_run_id = task.goal_run_id.as_deref().ok_or_else(|| {
+        anyhow::anyhow!("current final-review task is missing goal_run_id context")
+    })?;
+    if let Some(provided) = args
+        .get("goal_run_id")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        if provided != goal_run_id {
+            anyhow::bail!("goal_run_id mismatch: current task is bound to '{goal_run_id}' but tool received '{provided}'");
+        }
+    }
+
+    let record = GoalFinalReviewRecord {
+        task_id: task.id.clone(),
+        goal_run_id: goal_run_id.to_string(),
+        verdict,
+        explanation,
+        evidence,
+        submitted_at: crate::agent::now_millis(),
+    };
+    let record_json = serde_json::to_string(&record)?;
+    let verdict_key = super::super::goal_planner::goal_final_review_verdict_state_key(task_id);
+    if agent
+        .history
+        .get_consolidation_state(&verdict_key)
+        .await?
+        .is_some()
+    {
+        anyhow::bail!("final-review verdict already submitted for task {task_id}");
+    }
+    agent
+        .history
+        .set_consolidation_state(&verdict_key, &record_json, record.submitted_at)
+        .await?;
+
+    let mut updated = task.clone();
+    updated.result = Some(format!(
+        "Structured final review: {:?}\n{}",
+        record.verdict, record.explanation
+    ));
+    updated.logs.push(make_task_log_entry(
+        updated.retry_count,
+        TaskLogLevel::Info,
+        "final_review",
+        "structured final goal review submitted",
+        Some(record_json),
+    ));
+    agent.history.upsert_agent_task(&updated).await?;
+    {
+        let mut tasks = agent.tasks.lock().await;
+        if let Some(live) = tasks.iter_mut().find(|task| task.id == task_id) {
+            *live = updated.clone();
+        }
+    }
+    agent.emit_task_update(&updated, Some("Final goal review submitted".into()));
+    Ok(serde_json::to_string_pretty(&record).unwrap_or_else(|_| "{}".to_string()))
+}
+
 pub(crate) async fn execute_submit_goal_step_verdict(
     args: &serde_json::Value,
     agent: &AgentEngine,

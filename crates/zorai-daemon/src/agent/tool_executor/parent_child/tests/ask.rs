@@ -275,6 +275,23 @@ async fn answer_child_targets_one_open_ask_and_keeps_the_child_blocked_until_all
         Some(second_id.as_str())
     );
 
+    let stale = execute_answer_child(
+        &serde_json::json!({
+            "child_task_id": child.id,
+            "ask_id": first_id,
+            "answer": "duplicate stale answer",
+        }),
+        &engine,
+        "thread-parent",
+        None,
+    )
+    .await
+    .expect_err("an already-answered ask id must be reported as stale");
+    assert!(
+        stale.to_string().contains("not open") || stale.to_string().contains("open ask"),
+        "stale ask error should be actionable, got: {stale}"
+    );
+
     execute_answer_child(
         &serde_json::json!({
             "child_task_id": child.id,

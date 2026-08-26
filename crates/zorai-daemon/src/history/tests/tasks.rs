@@ -1,5 +1,7 @@
 use super::*;
-use crate::agent::types::{AgentTask, TaskPriority, TaskStatus};
+use crate::agent::types::{
+    AgentTask, TaskCompletionContract, TaskCompletionRequirement, TaskPriority, TaskStatus,
+};
 
 fn awaiting_approval_task(id: &str, approval_expires_at: Option<u64>) -> AgentTask {
     AgentTask {
@@ -42,6 +44,7 @@ fn awaiting_approval_task(id: &str, approval_expires_at: Option<u64>) -> AgentTa
         lane_id: None,
         last_error: None,
         logs: Vec::new(),
+        completion_contract: None,
         tool_whitelist: None,
         tool_blacklist: None,
         context_budget_tokens: None,
@@ -56,6 +59,99 @@ fn awaiting_approval_task(id: &str, approval_expires_at: Option<u64>) -> AgentTa
         override_system_prompt: None,
         sub_agent_def_id: None,
     }
+}
+
+#[tokio::test]
+async fn completion_contract_round_trips_across_store_reload() -> Result<()> {
+    let (store, _root) = make_test_store().await?;
+    let mut task = awaiting_approval_task("contract-reload", None);
+    task.status = TaskStatus::Blocked;
+    task.awaiting_approval_id = None;
+    task.completion_contract = Some(TaskCompletionContract {
+        objective: "produce and verify artifact".to_string(),
+        required_deliverables: vec![TaskCompletionRequirement {
+            description: "artifact.json".to_string(),
+            completed: true,
+            evidence: Some("inventory/artifact.json".to_string()),
+        }],
+        completed_actions: vec!["implemented persistence".to_string()],
+        outstanding_promised_actions: vec!["publish summary".to_string()],
+        pending_operations: vec!["operation-42".to_string()],
+        verification_requirements: vec![TaskCompletionRequirement {
+            description: "restart replay".to_string(),
+            completed: false,
+            evidence: None,
+        }],
+        blocked_reason: Some("waiting for operation-42".to_string()),
+        terminal_status: None,
+        ..TaskCompletionContract::default()
+    });
+
+    store.upsert_agent_task(&task).await?;
+    let loaded = store
+        .list_agent_tasks()
+        .await?
+        .into_iter()
+        .find(|candidate| candidate.id == task.id)
+        .expect("persisted task should reload");
+
+    assert_eq!(loaded.completion_contract, task.completion_contract);
+    assert_eq!(loaded.status, TaskStatus::Blocked);
+    Ok(())
+}
+
+#[tokio::test]
+async fn persistence_guard_rejects_completed_status_with_open_contract() -> Result<()> {
+    let (store, _root) = make_test_store().await?;
+    let mut task = awaiting_approval_task("guarded-completion", None);
+    task.status = TaskStatus::Completed;
+    task.progress = 100;
+    task.completed_at = Some(500);
+    task.awaiting_approval_id = None;
+    task.completion_contract = Some(TaskCompletionContract {
+        objective: "wait for build".to_string(),
+        pending_operations: vec!["operation-build".to_string()],
+        terminal_status: Some(TaskStatus::Completed),
+        ..TaskCompletionContract::default()
+    });
+
+    store.upsert_agent_task(&task).await?;
+    let loaded = store
+        .list_agent_tasks()
+        .await?
+        .into_iter()
+        .find(|candidate| candidate.id == task.id)
+        .expect("guarded row should reload");
+
+    assert_eq!(loaded.status, TaskStatus::Blocked);
+    assert!(loaded.progress < 100);
+    assert_eq!(loaded.completed_at, None);
+    assert!(loaded
+        .blocked_reason
+        .as_deref()
+        .is_some_and(|reason| reason.contains("operation-build")));
+    assert_eq!(
+        loaded.completion_contract.unwrap().terminal_status,
+        None,
+        "rejected completion must not persist a contradictory terminal status"
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn legacy_agent_task_row_loads_without_completion_contract() -> Result<()> {
+    let (store, _root) = make_test_store().await?;
+    let task = awaiting_approval_task("legacy-contract", None);
+    store.upsert_agent_task(&task).await?;
+
+    let loaded = store
+        .list_agent_tasks()
+        .await?
+        .into_iter()
+        .find(|candidate| candidate.id == task.id)
+        .expect("legacy-compatible row should reload");
+    assert!(loaded.completion_contract.is_none());
+    Ok(())
 }
 
 #[tokio::test]

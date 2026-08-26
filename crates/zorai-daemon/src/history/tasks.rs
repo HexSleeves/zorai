@@ -31,6 +31,24 @@ fn parse_supervisor_config_json(
     value.and_then(|json| serde_json::from_str::<crate::agent::types::SupervisorConfig>(&json).ok())
 }
 
+fn serialize_completion_contract_json(
+    value: &Option<crate::agent::types::TaskCompletionContract>,
+) -> std::result::Result<Option<String>, tokio_rusqlite::Error> {
+    value
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .call_err()
+}
+
+fn parse_completion_contract_json(
+    value: Option<String>,
+) -> Option<crate::agent::types::TaskCompletionContract> {
+    value.and_then(|json| {
+        serde_json::from_str::<crate::agent::types::TaskCompletionContract>(&json).ok()
+    })
+}
+
 fn preserve_notification_lifecycle_state(
     notification: &mut zorai_protocol::InboxNotification,
     existing: zorai_protocol::InboxNotification,
@@ -48,15 +66,38 @@ async fn upsert_agent_task_exec<E: db::DbExecutor + ?Sized>(
     exec: &mut E,
     task: &AgentTask,
 ) -> anyhow::Result<()> {
+    let mut guarded_task;
+    let task = if task.status == TaskStatus::Completed {
+        let blockers = task.completion_blockers();
+        if blockers.is_empty() {
+            task
+        } else {
+            guarded_task = task.clone();
+            guarded_task.status = TaskStatus::Blocked;
+            guarded_task.progress = guarded_task.progress.min(99);
+            guarded_task.completed_at = None;
+            guarded_task.blocked_reason = Some(format!(
+                "completion contract remains open: {}",
+                blockers.join("; ")
+            ));
+            if let Some(contract) = guarded_task.completion_contract.as_mut() {
+                contract.terminal_status = None;
+            }
+            &guarded_task
+        }
+    } else {
+        task
+    };
     let notify_channels_json = serde_json::to_string(&task.notify_channels)?;
     let tool_whitelist_json = serialize_string_vec_json(&task.tool_whitelist)?;
     let tool_blacklist_json = serialize_string_vec_json(&task.tool_blacklist)?;
     let supervisor_config_json = serialize_supervisor_config_json(&task.supervisor_config)?;
+    let completion_contract_json = serialize_completion_contract_json(&task.completion_contract)?;
 
     exec.execute(
         "INSERT OR REPLACE INTO agent_tasks \
-         (id, title, description, status, priority, progress, created_at, started_at, completed_at, error, result, thread_id, source, notify_on_complete, notify_channels_json, command, session_id, goal_run_id, goal_run_title, goal_step_id, goal_step_title, parent_task_id, parent_thread_id, runtime, retry_count, max_retries, next_retry_at, scheduled_at, blocked_reason, awaiting_approval_id, policy_fingerprint, approval_expires_at, containment_scope, compensation_status, compensation_summary, lane_id, last_error, override_provider, override_model, override_system_prompt, sub_agent_def_id, tool_whitelist_json, tool_blacklist_json, context_budget_tokens, context_overflow_action, termination_conditions, success_criteria, max_duration_secs, supervisor_config_json, override_api_transport, deleted_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43, ?44, ?45, ?46, ?47, ?48, ?49, ?50, NULL)",
+         (id, title, description, status, priority, progress, created_at, started_at, completed_at, error, result, thread_id, source, notify_on_complete, notify_channels_json, command, session_id, goal_run_id, goal_run_title, goal_step_id, goal_step_title, parent_task_id, parent_thread_id, runtime, retry_count, max_retries, next_retry_at, scheduled_at, blocked_reason, awaiting_approval_id, policy_fingerprint, approval_expires_at, containment_scope, compensation_status, compensation_summary, lane_id, last_error, override_provider, override_model, override_system_prompt, sub_agent_def_id, tool_whitelist_json, tool_blacklist_json, context_budget_tokens, context_overflow_action, termination_conditions, success_criteria, max_duration_secs, supervisor_config_json, override_api_transport, completion_contract_json, deleted_at) \
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29, ?30, ?31, ?32, ?33, ?34, ?35, ?36, ?37, ?38, ?39, ?40, ?41, ?42, ?43, ?44, ?45, ?46, ?47, ?48, ?49, ?50, ?51, NULL)",
         db::db_params![
             task.id.clone(),
             task.title.clone(),
@@ -108,6 +149,7 @@ async fn upsert_agent_task_exec<E: db::DbExecutor + ?Sized>(
             task.max_duration_secs.map(|value| value as i64),
             supervisor_config_json,
             task.override_api_transport.map(|value| value.as_snake_str()),
+            completion_contract_json,
         ],
     )
     .await?;
@@ -271,7 +313,7 @@ fn append_agent_task_query_filters(
     }
 }
 
-const AGENT_TASK_SELECT_SQL: &str = "SELECT id, title, description, status, priority, progress, created_at, started_at, completed_at, error, result, thread_id, source, notify_on_complete, notify_channels_json, command, session_id, goal_run_id, goal_run_title, goal_step_id, goal_step_title, parent_task_id, parent_thread_id, runtime, retry_count, max_retries, next_retry_at, scheduled_at, blocked_reason, awaiting_approval_id, policy_fingerprint, approval_expires_at, containment_scope, compensation_status, compensation_summary, lane_id, last_error, override_provider, override_model, override_system_prompt, sub_agent_def_id, tool_whitelist_json, tool_blacklist_json, context_budget_tokens, context_overflow_action, termination_conditions, success_criteria, max_duration_secs, supervisor_config_json, override_api_transport FROM agent_tasks WHERE deleted_at IS NULL";
+const AGENT_TASK_SELECT_SQL: &str = "SELECT id, title, description, status, priority, progress, created_at, started_at, completed_at, error, result, thread_id, source, notify_on_complete, notify_channels_json, command, session_id, goal_run_id, goal_run_title, goal_step_id, goal_step_title, parent_task_id, parent_thread_id, runtime, retry_count, max_retries, next_retry_at, scheduled_at, blocked_reason, awaiting_approval_id, policy_fingerprint, approval_expires_at, containment_scope, compensation_status, compensation_summary, lane_id, last_error, override_provider, override_model, override_system_prompt, sub_agent_def_id, tool_whitelist_json, tool_blacklist_json, context_budget_tokens, context_overflow_action, termination_conditions, success_criteria, max_duration_secs, supervisor_config_json, override_api_transport, completion_contract_json FROM agent_tasks WHERE deleted_at IS NULL";
 
 fn append_agent_task_order_and_limit(
     task_sql: &mut String,
@@ -356,6 +398,7 @@ fn map_agent_task_row(row: &db::Row) -> anyhow::Result<AgentTask> {
         override_model: row.get(38)?,
         override_system_prompt: row.get(39)?,
         sub_agent_def_id: row.get(40)?,
+        completion_contract: parse_completion_contract_json(row.get(50)?),
         tool_whitelist: parse_string_vec_json(row.get(41)?),
         tool_blacklist: parse_string_vec_json(row.get(42)?),
         context_budget_tokens: row.get::<Option<i64>>(43)?.map(|value| value as u32),

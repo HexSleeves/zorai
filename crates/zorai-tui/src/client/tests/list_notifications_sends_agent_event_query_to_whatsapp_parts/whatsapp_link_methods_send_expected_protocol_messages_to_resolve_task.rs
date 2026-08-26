@@ -106,7 +106,7 @@ fn pin_methods_send_expected_protocol_messages() {
 }
 
 #[test]
-fn refresh_requests_all_threads_with_internal_threads_included() {
+fn refresh_requests_bounded_thread_summaries_with_internal_threads_included() {
     let (event_tx, _event_rx) = mpsc::channel(8);
     let client = DaemonClient::new(event_tx);
     let mut rx = client.request_rx.lock().unwrap().take().unwrap();
@@ -116,8 +116,8 @@ fn refresh_requests_all_threads_with_internal_threads_included() {
     assert!(matches!(
         drain_request(&mut rx),
         ClientMessage::AgentListThreads {
-            limit: None,
-            offset: None,
+            limit: Some(250),
+            offset: Some(0),
             include_internal: true,
             agent_filter: None,
         }

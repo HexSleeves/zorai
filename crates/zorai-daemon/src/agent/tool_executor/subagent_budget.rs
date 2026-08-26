@@ -1,6 +1,9 @@
 use super::*;
 use crate::agent::task_scheduler::make_task_log_entry;
-use crate::agent::types::{AgentTask, DeferredVisibleThreadContinuation, TaskLogLevel, TaskStatus};
+use crate::agent::types::{
+    AgentTask, ChildReportState, ChildResultContract, DeferredVisibleThreadContinuation,
+    ParentNotificationState, TaskLogLevel, TaskStatus,
+};
 use crate::history::AgentTaskListQuery;
 
 const MIN_EXTENSION_TOKENS: u32 = 256;
@@ -16,16 +19,61 @@ pub(crate) async fn execute_report_subagent_outcome(
     task_id: Option<&str>,
 ) -> Result<String> {
     let status = parse_report_status(args)?;
-    let summary = args
+    let raw_summary = args
         .get("summary")
         .and_then(|value| value.as_str())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("missing 'summary' argument"))?
-        .to_string();
+        .unwrap_or("");
+    let summary = raw_summary.trim().to_string();
 
     let mut task = resolve_current_spawned_task(agent, thread_id, task_id).await?;
-    task.result = Some(summary.clone());
+    let report_state = classify_report_state(args, &summary);
+    let ask_records = super::parent_child::list_ask_records(agent, &task.id).await?;
+    let open_ask_ids = ask_records
+        .iter()
+        .filter(|(_, record)| record.state == "open")
+        .filter_map(|(key, _)| key.rsplit_once(':').map(|(_, ask_id)| ask_id.to_string()))
+        .collect::<Vec<_>>();
+    let artifact_refs = collect_child_artifact_refs(agent, &task).await;
+    let parent_notification = if task.parent_task_id.is_some() || task.parent_thread_id.is_some() {
+        ParentNotificationState::Pending
+    } else {
+        ParentNotificationState::NotRequired
+    };
+    let prior_version = task
+        .completion_contract
+        .as_ref()
+        .and_then(|contract| contract.child_result.as_ref())
+        .map(|result| result.terminal_version)
+        .unwrap_or(0);
+    task.result = (!summary.is_empty()).then(|| summary.clone());
+    let child_result = ChildResultContract {
+        terminal_status: Some(report_terminal_status(status)),
+        terminal_version: prior_version.max(1),
+        report_state,
+        summary: (!summary.is_empty()).then(|| summary.clone()),
+        summary_chars: summary.chars().count(),
+        report_error: (report_state == ChildReportState::Failed)
+            .then(|| summary.clone())
+            .filter(|value| !value.is_empty()),
+        artifact_refs,
+        open_ask_ids: open_ask_ids.clone(),
+        asks_reconciled: open_ask_ids.is_empty(),
+        parent_notification,
+        parent_notification_error: None,
+        parent_notified_at: None,
+        integration_acknowledged_at: None,
+    };
+    if let Some(contract) = task.completion_contract.as_mut() {
+        contract.child_result = Some(child_result);
+    }
+    if report_state == ChildReportState::Usable && open_ask_ids.is_empty() {
+        if let Some(contract) = task.completion_contract.as_mut() {
+            contract.satisfy_requirement(
+                crate::agent::types::SUBAGENT_REPORT_REQUIREMENT_DESCRIPTION,
+                format!("reported summary: {summary}"),
+            );
+        }
+    }
     task.logs.push(make_task_log_entry(
         task.retry_count,
         match status {
@@ -44,6 +92,9 @@ pub(crate) async fn execute_report_subagent_outcome(
         "action": "report",
         "status": status,
         "task_id": task.id,
+        "report_state": report_state,
+        "open_ask_ids": open_ask_ids,
+        "artifacts": task.completion_contract.as_ref().and_then(|contract| contract.child_result.as_ref()).map(|result| &result.artifact_refs),
         "summary": summary,
     })
     .to_string())
@@ -156,6 +207,57 @@ pub(crate) async fn execute_extend_subagent_budget(
         "reason": reason,
     })
     .to_string())
+}
+
+fn report_terminal_status(status: &str) -> TaskStatus {
+    match status {
+        "done" => TaskStatus::Completed,
+        "cancelled" => TaskStatus::Cancelled,
+        _ => TaskStatus::Failed,
+    }
+}
+
+fn classify_report_state(args: &serde_json::Value, summary: &str) -> ChildReportState {
+    if args
+        .get("truncated")
+        .and_then(|value| value.as_bool())
+        .unwrap_or(false)
+    {
+        ChildReportState::Truncated
+    } else if summary.is_empty() {
+        ChildReportState::Empty
+    } else if args.get("status").and_then(|value| value.as_str()) == Some("done") {
+        ChildReportState::Usable
+    } else {
+        ChildReportState::Failed
+    }
+}
+
+async fn collect_child_artifact_refs(agent: &AgentEngine, task: &AgentTask) -> Vec<String> {
+    let Some(thread_id) = task.thread_id.as_deref() else {
+        return Vec::new();
+    };
+    let root = agent
+        .history
+        .data_root()
+        .join("threads")
+        .join(thread_id)
+        .join("artifacts");
+    let mut refs = Vec::new();
+    for directory in ["specs", "media", "previews"] {
+        let path = root.join(directory);
+        let Ok(mut entries) = tokio::fs::read_dir(&path).await else {
+            continue;
+        };
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            if entry.file_type().await.is_ok_and(|kind| kind.is_file()) {
+                refs.push(entry.path().display().to_string());
+            }
+        }
+    }
+    refs.sort();
+    refs.dedup();
+    refs
 }
 
 fn parse_report_status(args: &serde_json::Value) -> Result<&'static str> {

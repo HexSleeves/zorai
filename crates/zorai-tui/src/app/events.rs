@@ -208,13 +208,10 @@ impl TuiModel {
             include(tick / 3);
         }
 
-        if self.current_thread_agent_activity().is_some()
-            && self.input.buffer().is_empty()
-            && self.attachments.is_empty()
-            && self.input_notice.is_none()
-        {
-            include(tick / 4);
-        }
+        // Agent activity labels are state, not animations. Tool/reasoning
+        // events redraw when the label changes; keeping this in the tick epoch
+        // repainted the entire screen four times per second for any stale
+        // activity entry and kept the main loop on its fast cadence forever.
 
         if self.chat.retry_status().is_some()
             || self.active_auto_response_countdown_secs().is_some()
@@ -227,14 +224,10 @@ impl TuiModel {
             include(tick / 3);
         }
 
-        if self
-            .chat
-            .active_thread()
-            .is_some_and(|thread| thread.created_at > 0)
-        {
-            let ticks_per_second = (1_000 / TUI_TICK_RATE_MS).max(1);
-            include(tick / ticks_per_second);
-        }
+        // Static thread timestamps must not schedule redraws. `format_time_ago`
+        // can tolerate being stale until the next real UI/event update; the old
+        // condition below repainted the entire TUI once per second forever as
+        // soon as any selected thread had a nonzero creation timestamp.
 
         if self.voice_recording || self.voice_player.is_some() {
             include(tick / 8);
@@ -244,42 +237,12 @@ impl TuiModel {
             include(tick / 10);
         }
 
-        if let Some(value) = self.visible_goal_animation_epoch(tick) {
-            include(value);
-        }
+        // Goal progress is event-driven. Do not animate the entire goal screen:
+        // every spinner frame previously rebuilt and repainted a large Ratatui
+        // buffer four times per second even when no goal state had changed.
+        // Real goal/task daemon updates already request a redraw.
 
         epoch
-    }
-
-    fn visible_goal_animation_epoch(&self, tick: u64) -> Option<u64> {
-        let MainPaneView::Task(target) = &self.main_pane_view else {
-            return None;
-        };
-        let goal_run_id = target_goal_run_id(self, target)?;
-        let status = self.tasks.goal_run_by_id(&goal_run_id)?.status.clone();
-
-        match target {
-            sidebar::SidebarItemTarget::GoalRun { .. }
-                if matches!(
-                    status,
-                    Some(task::GoalRunStatus::Planning | task::GoalRunStatus::Running)
-                ) =>
-            {
-                Some(tick / 4)
-            }
-            _ if matches!(
-                status,
-                Some(
-                    task::GoalRunStatus::Planning
-                        | task::GoalRunStatus::Running
-                        | task::GoalRunStatus::AwaitingApproval
-                )
-            ) =>
-            {
-                Some(tick / 4)
-            }
-            _ => None,
-        }
     }
 
     fn maybe_refresh_spawned_sidebar_tasks(&mut self) {

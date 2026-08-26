@@ -1,8 +1,16 @@
 import { useState } from "react";
-import type { ToolEventGroup } from "./types";
+import type { ToolEventAttribution, ToolEventGroup } from "./types";
 import { ToolEventRow } from "./ToolEventRow";
 
-export function ToolEventList({ groups }: { groups: ToolEventGroup[] }) {
+export function ToolEventList({
+  groups,
+  attribution,
+  fallbackAuthorName,
+}: {
+  groups: ToolEventGroup[];
+  attribution?: ToolEventAttribution;
+  fallbackAuthorName?: string;
+}) {
   const [expanded, setExpanded] = useState(false);
 
   if (groups.length === 0) {
@@ -17,6 +25,12 @@ export function ToolEventList({ groups }: { groups: ToolEventGroup[] }) {
 
   return (
     <div className="acp-tool-list">
+      {attribution ? (
+        <div className="acp-tool-list__attribution">
+          <strong>{attribution.authorAgentName || fallbackAuthorName || "Zorai"}</strong>
+          <time>{formatToolEventTime(attribution.createdAt)}</time>
+        </div>
+      ) : null}
       <button
         type="button"
         aria-expanded={expanded}
@@ -43,4 +57,12 @@ export function ToolEventList({ groups }: { groups: ToolEventGroup[] }) {
       )}
     </div>
   );
+}
+
+function formatToolEventTime(timestamp: number): string {
+  const milliseconds = timestamp < 10_000_000_000 ? timestamp * 1_000 : timestamp;
+  return new Date(milliseconds).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }

@@ -360,20 +360,29 @@ pub fn render_for_workspace(
     frame.render_widget(Paragraph::new(sep), separator_row);
 
     let active_id = chat.active_thread_id();
-    let filtered_threads = filtered_threads_inner(
-        chat,
-        modal,
-        subagents,
-        Some(&goal_index),
-        Some(&workspace_index),
-    );
-    let status_index = ThreadPickerStatusIndex::from_state(chat, tasks);
-
     let cursor = modal.picker_cursor();
     let list_h = list_row.height as usize;
     let inner_w = inner.width as usize;
-    let total_items = filtered_threads.len() + 1;
+
+    // Do not build metadata and formatted titles for every cached thread. The
+    // picker can hold hundreds of summaries; only one viewport is rendered.
+    // Filter to stable indices first, then format the visible window below.
+    let query = modal.command_query();
+    let filtered_indices =
+        filtered_thread_indices(chat, modal, subagents, &goal_index, &workspace_index, query);
+    let total_items = filtered_indices.len() + 1;
     let (visible_start, visible_len) = visible_window(cursor, total_items, list_h);
+    let visible_threads = filtered_indices
+        .iter()
+        .skip(visible_start.saturating_sub(1))
+        .take(visible_len)
+        .filter_map(|index| chat.threads().get(*index))
+        .collect::<Vec<_>>();
+    let status_index = ThreadPickerStatusIndex::from_state_for_threads(
+        chat,
+        tasks,
+        visible_threads.iter().copied(),
+    );
 
     let list_items: Vec<ListItem> = (0..list_h)
         .map(|i| {
@@ -392,9 +401,8 @@ pub fn render_for_workspace(
                         ]))
                     }
                 } else {
-                    let thread_idx = absolute_index - 1;
-                    if thread_idx < filtered_threads.len() {
-                        let thread = filtered_threads[thread_idx];
+                    let visible_index = absolute_index.saturating_sub(visible_start.max(1));
+                    if let Some(thread) = visible_threads.get(visible_index).copied() {
                         let is_selected = cursor == absolute_index;
                         let is_active = active_id == Some(thread.id.as_str());
 
@@ -504,6 +512,56 @@ pub fn hit_test(
     let tasks = TaskState::default();
     let workspace = WorkspaceState::new();
     hit_test_for_workspace(area, chat, modal, subagents, &tasks, &workspace, mouse)
+}
+
+fn filtered_thread_indices(
+    chat: &ChatState,
+    modal: &ModalState,
+    subagents: &SubAgentsState,
+    goal_index: &GoalThreadIndex,
+    workspace_index: &WorkspaceThreadIndex,
+    query: &str,
+) -> Vec<usize> {
+    chat.threads()
+        .iter()
+        .enumerate()
+        .filter(|(_, thread)| !is_hidden_handoff_thread(thread))
+        .filter(|(_, thread)| match modal.thread_picker_tab() {
+            ThreadPickerTab::Swarog => {
+                !is_rarog_thread(thread)
+                    && !is_internal_thread(thread)
+                    && !is_gateway_thread(thread)
+                    && !is_weles_thread(thread)
+                    && !is_workspace_thread_with_index(thread, Some(workspace_index))
+                    && !is_goal_thread_with_index(thread, Some(goal_index))
+                    && !is_playground_thread(thread)
+                    && is_svarog_thread(thread)
+            }
+            ThreadPickerTab::Rarog => is_rarog_thread(thread),
+            ThreadPickerTab::Weles => !is_playground_thread(thread) && is_weles_thread(thread),
+            ThreadPickerTab::Goals => {
+                !is_workspace_thread_with_index(thread, Some(workspace_index))
+                    && is_goal_thread_with_index(thread, Some(goal_index))
+            }
+            ThreadPickerTab::Workspace => {
+                is_workspace_thread_with_index(thread, Some(workspace_index))
+            }
+            ThreadPickerTab::Playgrounds => is_playground_thread(thread),
+            ThreadPickerTab::Internal => is_internal_thread(thread),
+            ThreadPickerTab::Gateway => is_gateway_thread(thread),
+            ThreadPickerTab::Agent(ref agent_id) => thread_matches_agent_tab(
+                thread,
+                agent_id,
+                subagents,
+                Some(goal_index),
+                Some(workspace_index),
+            ),
+        })
+        .filter(|(_, thread)| {
+            thread_matches_query(thread, query, Some(goal_index), Some(workspace_index))
+        })
+        .map(|(index, _)| index)
+        .collect()
 }
 
 fn thread_picker_spinner_frame(tick_counter: u64) -> &'static str {

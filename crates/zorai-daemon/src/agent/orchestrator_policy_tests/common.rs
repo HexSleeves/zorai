@@ -316,6 +316,7 @@ pub(super) fn task_fixture(thread_id: &str) -> AgentTask {
             details: Some("same command failed".to_string()),
             attempt: 1,
         }],
+        completion_contract: None,
         tool_whitelist: None,
         tool_blacklist: None,
         override_provider: None,

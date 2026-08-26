@@ -66,28 +66,14 @@ pub(super) fn idle_tick_does_not_request_redraw() {
 }
 
 #[test]
-pub(super) fn activity_tick_redraws_only_when_spinner_frame_changes() {
+pub(super) fn activity_state_does_not_force_spinner_repaints() {
     let (mut model, _daemon_rx) = make_model_with_daemon_rx();
     model.connected = true;
     model.agent_config_loaded = true;
     model.agent_activity = Some("Thinking".to_string());
 
-    assert!(
-        !model.on_tick(),
-        "activity ticks between spinner frames should not redraw"
-    );
-    assert!(
-        !model.on_tick(),
-        "activity ticks between spinner frames should not redraw"
-    );
-    assert!(
-        !model.on_tick(),
-        "activity ticks between spinner frames should not redraw"
-    );
-    assert!(
-        model.on_tick(),
-        "activity ticks should redraw when the spinner frame changes"
-    );
+    assert!(!model.wants_fast_tick());
+    assert!(!model.on_tick_elapsed(20), "unchanged activity state must wait for an event-driven redraw");
 }
 
 #[test]
@@ -170,7 +156,7 @@ pub(super) fn streaming_chat_wants_fast_tick_even_without_footer_activity() {
 }
 
 #[test]
-pub(super) fn live_goal_view_redraws_on_animation_tick() {
+pub(super) fn live_goal_view_is_event_driven_instead_of_repainting_for_animation() {
     let (mut model, _daemon_rx) = make_model_with_daemon_rx();
     model.connected = true;
     model.agent_config_loaded = true;
@@ -203,13 +189,31 @@ pub(super) fn live_goal_view_redraws_on_animation_tick() {
     });
 
     assert!(
-        model.wants_fast_tick(),
-        "live goal view animations should keep the loop on the fast cadence"
+        !model.wants_fast_tick(),
+        "live goal progress must not keep the whole TUI on the fast animation cadence"
     );
     assert!(
-        model.on_tick(),
-        "live goal view animations should request redraw when their tick frame changes"
+        !model.on_tick(),
+        "an unchanged live goal must wait for daemon state updates instead of repainting"
     );
+}
+
+#[test]
+pub(super) fn selected_static_thread_does_not_repaint_for_age_label() {
+    let (mut model, _daemon_rx) = make_model_with_daemon_rx();
+    model.connected = true;
+    model.agent_config_loaded = true;
+    model.next_system_monitor_tick = u64::MAX;
+    model.chat.reduce(chat::ChatAction::ThreadCreated {
+        thread_id: "thread-static".to_string(),
+        title: "Static Thread".to_string(),
+    });
+    model
+        .chat
+        .reduce(chat::ChatAction::SelectThread("thread-static".to_string()));
+
+    assert!(!model.wants_fast_tick());
+    assert!(!model.on_tick_elapsed(10));
 }
 
 #[test]

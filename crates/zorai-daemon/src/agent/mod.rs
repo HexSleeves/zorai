@@ -86,6 +86,7 @@ mod prompt_inspection;
 mod prompt_queue;
 mod provenance;
 mod provider_auth_store;
+mod provider_preflight;
 mod provider_resolution;
 pub mod rate_limiter;
 mod resonance;
@@ -166,7 +167,8 @@ pub(crate) use explanation::*;
 pub(crate) use gateway_health::GatewayConnectionStatus as RuntimeGatewayConnectionStatus;
 use goal_parsing::*;
 pub(in crate::agent) use goal_planner::{
-    parse_goal_verdict_evidence, validate_pass_verdict_evidence, GOAL_VERIFICATION_SOURCE,
+    parse_goal_verdict_evidence, validate_pass_verdict_evidence, GOAL_FINAL_REVIEW_SOURCE,
+    GOAL_VERIFICATION_SOURCE,
 };
 use goal_routing::*;
 use honcho::*;

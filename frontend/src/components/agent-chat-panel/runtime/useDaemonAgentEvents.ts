@@ -30,6 +30,7 @@ import {
   handleWorkspaceCommand,
 } from "./daemonEventHandlers";
 import { finalizeStreamingAssistantMessages } from "./threadTurnState";
+import { completeThreadStopBarrier, hasThreadStopBarrier } from "./threadStopBarrier";
 import {
   applyDaemonRetryStatusEvent,
   clearThreadRetryStatus,
@@ -284,8 +285,14 @@ export function useDaemonAgentEvents({
     const unsubscribe = zorai.onAgentEvent((event: any) => {
       if (!event?.type) return;
 
+      const terminalStopEvent = event.type === "turn_interrupted"
+        || event.type === "done"
+        || event.type === "error";
       const allowThreadlessFallback = !isThreadlessDaemonStreamEvent(event)
-        || hasOpenLocalAssistantStream(daemonLocalThreadRef.current);
+        || hasOpenLocalAssistantStream(daemonLocalThreadRef.current)
+        || (terminalStopEvent && Boolean(
+          daemonLocalThreadRef.current && hasThreadStopBarrier(daemonLocalThreadRef.current),
+        ));
       const tid = resolveDaemonEventLocalThreadId(
         event,
         daemonLocalThreadRef.current,
@@ -336,6 +343,7 @@ export function useDaemonAgentEvents({
             replaceMessageIdAtTail(tid, event.message_id, (m) => m.role === "assistant");
           }
           finalizeStreamingAssistantMessages(tid);
+          completeThreadStopBarrier(tid);
           break;
         }
         case "turn_interrupted": {
@@ -344,6 +352,7 @@ export function useDaemonAgentEvents({
           flushStreamDeltas();
           useAgentMissionStore.getState().setSharedCursorMode("idle");
           finalizeStreamingAssistantMessages(tid);
+          completeThreadStopBarrier(tid);
           break;
         }
         case "tool_call": {
@@ -467,6 +476,7 @@ export function useDaemonAgentEvents({
           ensureStreamingAssistantMessage(tid);
           updateLastAssistantMessage(tid, `Error: ${event.message}`, false);
           finalizeStreamingAssistantMessages(tid);
+          completeThreadStopBarrier(tid);
           break;
         }
         case "thread_created": {

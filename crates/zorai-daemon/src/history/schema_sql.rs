@@ -134,6 +134,7 @@ pub(super) fn base_schema_sql() -> &'static str {
                 success_criteria     TEXT,
                 max_duration_secs    INTEGER,
                 supervisor_config_json TEXT,
+                completion_contract_json TEXT,
                 deleted_at           INTEGER
             );
             CREATE INDEX IF NOT EXISTS idx_agent_tasks_status ON agent_tasks(status, priority, created_at DESC);

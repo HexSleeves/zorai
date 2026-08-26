@@ -1414,7 +1414,13 @@ async fn prepare_tool_execution(
         effective_tool_name.as_str(),
         &effective_args,
     );
-    let governance_decision = if !crate::agent::weles_governance::should_guard_classification(
+    let governance_decision = if matches!(security_level, SecurityLevel::Yolo) {
+        // YOLO is an operator-selected no-supervision mode. Do not spawn a
+        // WELES review task, create an approval, or attach a synthetic
+        // supervision element to a goal. The ordinary tool result/audit trail
+        // remains the source of execution visibility.
+        crate::agent::weles_governance::direct_allow_decision(governance_classification.class)
+    } else if !crate::agent::weles_governance::should_guard_classification(
         &governance_classification,
     ) {
         crate::agent::weles_governance::direct_allow_decision(governance_classification.class)
@@ -1461,52 +1467,60 @@ async fn prepare_tool_execution(
             )
             .await
             {
-                Ok(weles_task) => match agent
-                    .send_internal_task_message(
-                        &active_scope_id,
-                        crate::agent::agent_identity::WELES_AGENT_ID,
-                        &weles_task.id,
-                        None,
-                        Some("daemon"),
-                        &crate::agent::weles_governance::build_weles_runtime_review_message(
+                Ok(weles_task) => {
+                    let review_outcome = agent
+                        .send_internal_task_message(
+                            &active_scope_id,
+                            crate::agent::agent_identity::WELES_AGENT_ID,
+                            &weles_task.id,
+                            None,
+                            Some("daemon"),
+                            &crate::agent::weles_governance::build_weles_runtime_review_message(
+                                &governance_classification,
+                                security_level,
+                            ),
+                        )
+                        .await;
+                    finalize_synchronous_weles_review_task(
+                        agent,
+                        &weles_task,
+                        review_outcome.as_ref(),
+                    )
+                    .await;
+                    match review_outcome {
+                        Ok(outcome) => {
+                            let response = agent
+                                .latest_assistant_message_text(&outcome.thread_id)
+                                .await
+                                .unwrap_or_default();
+                            if let Some(runtime_review) =
+                                crate::agent::weles_governance::parse_weles_runtime_review_response(
+                                    &response,
+                                )
+                            {
+                                let runtime_review = crate::agent::weles_governance::normalize_runtime_verdict_for_classification(
+                                    &governance_classification,
+                                    security_level,
+                                    runtime_review,
+                                );
+                                crate::agent::weles_governance::reviewed_runtime_decision(
+                                    &governance_classification,
+                                    security_level,
+                                    runtime_review,
+                                )
+                            } else {
+                                crate::agent::weles_governance::guarded_fallback_decision(
+                                    &governance_classification,
+                                    security_level,
+                                )
+                            }
+                        }
+                        Err(_) => crate::agent::weles_governance::guarded_fallback_decision(
                             &governance_classification,
                             security_level,
                         ),
-                    )
-                    .await
-                {
-                    Ok(outcome) => {
-                        let response = agent
-                            .latest_assistant_message_text(&outcome.thread_id)
-                            .await
-                            .unwrap_or_default();
-                        if let Some(runtime_review) =
-                            crate::agent::weles_governance::parse_weles_runtime_review_response(
-                                &response,
-                            )
-                        {
-                            let runtime_review = crate::agent::weles_governance::normalize_runtime_verdict_for_classification(
-                                &governance_classification,
-                                security_level,
-                                runtime_review,
-                            );
-                            crate::agent::weles_governance::reviewed_runtime_decision(
-                                &governance_classification,
-                                security_level,
-                                runtime_review,
-                            )
-                        } else {
-                            crate::agent::weles_governance::guarded_fallback_decision(
-                                &governance_classification,
-                                security_level,
-                            )
-                        }
                     }
-                    Err(_) => crate::agent::weles_governance::guarded_fallback_decision(
-                        &governance_classification,
-                        security_level,
-                    ),
-                },
+                }
                 Err(_) => crate::agent::weles_governance::guarded_fallback_decision(
                     &governance_classification,
                     security_level,
@@ -1555,22 +1569,6 @@ async fn prepare_tool_execution(
     }
     if trusted_weles_internal_task && effective_tool_name.as_str() == tool_names::BASH_COMMAND {
         if let serde_json::Value::Object(ref mut map) = effective_args {
-            map.insert(
-                "__weles_force_headless".to_string(),
-                serde_json::Value::Bool(true),
-            );
-        }
-    }
-    if matches!(
-        governance_decision.class,
-        crate::agent::weles_governance::WelesGovernanceClass::RejectBypass
-    ) && matches!(security_level, SecurityLevel::Yolo)
-    {
-        if let serde_json::Value::Object(ref mut map) = effective_args {
-            map.insert(
-                "security_level".to_string(),
-                serde_json::Value::String("moderate".to_string()),
-            );
             map.insert(
                 "__weles_force_headless".to_string(),
                 serde_json::Value::Bool(true),
@@ -1823,6 +1821,9 @@ async fn dispatch_tool_execution(
             execute_start_goal_run(args, agent, thread_id, session_id).await
         }
         tool_names::LIST_GOAL_RUNS => execute_list_goal_runs(&prepared.args, agent).await,
+        tool_names::SUBMIT_GOAL_FINAL_REVIEW => {
+            execute_submit_goal_final_review(args, agent, task_id).await
+        }
         tool_names::SUBMIT_GOAL_STEP_VERDICT => {
             execute_submit_goal_step_verdict(args, agent, task_id).await
         }

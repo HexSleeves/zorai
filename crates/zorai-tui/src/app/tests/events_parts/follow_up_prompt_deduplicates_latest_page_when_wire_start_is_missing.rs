@@ -425,10 +425,7 @@ fn prompt_during_text_stream_without_running_tools_waits_for_done() {
             assert_eq!(thread_id, "thread-1");
             assert_eq!(content, "switch to the auth bug instead");
         }
-        other => panic!(
-            "expected enqueue while text is streaming, got {:?}",
-            other
-        ),
+        other => panic!("expected enqueue while text is streaming, got {:?}", other),
     }
 
     model.handle_client_event(ClientEvent::Done {
@@ -489,5 +486,8 @@ fn daemon_prompt_queue_event_replaces_operator_items_for_thread() {
 
     assert_eq!(model.queued_prompts.len(), 1);
     assert_eq!(model.queued_prompts[0].text, "from daemon");
-    assert_eq!(model.queued_prompts[0].prompt_id.as_deref(), Some("prompt-1"));
+    assert_eq!(
+        model.queued_prompts[0].prompt_id.as_deref(),
+        Some("prompt-1")
+    );
 }

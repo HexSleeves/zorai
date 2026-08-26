@@ -717,6 +717,18 @@ impl AgentEngine {
         removed
     }
 
+    pub(in crate::agent) async fn clear_deferred_visible_thread_continuations_for_threads(
+        &self,
+        thread_ids: &std::collections::HashSet<String>,
+    ) -> usize {
+        let mut queued = self.deferred_visible_thread_continuations.lock().await;
+        thread_ids
+            .iter()
+            .filter_map(|thread_id| queued.remove(thread_id))
+            .map(|items| items.len())
+            .sum()
+    }
+
     pub(crate) async fn deferred_visible_thread_continuations_for(
         &self,
         thread_id: &str,
@@ -725,10 +737,26 @@ impl AgentEngine {
         queued.get(thread_id).cloned().unwrap_or_default()
     }
 
+    async fn goal_for_execution_thread(&self, thread_id: &str) -> Option<GoalRun> {
+        let refs = self
+            .history
+            .list_goal_run_thread_refs_for_thread_ids(&[thread_id.to_string()])
+            .await
+            .ok()?;
+        let goal_id = refs.into_iter().next()?.id;
+        self.get_goal_run(&goal_id).await
+    }
+
     pub(in crate::agent) async fn flush_deferred_visible_thread_continuations(
         &self,
         thread_id: &str,
     ) -> Result<()> {
+        if let Some(goal) = self.goal_for_execution_thread(thread_id).await {
+            if goal.status == GoalRunStatus::Paused || goal.status.is_terminal() {
+                tracing::debug!(goal_run_id = %goal.id, thread_id, "not flushing deferred continuation for paused or terminal goal");
+                return Ok(());
+            }
+        }
         {
             // Mirror the loop's stream-state check below: a live stream
             // blocks the flush, but a cancelled-but-not-yet-removed

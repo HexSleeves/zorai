@@ -125,7 +125,7 @@ describe("goalWorkspaceModel", () => {
       expandedStepIds: new Set(["step-1"]),
       promptExpanded: false,
       selectedStepId: "step-1",
-      selectedCenterIndex: 0,
+      detailsExpanded: true,
     });
 
     expect(model.summaryTitle).toBe("Goal Mission Control");
@@ -161,6 +161,46 @@ describe("goalWorkspaceModel", () => {
     expect(model.footerActions.find((action) => action.id === "retry")?.enabled).toBe(true);
   });
 
+  it("shows live work and per-step execution threads", () => {
+    const model = buildGoalWorkspaceModel(baseRun, {
+      mode: "progress",
+      expandedStepIds: new Set(["step-1"]),
+      detailsExpanded: true,
+      tasks: [{
+        id: "task-live",
+        title: "Implement ledger",
+        description: "",
+        status: "in_progress",
+        priority: "high",
+        progress: 42,
+        created_at: 2,
+        source: "goal_step",
+        goal_run_id: "goal-1",
+        goal_step_id: "step-1",
+        goal_step_title: "[HIGH] Pin the contract and cut the landing ledger",
+        thread_id: "thread-step-1",
+        logs: [{ id: "log-1", timestamp: 3, level: "info", phase: "execution", message: "editing goal UI", attempt: 0 }],
+      }],
+    });
+
+    expect(model.planRows.find((row) => row.id === "task-task-live")).toMatchObject({
+      text: "Implement ledger",
+      targetThreadId: "thread-step-1",
+      meta: "Working 42% · editing goal UI",
+    });
+    expect(model.centerRows.find((row) => row.id === "live-task-live")?.targetThreadId).toBe("thread-step-1");
+    const dossier = buildGoalWorkspaceModel(baseRun, {
+      mode: "dossier",
+      selectedStepId: "step-1",
+      detailsExpanded: true,
+      tasks: model.planRows.length ? [{
+        id: "task-live", title: "Implement ledger", description: "", status: "in_progress", priority: "high", progress: 42,
+        created_at: 2, source: "goal_step", goal_run_id: "goal-1", goal_step_id: "step-1", thread_id: "thread-step-1",
+      }] : [],
+    });
+    expect(dossier.detailSections.find((section) => section.title === "Related Tasks")?.rows[0].targetThreadId).toBe("thread-step-1");
+  });
+
   it("maps a selected flattened timeline row back to its owning event", () => {
     const run: GoalRun = {
       ...baseRun,
@@ -177,7 +217,7 @@ describe("goalWorkspaceModel", () => {
         },
       ],
     };
-    const model = buildGoalWorkspaceModel(run, { mode: "dossier", selectedCenterIndex: 1 });
+    const model = buildGoalWorkspaceModel(run, { mode: "dossier", selectedCenterIndex: 1, detailsExpanded: true });
 
     expect(model.centerRows[1]).toMatchObject({
       id: "event-with-hyphens-details",
@@ -192,19 +232,20 @@ describe("goalWorkspaceModel", () => {
   });
 
   it("switches center and detail panes by workspace mode", () => {
-    expect(buildGoalWorkspaceModel(baseRun, { mode: "usage" }).centerTitle).toBe("Usage");
-    expect(buildGoalWorkspaceModel(baseRun, { mode: "usage" }).detailTitle).toBe("Usage details");
-    expect(buildGoalWorkspaceModel(baseRun, { mode: "active-agent" }).centerTitle).toBe("Active agent");
-    expect(buildGoalWorkspaceModel(baseRun, { mode: "threads" }).detailTitle).toBe("Thread details");
-    expect(buildGoalWorkspaceModel(baseRun, { mode: "needs-attention" }).centerTitle).toBe("Needs attention");
+    expect(buildGoalWorkspaceModel(baseRun, { mode: "usage", detailsExpanded: true }).centerTitle).toBe("Usage");
+    expect(buildGoalWorkspaceModel(baseRun, { mode: "usage", detailsExpanded: true }).detailTitle).toBe("Usage details");
+    expect(buildGoalWorkspaceModel(baseRun, { mode: "active-agent", detailsExpanded: true }).centerTitle).toBe("Active agent");
+    expect(buildGoalWorkspaceModel(baseRun, { mode: "threads", detailsExpanded: true }).detailTitle).toBe("Thread details");
+    expect(buildGoalWorkspaceModel(baseRun, { mode: "needs-attention", detailsExpanded: true }).centerTitle).toBe("Needs attention");
   });
 
   it("marks linked threads and projection files as actionable targets", () => {
-    const threads = buildGoalWorkspaceModel(baseRun, { mode: "threads" });
+    const threads = buildGoalWorkspaceModel(baseRun, { mode: "threads", detailsExpanded: true });
     expect(threads.centerRows.find((row) => row.targetThreadId === "thread-active")?.text).toContain("Main agent");
 
     const files = buildGoalWorkspaceModel(baseRun, {
       mode: "files",
+      detailsExpanded: true,
       projectionFiles: [
         {
           relativePath: "dossier.json",

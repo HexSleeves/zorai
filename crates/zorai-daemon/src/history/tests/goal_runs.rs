@@ -144,6 +144,7 @@ fn sample_agent_task_record(id: &str, status: TaskStatus, created_at: u64) -> Ag
         lane_id: None,
         last_error: None,
         logs: Vec::new(),
+        completion_contract: None,
         tool_whitelist: None,
         tool_blacklist: None,
         context_budget_tokens: None,
@@ -215,6 +216,8 @@ async fn init_schema_migrates_legacy_agent_tasks_before_goal_run_index() -> Resu
         let has_success_criteria = table_has_column_sync(conn, "agent_tasks", "success_criteria")?;
         let has_max_duration = table_has_column_sync(conn, "agent_tasks", "max_duration_secs")?;
         let has_supervisor_config = table_has_column_sync(conn, "agent_tasks", "supervisor_config_json")?;
+        let has_completion_contract =
+            table_has_column_sync(conn, "agent_tasks", "completion_contract_json")?;
         let index_name: Option<String> = conn
             .query_row(
                 "SELECT name FROM sqlite_master WHERE type = 'index' AND name = 'idx_agent_tasks_goal_run'",
@@ -251,6 +254,7 @@ async fn init_schema_migrates_legacy_agent_tasks_before_goal_run_index() -> Resu
             has_success_criteria,
             has_max_duration,
             has_supervisor_config,
+            has_completion_contract,
             index_name,
             parent_thread_subagent_index_name,
             quiet_recovery_index_name,
@@ -271,13 +275,14 @@ async fn init_schema_migrates_legacy_agent_tasks_before_goal_run_index() -> Resu
     assert!(has_cols.11);
     assert!(has_cols.12);
     assert!(has_cols.13);
-    assert_eq!(has_cols.14.as_deref(), Some("idx_agent_tasks_goal_run"));
+    assert!(has_cols.14);
+    assert_eq!(has_cols.15.as_deref(), Some("idx_agent_tasks_goal_run"));
     assert_eq!(
-        has_cols.15.as_deref(),
+        has_cols.16.as_deref(),
         Some("idx_agent_tasks_parent_thread_subagent_status")
     );
     assert_eq!(
-        has_cols.16.as_deref(),
+        has_cols.17.as_deref(),
         Some("idx_agent_tasks_goal_run_status_quiet")
     );
 
@@ -337,6 +342,7 @@ async fn agent_task_subagent_metadata_round_trips() -> Result<()> {
             details: Some("tool loop A→B→A→B".to_string()),
             attempt: 1,
         }],
+        completion_contract: None,
         tool_whitelist: Some(vec!["read_file".to_string(), "search_files".to_string()]),
         tool_blacklist: Some(vec!["bash_command".to_string()]),
         context_budget_tokens: Some(20_000),

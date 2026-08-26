@@ -19,6 +19,7 @@ impl TaskState {
             heartbeat_items: Vec::new(),
             last_digest: None,
             goal_thread_ids_cache: std::cell::RefCell::new(None),
+            goal_thread_ids_by_run_cache: std::cell::RefCell::new(std::collections::HashMap::new()),
         }
     }
 
@@ -190,10 +191,22 @@ impl TaskState {
     }
 
     pub fn goal_thread_ids(&self, goal_run_id: &str) -> Vec<String> {
+        if let Some((revision, cached)) =
+            self.goal_thread_ids_by_run_cache.borrow().get(goal_run_id)
+        {
+            if *revision == self.tasks_revision {
+                return cached.clone();
+            }
+        }
         let Some(run) = self.goal_run_by_id(goal_run_id) else {
             return Vec::new();
         };
-        goal_step_todo_thread_ids(self, run)
+        let computed = goal_step_todo_thread_ids(self, run);
+        self.goal_thread_ids_by_run_cache.borrow_mut().insert(
+            goal_run_id.to_string(),
+            (self.tasks_revision, computed.clone()),
+        );
+        computed
     }
 
     pub fn checkpoints_for_goal_run(&self, goal_run_id: &str) -> &[GoalRunCheckpointSummary] {
@@ -478,6 +491,9 @@ impl TaskState {
                 self.goal_step_live_todos
                     .retain(|key, _| !key.starts_with(&prefix));
                 self.goal_thread_ids.remove(&goal_run_id);
+                self.goal_thread_ids_by_run_cache
+                    .borrow_mut()
+                    .remove(&goal_run_id);
                 self.tasks
                     .retain(|task| task.goal_run_id.as_deref() != Some(goal_run_id.as_str()));
                 self.tasks_revision = self.tasks_revision.wrapping_add(1);

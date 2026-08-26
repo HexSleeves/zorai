@@ -73,9 +73,10 @@ impl DaemonClient {
     /// agent. The TUI caches the result and refreshes on demand (shift+r) or
     /// when a `ThreadCreated` event for the same filter arrives.
     pub fn refresh_threads_for_agent(&self, agent_filter: Option<String>) -> Result<()> {
+        const TUI_THREAD_LIST_LIMIT: usize = 250;
         self.send(ClientMessage::AgentListThreads {
-            limit: None,
-            offset: None,
+            limit: Some(TUI_THREAD_LIST_LIMIT),
+            offset: Some(0),
             include_internal: true,
             agent_filter,
         })

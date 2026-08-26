@@ -98,6 +98,7 @@ async fn send_message_request_uses_spawned_persona_identity_in_continuity_summar
             lane_id: None,
             last_error: None,
             logs: Vec::new(),
+            completion_contract: None,
             tool_whitelist: None,
             tool_blacklist: None,
             override_provider: None,

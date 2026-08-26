@@ -80,6 +80,16 @@ impl TuiModel {
         self.goal_workspace.set_selected_detail_row(0);
         self.goal_workspace.set_timeline_scroll(0);
         self.goal_workspace.set_detail_scroll(0);
+        if changed && mode == crate::state::goal_workspace::GoalWorkspaceMode::Threads {
+            if let MainPaneView::Task(sidebar::SidebarItemTarget::GoalRun { goal_run_id, .. }) =
+                &self.main_pane_view
+            {
+                // Warm the revision cache at the navigation boundary. The
+                // render pass then consumes a stable thread list instead of
+                // discovering the recursive closure several times.
+                let _ = self.tasks.goal_thread_ids(goal_run_id);
+            }
+        }
         changed
     }
 

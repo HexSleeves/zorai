@@ -74,6 +74,38 @@ impl AgentEngine {
         self.operation_wakeups.lock().await.len()
     }
 
+    pub(in crate::agent) async fn remove_operation_wakeups_for_threads(
+        &self,
+        thread_ids: &std::collections::HashSet<String>,
+        cancel_operations: bool,
+    ) -> usize {
+        let removed = {
+            let mut wakeups = self.operation_wakeups.lock().await;
+            let ids = wakeups
+                .values()
+                .filter(|wakeup| thread_ids.contains(&wakeup.thread_id))
+                .map(|wakeup| wakeup.operation_id.clone())
+                .collect::<Vec<_>>();
+            for operation_id in &ids {
+                wakeups.remove(operation_id);
+            }
+            ids
+        };
+        if cancel_operations {
+            for operation_id in &removed {
+                if self
+                    .session_manager
+                    .cancel_queued_managed_command(operation_id)
+                    .await
+                {
+                    continue;
+                }
+                let _ = crate::agent::tool_executor::cancel_headless_operation(operation_id);
+            }
+        }
+        removed.len()
+    }
+
     pub(in crate::agent) async fn supervise_operation_completion_wakeups(&self) -> Result<()> {
         // Piggyback the ask_parent timeout sweep on this periodic pass so an
         // expired blocking question unblocks the child without a full

@@ -66,9 +66,13 @@ pub(crate) struct ThreadPickerStatusIndex {
 }
 
 impl ThreadPickerStatusIndex {
-    pub(super) fn from_state(chat: &ChatState, tasks: &TaskState) -> Self {
+    pub(super) fn from_state_for_threads<'a>(
+        chat: &ChatState,
+        tasks: &TaskState,
+        threads: impl IntoIterator<Item = &'a AgentThread>,
+    ) -> Self {
         let mut index = Self::from_tasks(tasks);
-        for thread in chat.threads() {
+        for thread in threads {
             if chat.is_thread_streaming(&thread.id) {
                 index.set_status(&thread.id, ThreadPickerStatus::Running);
             } else if latest_assistant_message_is_stopped(thread) {
@@ -76,6 +80,11 @@ impl ThreadPickerStatusIndex {
             }
         }
         index
+    }
+
+    #[cfg(test)]
+    pub(super) fn from_state(chat: &ChatState, tasks: &TaskState) -> Self {
+        Self::from_state_for_threads(chat, tasks, chat.threads())
     }
 
     pub(super) fn status_for(&self, thread: &AgentThread) -> ThreadPickerStatus {

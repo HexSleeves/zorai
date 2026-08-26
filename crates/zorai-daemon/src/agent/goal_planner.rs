@@ -9,7 +9,9 @@ mod progress_impl;
 #[path = "goal_planner/stagnation.rs"]
 pub(in crate::agent) mod stagnation;
 
-pub(super) const GOAL_FINAL_REVIEW_SOURCE: &str = "goal_final_review";
+pub(in crate::agent) const GOAL_FINAL_REVIEW_SOURCE: &str = "goal_final_review";
+pub(in crate::agent) const GOAL_FINAL_REVIEW_VERDICT_STATE_PREFIX: &str =
+    "goal_final_review_verdict:";
 pub(in crate::agent) const GOAL_VERIFICATION_SOURCE: &str = "goal_verification";
 pub(in crate::agent) const GOAL_PROGRESS_SUPERVISION_SOURCE: &str = "goal_progress_supervision";
 const GOAL_REVIEWER_ROLE_ID: &str = "reviewer";
@@ -17,6 +19,10 @@ const GOAL_REVIEW_VERDICT_PASS: &str = "VERDICT: PASS";
 const GOAL_REVIEW_VERDICT_FAIL: &str = "VERDICT: FAIL";
 const GOAL_STEP_VERDICT_STATE_PREFIX: &str = "goal_step_verdict:";
 const GOAL_STEP_VERDICT_REQUIRED_STATE_PREFIX: &str = "goal_step_verdict_required:";
+
+pub(in crate::agent) fn goal_final_review_verdict_state_key(task_id: &str) -> String {
+    format!("{GOAL_FINAL_REVIEW_VERDICT_STATE_PREFIX}{task_id}")
+}
 
 pub(in crate::agent) fn goal_step_verdict_state_key(task_id: &str) -> String {
     format!("{GOAL_STEP_VERDICT_STATE_PREFIX}{task_id}")
@@ -950,6 +956,32 @@ impl AgentEngine {
             current_task.goal_run_title = Some(snapshot.title.clone());
             current_task.goal_step_id = Some(step.id.clone());
             current_task.goal_step_title = Some(step.title.clone());
+            if let Some(contract) = current_task.completion_contract.as_mut() {
+                contract.objective = step.instructions.clone();
+                if !contract.required_deliverables.iter().any(|requirement| {
+                    requirement.description == "required goal step completion marker"
+                }) {
+                    contract
+                        .required_deliverables
+                        .push(TaskCompletionRequirement {
+                            description: "required goal step completion marker".into(),
+                            completed: false,
+                            evidence: None,
+                        });
+                }
+                contract
+                    .verification_requirements
+                    .push(TaskCompletionRequirement {
+                        description: format!(
+                            "goal step success criteria: {}",
+                            step.success_criteria
+                        ),
+                        completed: true,
+                        evidence: Some(
+                            "delegated to the goal verifier after implementation completion".into(),
+                        ),
+                    });
+            }
             if let Some(ack_id) = autonomy_acknowledgment_id.as_ref() {
                 current_task.status = TaskStatus::AwaitingApproval;
                 current_task.awaiting_approval_id = Some(ack_id.clone());

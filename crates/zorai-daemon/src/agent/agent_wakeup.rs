@@ -125,6 +125,27 @@ impl AgentEngine {
         removed
     }
 
+    pub(in crate::agent) async fn cancel_wakeups_for_threads(
+        &self,
+        thread_ids: &std::collections::HashSet<String>,
+    ) -> usize {
+        let ids = {
+            let wakeups = self.timer_wakeups.lock().await;
+            wakeups
+                .values()
+                .filter(|wakeup| thread_ids.contains(&wakeup.thread_id))
+                .map(|wakeup| wakeup.id.clone())
+                .collect::<Vec<_>>()
+        };
+        for id in &ids {
+            self.timer_wakeups.lock().await.remove(id);
+            if let Err(error) = self.history.delete_agent_wakeup(id).await {
+                tracing::warn!(wakeup_id = %id, %error, "failed to delete descendant wakeup");
+            }
+        }
+        ids.len()
+    }
+
     pub(in crate::agent) async fn cancel_wakeup(&self, wakeup_id: &str) -> bool {
         let wakeup_id = wakeup_id.trim();
         let removed = self.timer_wakeups.lock().await.remove(wakeup_id).is_some();

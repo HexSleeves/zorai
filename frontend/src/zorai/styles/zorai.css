@@ -40,11 +40,11 @@
 .zorai-code-loading { width: 100%; height: 100%; min-height: 360px; display: grid; grid-template-rows: 48px 34px minmax(0, 1fr); overflow: hidden; background: var(--zorai-bg-surface); }
 .zorai-code-loading__toolbar { display: flex; align-items: center; padding: 0 18px; border-bottom: 1px solid var(--zorai-border); background: var(--zorai-bg-panel); }
 .zorai-code-loading__tabs { display: flex; align-items: end; gap: 2px; padding: 5px 10px 0; border-bottom: 1px solid var(--zorai-border); }
-.zorai-code-loading__tabs span { width: 110px; height: 23px; border-radius: 6px 6px 0 0; background: var(--zorai-bg-elevated); }
+.zorai-code-loading__tabs span { width: 110px; height: 23px; border-radius: 6px 6px 0 0; background: color-mix(in srgb, var(--zorai-muted) 22%, var(--zorai-bg-panel)); }
 .zorai-code-loading__tabs span:nth-child(2) { width: 145px; opacity: .72; }
 .zorai-code-loading__tabs span:nth-child(3) { width: 88px; opacity: .5; }
 .zorai-code-loading__editor { display: grid; align-content: start; gap: 12px; padding: 28px 38px; background: linear-gradient(90deg, var(--zorai-bg-panel) 0 52px, transparent 52px); }
-.zorai-code-loading__editor span { display: block; height: 10px; margin-left: 48px; border-radius: 4px; background: linear-gradient(100deg, var(--zorai-bg-elevated) 20%, color-mix(in srgb, var(--zorai-border-strong) 70%, var(--zorai-bg-panel)) 42%, var(--zorai-bg-elevated) 64%); background-size: 220% 100%; animation: zorai-loader-shimmer 1.45s ease-in-out infinite; }
+.zorai-code-loading__editor span { display: block; height: 10px; margin-left: 48px; border-radius: 4px; background: linear-gradient(100deg, color-mix(in srgb, var(--zorai-muted) 22%, var(--zorai-bg-panel)) 20%, color-mix(in srgb, var(--zorai-muted) 42%, var(--zorai-bg-panel)) 42%, color-mix(in srgb, var(--zorai-muted) 22%, var(--zorai-bg-panel)) 64%); background-size: 220% 100%; animation: zorai-loader-shimmer 1.45s ease-in-out infinite; }
 
 .zorai-loading-state { min-width: 0; }
 .zorai-loading-spinner { display: inline-flex; align-items: center; gap: 8px; color: var(--zorai-muted); }
@@ -61,8 +61,9 @@
 .zorai-loading-skeleton { display: grid; gap: 8px; width: 100%; }
 .zorai-loading-skeleton__line {
   max-width: 100%;
+  min-height: 10px;
   border-radius: 6px;
-  background: linear-gradient(100deg, var(--zorai-bg-elevated) 20%, color-mix(in srgb, var(--zorai-border-strong) 72%, var(--zorai-bg-panel)) 42%, var(--zorai-bg-elevated) 64%);
+  background: linear-gradient(100deg, color-mix(in srgb, var(--zorai-muted) 22%, var(--zorai-bg-panel)) 20%, color-mix(in srgb, var(--zorai-muted) 42%, var(--zorai-bg-panel)) 42%, color-mix(in srgb, var(--zorai-muted) 22%, var(--zorai-bg-panel)) 64%);
   background-size: 220% 100%;
   animation: zorai-loader-shimmer 1.45s ease-in-out infinite;
 }
@@ -72,7 +73,7 @@
 .zorai-loading-progress__track { height: 6px; overflow: hidden; border-radius: 999px; background: var(--zorai-bg-elevated); }
 .zorai-loading-progress__bar { height: 100%; border-radius: inherit; background: var(--zorai-accent); transition: width .3s ease; }
 .zorai-thread-list-skeleton { display: grid; gap: 8px; padding-top: 3px; }
-.zorai-thread-list-skeleton__row { padding: 12px; border: 1px solid var(--zorai-border); border-radius: 8px; background: linear-gradient(90deg, var(--zorai-bg-elevated) 20%, color-mix(in srgb, var(--zorai-border-strong) 72%, var(--zorai-bg-panel)) 42%, var(--zorai-bg-elevated) 64%); }
+.zorai-thread-list-skeleton__row { padding: 12px; border: 1px solid var(--zorai-border); border-radius: 8px; background: var(--zorai-bg-panel); }
 .zorai-thread-list-skeleton__row .zorai-loading-skeleton__line:nth-child(1) { height: 13px !important; width: 72% !important; }
 .zorai-thread-list-skeleton__row .zorai-loading-skeleton__line:nth-child(2) { height: 10px !important; width: 92% !important; }
 .zorai-thread-list-skeleton__row .zorai-loading-skeleton__line:nth-child(3) { height: 9px !important; width: 46% !important; }
@@ -85,7 +86,7 @@
 @media (prefers-reduced-motion: reduce) {
   .zorai-loading-spinner__ring { animation-duration: 1.8s; }
   .zorai-loading-skeleton__line,
-  .zorai-code-loading__editor span { animation: none; background: var(--zorai-bg-elevated); }
+  .zorai-code-loading__editor span { animation: none; background: color-mix(in srgb, var(--zorai-muted) 22%, var(--zorai-bg-panel)); }
   .zorai-loading-progress__bar { transition: none; }
 }
 
@@ -1814,6 +1815,16 @@
 @keyframes zorai-thinking-in {
   from { opacity: 0; transform: translateY(4px); }
   to { opacity: 1; transform: translateY(0); }
+}
+
+.zorai-thinking--continued {
+  min-height: 20px;
+  padding-top: 0;
+  padding-left: 8px;
+}
+
+.zorai-thinking--continued .zorai-thinking__label {
+  min-height: 16px;
 }
 
 .zorai-thinking__avatar {

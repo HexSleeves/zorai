@@ -132,7 +132,7 @@ pub(crate) async fn dispatch_part4(
                     .list_threads_filtered(&crate::agent::thread_crud::ThreadListFilter {
                         agent_name: agent_filter,
                         include_internal,
-                        limit: None,
+                        limit: limit.map(|value| value.min(500)),
                         offset: 0,
                         ..crate::agent::thread_crud::ThreadListFilter::default()
                     })

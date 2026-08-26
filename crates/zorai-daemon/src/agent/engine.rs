@@ -249,6 +249,10 @@ pub struct AgentEngine {
     pub(super) aline_startup_last_summary: Mutex<Option<super::aline_startup::AlineStartupSummary>>,
     /// Per-provider circuit breakers for LLM call path gating.
     pub circuit_breakers: Arc<CircuitBreakerRegistry>,
+    /// Locally known provider failures. Populated only from authenticated
+    /// session state or an observed upstream response; preflight never probes.
+    pub(super) provider_availability_signals:
+        RwLock<HashMap<String, super::provider_preflight::KnownProviderAvailabilitySignal>>,
     /// Notifies the run_loop when config changes so heartbeat schedule can be recomputed.
     pub config_notify: tokio::sync::Notify,
     /// Tracks desired-vs-effective runtime config reconciliation progress.
@@ -499,6 +503,7 @@ impl AgentEngine {
             aline_startup_test_repo_roots: Mutex::new(Vec::new()),
             aline_startup_last_summary: Mutex::new(None),
             circuit_breakers,
+            provider_availability_signals: RwLock::new(HashMap::new()),
             config_notify: tokio::sync::Notify::new(),
             config_runtime_projection: Mutex::new(initial_config_runtime_projection),
             learned_check_weights: RwLock::new(HashMap::new()),

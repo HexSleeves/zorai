@@ -1,7 +1,28 @@
 use super::*;
 
+fn enforce_completion_contract_backstop(task: &mut AgentTask) {
+    if task.status != TaskStatus::Completed {
+        return;
+    }
+    let blockers = task.completion_blockers();
+    if blockers.is_empty() {
+        return;
+    }
+    task.status = TaskStatus::Blocked;
+    task.progress = task.progress.min(99);
+    task.completed_at = None;
+    task.blocked_reason = Some(format!(
+        "completion contract remains open: {}",
+        blockers.join("; ")
+    ));
+    if let Some(contract) = task.completion_contract.as_mut() {
+        contract.terminal_status = None;
+    }
+}
+
 fn sanitize_task_for_persistence(task: &AgentTask) -> AgentTask {
     let mut persisted = task.clone();
+    enforce_completion_contract_backstop(&mut persisted);
     if persisted.sub_agent_def_id.as_deref()
         == Some(crate::agent::agent_identity::WELES_BUILTIN_SUBAGENT_ID)
     {
@@ -239,6 +260,7 @@ impl AgentEngine {
         let mut sanitized: Vec<crate::agent::types::AgentTask> = Vec::with_capacity(tasks.len());
         for task in tasks.iter_mut() {
             persist_weles_runtime_context(self, task).await;
+            enforce_completion_contract_backstop(task);
             sanitized.push(sanitize_task_for_persistence(task));
         }
         if let Err(e) = self.history.upsert_agent_tasks_batch(&sanitized).await {

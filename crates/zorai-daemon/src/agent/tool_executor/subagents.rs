@@ -1,6 +1,7 @@
 use super::*;
 use crate::agent::operator_model::SatisfactionAdaptationMode;
 use crate::agent::types::AgentTask;
+use crate::agent::SendMessageOutcome;
 use crate::history::AgentTaskListQuery;
 use std::collections::HashSet;
 
@@ -1062,6 +1063,86 @@ async fn resolve_authenticated_provider_config(
         })
 }
 
+pub(in crate::agent) async fn finalize_synchronous_weles_review_task(
+    agent: &AgentEngine,
+    task: &crate::agent::types::AgentTask,
+    outcome: Result<&SendMessageOutcome, &anyhow::Error>,
+) {
+    let now = now_millis();
+    let (status, summary) = match outcome {
+        Ok(outcome) => (
+            crate::agent::types::TaskStatus::Completed,
+            agent
+                .latest_assistant_message_text(&outcome.thread_id)
+                .await
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| "WELES governance review completed".to_string()),
+        ),
+        Err(error) => (
+            crate::agent::types::TaskStatus::Failed,
+            format!("WELES governance review failed: {error}"),
+        ),
+    };
+
+    let mut updated = task.clone();
+    updated.status = status;
+    updated.progress = 100;
+    updated.completed_at = Some(now);
+    updated.lane_id = None;
+    updated.next_retry_at = None;
+    updated.blocked_reason = None;
+    updated.result = Some(summary.clone());
+    if status == crate::agent::types::TaskStatus::Failed {
+        updated.error = Some(summary.clone());
+        updated.last_error = Some(summary.clone());
+    } else {
+        updated.error = None;
+        updated.last_error = None;
+    }
+    if let Some(contract) = updated.completion_contract.as_mut() {
+        contract.satisfy_requirement(
+            crate::agent::types::SUBAGENT_REPORT_REQUIREMENT_DESCRIPTION,
+            summary.clone(),
+        );
+        contract.terminal_status = Some(status);
+    }
+    updated.logs.push(make_task_log_entry(
+        updated.retry_count,
+        if status == crate::agent::types::TaskStatus::Completed {
+            TaskLogLevel::Info
+        } else {
+            TaskLogLevel::Error
+        },
+        "weles_governance",
+        if status == crate::agent::types::TaskStatus::Completed {
+            "synchronous WELES governance review completed"
+        } else {
+            "synchronous WELES governance review failed"
+        },
+        Some(summary),
+    ));
+
+    {
+        let mut tasks = agent.tasks.lock().await;
+        if let Some(existing) = tasks.iter_mut().find(|entry| entry.id == updated.id) {
+            *existing = updated.clone();
+        }
+    }
+    if let Err(error) = agent.history.upsert_agent_task(&updated).await {
+        tracing::warn!(task_id = %updated.id, "failed to persist synchronous WELES terminal state: {error}");
+    }
+    agent.trusted_weles_tasks.write().await.remove(&updated.id);
+    agent.persist_tasks().await;
+    agent.emit_task_update(
+        &updated,
+        Some(if status == crate::agent::types::TaskStatus::Completed {
+            "WELES governance review completed".to_string()
+        } else {
+            "WELES governance review failed".to_string()
+        }),
+    );
+}
+
 pub(in crate::agent) async fn spawn_weles_internal_subagent(
     agent: &AgentEngine,
     thread_id: &str,
@@ -1088,6 +1169,11 @@ pub(in crate::agent) async fn spawn_weles_internal_subagent(
     } else {
         None
     };
+    if scope == crate::agent::agent_identity::WELES_GOVERNANCE_SCOPE
+        && matches!(security_level, SecurityLevel::Yolo)
+    {
+        anyhow::bail!("YOLO mode disables WELES tool-call supervision");
+    }
     let effective_sub_agents = agent.list_sub_agents().await;
     let def = effective_sub_agents
         .iter()
@@ -1126,14 +1212,21 @@ pub(in crate::agent) async fn spawn_weles_internal_subagent(
             Vec::new(),
             None,
             "subagent",
-            task_snapshot
-                .as_ref()
-                .and_then(|task| task.goal_run_id.clone()),
-            parent_task_id.map(ToOwned::to_owned),
+            None,
+            None,
             Some(thread_id.to_string()),
             Some("daemon".to_string()),
         )
         .await;
+    // Governance is an out-of-band control-plane operation. It must never
+    // become a goal child, inherit a goal step, or participate in goal
+    // progress/completion accounting. Keep the parent thread only for
+    // routing the internal review conversation.
+    subagent.goal_run_title = None;
+    subagent.goal_step_id = None;
+    subagent.goal_step_title = None;
+    subagent.parent_task_id = None;
+    subagent.parent_thread_id = Some(thread_id.to_string());
     subagent.status = crate::agent::types::TaskStatus::InProgress;
     subagent.started_at = Some(now_millis());
     subagent.notify_on_complete = false;
@@ -1173,12 +1266,6 @@ pub(in crate::agent) async fn spawn_weles_internal_subagent(
         trusted.insert(subagent.id.clone());
     }
     agent.persist_tasks().await;
-
-    if let Some(parent_task_id) = parent_task_id {
-        agent
-            .register_subagent_collaboration(parent_task_id, &subagent)
-            .await;
-    }
 
     Ok(subagent)
 }

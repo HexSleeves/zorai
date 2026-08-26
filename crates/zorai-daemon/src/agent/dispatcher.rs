@@ -164,6 +164,17 @@ fn apply_dispatched_task_success_update(
     let budget_exceeded_reason = "execution budget exceeded for this thread".to_string();
     if let Some(report) = outcome.subagent_report.as_ref() {
         task.result = Some(report.summary.clone());
+        if report.status == SubagentReportStatus::Done {
+            if let Some(contract) = task.completion_contract.as_mut() {
+                contract.satisfy_requirement(
+                    crate::agent::types::SUBAGENT_REPORT_REQUIREMENT_DESCRIPTION,
+                    format!("reported summary: {}", report.summary),
+                );
+                contract
+                    .completed_actions
+                    .push("reported usable subagent outcome".into());
+            }
+        }
         match report.status {
             SubagentReportStatus::Done if waiting_for_subagents => {
                 task.status = TaskStatus::Blocked;
@@ -177,12 +188,7 @@ fn apply_dispatched_task_success_update(
                 task.last_error = None;
             }
             SubagentReportStatus::Done => {
-                task.status = TaskStatus::Completed;
-                task.progress = 100;
-                task.completed_at = Some(now);
-                task.blocked_reason = None;
-                task.error = None;
-                task.last_error = None;
+                apply_successful_completion_transition(task, now);
             }
             SubagentReportStatus::Cancelled => {
                 task.status = TaskStatus::Cancelled;
@@ -232,23 +238,24 @@ fn apply_dispatched_task_success_update(
         ));
         return;
     }
-    task.status = if outcome.terminated_for_budget {
-        TaskStatus::BudgetExceeded
+    if outcome.terminated_for_budget {
+        let _ = task.transition_to_terminal(TaskStatus::BudgetExceeded, now);
     } else if waiting_for_subagents {
-        TaskStatus::Blocked
+        task.status = TaskStatus::Blocked;
     } else {
-        TaskStatus::Completed
-    };
+        apply_successful_completion_transition(task, now);
+    }
+    let completion_blocked = task.status == TaskStatus::Blocked && !waiting_for_subagents;
     task.progress = if waiting_for_subagents {
         task.progress.max(90)
+    } else if completion_blocked {
+        task.progress.min(99)
     } else {
         100
     };
-    task.completed_at = if waiting_for_subagents {
-        None
-    } else {
-        Some(now)
-    };
+    if waiting_for_subagents {
+        task.completed_at = None;
+    }
     task.thread_id = Some(outcome.thread_id.clone());
     task.lane_id = None;
     task.blocked_reason = if outcome.terminated_for_budget {
@@ -258,6 +265,8 @@ fn apply_dispatched_task_success_update(
             "waiting for subagents: {}",
             active_child_ids.join(", ")
         ))
+    } else if completion_blocked {
+        task.blocked_reason.clone()
     } else {
         None
     };
@@ -285,17 +294,40 @@ fn apply_dispatched_task_success_update(
             "task waiting for spawned subagents to finish"
         } else if outcome.terminated_for_budget {
             "task stopped after exhausting execution budget"
+        } else if completion_blocked {
+            "task produced progress but completion contract remains open"
         } else if task.retry_count > 0 {
             "task self-healed and completed"
         } else {
             "task completed"
         },
-        if waiting_for_subagents {
+        if waiting_for_subagents || completion_blocked {
             task.blocked_reason.clone()
         } else {
             None
         },
     ));
+}
+
+fn apply_successful_completion_transition(task: &mut AgentTask, now: u64) {
+    match task.transition_to_terminal(TaskStatus::Completed, now) {
+        Ok(()) => {
+            task.blocked_reason = None;
+            task.error = None;
+            task.last_error = None;
+        }
+        Err(reasons) => {
+            task.status = TaskStatus::Blocked;
+            task.progress = task.progress.max(90).min(99);
+            task.completed_at = None;
+            task.blocked_reason = Some(format!(
+                "completion contract remains open: {}",
+                reasons.join("; ")
+            ));
+            task.error = None;
+            task.last_error = None;
+        }
+    }
 }
 
 fn apply_dispatched_task_failure_update(
@@ -403,6 +435,60 @@ impl AgentEngine {
             None => {
                 let tasks = self.tasks.lock().await;
                 tasks.iter().find(|task| task.id == task_id).cloned()
+            }
+        }
+    }
+
+    async fn replay_pending_child_parent_notifications(&self) {
+        let children = self
+            .list_tasks_filtered(&crate::history::AgentTaskListQuery {
+                id: None,
+                status: None,
+                statuses: vec![
+                    "completed".to_string(),
+                    "failed".to_string(),
+                    "cancelled".to_string(),
+                    "budget_exceeded".to_string(),
+                ],
+                source: Some("subagent".to_string()),
+                thread_id: None,
+                thread_ids: Vec::new(),
+                goal_run_id: None,
+                parent_task_id: None,
+                awaiting_approval_id: None,
+                supervisor_config_present: false,
+                exclude_terminal_statuses: false,
+                order_by_recent_activity_desc: true,
+                limit: Some(64),
+                ids: Vec::new(),
+                parent_task_ids: Vec::new(),
+            })
+            .await;
+        for child in children {
+            let pending = child
+                .completion_contract
+                .as_ref()
+                .and_then(|contract| contract.child_result.as_ref())
+                .is_some_and(|result| {
+                    result.parent_notification
+                        == crate::agent::types::ParentNotificationState::Pending
+                        || (result.parent_notification
+                            == crate::agent::types::ParentNotificationState::Delivered
+                            && result.integration_acknowledged_at.is_none())
+                });
+            if pending {
+                let (level, message) = match child.status {
+                    TaskStatus::Completed => (TaskLogLevel::Info, "subagent completed"),
+                    TaskStatus::BudgetExceeded => (TaskLogLevel::Warn, "subagent budget exceeded"),
+                    _ => (TaskLogLevel::Error, "subagent failed"),
+                };
+                self.record_subagent_outcome_on_parent(
+                    &child,
+                    level,
+                    message,
+                    child.result.clone().or(child.last_error.clone()),
+                )
+                .await;
             }
         }
     }
@@ -855,6 +941,28 @@ impl AgentEngine {
                 }
             }
 
+            if let Some(review_task) = self.latest_goal_final_review_task(goal_run_id).await {
+                match review_task.status {
+                    TaskStatus::Queued
+                    | TaskStatus::InProgress
+                    | TaskStatus::Blocked
+                    | TaskStatus::AwaitingApproval
+                    | TaskStatus::FailedAnalyzing => {
+                        self.resume_existing_goal_final_review(&goal_run, &review_task)
+                            .await?;
+                    }
+                    TaskStatus::Completed | TaskStatus::BudgetExceeded => {
+                        self.handle_goal_run_final_review_completion(goal_run_id, &review_task)
+                            .await?;
+                    }
+                    TaskStatus::Failed | TaskStatus::Cancelled => {
+                        self.handle_goal_run_final_review_failure(goal_run_id, &review_task)
+                            .await?;
+                    }
+                }
+                return Ok(());
+            }
+
             if !self.goal_run_has_active_tasks(goal_run_id).await {
                 self.complete_goal_run(goal_run_id).await?;
             }
@@ -900,6 +1008,7 @@ impl AgentEngine {
     }
 
     pub(super) async fn dispatch_ready_tasks(self: Arc<Self>) -> Result<()> {
+        self.replay_pending_child_parent_notifications().await;
         let now = now_millis();
         let persisted_active_tasks = self
             .list_tasks_filtered(&crate::history::AgentTaskListQuery {
@@ -927,6 +1036,9 @@ impl AgentEngine {
                     tasks.push_back(task);
                 }
             }
+        }
+        if self.apply_provider_preflight_to_ready_tasks().await {
+            self.persist_tasks().await;
         }
         let sessions = self.session_manager.list().await;
         let config = self.config.read().await.clone();
@@ -1092,9 +1204,42 @@ impl AgentEngine {
                 let active_child_ids = self
                     .active_subagent_child_ids_for_dispatcher(&task.id)
                     .await;
+                let goal_marker_evidence = if task.source == "goal_run" {
+                    match (task.goal_run_id.as_deref(), task.goal_step_id.as_deref()) {
+                        (Some(goal_run_id), Some(goal_step_id)) => self
+                            .get_goal_run(goal_run_id)
+                            .await
+                            .and_then(|goal| {
+                                goal.steps
+                                    .iter()
+                                    .position(|step| step.id == goal_step_id)
+                                    .map(|index| {
+                                        crate::agent::goal_dossier::goal_step_completion_marker_path(
+                                            &self.data_dir,
+                                            goal_run_id,
+                                            index,
+                                        )
+                                    })
+                            })
+                            .filter(|path| path.is_file())
+                            .map(|path| path.display().to_string()),
+                        _ => None,
+                    }
+                } else {
+                    None
+                };
                 let updated_live_task = {
                     let mut tasks = self.tasks.lock().await;
                     if let Some(current) = tasks.iter_mut().find(|entry| entry.id == task.id) {
+                        if let (Some(contract), Some(marker)) = (
+                            current.completion_contract.as_mut(),
+                            goal_marker_evidence.as_ref(),
+                        ) {
+                            contract.satisfy_requirement(
+                                "required goal step completion marker",
+                                marker.clone(),
+                            );
+                        }
                         apply_dispatched_task_success_update(
                             current,
                             &outcome,
@@ -1114,6 +1259,15 @@ impl AgentEngine {
                         else {
                             return Ok(());
                         };
+                        if let (Some(contract), Some(marker)) = (
+                            persisted_task.completion_contract.as_mut(),
+                            goal_marker_evidence.as_ref(),
+                        ) {
+                            contract.satisfy_requirement(
+                                "required goal step completion marker",
+                                marker.clone(),
+                            );
+                        }
                         apply_dispatched_task_success_update(
                             &mut persisted_task,
                             &outcome,
@@ -1283,6 +1437,18 @@ impl AgentEngine {
             }
             Err(error) => {
                 let error_text = error.to_string();
+                if let Some(signal) =
+                    crate::agent::provider_preflight::availability_signal_from_observed_failure(
+                        &error_text,
+                    )
+                {
+                    let provider = match task.override_provider.clone() {
+                        Some(provider) => provider,
+                        None => self.config.read().await.provider.clone(),
+                    };
+                    self.record_provider_availability_signal(&provider, signal)
+                        .await;
+                }
                 let provider_quota_failure = task.is_spawned_subagent()
                     && recoverable_goal_pause_reason(&error_text)
                         == Some(RecoverableGoalPauseReason::ProviderCredits);
@@ -1447,6 +1613,126 @@ impl AgentEngine {
         }
     }
 
+    async fn reconcile_child_result_contract(&self, child: &mut AgentTask) {
+        if !child.is_spawned_subagent() {
+            return;
+        }
+        let ask_records = match crate::agent::tool_executor::list_ask_records(self, &child.id).await
+        {
+            Ok(records) => records,
+            Err(error) => {
+                tracing::warn!(child_task_id = %child.id, %error, "failed to reconcile child asks");
+                return;
+            }
+        };
+        let open_ask_ids = ask_records
+            .iter()
+            .filter(|(_, record)| record.state == "open")
+            .filter_map(|(key, _)| key.rsplit_once(':').map(|(_, id)| id.to_string()))
+            .collect::<Vec<_>>();
+        let Some(contract) = child.completion_contract.as_mut() else {
+            return;
+        };
+        let result = contract.child_result.get_or_insert_with(|| {
+            let summary = child
+                .result
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned);
+            crate::agent::types::ChildResultContract {
+                terminal_status: Some(child.status),
+                terminal_version: 1,
+                report_state: if summary.is_some() {
+                    crate::agent::types::ChildReportState::Truncated
+                } else {
+                    crate::agent::types::ChildReportState::Unavailable
+                },
+                summary_chars: summary.as_deref().map(str::len).unwrap_or(0),
+                summary,
+                parent_notification: crate::agent::types::ParentNotificationState::Pending,
+                ..Default::default()
+            }
+        });
+        result.terminal_status = Some(child.status);
+        result.terminal_version = result.terminal_version.max(1);
+        result.open_ask_ids = open_ask_ids;
+        result.asks_reconciled = result.open_ask_ids.is_empty();
+    }
+
+    async fn mark_child_parent_notification(
+        &self,
+        child_task_id: &str,
+        delivered: bool,
+        error: Option<String>,
+    ) {
+        let Some(mut child) = self.task_by_id_for_dispatcher(child_task_id).await else {
+            return;
+        };
+        let Some(result) = child
+            .completion_contract
+            .as_mut()
+            .and_then(|contract| contract.child_result.as_mut())
+        else {
+            return;
+        };
+        result.parent_notification = if delivered {
+            crate::agent::types::ParentNotificationState::Delivered
+        } else {
+            crate::agent::types::ParentNotificationState::Pending
+        };
+        result.parent_notification_error = error;
+        if delivered {
+            result.parent_notified_at = Some(now_millis());
+        }
+        let _ = self.history.upsert_agent_task(&child).await;
+        let mut tasks = self.tasks.lock().await;
+        if let Some(live) = tasks.iter_mut().find(|task| task.id == child.id) {
+            *live = child;
+        }
+    }
+
+    async fn mark_child_result_integrated(
+        &self,
+        child_task_id: &str,
+        parent_task_id: Option<&str>,
+    ) {
+        let now = now_millis();
+        if let Some(mut child) = self.task_by_id_for_dispatcher(child_task_id).await {
+            if let Some(result) = child
+                .completion_contract
+                .as_mut()
+                .and_then(|contract| contract.child_result.as_mut())
+            {
+                result.integration_acknowledged_at = Some(now);
+                result.parent_notification_error = None;
+                let _ = self.history.upsert_agent_task(&child).await;
+                let mut tasks = self.tasks.lock().await;
+                if let Some(live) = tasks.iter_mut().find(|task| task.id == child.id) {
+                    *live = child;
+                }
+            }
+        }
+
+        let Some(parent_task_id) = parent_task_id else {
+            return;
+        };
+        let Some(mut parent) = self.task_by_id_for_dispatcher(parent_task_id).await else {
+            return;
+        };
+        if let Some(contract) = parent.completion_contract.as_mut() {
+            contract.acknowledge_child_result_integration(
+                child_task_id,
+                format!("parent continuation consumed child result at {now}"),
+            );
+        }
+        let _ = self.history.upsert_agent_task(&parent).await;
+        let mut tasks = self.tasks.lock().await;
+        if let Some(live) = tasks.iter_mut().find(|task| task.id == parent.id) {
+            *live = parent;
+        }
+    }
+
     async fn record_subagent_outcome_on_parent(
         &self,
         child_task: &AgentTask,
@@ -1457,6 +1743,22 @@ impl AgentEngine {
         if child_task.is_internal_weles_review() {
             return;
         }
+        let mut child_task = child_task.clone();
+        self.reconcile_child_result_contract(&mut child_task).await;
+        if let Err(error) = self.history.upsert_agent_task(&child_task).await {
+            tracing::warn!(child_task_id = %child_task.id, %error, "failed to persist child terminal contract");
+            return;
+        }
+        // Keep the live queue aligned before any later `persist_tasks` call
+        // writes the full snapshot; otherwise the stale live child can erase
+        // the just-persisted outbox/ask reconciliation state.
+        {
+            let mut tasks = self.tasks.lock().await;
+            if let Some(live) = tasks.iter_mut().find(|task| task.id == child_task.id) {
+                *live = child_task.clone();
+            }
+        }
+        let child_task = &child_task;
         let mut updated_live_parent = false;
         let mut updated_parent = None;
         if let Some(parent_task_id) = child_task.parent_task_id.as_deref() {
@@ -1466,6 +1768,9 @@ impl AgentEngine {
                     .iter_mut()
                     .find(|entry| entry.id == parent_task_id)
                     .map(|parent| {
+                        if let Some(contract) = parent.completion_contract.as_mut() {
+                            contract.require_child_result_integration(&child_task.id);
+                        }
                         append_subagent_outcome_log_to_parent(
                             parent,
                             child_task,
@@ -1480,6 +1785,9 @@ impl AgentEngine {
 
             if updated_parent.is_none() {
                 if let Some(mut parent) = self.task_by_id_for_dispatcher(parent_task_id).await {
+                    if let Some(contract) = parent.completion_contract.as_mut() {
+                        contract.require_child_result_integration(&child_task.id);
+                    }
                     append_subagent_outcome_log_to_parent(
                         &mut parent,
                         child_task,
@@ -1621,9 +1929,33 @@ impl AgentEngine {
             _ => None,
         };
         if let Some((parent_message, notice_kind, notice_summary)) = notice {
-            if self
-                .append_system_thread_message(&parent_thread_id, parent_message.clone())
-                .await
+            let already_integrated = child_task
+                .completion_contract
+                .as_ref()
+                .and_then(|contract| contract.child_result.as_ref())
+                .is_some_and(|result| result.integration_acknowledged_at.is_some());
+            if already_integrated {
+                return;
+            }
+            let message_already_present =
+                if self.ensure_thread_messages_loaded(&parent_thread_id).await {
+                    self.threads
+                        .read()
+                        .await
+                        .get(&parent_thread_id)
+                        .is_some_and(|thread| {
+                            thread.messages.iter().any(|message| {
+                                message.role == MessageRole::System
+                                    && message.content.contains(child_task_id)
+                            })
+                        })
+                } else {
+                    false
+                };
+            if message_already_present
+                || self
+                    .append_system_thread_message(&parent_thread_id, parent_message.clone())
+                    .await
             {
                 self.emit_workflow_notice(
                     &parent_thread_id,
@@ -1641,12 +1973,52 @@ impl AgentEngine {
                 self.enqueue_subagent_completion_continuation(
                     &parent_thread_id,
                     &parent_message,
-                    parent_task_id,
+                    parent_task_id.clone(),
                 )
                 .await;
-                self.resume_idle_parent_after_subagent_completion(
-                    &parent_thread_id,
+                let queued = self
+                    .deferred_visible_thread_continuations_for(&parent_thread_id)
+                    .await
+                    .iter()
+                    .any(|continuation| continuation.llm_user_content.contains(child_task_id));
+                if !queued {
+                    self.mark_child_parent_notification(
+                        &child_task.id,
+                        false,
+                        Some("failed to queue parent completion continuation".to_string()),
+                    )
+                    .await;
+                    return;
+                }
+                // The child row is the durable outbox. Once the deterministic
+                // continuation has been accepted by the local queue, persist
+                // Delivered while leaving integration unacknowledged. A restart
+                // replays Delivered+unacknowledged rows and reconstructs the
+                // in-memory continuation without duplicating the thread message.
+                self.mark_child_parent_notification(&child_task.id, true, None)
+                    .await;
+                match self
+                    .resume_idle_parent_after_subagent_completion(&parent_thread_id, &child_task.id)
+                    .await
+                {
+                    Ok(true) => {
+                        self.mark_child_result_integrated(
+                            &child_task.id,
+                            parent_task_id.as_deref(),
+                        )
+                        .await;
+                    }
+                    Ok(false) => {}
+                    Err(error) => {
+                        self.mark_child_parent_notification(&child_task.id, false, Some(error))
+                            .await;
+                    }
+                }
+            } else {
+                self.mark_child_parent_notification(
                     &child_task.id,
+                    false,
+                    Some("failed to append parent completion message".to_string()),
                 )
                 .await;
             }
@@ -1665,7 +2037,7 @@ impl AgentEngine {
         &self,
         parent_thread_id: &str,
         child_task_id: &str,
-    ) {
+    ) -> std::result::Result<bool, String> {
         for attempt in 0..3 {
             let idle = self
                 .thread_is_idle_for_subagent_wakeup(parent_thread_id)
@@ -1679,7 +2051,7 @@ impl AgentEngine {
                     attempt,
                     "deferring subagent parent wakeup until the live parent stream finishes"
                 );
-                return;
+                return Ok(false);
             }
 
             if let Err(error) = self
@@ -1693,14 +2065,14 @@ impl AgentEngine {
                     error = %error,
                     "subagent completion continuation flush failed"
                 );
-                return;
+                return Err(error.to_string());
             }
             if self
                 .deferred_visible_thread_continuations_for(parent_thread_id)
                 .await
                 .is_empty()
             {
-                return;
+                return Ok(true);
             }
             tracing::info!(
                 thread_id = %parent_thread_id,
@@ -1710,6 +2082,7 @@ impl AgentEngine {
             );
             tokio::time::sleep(std::time::Duration::from_millis(50)).await;
         }
+        Ok(false)
     }
 
     async fn enqueue_subagent_completion_continuation(
@@ -2761,6 +3134,442 @@ mod tests {
         );
     }
 
+    #[test]
+    fn dispatched_subagent_report_discharges_production_report_obligation() {
+        let mut task = terminal_notification_test_task(
+            "contract-subagent",
+            "Report a usable child outcome",
+            TaskStatus::InProgress,
+            Vec::new(),
+        );
+        task.source = "subagent".into();
+        task.completion_contract = Some(TaskCompletionContract::for_new_task(
+            task.description.clone(),
+            &task.source,
+        ));
+        let outcome = SendMessageOutcome {
+            thread_id: "thread-contract-subagent".into(),
+            stream_generation: 0,
+            interrupted_for_approval: false,
+            terminated_for_budget: false,
+            subagent_report: Some(SubagentTurnReport {
+                status: SubagentReportStatus::Done,
+                summary: "Implemented and verified the delegated slice".into(),
+                reason: None,
+            }),
+            upstream_message: None,
+            provider_final_result: None,
+            fresh_runner_retry: None,
+            handoff_restart: None,
+        };
+
+        apply_dispatched_task_success_update(&mut task, &outcome, &[], 99);
+
+        assert_eq!(task.status, TaskStatus::Completed);
+        assert!(task.completion_blockers().is_empty());
+        let contract = task.completion_contract.as_ref().unwrap();
+        assert!(contract.required_deliverables[0].completed);
+        assert!(contract.required_deliverables[0].evidence.is_some());
+    }
+
+    #[test]
+    fn dispatched_subagent_progress_without_report_cannot_complete() {
+        let mut task = terminal_notification_test_task(
+            "contract-subagent-progress",
+            "Report a usable child outcome",
+            TaskStatus::InProgress,
+            Vec::new(),
+        );
+        task.source = "subagent".into();
+        task.completion_contract = Some(TaskCompletionContract::for_new_task(
+            task.description.clone(),
+            &task.source,
+        ));
+        let outcome = SendMessageOutcome {
+            thread_id: "thread-contract-subagent-progress".into(),
+            stream_generation: 0,
+            interrupted_for_approval: false,
+            terminated_for_budget: false,
+            subagent_report: None,
+            upstream_message: None,
+            provider_final_result: None,
+            fresh_runner_retry: None,
+            handoff_restart: None,
+        };
+
+        apply_dispatched_task_success_update(&mut task, &outcome, &[], 99);
+
+        assert_eq!(task.status, TaskStatus::Blocked);
+        assert!(task
+            .blocked_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("usable subagent outcome report"));
+    }
+
+    #[tokio::test]
+    async fn parent_completion_waits_for_open_child_ask_and_result_integration() {
+        let root = tempdir().expect("tempdir");
+        let manager = SessionManager::new_test(root.path()).await;
+        let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+        let parent = engine
+            .enqueue_task(
+                "Parent task".to_string(),
+                "Integrate child after answering its ask".to_string(),
+                "normal",
+                None,
+                None,
+                Vec::new(),
+                None,
+                "user",
+                None,
+                None,
+                Some("thread-parent-contract-ask".to_string()),
+                Some("daemon".to_string()),
+            )
+            .await;
+        let mut child = engine
+            .enqueue_task(
+                "Child task".to_string(),
+                "Wait for the parent then report".to_string(),
+                "normal",
+                None,
+                None,
+                Vec::new(),
+                None,
+                "subagent",
+                None,
+                Some(parent.id.clone()),
+                Some("thread-child-contract-ask".to_string()),
+                Some("daemon".to_string()),
+            )
+            .await;
+        child.status = TaskStatus::Failed;
+        child.completed_at = Some(now_millis());
+        child.last_error = Some("child terminated with an unresolved ask".to_string());
+        child.result = None;
+        child.parent_thread_id = Some("thread-parent-contract-ask".to_string());
+        let ask_key = format!("ask_parent:{}:ask-open", child.id);
+        engine
+            .history
+            .set_consolidation_state(
+                &ask_key,
+                &serde_json::json!({
+                    "question": "Which result should be integrated?",
+                    "options": [],
+                    "asked_at": 1,
+                    "timeout_minutes": 240,
+                    "state": "open",
+                    "answer": null,
+                    "answer_delivered": false
+                })
+                .to_string(),
+                now_millis(),
+            )
+            .await
+            .unwrap();
+
+        engine
+            .record_subagent_outcome_on_parent(
+                &child,
+                TaskLogLevel::Error,
+                "subagent failed",
+                child.last_error.clone(),
+            )
+            .await;
+
+        let mut persisted_parent = engine.task_by_id_for_dispatcher(&parent.id).await.unwrap();
+        let reasons = persisted_parent
+            .transition_to_terminal(TaskStatus::Completed, now_millis())
+            .expect_err("parent completion must retain its child integration obligation");
+        assert!(reasons
+            .iter()
+            .any(|reason| reason.contains("integrate child result")));
+        let persisted_child = engine.task_by_id_for_dispatcher(&child.id).await.unwrap();
+        let child_result = persisted_child
+            .completion_contract
+            .as_ref()
+            .and_then(|contract| contract.child_result.as_ref())
+            .unwrap();
+        assert_eq!(child_result.open_ask_ids, vec!["ask-open"]);
+        assert!(!child_result.asks_reconciled);
+        assert!(!child_result.is_usable());
+    }
+
+    #[test]
+    fn parent_completion_waits_for_child_result_integration_acknowledgement() {
+        let mut task = terminal_notification_test_task(
+            "contract-parent-child-result",
+            "Integrate a required child result",
+            TaskStatus::InProgress,
+            Vec::new(),
+        );
+        let mut contract = TaskCompletionContract::for_new_task(task.description.clone(), "user");
+        contract.require_child_result_integration("child-required");
+        task.completion_contract = Some(contract);
+
+        let reasons = task
+            .transition_to_terminal(TaskStatus::Completed, 50)
+            .expect_err("parent completion must wait for child-result integration");
+        assert!(reasons
+            .iter()
+            .any(|reason| reason.contains("integrate child result: child-required")));
+
+        task.completion_contract
+            .as_mut()
+            .unwrap()
+            .acknowledge_child_result_integration("child-required", "continuation consumed result");
+        task.transition_to_terminal(TaskStatus::Completed, 51)
+            .expect("acknowledged child result should discharge the parent obligation");
+        assert_eq!(task.status, TaskStatus::Completed);
+    }
+
+    #[test]
+    fn dispatched_progress_turn_stays_blocked_while_contract_work_remains() {
+        let mut task = terminal_notification_test_task(
+            "contract-progress",
+            "Continue after progress",
+            TaskStatus::InProgress,
+            Vec::new(),
+        );
+        task.completed_at = None;
+        task.progress = 55;
+        task.completion_contract = Some(TaskCompletionContract {
+            objective: "finish the background build and report verification".into(),
+            outstanding_promised_actions: vec!["report final verification".into()],
+            pending_operations: vec!["operation-build-1".into()],
+            ..TaskCompletionContract::default()
+        });
+        let outcome = SendMessageOutcome {
+            thread_id: "thread-contract-progress".to_string(),
+            stream_generation: 0,
+            interrupted_for_approval: false,
+            terminated_for_budget: false,
+            subagent_report: None,
+            upstream_message: None,
+            provider_final_result: None,
+            fresh_runner_retry: None,
+            handoff_restart: None,
+        };
+
+        apply_dispatched_task_success_update(&mut task, &outcome, &[], 99);
+
+        assert_eq!(task.status, TaskStatus::Blocked);
+        assert!(task.progress < 100);
+        assert_eq!(task.completed_at, None);
+        let reason = task.blocked_reason.as_deref().unwrap_or_default();
+        assert!(reason.contains("report final verification"));
+        assert!(reason.contains("operation-build-1"));
+        assert!(task.logs.iter().any(|log| {
+            log.message == "task produced progress but completion contract remains open"
+        }));
+    }
+
+    #[tokio::test]
+    async fn duplicate_terminal_child_events_queue_one_parent_continuation() {
+        let root = tempdir().expect("tempdir");
+        let manager = SessionManager::new_test(root.path()).await;
+        let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+        let parent_thread_id = "thread-duplicate-child-terminal";
+        insert_parent_thread(&engine, parent_thread_id, "Integrate the child once").await;
+        engine.begin_stream_cancellation(parent_thread_id).await;
+
+        let mut child = engine
+            .enqueue_task(
+                "Duplicate child".to_string(),
+                "Report once".to_string(),
+                "normal",
+                None,
+                None,
+                Vec::new(),
+                None,
+                "subagent",
+                None,
+                None,
+                Some(parent_thread_id.to_string()),
+                Some("daemon".to_string()),
+            )
+            .await;
+        child.status = TaskStatus::Completed;
+        child.result = Some("stable child result".to_string());
+        child.parent_thread_id = Some(parent_thread_id.to_string());
+
+        for _ in 0..2 {
+            engine
+                .record_subagent_outcome_on_parent(
+                    &child,
+                    TaskLogLevel::Info,
+                    "subagent completed",
+                    None,
+                )
+                .await;
+        }
+
+        let continuations = engine
+            .deferred_visible_thread_continuations_for(parent_thread_id)
+            .await;
+        assert_eq!(continuations.len(), 1);
+        let system_messages = engine
+            .threads
+            .read()
+            .await
+            .get(parent_thread_id)
+            .unwrap()
+            .messages
+            .iter()
+            .filter(|message| {
+                message.role == MessageRole::System && message.content.contains(&child.id)
+            })
+            .count();
+        assert_eq!(system_messages, 1);
+    }
+
+    #[tokio::test]
+    async fn parent_notification_failure_stays_pending_and_retries() {
+        let root = tempdir().expect("tempdir");
+        let manager = SessionManager::new_test(root.path()).await;
+        let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+        let parent_thread_id = "thread-child-notification-retry";
+        let mut child = engine
+            .enqueue_task(
+                "Retry child".to_string(),
+                "Persist notification failure".to_string(),
+                "normal",
+                None,
+                None,
+                Vec::new(),
+                None,
+                "subagent",
+                None,
+                None,
+                Some(parent_thread_id.to_string()),
+                Some("daemon".to_string()),
+            )
+            .await;
+        child.status = TaskStatus::Failed;
+        child.completed_at = Some(now_millis());
+        child.last_error = Some("expected child failure".to_string());
+        child.parent_thread_id = Some(parent_thread_id.to_string());
+
+        engine
+            .record_subagent_outcome_on_parent(
+                &child,
+                TaskLogLevel::Error,
+                "subagent failed",
+                child.last_error.clone(),
+            )
+            .await;
+        let failed_delivery = engine.task_by_id_for_dispatcher(&child.id).await.unwrap();
+        let result = failed_delivery
+            .completion_contract
+            .as_ref()
+            .and_then(|contract| contract.child_result.as_ref())
+            .unwrap();
+        assert_eq!(
+            result.parent_notification,
+            crate::agent::types::ParentNotificationState::Pending
+        );
+        assert_eq!(
+            result.parent_notification_error.as_deref(),
+            Some("failed to append parent completion message")
+        );
+
+        insert_parent_thread(&engine, parent_thread_id, "Retry the notification").await;
+        engine.begin_stream_cancellation(parent_thread_id).await;
+        engine
+            .record_subagent_outcome_on_parent(
+                &failed_delivery,
+                TaskLogLevel::Error,
+                "subagent failed",
+                failed_delivery.last_error.clone(),
+            )
+            .await;
+
+        let retried = engine.task_by_id_for_dispatcher(&child.id).await.unwrap();
+        let result = retried
+            .completion_contract
+            .as_ref()
+            .and_then(|contract| contract.child_result.as_ref())
+            .unwrap();
+        assert_eq!(
+            result.parent_notification,
+            crate::agent::types::ParentNotificationState::Delivered
+        );
+        assert!(result.parent_notification_error.is_none());
+        assert_eq!(
+            engine
+                .deferred_visible_thread_continuations_for(parent_thread_id)
+                .await
+                .len(),
+            1
+        );
+    }
+
+    #[tokio::test]
+    async fn pending_child_notification_replays_after_engine_restart() {
+        let root = tempdir().expect("tempdir");
+        let parent_thread_id = "thread-child-restart-replay";
+        let child_id;
+        {
+            let manager = SessionManager::new_test(root.path()).await;
+            let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+            insert_parent_thread(&engine, parent_thread_id, "Resume after restart").await;
+            engine.persist_thread_by_id(parent_thread_id).await;
+            engine.begin_stream_cancellation(parent_thread_id).await;
+            let mut child = engine
+                .enqueue_task(
+                    "Restart child".to_string(),
+                    "Persist terminal event".to_string(),
+                    "normal",
+                    None,
+                    None,
+                    Vec::new(),
+                    None,
+                    "subagent",
+                    None,
+                    None,
+                    Some(parent_thread_id.to_string()),
+                    Some("daemon".to_string()),
+                )
+                .await;
+            child.status = TaskStatus::Failed;
+            child.completed_at = Some(now_millis());
+            child.last_error = Some("restart-safe child failure".to_string());
+            child.result = None;
+            child.parent_thread_id = Some(parent_thread_id.to_string());
+            engine.reconcile_child_result_contract(&mut child).await;
+            engine.history.upsert_agent_task(&child).await.unwrap();
+            child_id = child.id.clone();
+        }
+
+        let manager = SessionManager::new_test(root.path()).await;
+        let restarted = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+        restarted.begin_stream_cancellation(parent_thread_id).await;
+        restarted.replay_pending_child_parent_notifications().await;
+
+        let reloaded = restarted
+            .task_by_id_for_dispatcher(&child_id)
+            .await
+            .unwrap();
+        let result = reloaded
+            .completion_contract
+            .as_ref()
+            .and_then(|contract| contract.child_result.as_ref())
+            .unwrap();
+        assert_eq!(
+            result.parent_notification,
+            crate::agent::types::ParentNotificationState::Delivered
+        );
+        assert!(result.integration_acknowledged_at.is_none());
+        assert_eq!(
+            restarted
+                .deferred_visible_thread_continuations_for(parent_thread_id)
+                .await
+                .len(),
+            1
+        );
+    }
+
     #[tokio::test]
     async fn chat_spawned_subagent_notifies_parent_thread_without_parent_task() {
         let root = tempdir().expect("tempdir");
@@ -2909,6 +3718,7 @@ mod tests {
             lane_id: None,
             last_error: None,
             logs: Vec::new(),
+            completion_contract: None,
             tool_whitelist: None,
             tool_blacklist: None,
             override_provider: None,
@@ -2963,6 +3773,7 @@ mod tests {
             lane_id: None,
             last_error: Some("execution budget exceeded for this thread".to_string()),
             logs: Vec::new(),
+            completion_contract: None,
             tool_whitelist: None,
             tool_blacklist: None,
             override_provider: None,
@@ -3112,6 +3923,81 @@ mod tests {
             }),
             "persisted parent task should record subagent outcome"
         );
+    }
+
+    #[tokio::test]
+    async fn persist_tasks_backstop_updates_live_and_durable_task_state() {
+        let root = tempdir().expect("tempdir");
+        let manager = SessionManager::new_test(root.path()).await;
+        let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+        let task = engine
+            .enqueue_task(
+                "Guard live completion".to_string(),
+                "Do not complete while an operation remains pending".to_string(),
+                "normal",
+                None,
+                None,
+                Vec::new(),
+                None,
+                "user",
+                None,
+                None,
+                Some("thread-live-contract-guard".to_string()),
+                Some("daemon".to_string()),
+            )
+            .await;
+        {
+            let mut tasks = engine.tasks.lock().await;
+            let live = tasks
+                .iter_mut()
+                .find(|entry| entry.id == task.id)
+                .expect("enqueued task should exist");
+            live.status = TaskStatus::Completed;
+            live.progress = 100;
+            live.completed_at = Some(now_millis());
+            let contract = live
+                .completion_contract
+                .as_mut()
+                .expect("new production task should have a completion contract");
+            contract.pending_operations = vec!["operation-live-guard".to_string()];
+            contract.terminal_status = Some(TaskStatus::Completed);
+        }
+
+        engine.persist_tasks().await;
+
+        let live = engine
+            .tasks
+            .lock()
+            .await
+            .iter()
+            .find(|entry| entry.id == task.id)
+            .cloned()
+            .expect("live task should remain available");
+        assert_eq!(live.status, TaskStatus::Blocked);
+        assert!(live.progress < 100);
+        assert_eq!(live.completed_at, None);
+        assert!(live
+            .blocked_reason
+            .as_deref()
+            .is_some_and(|reason| reason.contains("operation-live-guard")));
+        assert_eq!(
+            live.completion_contract
+                .as_ref()
+                .expect("contract should remain attached")
+                .terminal_status,
+            None
+        );
+
+        let durable = engine
+            .history
+            .list_agent_tasks()
+            .await
+            .expect("durable task query should succeed")
+            .into_iter()
+            .find(|entry| entry.id == task.id)
+            .expect("durable task should remain queryable");
+        assert_eq!(durable.status, TaskStatus::Blocked);
+        assert_eq!(durable.completed_at, None);
     }
 
     #[tokio::test]
@@ -3590,6 +4476,7 @@ mod tests {
             lane_id: None,
             last_error: None,
             logs: Vec::new(),
+            completion_contract: None,
             tool_whitelist: None,
             tool_blacklist: None,
             override_provider: None,

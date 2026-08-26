@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { fetchAgentTasks, type AgentQueueTask } from "@/lib/agentTaskQueue";
 import { getDataDir, listPersistedDir } from "@/lib/persistence";
 import { useThreadFilePreview } from "../threads/ThreadFilePreviewContext";
 import {
@@ -17,6 +18,27 @@ import {
   type GoalWorkspaceSection,
 } from "./goalWorkspaceModel";
 
+const GOAL_TASK_POLL_MS = 5_000;
+
+function latestTaskLogId(task: AgentQueueTask): string {
+  const logs = task.logs ?? [];
+  return logs.length > 0 ? logs[logs.length - 1]?.id ?? "" : "";
+}
+
+function taskRenderFingerprint(tasks: AgentQueueTask[]): string {
+  return tasks.map((task) => [
+    task.id,
+    task.status,
+    task.progress,
+    task.thread_id ?? "",
+    task.blocked_reason ?? "",
+    task.awaiting_approval_id ?? "",
+    latestTaskLogId(task),
+  ].join(":"))
+    .sort()
+    .join("|");
+}
+
 export function GoalWorkspacePanel({
   run,
   onRefresh,
@@ -32,13 +54,15 @@ export function GoalWorkspacePanel({
   const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
   const [selectedCenterIndex, setSelectedCenterIndex] = useState(0);
   const [promptExpanded, setPromptExpanded] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
   const [expandedStepIds, setExpandedStepIds] = useState<Set<string>>(() => new Set());
   const [projectionFiles, setProjectionFiles] = useState<GoalProjectionFile[]>([]);
+  const [goalTasks, setGoalTasks] = useState<AgentQueueTask[]>([]);
   const { openThreadFilePreview } = useThreadFilePreview();
 
   useEffect(() => {
     let cancelled = false;
-    if (!run?.id) {
+    if (!run?.id || !moreOpen || mode !== "files") {
       setProjectionFiles((current) => (current.length === 0 ? current : []));
       return () => {
         cancelled = true;
@@ -51,6 +75,32 @@ export function GoalWorkspacePanel({
     return () => {
       cancelled = true;
     };
+  }, [mode, moreOpen, run?.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!run?.id) {
+      setGoalTasks((current) => (current.length === 0 ? current : []));
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    const refreshTasks = async () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      const tasks = (await fetchAgentTasks()).filter((task) => task.goal_run_id === run.id);
+      if (!cancelled) {
+        setGoalTasks((current) => (
+          taskRenderFingerprint(current) === taskRenderFingerprint(tasks) ? current : tasks
+        ));
+      }
+    };
+    void refreshTasks();
+    const timer = window.setInterval(() => void refreshTasks(), GOAL_TASK_POLL_MS);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
   }, [run?.id]);
 
   const model = useMemo(() => run ? buildGoalWorkspaceModel(run, {
@@ -60,7 +110,9 @@ export function GoalWorkspacePanel({
     promptExpanded,
     expandedStepIds,
     projectionFiles,
-  }) : null, [expandedStepIds, mode, projectionFiles, promptExpanded, run, selectedCenterIndex, selectedStepId]);
+    tasks: goalTasks,
+    detailsExpanded: moreOpen,
+  }) : null, [expandedStepIds, goalTasks, mode, moreOpen, projectionFiles, promptExpanded, run, selectedCenterIndex, selectedStepId]);
 
   const control = async (action: GoalRunControlAction) => {
     if (!run || !model) return;
@@ -133,41 +185,6 @@ export function GoalWorkspacePanel({
 
   return (
     <div className="zorai-goal-workspace-shell" aria-label="Goal workspace">
-      <nav className="zorai-goal-tabs" aria-label="Goal workspace modes">
-        {model.tabs.map((tab) => (
-          <button
-            type="button"
-            key={tab.id}
-            className={["zorai-goal-tab", tab.active ? "zorai-goal-tab--active" : ""].filter(Boolean).join(" ")}
-            onClick={() => {
-              setMode(tab.id);
-              setSelectedCenterIndex(0);
-            }}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </nav>
-
-      <div className="zorai-goal-workspace-grid">
-        <Pane title={model.planTitle} className="zorai-goal-plan-pane">
-          <RowList rows={model.planRows} onRowClick={handlePlanRowClick} />
-        </Pane>
-
-        <Pane title={model.centerTitle}>
-          <RowList
-            rows={model.centerRows}
-            onRowClick={(row, index) => {
-              setSelectedCenterIndex(index);
-              handleTargetRow(row);
-            }}
-          />
-        </Pane>
-
-        <Pane title={model.detailTitle}>
-          <SectionList sections={model.detailSections} onRowClick={handleTargetRow} />
-        </Pane>
-      </div>
 
       <section className="zorai-panel zorai-goal-toolbar">
         <div>
@@ -189,28 +206,61 @@ export function GoalWorkspacePanel({
         </div>
       </section>
 
+      <div className="zorai-goal-workspace-grid zorai-goal-workspace-grid--single">
+        <section className="zorai-panel zorai-goal-pane zorai-goal-plan-pane">
+          <div className="zorai-section-label">Steps and live progress</div>
+          <div className="zorai-goal-pane__body">
+            <RowList rows={model.planRows} onRowClick={handlePlanRowClick} />
+          </div>
+        </section>
+      </div>
+
+      <section className="zorai-goal-more">
+        <button
+          type="button"
+          className="zorai-ghost-button zorai-goal-more__toggle"
+          aria-expanded={moreOpen}
+          onClick={() => setMoreOpen((current) => !current)}
+        >
+          {moreOpen ? "Hide run details" : "More details"}
+        </button>
+        {moreOpen ? (
+          <div className="zorai-goal-more__content">
+            <nav className="zorai-goal-tabs" aria-label="Goal detail modes">
+              {model.tabs.map((tab) => (
+                <button
+                  type="button"
+                  key={tab.id}
+                  className={["zorai-goal-tab", tab.active ? "zorai-goal-tab--active" : ""].filter(Boolean).join(" ")}
+                  onClick={() => {
+                    setMode(tab.id);
+                    setSelectedCenterIndex(0);
+                  }}
+                >
+                  {tab.label}
+                </button>
+              ))}
+            </nav>
+            <section className="zorai-panel zorai-goal-detail-drawer">
+              <div className="zorai-section-label">{model.centerTitle}</div>
+              <RowList
+                rows={model.centerRows.slice(0, 40)}
+                onRowClick={(row, index) => {
+                  setSelectedCenterIndex(index);
+                  handleTargetRow(row);
+                }}
+              />
+              <SectionList sections={model.detailSections} onRowClick={handleTargetRow} />
+            </section>
+          </div>
+        ) : null}
+      </section>
+
       <div className="zorai-goal-workspace-status">
         <span className="zorai-status-pill">{formatGoalRunStatus(run.status)}</span>
         <span>{summarizeGoalRunStep(run)}</span>
       </div>
     </div>
-  );
-}
-
-function Pane({
-  title,
-  className,
-  children,
-}: {
-  title: string;
-  className?: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className={["zorai-panel zorai-goal-pane", className ?? ""].filter(Boolean).join(" ")}>
-      <div className="zorai-section-label">{title}</div>
-      <div className="zorai-goal-pane__body">{children}</div>
-    </section>
   );
 }
 
@@ -221,9 +271,16 @@ function RowList({
   rows: GoalWorkspaceRow[];
   onRowClick?: (row: GoalWorkspaceRow, index: number) => void;
 }) {
+  const [expandedTextRows, setExpandedTextRows] = useState<Set<string>>(() => new Set());
   return (
     <div className="zorai-goal-item-list">
-      {rows.map((row, index) => (
+      {rows.map((row, index) => {
+        const expanded = expandedTextRows.has(row.id);
+        const longText = row.text.length > 420;
+        const text = longText && !expanded
+          ? `${row.text.slice(0, 420).trimEnd()}…`
+          : row.text;
+        return (
         <button
           key={`${row.id}-${index}`}
           type="button"
@@ -235,12 +292,53 @@ function RowList({
           style={{ paddingLeft: `${10 + (row.depth ?? 0) * 16}px` }}
           onClick={() => onRowClick?.(row, index)}
         >
+          <span
+            className={[
+              "zorai-goal-indicator",
+              row.working ? "zorai-goal-indicator--working" : "",
+            ].filter(Boolean).join(" ")}
+            aria-label={row.indicatorLabel}
+          />
           <span className="zorai-goal-item__body">
-            <span className="zorai-goal-item__text">{row.text}</span>
+            <span
+              className={[
+                "zorai-goal-item__text",
+                expanded ? "zorai-goal-item__text--expanded" : "",
+              ].filter(Boolean).join(" ")}
+            >
+              {text}
+            </span>
+            {longText ? (
+              <span
+                className="zorai-goal-item__text-toggle"
+                role="button"
+                tabIndex={0}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setExpandedTextRows((current) => {
+                    const next = new Set(current);
+                    if (next.has(row.id)) next.delete(row.id);
+                    else next.add(row.id);
+                    return next;
+                  });
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") event.currentTarget.click();
+                }}
+              >
+                {expanded ? "Show less" : "Show full text"}
+              </span>
+            ) : null}
             {row.meta ? <span className="zorai-goal-item__meta">{row.meta}</span> : null}
+            {typeof row.progress === "number" ? (
+              <span className="zorai-goal-progress" aria-label={`${row.indicatorLabel ?? "Progress"} ${row.progress}%`}>
+                <span className="zorai-goal-progress__bar" style={{ width: `${Math.max(0, Math.min(100, row.progress))}%` }} />
+              </span>
+            ) : null}
           </span>
         </button>
-      ))}
+        );
+      })}
     </div>
   );
 }

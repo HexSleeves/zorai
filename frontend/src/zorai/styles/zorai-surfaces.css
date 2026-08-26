@@ -464,8 +464,8 @@ select.zorai-input:disabled option {
 
 .zorai-goal-workspace-shell {
   min-height: 0;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto auto;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
 }
 
@@ -474,6 +474,84 @@ select.zorai-input:disabled option {
   display: grid;
   grid-template-columns: minmax(220px, 32fr) minmax(240px, 40fr) minmax(220px, 28fr);
   gap: 12px;
+}
+
+.zorai-goal-workspace-grid--single {
+  min-height: 360px;
+  display: block;
+}
+
+.zorai-goal-workspace-grid--single .zorai-goal-pane {
+  min-height: 360px;
+  max-width: 100%;
+}
+
+.zorai-goal-more {
+  display: grid;
+  gap: 10px;
+}
+
+.zorai-goal-more__toggle {
+  justify-self: start;
+}
+
+.zorai-goal-more__content {
+  display: grid;
+  gap: 10px;
+}
+
+.zorai-goal-detail-drawer {
+  max-width: 920px;
+  max-height: 56vh;
+  overflow: auto;
+  display: grid;
+  gap: 12px;
+}
+
+.zorai-goal-indicator {
+  flex: 0 0 auto;
+  width: 9px;
+  height: 9px;
+  margin-top: 6px;
+  border-radius: 999px;
+  border: 1px solid var(--zorai-border-strong);
+  background: var(--zorai-bg-elevated);
+}
+
+.zorai-goal-indicator--working {
+  border-color: var(--zorai-accent);
+  background: var(--zorai-accent);
+  box-shadow: 0 0 0 0 color-mix(in srgb, var(--zorai-accent) 45%, transparent);
+  animation: zorai-goal-working-pulse 1.4s ease-out infinite;
+}
+
+.zorai-goal-progress {
+  display: block;
+  width: min(280px, 100%);
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--zorai-border);
+  margin-top: 4px;
+}
+
+.zorai-goal-progress__bar {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: inherit;
+  background: var(--zorai-accent);
+  transition: width 180ms ease;
+}
+
+@keyframes zorai-goal-working-pulse {
+  70% { box-shadow: 0 0 0 6px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .zorai-goal-indicator--working { animation: none; }
+  .zorai-goal-progress__bar { transition: none; }
 }
 
 .zorai-goal-tabs {
@@ -557,7 +635,26 @@ select.zorai-input:disabled option {
 }
 
 .zorai-goal-item__text {
+  display: -webkit-box;
+  overflow: hidden;
   word-break: break-word;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 8;
+}
+
+.zorai-goal-item__text--expanded {
+  display: block;
+  overflow: visible;
+  white-space: pre-wrap;
+  -webkit-line-clamp: unset;
+}
+
+.zorai-goal-item__text-toggle {
+  width: fit-content;
+  color: var(--zorai-accent);
+  cursor: pointer;
+  font-size: var(--text-xs);
+  margin-top: 2px;
 }
 
 .zorai-goal-item__meta {

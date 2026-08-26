@@ -97,6 +97,39 @@ describe("queued composer follow-ups", () => {
     });
   });
 
+  it("adopts an authoritative queued user row that arrives before Send now reconciliation", () => {
+    const prompt = {
+      id: "prompt-1",
+      text: "send this now",
+      contentBlocksJson: '[{"type":"image","data_url":"data:image/png;base64,abc"}]',
+    };
+    const authoritative = {
+      id: "daemon-user-1",
+      threadId: "local-thread",
+      createdAt: 20,
+      role: "user",
+      content: "send this now",
+      inputTokens: 0,
+      outputTokens: 0,
+      totalTokens: 0,
+      isCompactionSummary: false,
+    } as const;
+
+    const messages = reconcileSentQueuedPromptMessages(
+      [authoritative],
+      "local-thread",
+      prompt,
+      21,
+      0,
+    );
+
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      id: "daemon-user-1",
+      contentBlocks: [{ type: "image" }],
+    });
+  });
+
   it("does not duplicate a sent queued prompt during repeated reconciliation", () => {
     const prompt = { id: "prompt-1", text: "send once" };
     const once = reconcileSentQueuedPromptMessages([], "local-thread", prompt, 10);

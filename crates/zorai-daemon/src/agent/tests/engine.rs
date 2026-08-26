@@ -563,6 +563,7 @@ async fn hydrate_restores_full_persisted_task_log_history() {
                 attempt: 0,
             })
             .collect(),
+        completion_contract: None,
         tool_whitelist: None,
         tool_blacklist: None,
         context_budget_tokens: None,
@@ -716,6 +717,182 @@ async fn provider_alternative_excludes_failed_provider_itself() {
         suggestion.is_none(),
         "the failed provider itself must not be suggested as an alternative"
     );
+}
+
+fn provider_preflight_task(provider: &str, model: &str) -> AgentTask {
+    serde_json::from_value(serde_json::json!({
+        "id": "provider-preflight-task", "title": "Provider preflight",
+        "description": "verify routing", "status": "queued", "created_at": 1,
+        "override_provider": provider, "override_model": model
+    }))
+    .expect("minimal provider preflight task")
+}
+
+fn provider_preflight_config() -> AgentConfig {
+    let mut config = AgentConfig::default();
+    config.provider = PROVIDER_ID_CUSTOM.to_string();
+    config.model = "primary-model".to_string();
+    config.base_url = "https://primary.invalid/v1".to_string();
+    config.api_key = ["primary", "credential"].join("-");
+    config.providers.insert(
+        zorai_shared::providers::PROVIDER_ID_OLLAMA.to_string(),
+        provider_config(
+            "http://127.0.0.1:11434/v1",
+            "fallback-model",
+            "local-auth-marker",
+            AuthSource::ApiKey,
+        ),
+    );
+    config
+}
+
+#[tokio::test]
+async fn provider_preflight_rejects_known_auth_session_quota_and_balance_failures() {
+    use crate::agent::provider_preflight::{
+        ProviderAvailabilitySignal as Signal, ProviderPreflightDecision,
+    };
+    for signal in [
+        Signal::InvalidCredentials,
+        Signal::ExpiredSession,
+        Signal::QuotaExhausted,
+        Signal::BalanceExhausted,
+    ] {
+        let (engine, _temp_dir) = make_test_engine(provider_preflight_config()).await;
+        engine
+            .set_provider_availability_signal_for_test(PROVIDER_ID_CUSTOM, signal)
+            .await;
+        let rationale = engine
+            .provider_assignment_preflight(&provider_preflight_task(
+                PROVIDER_ID_CUSTOM,
+                "primary-model",
+            ))
+            .await;
+        assert_eq!(rationale.decision, ProviderPreflightDecision::Rerouted);
+        assert_eq!(
+            rationale.selected_provider.as_deref(),
+            Some(zorai_shared::providers::PROVIDER_ID_OLLAMA)
+        );
+        assert!(!rationale.rejected_candidates[0].reasons.is_empty());
+    }
+}
+
+#[tokio::test]
+async fn provider_preflight_rejects_open_circuit_and_selects_fallback() {
+    use crate::agent::provider_preflight::{ProviderPreflightDecision, ProviderPreflightReason};
+    let (engine, _temp_dir) = make_test_engine(provider_preflight_config()).await;
+    {
+        let breaker = engine.circuit_breakers.get(PROVIDER_ID_CUSTOM).await;
+        let mut breaker = breaker.lock().await;
+        for offset in 0..5 {
+            breaker.record_failure(now_millis() + offset);
+        }
+    }
+    let rationale = engine
+        .provider_assignment_preflight(&provider_preflight_task(
+            PROVIDER_ID_CUSTOM,
+            "primary-model",
+        ))
+        .await;
+    assert_eq!(rationale.decision, ProviderPreflightDecision::Rerouted);
+    assert_eq!(
+        rationale.selected_provider.as_deref(),
+        Some(zorai_shared::providers::PROVIDER_ID_OLLAMA)
+    );
+    assert!(rationale.rejected_candidates[0]
+        .reasons
+        .contains(&ProviderPreflightReason::CircuitOpen));
+}
+
+#[tokio::test]
+async fn provider_preflight_rejects_tool_and_schema_incompatibility() {
+    use crate::agent::provider_preflight::{ProviderPreflightDecision, ProviderPreflightReason};
+    let (engine, _temp_dir) = make_test_engine(provider_preflight_config()).await;
+    let mut tool_task = provider_preflight_task(PROVIDER_ID_CUSTOM, "primary-model");
+    tool_task.containment_scope = Some("provider_preflight_tool_count:129".to_string());
+    let tool_rationale = engine.provider_assignment_preflight(&tool_task).await;
+    assert_eq!(tool_rationale.decision, ProviderPreflightDecision::Rejected);
+    assert!(tool_rationale
+        .rejected_candidates
+        .iter()
+        .all(|candidate| candidate
+            .reasons
+            .contains(&ProviderPreflightReason::ToolLimitExceeded)));
+
+    let mut config = provider_preflight_config();
+    config
+        .providers
+        .remove(zorai_shared::providers::PROVIDER_ID_OLLAMA);
+    config.api_transport = ApiTransport::NativeAssistant;
+    let (engine, _temp_dir) = make_test_engine(config).await;
+    let mut schema_task = provider_preflight_task(PROVIDER_ID_CUSTOM, "primary-model");
+    schema_task.override_api_transport = Some(ApiTransport::NativeAssistant);
+    schema_task.containment_scope = Some("provider_preflight_requires_schema".to_string());
+    let schema_rationale = engine.provider_assignment_preflight(&schema_task).await;
+    assert_eq!(
+        schema_rationale.decision,
+        ProviderPreflightDecision::Rejected
+    );
+    assert!(schema_rationale.rejected_candidates[0]
+        .reasons
+        .contains(&ProviderPreflightReason::SchemaUnsupported));
+}
+
+#[tokio::test]
+async fn provider_preflight_persists_redacted_structured_no_provider_failure() {
+    use crate::agent::provider_preflight::ProviderAvailabilitySignal;
+    let mut config = provider_preflight_config();
+    config
+        .providers
+        .remove(zorai_shared::providers::PROVIDER_ID_OLLAMA);
+    let (engine, _temp_dir) = make_test_engine(config).await;
+    engine
+        .set_provider_availability_signal_for_test(
+            PROVIDER_ID_CUSTOM,
+            ProviderAvailabilitySignal::InvalidCredentials,
+        )
+        .await;
+    let task = provider_preflight_task(PROVIDER_ID_CUSTOM, "primary-model");
+    engine.tasks.lock().await.push_back(task.clone());
+    assert!(engine.apply_provider_preflight_to_ready_tasks().await);
+    let routed = engine
+        .tasks
+        .lock()
+        .await
+        .iter()
+        .find(|entry| entry.id == task.id)
+        .cloned()
+        .expect("routed task");
+    engine
+        .history
+        .upsert_agent_task(&routed)
+        .await
+        .expect("persist routed task");
+    let persisted = engine
+        .history
+        .list_agent_tasks()
+        .await
+        .expect("list tasks")
+        .into_iter()
+        .find(|entry| entry.id == task.id)
+        .expect("persisted task");
+    assert_eq!(persisted.status, TaskStatus::Blocked);
+    assert_eq!(
+        persisted.error.as_deref(),
+        Some("provider_preflight_rejected")
+    );
+    assert!(persisted
+        .blocked_reason
+        .as_deref()
+        .is_some_and(|value| value.starts_with("no_compatible_provider:")));
+    let details = persisted
+        .logs
+        .iter()
+        .find(|entry| entry.phase == "provider_preflight")
+        .and_then(|entry| entry.details.as_deref())
+        .expect("routing rationale");
+    assert!(details.contains("invalid_credentials"));
+    assert!(!details.contains(&["primary", "credential"].join("-")));
+    assert!(!details.contains("local-auth-marker"));
 }
 
 #[tokio::test]
@@ -1019,6 +1196,7 @@ async fn force_compact_reuses_task_provider_override_for_builtin_persona_threads
             lane_id: None,
             last_error: None,
             logs: Vec::new(),
+            completion_contract: None,
             tool_whitelist: None,
             tool_blacklist: None,
             context_budget_tokens: None,

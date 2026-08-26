@@ -1331,12 +1331,42 @@ impl<'a> SendMessageRunner<'a> {
         }
         let has_workspace_topology = engine.session_manager.read_workspace_topology().is_some();
         let mut tools = get_available_tools(&config, &engine.data_dir, has_workspace_topology);
+        if let Some(task) = current_task_snapshot.as_ref() {
+            if task.source == crate::agent::GOAL_FINAL_REVIEW_SOURCE
+                && !tools.iter().any(|tool| {
+                    tool.function.name == zorai_protocol::tool_names::SUBMIT_GOAL_FINAL_REVIEW
+                })
+            {
+                tracing::error!(
+                    task_id = %task.id,
+                    "final-review tool missing from available tool catalog"
+                );
+            }
+        }
         crate::agent::tool_executor::filter_tools_for_client_surface(
             &mut tools,
             engine.get_thread_client_surface(&tid).await,
         );
         if let Some(filter) = &task_tool_filter {
             tools = filter.filtered_tools(tools);
+        }
+        if current_task_snapshot
+            .as_ref()
+            .is_some_and(|task| task.source == crate::agent::GOAL_FINAL_REVIEW_SOURCE)
+        {
+            // The final-review transition is mandatory even when a task-level
+            // whitelist was inherited from a reviewer role.
+            let all_tools = get_available_tools(&config, &engine.data_dir, has_workspace_topology);
+            if let Some(tool) = all_tools.into_iter().find(|tool| {
+                tool.function.name == zorai_protocol::tool_names::SUBMIT_GOAL_FINAL_REVIEW
+            }) {
+                if !tools
+                    .iter()
+                    .any(|existing| existing.function.name == tool.function.name)
+                {
+                    tools.push(tool);
+                }
+            }
         }
         if let Some(filter) = direct_thread_responder
             .as_ref()
@@ -1381,7 +1411,18 @@ impl<'a> SendMessageRunner<'a> {
                 .and_then(|responder| responder.tool_filter.as_ref())
                 .is_some();
         let deferred_tool_pool = if config.tools.deferred_tool_loading && !tools_were_filtered {
-            super::tool_executor::partition_deferred_tools(&mut tools)
+            let mut deferred = super::tool_executor::partition_deferred_tools(&mut tools);
+            if current_task_snapshot
+                .as_ref()
+                .is_some_and(|task| task.source == crate::agent::GOAL_FINAL_REVIEW_SOURCE)
+            {
+                if let Some(index) = deferred.iter().position(|tool| {
+                    tool.function.name == zorai_protocol::tool_names::SUBMIT_GOAL_FINAL_REVIEW
+                }) {
+                    tools.push(deferred.remove(index));
+                }
+            }
+            deferred
         } else {
             Vec::new()
         };
@@ -2619,6 +2660,7 @@ mod tests {
             lane_id: None,
             last_error: None,
             logs: Vec::new(),
+            completion_contract: None,
             tool_whitelist: None,
             tool_blacklist: None,
             context_budget_tokens: None,
@@ -2706,6 +2748,7 @@ mod tests {
             lane_id: None,
             last_error: None,
             logs: Vec::new(),
+            completion_contract: None,
             tool_whitelist: None,
             tool_blacklist: None,
             context_budget_tokens: None,
@@ -2800,6 +2843,7 @@ mod tests {
             lane_id: None,
             last_error: None,
             logs: Vec::new(),
+            completion_contract: None,
             tool_whitelist: Some(vec![zorai_protocol::tool_names::CANCEL_TASK.to_string()]),
             tool_blacklist: None,
             context_budget_tokens: None,
@@ -3282,6 +3326,7 @@ mod tests {
             lane_id: None,
             last_error: None,
             logs: Vec::new(),
+            completion_contract: None,
             tool_whitelist: None,
             tool_blacklist: None,
             context_budget_tokens: None,
@@ -3524,6 +3569,7 @@ mod tests {
             lane_id: None,
             last_error: None,
             logs: Vec::new(),
+            completion_contract: None,
             tool_whitelist: None,
             tool_blacklist: Some(vec![zorai_protocol::tool_names::ASK_QUESTIONS.to_string()]),
             context_budget_tokens: None,

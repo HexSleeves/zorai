@@ -1615,6 +1615,178 @@ impl AgentEngine {
         task_ids
     }
 
+    async fn pause_goal_tasks(&self, goal_run: &GoalRun) {
+        for task_id in self.goal_related_task_ids(goal_run).await {
+            let task = self
+                .list_tasks_filtered(&crate::history::AgentTaskListQuery {
+                    id: Some(task_id.clone()),
+                    status: None,
+                    statuses: Vec::new(),
+                    source: None,
+                    thread_id: None,
+                    thread_ids: Vec::new(),
+                    goal_run_id: None,
+                    parent_task_id: None,
+                    awaiting_approval_id: None,
+                    supervisor_config_present: false,
+                    exclude_terminal_statuses: false,
+                    order_by_recent_activity_desc: false,
+                    limit: Some(1),
+                    ids: Vec::new(),
+                    parent_task_ids: Vec::new(),
+                })
+                .await
+                .into_iter()
+                .next();
+            let Some(mut task) = task else { continue };
+            if !matches!(
+                task.status,
+                TaskStatus::Queued | TaskStatus::InProgress | TaskStatus::FailedAnalyzing
+            ) {
+                continue;
+            }
+            let previous =
+                serde_json::to_string(&task.status).unwrap_or_else(|_| "\"queued\"".to_string());
+            task.status = TaskStatus::Blocked;
+            task.blocked_reason = Some(format!("goal_paused:{previous}"));
+            task.lane_id = None;
+            task.logs.push(make_task_log_entry(
+                task.retry_count,
+                TaskLogLevel::Info,
+                "goal_pause",
+                "task suspended because its goal was paused",
+                None,
+            ));
+            if let Err(error) = self.history.upsert_agent_task(&task).await {
+                tracing::warn!(task_id = %task.id, %error, "failed to persist paused goal task");
+                continue;
+            }
+            let mut tasks = self.tasks.lock().await;
+            if let Some(live) = tasks.iter_mut().find(|live| live.id == task.id) {
+                *live = task;
+            }
+        }
+    }
+
+    async fn resume_goal_tasks(&self, goal_run: &GoalRun) {
+        for task_id in self.goal_related_task_ids(goal_run).await {
+            let Some(mut task) = self
+                .list_tasks_filtered(&crate::history::AgentTaskListQuery {
+                    id: Some(task_id),
+                    status: None,
+                    statuses: Vec::new(),
+                    source: None,
+                    thread_id: None,
+                    thread_ids: Vec::new(),
+                    goal_run_id: None,
+                    parent_task_id: None,
+                    awaiting_approval_id: None,
+                    supervisor_config_present: false,
+                    exclude_terminal_statuses: false,
+                    order_by_recent_activity_desc: false,
+                    limit: Some(1),
+                    ids: Vec::new(),
+                    parent_task_ids: Vec::new(),
+                })
+                .await
+                .into_iter()
+                .next()
+            else {
+                continue;
+            };
+            let Some(reason) = task
+                .blocked_reason
+                .as_deref()
+                .and_then(|value| value.strip_prefix("goal_paused:"))
+            else {
+                continue;
+            };
+            task.status = if reason.contains("in_progress") || reason.contains("failed_analyzing") {
+                TaskStatus::Queued
+            } else {
+                serde_json::from_str(reason).unwrap_or(TaskStatus::Queued)
+            };
+            task.blocked_reason = None;
+            task.logs.push(make_task_log_entry(
+                task.retry_count,
+                TaskLogLevel::Info,
+                "goal_resume",
+                "task restored after goal resume",
+                None,
+            ));
+            if self.history.upsert_agent_task(&task).await.is_ok() {
+                let mut tasks = self.tasks.lock().await;
+                if let Some(live) = tasks.iter_mut().find(|live| live.id == task.id) {
+                    *live = task;
+                }
+            }
+        }
+    }
+
+    async fn goal_execution_thread_ids(
+        &self,
+        goal_run: &GoalRun,
+    ) -> std::collections::HashSet<String> {
+        let task_ids = self.goal_related_task_ids(goal_run).await;
+        let mut thread_ids = declared_goal_thread_ids(goal_run)
+            .into_iter()
+            .collect::<std::collections::HashSet<_>>();
+        if !task_ids.is_empty() {
+            for (_, thread_id, parent_thread_id) in self
+                .list_task_refs_for_goal_relation(crate::history::AgentTaskListQuery {
+                    id: None,
+                    ids: task_ids,
+                    status: None,
+                    statuses: Vec::new(),
+                    source: None,
+                    thread_id: None,
+                    thread_ids: Vec::new(),
+                    goal_run_id: None,
+                    parent_task_id: None,
+                    parent_task_ids: Vec::new(),
+                    awaiting_approval_id: None,
+                    supervisor_config_present: false,
+                    exclude_terminal_statuses: false,
+                    order_by_recent_activity_desc: false,
+                    limit: None,
+                })
+                .await
+            {
+                if let Some(thread_id) = thread_id.filter(|value| !value.is_empty()) {
+                    thread_ids.insert(thread_id);
+                }
+                if let Some(parent_thread_id) = parent_thread_id.filter(|value| !value.is_empty()) {
+                    thread_ids.insert(parent_thread_id);
+                }
+            }
+        }
+        thread_ids
+    }
+
+    async fn quiesce_goal_execution_tree(&self, goal_run: &GoalRun, cancel: bool) {
+        let thread_ids = self.goal_execution_thread_ids(goal_run).await;
+        for thread_id in &thread_ids {
+            let _ = self.stop_stream(thread_id).await;
+        }
+        if cancel {
+            self.clear_deferred_visible_thread_continuations_for_threads(&thread_ids)
+                .await;
+            self.remove_operation_wakeups_for_threads(&thread_ids, true)
+                .await;
+            self.cancel_wakeups_for_threads(&thread_ids).await;
+        }
+        self.quiet_goal_recovery.lock().await.remove(&goal_run.id);
+        self.inflight_goal_runs.lock().await.remove(&goal_run.id);
+        let _ = self
+            .history
+            .set_consolidation_state(
+                &crate::agent::goal_planner::stagnation::goal_stagnation_pending_key(&goal_run.id),
+                "false",
+                now_millis(),
+            )
+            .await;
+    }
+
     pub async fn control_goal_run(
         &self,
         goal_run_id: &str,
@@ -2020,6 +2192,20 @@ impl AgentEngine {
                 for task_id in self.goal_related_task_ids(goal_run).await {
                     push_unique_string(&mut tasks_to_cancel, &task_id);
                 }
+            }
+        }
+
+        if let Some(goal_run) = changed_goal.as_ref() {
+            if action == "pause" {
+                self.pause_goal_tasks(goal_run).await;
+                self.quiesce_goal_execution_tree(goal_run, false).await;
+            } else if action == "resume" {
+                self.resume_goal_tasks(goal_run).await;
+            } else if matches!(
+                action,
+                "cancel" | "stop" | "contain" | "compensate" | "compensate-partial"
+            ) {
+                self.quiesce_goal_execution_tree(goal_run, true).await;
             }
         }
 

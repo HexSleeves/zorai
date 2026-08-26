@@ -11,6 +11,7 @@ import {
 } from "./composerQueue";
 import { usePromptQueueStore, selectThreadPromptQueue } from "./promptQueueStore";
 import { useAgentStore } from "@/lib/agentStore";
+import { waitForThreadStopBarrier } from "@/components/agent-chat-panel/runtime/threadStopBarrier";
 
 function applyQueueResponse(
   threadId: string,
@@ -208,18 +209,26 @@ export function useDaemonPromptQueue(daemonThreadId: string | null | undefined) 
     if (!daemonThreadId) return;
     const bridge = getBridge();
     if (!bridge?.agentSendQueuedPromptNow) return;
-    const prompt = usePromptQueueStore.getState().byThreadId[daemonThreadId]
-      ?.find((item) => item.id === promptId);
-    const stateAtSend = useAgentStore.getState();
-    const localThread = stateAtSend.threads.find(
-      (thread) => thread.id === stateAtSend.activeThreadId && thread.daemonThreadId === daemonThreadId,
-    ) ?? stateAtSend.threads.find((thread) => thread.daemonThreadId === daemonThreadId);
-    const insertionBoundary = localThread
-      ? (stateAtSend.messages[localThread.id] ?? []).length
-      : 0;
-    const messageCountBeforeSend = localThread?.messageCount ?? insertionBoundary;
-    const revisionAtRequest = daemonEventRevisionRef.current;
+    const stateBeforeBarrier = useAgentStore.getState();
+    const threadBeforeBarrier = stateBeforeBarrier.threads.find(
+      (thread) => thread.id === stateBeforeBarrier.activeThreadId && thread.daemonThreadId === daemonThreadId,
+    ) ?? stateBeforeBarrier.threads.find((thread) => thread.daemonThreadId === daemonThreadId);
     try {
+      if (threadBeforeBarrier) {
+        await waitForThreadStopBarrier(threadBeforeBarrier.id);
+      }
+
+      const prompt = usePromptQueueStore.getState().byThreadId[daemonThreadId]
+        ?.find((item) => item.id === promptId);
+      const stateAtSend = useAgentStore.getState();
+      const localThread = stateAtSend.threads.find(
+        (thread) => thread.id === stateAtSend.activeThreadId && thread.daemonThreadId === daemonThreadId,
+      ) ?? stateAtSend.threads.find((thread) => thread.daemonThreadId === daemonThreadId);
+      const insertionBoundary = localThread
+        ? (stateAtSend.messages[localThread.id] ?? []).length
+        : 0;
+      const messageCountBeforeSend = localThread?.messageCount ?? insertionBoundary;
+      const revisionAtRequest = daemonEventRevisionRef.current;
       const raw = await bridge.agentSendQueuedPromptNow({
         threadId: daemonThreadId,
         promptId,
