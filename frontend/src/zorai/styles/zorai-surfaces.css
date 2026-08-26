@@ -483,7 +483,7 @@ select.zorai-input:disabled option {
 
 .zorai-goal-workspace-grid--single .zorai-goal-pane {
   min-height: 360px;
-  max-width: 920px;
+  max-width: 100%;
 }
 
 .zorai-goal-more {
@@ -635,7 +635,19 @@ select.zorai-input:disabled option {
 }
 
 .zorai-goal-item__text {
+  display: -webkit-box;
+  overflow: hidden;
   word-break: break-word;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 8;
+}
+
+.zorai-goal-item__text-toggle {
+  width: fit-content;
+  color: var(--zorai-accent);
+  cursor: pointer;
+  font-size: var(--text-xs);
+  margin-top: 2px;
 }
 
 .zorai-goal-item__meta {

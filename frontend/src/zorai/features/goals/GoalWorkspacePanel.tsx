@@ -18,6 +18,27 @@ import {
   type GoalWorkspaceSection,
 } from "./goalWorkspaceModel";
 
+const GOAL_TASK_POLL_MS = 5_000;
+
+function latestTaskLogId(task: AgentQueueTask): string {
+  const logs = task.logs ?? [];
+  return logs.length > 0 ? logs[logs.length - 1]?.id ?? "" : "";
+}
+
+function taskRenderFingerprint(tasks: AgentQueueTask[]): string {
+  return tasks.map((task) => [
+    task.id,
+    task.status,
+    task.progress,
+    task.thread_id ?? "",
+    task.blocked_reason ?? "",
+    task.awaiting_approval_id ?? "",
+    latestTaskLogId(task),
+  ].join(":"))
+    .sort()
+    .join("|");
+}
+
 export function GoalWorkspacePanel({
   run,
   onRefresh,
@@ -41,7 +62,7 @@ export function GoalWorkspacePanel({
 
   useEffect(() => {
     let cancelled = false;
-    if (!run?.id) {
+    if (!run?.id || !moreOpen || mode !== "files") {
       setProjectionFiles((current) => (current.length === 0 ? current : []));
       return () => {
         cancelled = true;
@@ -54,7 +75,7 @@ export function GoalWorkspacePanel({
     return () => {
       cancelled = true;
     };
-  }, [run?.id]);
+  }, [mode, moreOpen, run?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -66,13 +87,16 @@ export function GoalWorkspacePanel({
     }
 
     const refreshTasks = async () => {
-      const tasks = await fetchAgentTasks();
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") return;
+      const tasks = (await fetchAgentTasks()).filter((task) => task.goal_run_id === run.id);
       if (!cancelled) {
-        setGoalTasks(tasks.filter((task) => task.goal_run_id === run.id));
+        setGoalTasks((current) => (
+          taskRenderFingerprint(current) === taskRenderFingerprint(tasks) ? current : tasks
+        ));
       }
     };
     void refreshTasks();
-    const timer = window.setInterval(() => void refreshTasks(), 2_000);
+    const timer = window.setInterval(() => void refreshTasks(), GOAL_TASK_POLL_MS);
     return () => {
       cancelled = true;
       window.clearInterval(timer);
@@ -247,9 +271,16 @@ function RowList({
   rows: GoalWorkspaceRow[];
   onRowClick?: (row: GoalWorkspaceRow, index: number) => void;
 }) {
+  const [expandedTextRows, setExpandedTextRows] = useState<Set<string>>(() => new Set());
   return (
     <div className="zorai-goal-item-list">
-      {rows.map((row, index) => (
+      {rows.map((row, index) => {
+        const expanded = expandedTextRows.has(row.id);
+        const longText = row.text.length > 420;
+        const text = longText && !expanded
+          ? `${row.text.slice(0, 420).trimEnd()}…`
+          : row.text;
+        return (
         <button
           key={`${row.id}-${index}`}
           type="button"
@@ -269,7 +300,28 @@ function RowList({
             aria-label={row.indicatorLabel}
           />
           <span className="zorai-goal-item__body">
-            <span className="zorai-goal-item__text">{row.text}</span>
+            <span className="zorai-goal-item__text">{text}</span>
+            {longText ? (
+              <span
+                className="zorai-goal-item__text-toggle"
+                role="button"
+                tabIndex={0}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setExpandedTextRows((current) => {
+                    const next = new Set(current);
+                    if (next.has(row.id)) next.delete(row.id);
+                    else next.add(row.id);
+                    return next;
+                  });
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") event.currentTarget.click();
+                }}
+              >
+                {expanded ? "Show less" : "Show full text"}
+              </span>
+            ) : null}
             {row.meta ? <span className="zorai-goal-item__meta">{row.meta}</span> : null}
             {typeof row.progress === "number" ? (
               <span className="zorai-goal-progress" aria-label={`${row.indicatorLabel ?? "Progress"} ${row.progress}%`}>
@@ -278,7 +330,8 @@ function RowList({
             ) : null}
           </span>
         </button>
-      ))}
+        );
+      })}
     </div>
   );
 }

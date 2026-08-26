@@ -56,13 +56,30 @@ export function reconcileSentQueuedPromptMessages(
   const localMessageId = `queued-prompt:${prompt.id}`;
   if (messages.some((message) => message.id === localMessageId)) return messages;
 
+  const contentBlocks = prompt.localContentBlocks ?? queuedContentBlocks(prompt.contentBlocksJson);
+  const authoritativeIndex = messages.findIndex((message) =>
+    message.role === "user"
+    && !message.id.startsWith("queued-prompt:")
+    && message.content.trim() === prompt.text.trim()
+    && Math.abs(normalizeComposerTimestamp(message.createdAt) - normalizeComposerTimestamp(createdAt)) <= 120_000
+  );
+  if (authoritativeIndex >= 0) {
+    if (!contentBlocks?.length || messages[authoritativeIndex].contentBlocks?.length) return messages;
+    const reconciled = [...messages];
+    reconciled[authoritativeIndex] = {
+      ...messages[authoritativeIndex],
+      contentBlocks,
+    };
+    return reconciled;
+  }
+
   const userMessage: AgentMessage = {
     id: localMessageId,
     threadId,
     createdAt,
     role: "user",
     content: prompt.text,
-    contentBlocks: prompt.localContentBlocks ?? queuedContentBlocks(prompt.contentBlocksJson),
+    contentBlocks,
     inputTokens: 0,
     outputTokens: 0,
     totalTokens: 0,
@@ -78,6 +95,10 @@ export function reconcileSentQueuedPromptMessages(
     userMessage,
     ...messages.slice(insertionIndex),
   ];
+}
+
+function normalizeComposerTimestamp(timestamp: number): number {
+  return timestamp < 10_000_000_000 ? timestamp * 1_000 : timestamp;
 }
 
 export const EMPTY_PROMPT_QUEUE: QueuedComposerMessage[] = [];

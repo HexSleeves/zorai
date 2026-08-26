@@ -522,6 +522,50 @@ describe("loadDaemonThreadPageIntoLocalState", () => {
     ]);
   });
 
+  it("reconciles an optimistic image prompt with a persisted text-only user row", async () => {
+    useAgentStore.setState({
+      messages: {
+        "local-active": [{
+          ...makeMessage(10),
+          id: "msg_42",
+          role: "user",
+          content: "What is in this image?",
+          contentBlocks: [{ type: "image", source: "data:image/png;base64,abc" }],
+          createdAt: 10_000,
+        }],
+      },
+    } as any);
+    agentGetThread.mockResolvedValue({
+      id: "daemon-1",
+      title: "Active thread",
+      agent_name: "Svarog",
+      messages: [{
+        id: "persisted-user-image",
+        role: "user",
+        content: "What is in this image?",
+        timestamp: 10_050,
+      }],
+      total_message_count: 1,
+      loaded_message_start: 0,
+      loaded_message_end: 1,
+    });
+
+    await refreshDaemonThreadMessagesIntoLocalState({
+      daemonThreadId: "daemon-1",
+      setThreadTodos: vi.fn(),
+      setDaemonTodosByThread: vi.fn(),
+    });
+
+    const messages = useAgentStore.getState().messages["local-active"] ?? [];
+    expect(messages).toHaveLength(1);
+    expect(messages[0]).toMatchObject({
+      id: "persisted-user-image",
+      role: "user",
+      content: "What is in this image?",
+      contentBlocks: [{ type: "image", source: "data:image/png;base64,abc" }],
+    });
+  });
+
   it("deduplicates queued local and persisted user messages during reload", async () => {
     useAgentStore.setState({
       messages: {

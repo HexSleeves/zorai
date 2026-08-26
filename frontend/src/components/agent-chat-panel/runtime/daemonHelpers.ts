@@ -371,7 +371,7 @@ function mergeLiveMessages(existing: AgentMessage[], persisted: AgentMessage[]):
     );
     if (!authoritative) return message;
     consumed.add(authoritative.id);
-    return authoritative;
+    return mergeAuthoritativeMessageWithLocalContent(authoritative, message);
   });
   return mergeMessages(merged, persisted.filter((message) => !consumed.has(message.id)));
 }
@@ -389,9 +389,30 @@ function messagesAreEquivalent(left: AgentMessage, right: AgentMessage): boolean
       && (left.reasoning ?? "") === (right.reasoning ?? "");
   }
   if (left.role === "user") {
-    return userMessageEquivalenceKey(left) === userMessageEquivalenceKey(right);
+    return left.content.trim() === right.content.trim()
+      && Math.abs(normalizeMessageTimestamp(left.createdAt) - normalizeMessageTimestamp(right.createdAt)) <= 120_000;
   }
   return false;
+}
+
+function mergeAuthoritativeMessageWithLocalContent(
+  authoritative: AgentMessage,
+  local: AgentMessage,
+): AgentMessage {
+  const authoritativeBlocks = authoritative.contentBlocks ?? [];
+  const localBlocks = local.contentBlocks ?? [];
+  return {
+    ...authoritative,
+    contentBlocks: authoritativeBlocks.length > 0
+      ? authoritativeBlocks
+      : localBlocks.length > 0
+      ? localBlocks
+      : undefined,
+  };
+}
+
+function normalizeMessageTimestamp(timestamp: number): number {
+  return timestamp < 10_000_000_000 ? timestamp * 1_000 : timestamp;
 }
 
 function reconcileEquivalentUserMessages(messages: AgentMessage[]): AgentMessage[] {

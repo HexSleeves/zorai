@@ -147,6 +147,8 @@ function buildPlanRows(run: GoalRun, expandedStepIds: Set<string>, promptExpande
     : { id: "main-thread-empty", text: "No main agent thread yet.", tone: "muted" });
 
   const steps = sortedSteps(run);
+  const tasksByStep = indexTasksByStep(steps, tasks);
+  const todosByStep = indexTodosByStep(run);
   if (steps.length > 0) {
     rows.push({ id: "steps-label", text: "Steps:", tone: "accent" });
   }
@@ -155,6 +157,7 @@ function buildPlanRows(run: GoalRun, expandedStepIds: Set<string>, promptExpande
     const expanded = expandedStepIds.has(step.id);
     const parsed = splitGoalStepTitle(step.title);
     const status = stepMarkerState(run, step, index);
+    const stepTasks = tasksByStep.get(step.id) ?? [];
     rows.push({
       id: `step-${step.id}`,
       text: `${index + 1}. ${parsed.title}`,
@@ -163,11 +166,11 @@ function buildPlanRows(run: GoalRun, expandedStepIds: Set<string>, promptExpande
       selected: step.id === selectedStepId,
       working: status === "running",
       indicatorLabel: status === "running" ? "Working" : stepStatusLabel(status),
-      progress: stepProgress(tasksForStep(tasks, step), status),
+      progress: stepProgress(stepTasks, status),
     });
 
     if (expanded) {
-      for (const task of tasksForStep(tasks, step)) {
+      for (const task of stepTasks) {
         rows.push({
           id: `task-${task.id}`,
           text: task.title,
@@ -180,7 +183,7 @@ function buildPlanRows(run: GoalRun, expandedStepIds: Set<string>, promptExpande
           progress: task.progress,
         });
       }
-      for (const todo of todosForStep(run, index)) {
+      for (const todo of todosByStep.get(index) ?? []) {
         rows.push({
           id: `todo-${todo.id}`,
           text: todo.content,
@@ -310,8 +313,11 @@ function attentionDetails(run: GoalRun, selectedIndex: number): GoalWorkspaceSec
   return [{ title: "Status", rows: rows.length ? rows : [{ id: "empty", text: "No blockers or review items.", tone: "muted" }] }];
 }
 
+const MAX_TIMELINE_EVENTS = 40;
+const MAX_EVENT_TODOS = 12;
+
 function timelineRows(run: GoalRun, selectedIndex: number): GoalWorkspaceRow[] {
-  const events = [...(run.events ?? [])].reverse();
+  const events = (run.events ?? []).slice(-MAX_TIMELINE_EVENTS).reverse();
   if (events.length === 0) return [{ id: "empty", text: "Waiting for run events.", tone: "muted" }];
   return events.flatMap((event) => eventRows(event)).map((row, index) => ({
     ...row,
@@ -322,7 +328,7 @@ function timelineRows(run: GoalRun, selectedIndex: number): GoalWorkspaceRow[] {
 function eventRows(event: GoalRunEvent): GoalWorkspaceRow[] {
   const rows: GoalWorkspaceRow[] = [{ id: event.id, eventId: event.id, text: event.message || "event", tone: eventTone(event) }];
   if (event.details) rows.push({ id: `${event.id}-details`, eventId: event.id, text: event.details, tone: "muted", depth: 1 });
-  for (const todo of event.todo_snapshot ?? []) {
+  for (const todo of (event.todo_snapshot ?? []).slice(0, MAX_EVENT_TODOS)) {
     rows.push({ id: `${event.id}-${todo.id}`, eventId: event.id, text: todo.content, meta: todoStatusLabel(todo.status), tone: "muted", depth: 1 });
   }
   return rows;
@@ -455,12 +461,43 @@ function stepPosition(run: GoalRun, step: GoalRunStep): number {
   return index >= 0 ? index : 0;
 }
 
-function todosForStep(run: GoalRun, stepIndex: number) {
-  for (let index = (run.events ?? []).length - 1; index >= 0; index -= 1) {
-    const todos = run.events?.[index]?.todo_snapshot?.filter((todo) => todo.step_index === stepIndex) ?? [];
-    if (todos.length > 0) return todos;
+function indexTasksByStep(steps: GoalRunStep[], tasks: AgentQueueTask[]): Map<string, AgentQueueTask[]> {
+  const result = new Map<string, AgentQueueTask[]>();
+  const stepIdByTaskId = new Map(steps.filter((step) => step.task_id).map((step) => [step.task_id as string, step.id]));
+  const stepIdByTitle = new Map(steps.map((step) => [step.title, step.id]));
+  const validStepIds = new Set(steps.map((step) => step.id));
+  for (const task of tasks) {
+    const stepId = task.goal_step_id && validStepIds.has(task.goal_step_id)
+      ? task.goal_step_id
+      : stepIdByTaskId.get(task.id) ?? (task.goal_step_title ? stepIdByTitle.get(task.goal_step_title) : undefined);
+    if (!stepId) continue;
+    const bucket = result.get(stepId) ?? [];
+    bucket.push(task);
+    result.set(stepId, bucket);
   }
-  return [];
+  return result;
+}
+
+function indexTodosByStep(run: GoalRun): Map<number, NonNullable<GoalRunEvent["todo_snapshot"]>> {
+  const result = new Map<number, NonNullable<GoalRunEvent["todo_snapshot"]>>();
+  const claimed = new Set<number>();
+  for (let index = (run.events ?? []).length - 1; index >= 0; index -= 1) {
+    const event = run.events?.[index];
+    if (!event) continue;
+    const byStep = new Map<number, NonNullable<GoalRunEvent["todo_snapshot"]>>();
+    for (const todo of event.todo_snapshot ?? []) {
+      const stepIndex = todo.step_index ?? event.step_index;
+      if (stepIndex == null || claimed.has(stepIndex)) continue;
+      const bucket = byStep.get(stepIndex) ?? [];
+      bucket.push(todo);
+      byStep.set(stepIndex, bucket);
+    }
+    for (const [stepIndex, todos] of byStep) {
+      result.set(stepIndex, todos);
+      claimed.add(stepIndex);
+    }
+  }
+  return result;
 }
 
 function mainAgentThread(run: GoalRun): { label: string; threadId: string } | null {

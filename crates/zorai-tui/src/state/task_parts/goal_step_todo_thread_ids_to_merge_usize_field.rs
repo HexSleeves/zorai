@@ -10,12 +10,12 @@ pub(super) fn goal_step_todo_thread_ids(state: &TaskState, run: &GoalRun) -> Vec
     let mut children_by_thread: HashMap<&str, Vec<&AgentTask>> = HashMap::new();
     let mut tasks_by_id: HashMap<&str, &AgentTask> = HashMap::new();
 
-    let mut add_thread = |id: &str, ids: &mut HashSet<String>, queue: &mut VecDeque<String>| {
+    let add_thread = |id: &str, ids: &mut HashSet<String>, queue: &mut VecDeque<String>| {
         if !id.is_empty() && ids.insert(id.to_string()) {
             queue.push_back(id.to_string());
         }
     };
-    let mut add_task = |id: &str, ids: &mut HashSet<String>, queue: &mut VecDeque<String>| {
+    let add_task = |id: &str, ids: &mut HashSet<String>, queue: &mut VecDeque<String>| {
         if !id.is_empty() && ids.insert(id.to_string()) {
             queue.push_back(id.to_string());
         }

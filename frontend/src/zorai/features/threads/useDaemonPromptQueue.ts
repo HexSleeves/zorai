@@ -11,6 +11,7 @@ import {
 } from "./composerQueue";
 import { usePromptQueueStore, selectThreadPromptQueue } from "./promptQueueStore";
 import { useAgentStore } from "@/lib/agentStore";
+import { waitForThreadStopBarrier } from "@/components/agent-chat-panel/runtime/threadStopBarrier";
 
 function applyQueueResponse(
   threadId: string,
@@ -220,6 +221,9 @@ export function useDaemonPromptQueue(daemonThreadId: string | null | undefined) 
     const messageCountBeforeSend = localThread?.messageCount ?? insertionBoundary;
     const revisionAtRequest = daemonEventRevisionRef.current;
     try {
+      if (localThread) {
+        await waitForThreadStopBarrier(localThread.id);
+      }
       const raw = await bridge.agentSendQueuedPromptNow({
         threadId: daemonThreadId,
         promptId,
