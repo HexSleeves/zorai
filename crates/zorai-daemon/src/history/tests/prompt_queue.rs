@@ -28,7 +28,10 @@ async fn prompt_queue_persists_update_cancel_and_fifo_dequeue() -> Result<()> {
     let listed = store.list_queued_prompts(Some("thread-a")).await?;
     assert_eq!(listed[0].content, "first-edited");
     assert_eq!(listed[1].id, second.id);
-    assert_eq!(listed[1].content_blocks_json.as_deref(), Some("[{\"type\":\"text\"}]"));
+    assert_eq!(
+        listed[1].content_blocks_json.as_deref(),
+        Some("[{\"type\":\"text\"}]")
+    );
 
     let dequeued = store.dequeue_next_prompt("thread-a").await?.expect("fifo");
     assert_eq!(dequeued.id, "prompt-1");
@@ -40,7 +43,10 @@ async fn prompt_queue_persists_update_cancel_and_fifo_dequeue() -> Result<()> {
         .await?
         .expect("cancel");
     assert_eq!(cancelled.id, second.id);
-    assert!(store.list_queued_prompts(Some("thread-a")).await?.is_empty());
+    assert!(store
+        .list_queued_prompts(Some("thread-a"))
+        .await?
+        .is_empty());
     assert_eq!(store.list_queued_prompts(None).await?.len(), 1);
     Ok(())
 }

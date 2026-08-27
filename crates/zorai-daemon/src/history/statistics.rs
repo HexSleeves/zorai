@@ -1,5 +1,6 @@
 use super::*;
 use chrono::{Datelike, Duration, Local, TimeZone};
+use zorai_protocol::{DailyStatisticsRow, SessionStatisticsRow};
 
 #[derive(Debug)]
 struct StatisticsTotalsRow {

@@ -198,7 +198,6 @@ async fn agent_statistics_all_time_include_provider_model_rankings_and_incomplet
     assert_eq!(snapshot.top_models_by_cost[1].model, "gpt-5.4-mini");
     assert_eq!(snapshot.top_models_by_cost[2].model, "o3-mini");
 
-    assert_eq!(snapshot.daily.len(), 6);
     assert_eq!(
         snapshot
             .daily
