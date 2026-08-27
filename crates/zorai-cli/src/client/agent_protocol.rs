@@ -514,6 +514,10 @@ pub(super) enum AgentBridgeCommand {
     #[serde(rename = "agent-get-statistics")]
     GetStatistics {
         window: zorai_protocol::AgentStatisticsWindow,
+        #[serde(default)]
+        session_limit: Option<usize>,
+        #[serde(default)]
+        session_offset: Option<usize>,
     },
     EnqueuePrompt {
         thread_id: String,

@@ -32,6 +32,11 @@ import {
 import { finalizeStreamingAssistantMessages } from "./threadTurnState";
 import { completeThreadStopBarrier, hasThreadStopBarrier } from "./threadStopBarrier";
 import {
+  consumeDeferredThreadReload,
+  deferThreadReload,
+  shouldDeferThreadReload,
+} from "./deferredThreadReload";
+import {
   applyDaemonRetryStatusEvent,
   clearThreadRetryStatus,
 } from "@/zorai/features/threads/threadRetryStatus";
@@ -282,6 +287,17 @@ export function useDaemonAgentEvents({
       }, 3000);
     };
 
+    const flushDeferredThreadReload = (localThreadId: string) => {
+      if (!consumeDeferredThreadReload(localThreadId)) return;
+      const thread = useAgentStore.getState().threads.find((entry) => entry.id === localThreadId);
+      if (!thread?.daemonThreadId) return;
+      void refreshDaemonThreadMessagesIntoLocalState({
+        daemonThreadId: thread.daemonThreadId,
+        setThreadTodos,
+        setDaemonTodosByThread,
+      });
+    };
+
     const unsubscribe = zorai.onAgentEvent((event: any) => {
       if (!event?.type) return;
 
@@ -344,6 +360,7 @@ export function useDaemonAgentEvents({
           }
           finalizeStreamingAssistantMessages(tid);
           completeThreadStopBarrier(tid);
+          flushDeferredThreadReload(tid);
           break;
         }
         case "turn_interrupted": {
@@ -353,6 +370,7 @@ export function useDaemonAgentEvents({
           useAgentMissionStore.getState().setSharedCursorMode("idle");
           finalizeStreamingAssistantMessages(tid);
           completeThreadStopBarrier(tid);
+          flushDeferredThreadReload(tid);
           break;
         }
         case "tool_call": {
@@ -477,6 +495,7 @@ export function useDaemonAgentEvents({
           updateLastAssistantMessage(tid, `Error: ${event.message}`, false);
           finalizeStreamingAssistantMessages(tid);
           completeThreadStopBarrier(tid);
+          flushDeferredThreadReload(tid);
           break;
         }
         case "thread_created": {
@@ -503,6 +522,16 @@ export function useDaemonAgentEvents({
         case "thread_reload_required": {
           const reloadThreadId = typeof event.thread_id === "string" ? event.thread_id : null;
           if (reloadThreadId) {
+            const localThreadId = useAgentStore.getState().threads.find(
+              (thread) => thread.daemonThreadId === reloadThreadId,
+            )?.id ?? null;
+            const turnActive = localThreadId
+              ? shouldDeferThreadReload(useAgentStore.getState().getThreadMessages(localThreadId))
+              : false;
+            if (localThreadId && turnActive) {
+              deferThreadReload(localThreadId);
+              break;
+            }
             void refreshDaemonThreadMessagesIntoLocalState({
               daemonThreadId: reloadThreadId,
               setThreadTodos,

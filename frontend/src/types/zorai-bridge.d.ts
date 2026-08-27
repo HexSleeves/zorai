@@ -345,6 +345,28 @@ declare global {
         cost_usd: number;
     };
 
+    type ZoraiDailyStatisticsRow = {
+        day_start: number;
+        day_key: string;
+        input_tokens: number;
+        output_tokens: number;
+        total_tokens: number;
+        cost_usd: number;
+        request_count: number;
+    };
+
+    type ZoraiSessionStatisticsRow = {
+        thread_id: string;
+        title: string;
+        updated_at: number;
+        provider_models: string[];
+        request_count: number;
+        input_tokens: number;
+        output_tokens: number;
+        total_tokens: number;
+        cost_usd: number;
+    };
+
     type ZoraiAgentStatisticsSnapshot = {
         window: ZoraiStatisticsWindow;
         generated_at: number;
@@ -354,6 +376,11 @@ declare global {
         models: ZoraiModelStatisticsRow[];
         top_models_by_tokens: ZoraiModelStatisticsRow[];
         top_models_by_cost: ZoraiModelStatisticsRow[];
+        daily: ZoraiDailyStatisticsRow[];
+        sessions: ZoraiSessionStatisticsRow[];
+        session_total: number;
+        session_limit: number;
+        session_offset: number;
     };
 
     type ZoraiWorkspaceOperator = "user" | "svarog";
@@ -786,7 +813,7 @@ declare global {
                 operator_profile_scheduler_fallback?: boolean;
             };
         } | null>;
-        agentGetStatistics?: (window?: ZoraiStatisticsWindow) => Promise<ZoraiAgentStatisticsSnapshot | null | unknown>;
+        agentGetStatistics?: (window?: ZoraiStatisticsWindow, sessionLimit?: number, sessionOffset?: number) => Promise<ZoraiAgentStatisticsSnapshot | null | unknown>;
         agentInspectPrompt?: (agentId?: string | null) => Promise<{
             agent_id: string;
             agent_name: string;

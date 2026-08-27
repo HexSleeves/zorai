@@ -868,7 +868,10 @@ impl AgentEngine {
             other => bail!("unsupported cost summary window `{other}`; use today, last7days, last30days, or all"),
         };
 
-        let stats = self.history.get_agent_statistics(window).await?;
+        let stats = self
+            .history
+            .get_agent_statistics(window, None, None)
+            .await?;
 
         let task_summary_query = crate::history::AgentTaskListQuery {
             id: None,

@@ -219,7 +219,13 @@ pub enum ClientMessage {
     SkillDiscover { query: String, session_id: Option<SessionId>, limit: usize, #[serde(default)] cursor: Option<String> },
     AgentAskQuestion { content: String, options: Vec<String>, #[serde(default)] session_id: Option<String> },
     AgentAnswerQuestion { question_id: String, answer: String },
-    AgentStatisticsQuery { window: AgentStatisticsWindow },
+    AgentStatisticsQuery {
+        window: AgentStatisticsWindow,
+        #[serde(default)]
+        session_limit: Option<usize>,
+        #[serde(default)]
+        session_offset: Option<usize>,
+    },
     AgentListTools { #[serde(default)] limit: Option<usize>, #[serde(default)] offset: Option<usize> },
     AgentSearchTools { query: String, #[serde(default)] limit: Option<usize>, #[serde(default)] offset: Option<usize> },
     AgentInternalDelegate { thread_id: Option<String>, target_agent_id: String, content: String, session_id: Option<String>, #[serde(default)] client_surface: Option<ClientSurface> },

@@ -37,7 +37,11 @@ impl HistoryStore {
     pub async fn get_agent_statistics(
         &self,
         window: AgentStatisticsWindow,
+        session_limit: Option<usize>,
+        session_offset: Option<usize>,
     ) -> Result<AgentStatisticsSnapshot> {
+        let session_limit = session_limit.unwrap_or(25).clamp(1, 100);
+        let session_offset = session_offset.unwrap_or(0);
         let cutoff_ms = window_cutoff_ms(window);
         let totals_db_row = self
             .read_db
@@ -87,8 +91,8 @@ impl HistoryStore {
             .await?;
         let mut providers = provider_rows
             .iter()
-            .filter_map(|row| map_provider_statistics_row(row).ok())
-            .collect::<Vec<_>>();
+            .map(map_provider_statistics_row)
+            .collect::<Result<Vec<_>>>()?;
 
         providers.sort_by(|left, right| {
             right
@@ -122,8 +126,8 @@ impl HistoryStore {
             .await?;
         let models = model_rows
             .iter()
-            .filter_map(|row| map_model_statistics_row(row).ok())
-            .collect::<Vec<_>>();
+            .map(map_model_statistics_row)
+            .collect::<Result<Vec<_>>>()?;
 
         let mut sorted_models = models.clone();
         sorted_models.sort_by(|left, right| {
@@ -149,6 +153,123 @@ impl HistoryStore {
         let mut top_models_by_tokens = sorted_models.clone();
         top_models_by_tokens.truncate(5);
 
+        let daily_rows = self
+            .read_db
+            .query(
+                "SELECT
+                        strftime('%Y-%m-%d', created_at / 1000, 'unixepoch', 'localtime') AS day_key,
+                        COALESCE(SUM(COALESCE(input_tokens, 0)), 0),
+                        COALESCE(SUM(COALESCE(output_tokens, 0)), 0),
+                        COALESCE(SUM(COALESCE(total_tokens, COALESCE(input_tokens, 0) + COALESCE(output_tokens, 0))), 0),
+                        COALESCE(SUM(COALESCE(cost_usd, 0)), 0.0),
+                        COUNT(*)
+                     FROM agent_messages
+                     WHERE role = 'assistant'
+                       AND deleted_at IS NULL
+                       AND created_at > 0
+                       AND (?1 IS NULL OR created_at >= ?1)
+                     GROUP BY day_key
+                     ORDER BY day_key ASC",
+                db::db_params![cutoff_ms],
+            )
+            .await?;
+        let daily = daily_rows
+            .iter()
+            .map(|row| -> Result<DailyStatisticsRow> {
+                let day_key = row.get::<String>(0)?;
+                let day_start = local_day_start_ms(&day_key).ok_or_else(|| {
+                    anyhow::anyhow!("statistics query returned invalid local day key `{day_key}`")
+                })?;
+                Ok(DailyStatisticsRow {
+                    day_start,
+                    day_key,
+                    input_tokens: row.get::<i64>(1)?.max(0) as u64,
+                    output_tokens: row.get::<i64>(2)?.max(0) as u64,
+                    total_tokens: row.get::<i64>(3)?.max(0) as u64,
+                    cost_usd: row.get(4)?,
+                    request_count: row.get::<i64>(5)?.max(0) as u64,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
+        let session_total_row = self
+            .read_db
+            .query_opt(
+                "SELECT COUNT(*) FROM (
+                     SELECT m.thread_id
+                     FROM agent_messages m
+                     LEFT JOIN agent_threads t ON t.id = m.thread_id
+                     WHERE m.role = 'assistant'
+                       AND m.deleted_at IS NULL
+                       AND t.deleted_at IS NULL
+                       AND m.created_at > 0
+                       AND (?1 IS NULL OR m.created_at >= ?1)
+                     GROUP BY m.thread_id
+                 )",
+                db::db_params![cutoff_ms],
+            )
+            .await?;
+        let session_total = session_total_row
+            .as_ref()
+            .map(|row| row.get::<i64>(0))
+            .transpose()?
+            .unwrap_or_default()
+            .max(0) as u64;
+
+        let session_rows = self
+            .read_db
+            .query(
+                "SELECT
+                        m.thread_id,
+                        COALESCE(NULLIF(TRIM(t.title), ''), m.thread_id) AS title,
+                        MAX(m.created_at) AS updated_at,
+                        COALESCE(GROUP_CONCAT(DISTINCT
+                            (CASE WHEN m.provider IS NULL OR TRIM(m.provider) = '' THEN 'unknown' ELSE m.provider END)
+                            || '/' ||
+                            (CASE WHEN m.model IS NULL OR TRIM(m.model) = '' THEN 'unknown' ELSE m.model END)
+                        ), ''),
+                        COUNT(*),
+                        COALESCE(SUM(COALESCE(m.input_tokens, 0)), 0),
+                        COALESCE(SUM(COALESCE(m.output_tokens, 0)), 0),
+                        COALESCE(SUM(COALESCE(m.total_tokens, COALESCE(m.input_tokens, 0) + COALESCE(m.output_tokens, 0))), 0),
+                        COALESCE(SUM(COALESCE(m.cost_usd, 0)), 0.0)
+                     FROM agent_messages m
+                     LEFT JOIN agent_threads t ON t.id = m.thread_id
+                     WHERE m.role = 'assistant'
+                       AND m.deleted_at IS NULL
+                       AND t.deleted_at IS NULL
+                       AND m.created_at > 0
+                       AND (?1 IS NULL OR m.created_at >= ?1)
+                     GROUP BY m.thread_id, title
+                     ORDER BY updated_at DESC, m.thread_id ASC
+                     LIMIT ?2 OFFSET ?3",
+                db::db_params![cutoff_ms, session_limit as i64, session_offset as i64],
+            )
+            .await?;
+        let sessions = session_rows
+            .iter()
+            .map(|row| -> Result<SessionStatisticsRow> {
+                let provider_models = row
+                    .get::<String>(3)?
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|value| !value.is_empty())
+                    .map(str::to_string)
+                    .collect();
+                Ok(SessionStatisticsRow {
+                    thread_id: row.get(0)?,
+                    title: row.get(1)?,
+                    updated_at: row.get::<i64>(2)?.max(0) as u64,
+                    provider_models,
+                    request_count: row.get::<i64>(4)?.max(0) as u64,
+                    input_tokens: row.get::<i64>(5)?.max(0) as u64,
+                    output_tokens: row.get::<i64>(6)?.max(0) as u64,
+                    total_tokens: row.get::<i64>(7)?.max(0) as u64,
+                    cost_usd: row.get(8)?,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+
         Ok(AgentStatisticsSnapshot {
             window,
             generated_at: current_time_ms(),
@@ -165,8 +286,21 @@ impl HistoryStore {
             models: sorted_models,
             top_models_by_tokens,
             top_models_by_cost,
+            daily,
+            sessions,
+            session_total,
+            session_limit: session_limit as u64,
+            session_offset: session_offset as u64,
         })
     }
+}
+
+fn local_day_start_ms(day_key: &str) -> Option<u64> {
+    let date = chrono::NaiveDate::parse_from_str(day_key, "%Y-%m-%d").ok()?;
+    let local = Local
+        .with_ymd_and_hms(date.year(), date.month(), date.day(), 0, 0, 0)
+        .single()?;
+    Some(local.timestamp_millis().max(0) as u64)
 }
 
 fn current_time_ms() -> u64 {

@@ -4,18 +4,16 @@ import { ModelSelector } from "@/components/settings-panel/shared";
 import { useAgentStore, type AgentProviderId, type AgentThread } from "@/lib/agentStore";
 import { getBridge } from "@/lib/bridge";
 import { pushToast } from "@/lib/toastStore";
-import { threadProviderIds } from "../threads/threadRuntimeActions";
+import {
+  clampContextWindowTokens,
+  patchThreadProfile,
+  threadProviderIds,
+} from "../threads/threadRuntimeActions";
 import { resolveThreadOwnerRuntimeProfile } from "../threads/threadOwnerRuntime";
 import { getProviderDefinition, getProviderModels } from "@/lib/agentStore/providers";
 import { BUILTIN_WORKSPACE_PERSONAS } from "../workspaces/workspaceActorPicker";
 
 type Props = { thread: AgentThread | null; variant?: "toolbar" | "composer" };
-
-function patchLocalProfile(threadId: string, patch: Partial<Pick<AgentThread, "profileProvider" | "profileModel" | "profileReasoningEffort" | "profileContextWindowTokens">>) {
-  useAgentStore.setState((state) => ({
-    threads: state.threads.map((thread) => (thread.id === threadId ? { ...thread, ...patch } : thread)),
-  }));
-}
 
 export function CodeThreadRuntimeSwitcher({ thread, variant = "toolbar" }: Props) {
   const agentSettings = useAgentStore((state) => state.agentSettings);
@@ -26,6 +24,8 @@ export function CodeThreadRuntimeSwitcher({ thread, variant = "toolbar" }: Props
   const [open, setOpen] = useState(false);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
+  const [selectedModel, setSelectedModel] = useState<string | null>(null);
+  const [selectedContextWindow, setSelectedContextWindow] = useState<number | null>(null);
   const [modelStep, setModelStep] = useState(false);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
@@ -92,6 +92,8 @@ export function CodeThreadRuntimeSwitcher({ thread, variant = "toolbar" }: Props
       setOpen(false);
       setSelectedAgentId(null);
       setSelectedProvider(null);
+      setSelectedModel(null);
+      setSelectedContextWindow(null);
       setModelStep(false);
     };
     document.addEventListener("pointerdown", onDown);
@@ -120,8 +122,9 @@ export function CodeThreadRuntimeSwitcher({ thread, variant = "toolbar" }: Props
     profile.ownerId === "swarog" ? "Svarog" : profile.ownerId === "rarog" ? "Rarog" :
     agents.find((a) => a.id.toLowerCase() === profile.ownerId.toLowerCase())?.name ?? profile.ownerId;
 
-  const apply = async (agentId: string, nextProvider: string, nextModel: string) => {
+  const apply = async (agentId: string, nextProvider: string, nextModel: string, nextContextWindow: number) => {
     if (!nextProvider || !nextModel) return;
+    const contextWindowTokens = clampContextWindowTokens(nextContextWindow);
     if (threadMessages.some((message) => message.isStreaming === true)) {
       pushToast("Wait for the active response to finish before switching this thread runtime.", "error");
       return;
@@ -160,7 +163,11 @@ export function CodeThreadRuntimeSwitcher({ thread, variant = "toolbar" }: Props
         }
       }
       // 2) Set provider/model for this thread only via thread execution profile
-      patchLocalProfile(thread.id, { profileProvider: nextProvider, profileModel: nextModel });
+      patchThreadProfile(thread.id, {
+        profileProvider: nextProvider,
+        profileModel: nextModel,
+        profileContextWindowTokens: contextWindowTokens,
+      });
       if (daemonId) {
         const bridge = getBridge() as unknown as {
           agentGetThreadExecutionProfile?: (id: string) => Promise<unknown>;
@@ -174,6 +181,7 @@ export function CodeThreadRuntimeSwitcher({ thread, variant = "toolbar" }: Props
           ...(prev && typeof prev === "object" ? prev : {}),
           provider: nextProvider,
           model: nextModel,
+          context_window_tokens: contextWindowTokens,
         };
         const result = await bridge?.agentSetThreadExecutionProfile?.(daemonId, nextProfile) as { error?: string } | unknown;
         const err = result && typeof result === "object" && "error" in (result as Record<string, unknown>)
@@ -181,10 +189,12 @@ export function CodeThreadRuntimeSwitcher({ thread, variant = "toolbar" }: Props
           : "";
         if (err) throw new Error(err);
       }
-      pushToast(`${agents.find((a) => a.id.toLowerCase() === agentId.toLowerCase())?.name ?? agentId} → ${nextProvider}/${nextModel} for this thread only.`, "info");
+      pushToast(`${agents.find((a) => a.id.toLowerCase() === agentId.toLowerCase())?.name ?? agentId} → ${nextProvider}/${nextModel} · ${(contextWindowTokens / 1000).toLocaleString()}k context for this thread only.`, "info");
       setOpen(false);
       setSelectedAgentId(null);
       setSelectedProvider(null);
+      setSelectedModel(null);
+      setSelectedContextWindow(null);
       setModelStep(false);
     } catch (error) {
       pushToast(error instanceof Error ? error.message : "Could not switch thread runtime.", "error");
@@ -298,7 +308,10 @@ export function CodeThreadRuntimeSwitcher({ thread, variant = "toolbar" }: Props
                       type="button"
                       role="menuitem"
                       className={`zorai-code-runtime-switcher__item${isCurrentModel ? " is-current" : ""}`}
-                      onClick={() => void apply(selectedAgentId!, selectedProvider!, m.id)}
+                      onClick={() => {
+                        setSelectedModel(m.id);
+                        setSelectedContextWindow(m.contextWindow > 0 ? m.contextWindow : profile.contextWindowTokens);
+                      }}
                     >
                       <span>{m.name}</span>
                       <span className="zorai-code-runtime-switcher__item-sub">{m.id} · {(m.contextWindow / 1000).toFixed(0)}k ctx</span>
@@ -309,14 +322,37 @@ export function CodeThreadRuntimeSwitcher({ thread, variant = "toolbar" }: Props
                 <div className="zorai-code-runtime-switcher__custom">
                   <ModelSelector
                     providerId={selectedProvider as AgentProviderId}
-                    value={model}
-                    customName={model}
+                    value={selectedModel ?? model}
+                    customName={selectedModel ?? model}
                     base_url={providerConfig?.base_url}
                     api_key={providerConfig?.api_key}
                     auth_source={providerConfig?.auth_source}
-                    onChange={(nextModel: string) => void apply(selectedAgentId!, selectedProvider!, nextModel)}
+                    onChange={(nextModel: string) => {
+                      setSelectedModel(nextModel);
+                      setSelectedContextWindow((current) => current ?? profile.contextWindowTokens);
+                    }}
                   />
                 </div>
+                <label className="zorai-code-runtime-switcher__context">
+                  <span>Context window (tokens)</span>
+                  <input
+                    className="zorai-input"
+                    type="number"
+                    min={1000}
+                    max={2000000}
+                    step={1000}
+                    value={selectedContextWindow ?? profile.contextWindowTokens}
+                    onChange={(event) => setSelectedContextWindow(Number(event.target.value))}
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="zorai-primary-button"
+                  disabled={!selectedModel || !selectedContextWindow || busy}
+                  onClick={() => void apply(selectedAgentId!, selectedProvider!, selectedModel!, selectedContextWindow!)}
+                >
+                  Apply model &amp; context
+                </button>
               </div>
               <button type="button" className="zorai-code-runtime-switcher__close" onClick={resetClose}>Close</button>
             </div>

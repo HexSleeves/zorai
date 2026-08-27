@@ -814,9 +814,17 @@ where
                 })
                 .await?;
         }
-        AgentBridgeCommand::GetStatistics { window } => {
+        AgentBridgeCommand::GetStatistics {
+            window,
+            session_limit,
+            session_offset,
+        } => {
             framed
-                .send(ClientMessage::AgentStatisticsQuery { window })
+                .send(ClientMessage::AgentStatisticsQuery {
+                    window,
+                    session_limit,
+                    session_offset,
+                })
                 .await?;
         }
         AgentBridgeCommand::GetStatus => {

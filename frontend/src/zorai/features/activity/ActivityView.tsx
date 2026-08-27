@@ -5,6 +5,8 @@ import { useNotificationStore } from "@/lib/notificationStore";
 import { UsagePanel } from "./ActivityUsagePanel";
 import { ActivityInbox } from "./ActivityInbox";
 import { buildUsageStats, formatCount } from "./ActivityUsageStats";
+import { openThreadTarget } from "../threads/openThreadTarget";
+import { navigateZorai } from "../../shell/zoraiNavigationEvents";
 
 type ActivityTab = "inbox" | "timeline" | "reasoning" | "planner" | "usage";
 
@@ -56,6 +58,19 @@ export function ActivityView() {
     return buildUsageStats(runtime.threads, runtime.allMessagesByThread, runtime.goalRunsForTrace);
   }, [runtime.allMessagesByThread, runtime.goalRunsForTrace, runtime.threads]);
 
+  const openThread = async (threadId: string) => {
+    if (await openThreadTarget(runtime, threadId)) navigateZorai({ view: "threads" });
+  };
+  const openGoal = (goalRunId: string) => navigateZorai({ view: "goals", goalRunId });
+  const relatedThreadId = (...candidates: Array<string | null | undefined>) => {
+    for (const candidate of candidates) {
+      if (!candidate) continue;
+      const thread = runtime.threads.find((entry) => entry.id === candidate || entry.daemonThreadId === candidate);
+      if (thread) return thread.daemonThreadId || thread.id;
+    }
+    return null;
+  };
+
   return (
     <section className="zorai-feature-surface zorai-activity-surface">
       <div className="zorai-view-header">
@@ -99,7 +114,15 @@ export function ActivityView() {
           <ActivityColumn title="Pending Approvals">
             {runtime.pendingApprovals.length === 0 ? <EmptyActivity text="No approvals are waiting." /> : (
               runtime.pendingApprovals.slice(0, 8).map((approval) => (
-                <ActivityItem key={approval.id} title={approval.command || approval.id} meta={approval.status} body={approval.reasons.join("\n") || approval.blastRadius || "Approval request"} />
+                <ActivityItem
+                  key={approval.id}
+                  title={approval.command || approval.id}
+                  meta={approval.status}
+                  body={approval.reasons.join("\n") || approval.blastRadius || "Approval request"}
+                  provenance={activityProvenance(approval)}
+                  actionLabel={relatedThreadId(approval.sessionId, approval.surfaceId) ? "Open related thread" : undefined}
+                  onAction={relatedThreadId(approval.sessionId, approval.surfaceId) ? () => void openThread(relatedThreadId(approval.sessionId, approval.surfaceId)!) : undefined}
+                />
               ))
             )}
           </ActivityColumn>
@@ -111,6 +134,9 @@ export function ActivityView() {
                   title={event.kind}
                   meta={formatTime(event.timestamp)}
                   body={event.command || event.message || event.blastRadius || "Runtime event"}
+                  provenance={activityProvenance(event)}
+                  actionLabel={relatedThreadId(event.sessionId, event.surfaceId) ? "Open related thread" : undefined}
+                  onAction={relatedThreadId(event.sessionId, event.surfaceId) ? () => void openThread(relatedThreadId(event.sessionId, event.surfaceId)!) : undefined}
                 />
               ))
             )}
@@ -123,7 +149,15 @@ export function ActivityView() {
           <div className="zorai-section-label">Reasoning Trace</div>
           {cognitiveEvents.length === 0 ? <EmptyActivity text="No reasoning events match." /> : (
             cognitiveEvents.slice(0, 20).map((event) => (
-              <ActivityItem key={event.id} title={event.source} meta={formatTime(event.timestamp)} body={event.content} />
+              <ActivityItem
+                key={event.id}
+                title={event.source}
+                meta={formatTime(event.timestamp)}
+                body={event.content}
+                provenance={activityProvenance(event)}
+                actionLabel={relatedThreadId(event.sessionId, event.surfaceId) ? "Open related thread" : undefined}
+                onAction={relatedThreadId(event.sessionId, event.surfaceId) ? () => void openThread(relatedThreadId(event.sessionId, event.surfaceId)!) : undefined}
+              />
             ))
           )}
         </div>
@@ -139,6 +173,9 @@ export function ActivityView() {
                   title={`Thread ${threadId}`}
                   meta={`${todos.length} items`}
                   body={todos.map((todo) => `${todo.status}: ${todo.content}`).join("\n")}
+                  provenance={`thread: ${threadId}`}
+                  actionLabel="Open in Threads"
+                  onAction={() => void openThread(threadId)}
                 />
               ))
             )}
@@ -151,6 +188,9 @@ export function ActivityView() {
                   title={goal.title || goal.goal}
                   meta={goal.status}
                   body={(goal.events ?? []).slice(-3).map((event) => event.message).join("\n") || goal.goal}
+                  provenance={[`goal: ${goal.id}`, goal.thread_id ? `thread: ${goal.thread_id}` : ""].filter(Boolean).join(" · ")}
+                  actionLabel="Open goal"
+                  onAction={() => openGoal(goal.id)}
                 />
               ))
             )}
@@ -181,7 +221,21 @@ function ActivityColumn({ title, children }: { title: string; children: React.Re
   );
 }
 
-function ActivityItem({ title, meta, body }: { title: string; meta: string; body: string }) {
+function ActivityItem({
+  title,
+  meta,
+  body,
+  provenance,
+  actionLabel,
+  onAction,
+}: {
+  title: string;
+  meta: string;
+  body: string;
+  provenance?: string;
+  actionLabel?: string;
+  onAction?: () => void;
+}) {
   return (
     <article className="zorai-activity-item">
       <div>
@@ -189,12 +243,24 @@ function ActivityItem({ title, meta, body }: { title: string; meta: string; body
         <span>{meta}</span>
       </div>
       <p>{body}</p>
+      {provenance ? <code className="zorai-activity-provenance">{provenance}</code> : null}
+      {actionLabel && onAction ? <button type="button" className="zorai-ghost-button" onClick={onAction}>{actionLabel}</button> : null}
     </article>
   );
 }
 
 function EmptyActivity({ text }: { text: string }) {
   return <div className="zorai-empty-state">{text}</div>;
+}
+
+function activityProvenance(item: { id: string; paneId?: string | null; workspaceId?: string | null; surfaceId?: string | null; sessionId?: string | null }): string {
+  return [
+    `event: ${item.id}`,
+    item.sessionId ? `session: ${item.sessionId}` : "",
+    item.paneId ? `pane: ${item.paneId}` : "",
+    item.surfaceId ? `surface: ${item.surfaceId}` : "",
+    item.workspaceId ? `workspace: ${item.workspaceId}` : "",
+  ].filter(Boolean).join(" · ");
 }
 
 function formatTime(timestamp: number): string {

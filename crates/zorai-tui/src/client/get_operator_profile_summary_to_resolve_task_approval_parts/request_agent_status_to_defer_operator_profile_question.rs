@@ -10,7 +10,11 @@ impl DaemonClient {
         &self,
         window: zorai_protocol::AgentStatisticsWindow,
     ) -> Result<()> {
-        self.send(ClientMessage::AgentStatisticsQuery { window })
+        self.send(ClientMessage::AgentStatisticsQuery {
+            window,
+            session_limit: None,
+            session_offset: None,
+        })
     }
 
     pub fn request_prompt_inspection(&self, agent_id: Option<String>) -> Result<()> {

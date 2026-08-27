@@ -36,7 +36,7 @@ describe("resolveThreadHistoryScrollAction", () => {
     expect(shouldFollowThreadHistoryBottom()).toBe(false);
   });
 
-  it("collapses to the latest window only after the operator returns to the bottom", () => {
+  it("returns to bottom-follow mode without trimming loaded history", () => {
     setFollowThreadHistoryBottom(false);
 
     const action = resolveThreadHistoryScrollAction({
@@ -45,7 +45,7 @@ describe("resolveThreadHistoryScrollAction", () => {
       clientHeight: 400,
     });
 
-    expect(action).toBe("trim-latest");
+    expect(action).toBe("none");
     expect(shouldFollowThreadHistoryBottom()).toBe(true);
   });
 });
@@ -54,6 +54,20 @@ describe("consumeThreadHistoryScroll", () => {
   afterEach(() => {
     vi.useRealTimers();
     resetThreadHistoryScrollStateForTest();
+  });
+
+  it("never invokes a trim callback when expanded tool content reaches the bottom", () => {
+    const trimLatest = vi.fn(() => true);
+    const onTrimmed = vi.fn();
+
+    consumeThreadHistoryScroll({
+      scroller: makeScroller(9_600, 10_000, 400),
+      ...({ trimLatest, onTrimmed } as any),
+    });
+
+    expect(trimLatest).not.toHaveBeenCalled();
+    expect(onTrimmed).not.toHaveBeenCalled();
+    expect(shouldFollowThreadHistoryBottom()).toBe(true);
   });
 
   it("debounces older loads and ignores extra top events while a fetch is in flight", async () => {

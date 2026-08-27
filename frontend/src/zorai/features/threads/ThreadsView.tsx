@@ -249,13 +249,7 @@ export function ThreadsView({
     consumeThreadHistoryScroll({
       scroller: event.currentTarget,
       loadOlder: runtime.loadOlderThreadMessages,
-      trimLatest: () => runtime.trimThreadMessagesToLatestWindow(activeThread.id),
       onFollowBottomChange: setPinnedToBottom,
-      onTrimmed: () => {
-        requestAnimationFrame(() => {
-          runtime.messagesEndRef.current?.scrollIntoView({ block: "end" });
-        });
-      },
     });
   };
   const scrollThreadToLatest = () => {
@@ -266,11 +260,6 @@ export function ThreadsView({
     beginProgrammaticThreadHistoryScroll();
     scroller.scrollTop = scroller.scrollHeight;
     endProgrammaticThreadHistoryScroll();
-    if (runtime.trimThreadMessagesToLatestWindow(activeThread.id)) {
-      requestAnimationFrame(() => {
-        runtime.messagesEndRef.current?.scrollIntoView({ block: "end" });
-      });
-    }
   };
   const profile = resolveThreadOwnerRuntimeProfile(activeThread, subAgents, useAgentStore.getState().agentSettings, useAgentStore.getState().conciergeConfig);
   return (

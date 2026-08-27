@@ -158,7 +158,7 @@ async fn agent_statistics_all_time_include_provider_model_rankings_and_incomplet
     seed_statistics_messages(&store, "thread-statistics-all", now_ms).await?;
 
     let snapshot = store
-        .get_agent_statistics(AgentStatisticsWindow::All)
+        .get_agent_statistics(AgentStatisticsWindow::All, None, None)
         .await?;
 
     assert_eq!(snapshot.window, AgentStatisticsWindow::All);
@@ -198,6 +198,23 @@ async fn agent_statistics_all_time_include_provider_model_rankings_and_incomplet
     assert_eq!(snapshot.top_models_by_cost[1].model, "gpt-5.4-mini");
     assert_eq!(snapshot.top_models_by_cost[2].model, "o3-mini");
 
+    assert_eq!(snapshot.daily.len(), 6);
+    assert_eq!(
+        snapshot
+            .daily
+            .iter()
+            .map(|row| row.request_count)
+            .sum::<u64>(),
+        7
+    );
+    assert_eq!(snapshot.session_total, 1);
+    assert_eq!(snapshot.session_limit, 25);
+    assert_eq!(snapshot.session_offset, 0);
+    assert_eq!(snapshot.sessions.len(), 1);
+    assert_eq!(snapshot.sessions[0].thread_id, "thread-statistics-all");
+    assert_eq!(snapshot.sessions[0].request_count, 7);
+    assert_eq!(snapshot.sessions[0].total_tokens, 510);
+
     fs::remove_dir_all(root)?;
     Ok(())
 }
@@ -212,14 +229,14 @@ async fn agent_statistics_windows_apply_expected_cutoffs() -> Result<()> {
     seed_statistics_messages(&store, "thread-statistics-window", now_ms).await?;
 
     let today = store
-        .get_agent_statistics(AgentStatisticsWindow::Today)
+        .get_agent_statistics(AgentStatisticsWindow::Today, None, None)
         .await?;
     assert_eq!(today.totals.total_tokens, 100);
     assert!((today.totals.cost_usd - 0.40).abs() < f64::EPSILON);
     assert!(!today.has_incomplete_cost_history);
 
     let seven_days = store
-        .get_agent_statistics(AgentStatisticsWindow::Last7Days)
+        .get_agent_statistics(AgentStatisticsWindow::Last7Days, None, None)
         .await?;
     assert_eq!(seven_days.totals.input_tokens, 240);
     assert_eq!(seven_days.totals.output_tokens, 140);
@@ -229,7 +246,7 @@ async fn agent_statistics_windows_apply_expected_cutoffs() -> Result<()> {
     assert_eq!(seven_days.totals.model_count, 3);
 
     let thirty_days = store
-        .get_agent_statistics(AgentStatisticsWindow::Last30Days)
+        .get_agent_statistics(AgentStatisticsWindow::Last30Days, None, None)
         .await?;
     assert_eq!(thirty_days.totals.input_tokens, 300);
     assert_eq!(thirty_days.totals.output_tokens, 195);
@@ -238,6 +255,137 @@ async fn agent_statistics_windows_apply_expected_cutoffs() -> Result<()> {
     assert_eq!(thirty_days.totals.provider_count, 3);
     assert_eq!(thirty_days.totals.model_count, 4);
     assert!(!thirty_days.has_incomplete_cost_history);
+
+    assert_eq!(
+        today.daily.iter().map(|row| row.request_count).sum::<u64>(),
+        1
+    );
+    assert_eq!(
+        seven_days
+            .daily
+            .iter()
+            .map(|row| row.request_count)
+            .sum::<u64>(),
+        4
+    );
+    assert_eq!(
+        thirty_days
+            .daily
+            .iter()
+            .map(|row| row.request_count)
+            .sum::<u64>(),
+        6
+    );
+    assert_eq!(
+        seven_days.sessions[0].updated_at,
+        now_ms.saturating_sub(60 * 60 * 1000) as u64
+    );
+
+    fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[tokio::test]
+async fn agent_statistics_sessions_are_sql_paginated_and_skip_deleted_threads_and_invalid_dates(
+) -> Result<()> {
+    let (store, root) = make_test_store().await?;
+    let now_ms = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("now should be after epoch")
+        .as_millis() as i64;
+
+    for (index, thread_id) in ["session-old", "session-new", "session-deleted"]
+        .into_iter()
+        .enumerate()
+    {
+        store
+            .create_thread(&AgentDbThread {
+                id: thread_id.to_string(),
+                workspace_id: None,
+                surface_id: None,
+                pane_id: None,
+                agent_name: Some("Svarog".to_string()),
+                title: thread_id.to_string(),
+                created_at: now_ms - 10_000,
+                updated_at: now_ms + index as i64 * 10_000,
+                message_count: 0,
+                total_tokens: 0,
+                last_preview: String::new(),
+                metadata_json: None,
+            })
+            .await?;
+        store
+            .add_message(&AgentDbMessage {
+                id: format!("message-{thread_id}"),
+                thread_id: thread_id.to_string(),
+                created_at: now_ms - 3_000 + index as i64 * 1_000,
+                role: "assistant".to_string(),
+                content: thread_id.to_string(),
+                provider: Some("openai".to_string()),
+                model: Some("gpt-test".to_string()),
+                input_tokens: Some(1),
+                output_tokens: Some(1),
+                total_tokens: Some(2),
+                cost_usd: Some(0.01),
+                reasoning: None,
+                tool_calls_json: None,
+                metadata_json: None,
+            })
+            .await?;
+    }
+
+    store.delete_thread("session-deleted").await?;
+    store
+        .create_thread(&AgentDbThread {
+            id: "session-invalid-date".to_string(),
+            workspace_id: None,
+            surface_id: None,
+            pane_id: None,
+            agent_name: Some("Svarog".to_string()),
+            title: "invalid".to_string(),
+            created_at: 0,
+            updated_at: 0,
+            message_count: 0,
+            total_tokens: 0,
+            last_preview: String::new(),
+            metadata_json: None,
+        })
+        .await?;
+    store
+        .add_message(&AgentDbMessage {
+            id: "message-invalid-date".to_string(),
+            thread_id: "session-invalid-date".to_string(),
+            created_at: 0,
+            role: "assistant".to_string(),
+            content: "invalid".to_string(),
+            provider: Some("openai".to_string()),
+            model: Some("gpt-test".to_string()),
+            input_tokens: Some(1),
+            output_tokens: Some(1),
+            total_tokens: Some(2),
+            cost_usd: Some(0.01),
+            reasoning: None,
+            tool_calls_json: None,
+            metadata_json: None,
+        })
+        .await?;
+
+    let first = store
+        .get_agent_statistics(AgentStatisticsWindow::All, Some(1), Some(0))
+        .await?;
+    assert_eq!(first.session_total, 2);
+    assert_eq!(first.session_limit, 1);
+    assert_eq!(first.session_offset, 0);
+    assert_eq!(first.sessions.len(), 1);
+    assert_eq!(first.sessions[0].thread_id, "session-new");
+    assert!(first.daily.iter().all(|row| row.day_key != "1970-01-01"));
+
+    let second = store
+        .get_agent_statistics(AgentStatisticsWindow::All, Some(1), Some(1))
+        .await?;
+    assert_eq!(second.sessions.len(), 1);
+    assert_eq!(second.sessions[0].thread_id, "session-old");
+    assert!(second.sessions[0].updated_at < first.sessions[0].updated_at);
 
     fs::remove_dir_all(root)?;
     Ok(())

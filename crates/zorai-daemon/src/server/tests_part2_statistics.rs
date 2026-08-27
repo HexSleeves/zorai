@@ -51,6 +51,8 @@ async fn agent_statistics_query_returns_daemon_snapshot_payload() {
     conn.framed
         .send(ClientMessage::AgentStatisticsQuery {
             window: zorai_protocol::AgentStatisticsWindow::All,
+            session_limit: None,
+            session_offset: None,
         })
         .await
         .expect("request statistics");

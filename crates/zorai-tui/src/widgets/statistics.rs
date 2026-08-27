@@ -416,6 +416,11 @@ mod tests {
                 total_tokens: 36_022_724,
                 cost_usd: 0.5,
             }],
+            daily: vec![],
+            sessions: vec![],
+            session_total: 0,
+            session_limit: 25,
+            session_offset: 0,
         }
     }
 
