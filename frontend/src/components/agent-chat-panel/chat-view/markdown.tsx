@@ -45,7 +45,14 @@ const markdownComponents: Components = {
   ),
 };
 
-export function normalizeLatexDelimiters(content: string): string {
+const LATEX_MARKERS = {
+  inlineOpen: "\uE000",
+  inlineClose: "\uE001",
+  displayOpen: "\uE002",
+  displayClose: "\uE003",
+} as const;
+
+export function protectLatexDelimiters(content: string): string {
   let fenceMarker: string | null = null;
   return content
     .split("\n")
@@ -58,19 +65,19 @@ export function normalizeLatexDelimiters(content: string): string {
         return line;
       }
       if (fenceMarker !== null) return line;
-      return normalizeLatexOutsideInlineCode(line);
+      return protectLatexOutsideInlineCode(line);
     })
     .join("\n");
 }
 
-function normalizeLatexOutsideInlineCode(line: string): string {
+function protectLatexOutsideInlineCode(line: string): string {
   let output = "";
   let cursor = 0;
   while (cursor < line.length) {
     if (line[cursor] !== "`") {
       const nextCode = line.indexOf("`", cursor);
       const end = nextCode < 0 ? line.length : nextCode;
-      output += normalizeLatexText(line.slice(cursor, end));
+      output += protectLatexText(line.slice(cursor, end));
       cursor = end;
       continue;
     }
@@ -80,7 +87,7 @@ function normalizeLatexOutsideInlineCode(line: string): string {
     const marker = "`".repeat(ticks);
     const closing = line.indexOf(marker, cursor + ticks);
     if (closing < 0) {
-      output += normalizeLatexText(line.slice(cursor));
+      output += protectLatexText(line.slice(cursor));
       break;
     }
     output += line.slice(cursor, closing + ticks);
@@ -89,12 +96,28 @@ function normalizeLatexOutsideInlineCode(line: string): string {
   return output;
 }
 
-function normalizeLatexText(text: string): string {
+function protectLatexText(text: string): string {
   return text
-    .replace(/\\\[/g, () => "$$")
-    .replace(/\\\]/g, () => "$$")
-    .replace(/\\\(/g, () => "$")
-    .replace(/\\\)/g, () => "$");
+    .replace(/\\\[/g, LATEX_MARKERS.displayOpen)
+    .replace(/\\\]/g, LATEX_MARKERS.displayClose)
+    .replace(/\\\(/g, LATEX_MARKERS.inlineOpen)
+    .replace(/\\\)/g, LATEX_MARKERS.inlineClose);
+}
+
+function restoreLatexDelimiters(root: HTMLElement): void {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const textNodes: Text[] = [];
+  while (walker.nextNode()) textNodes.push(walker.currentNode as Text);
+  for (const node of textNodes) {
+    const parent = node.parentElement;
+    if (parent?.closest("pre, code, .no-math, .katex")) continue;
+    const restored = node.data
+      .split(LATEX_MARKERS.inlineOpen).join("\\(")
+      .split(LATEX_MARKERS.inlineClose).join("\\)")
+      .split(LATEX_MARKERS.displayOpen).join("\\[")
+      .split(LATEX_MARKERS.displayClose).join("\\]");
+    if (restored !== node.data) node.data = restored;
+  }
 }
 
 export function markdownRenderMode(streaming: boolean | undefined): "plain" | "markdown" {
@@ -110,11 +133,12 @@ export const MarkdownContent = memo(function MarkdownContent({
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const renderMode = markdownRenderMode(streaming);
-  const normalizedContent = renderMode === "markdown" ? normalizeLatexDelimiters(content) : content;
+  const protectedContent = renderMode === "markdown" ? protectLatexDelimiters(content) : content;
 
   useEffect(() => {
     const root = rootRef.current;
     if (!root || renderMode === "plain") return;
+    restoreLatexDelimiters(root);
     renderMathInElement(root, {
       delimiters: [...KATEX_DELIMITERS],
       ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code", "option"],
@@ -122,7 +146,7 @@ export const MarkdownContent = memo(function MarkdownContent({
       throwOnError: false,
       strict: "ignore",
     });
-  }, [normalizedContent, renderMode]);
+  }, [protectedContent, renderMode]);
 
   if (renderMode === "plain") {
     return <div ref={rootRef} className="acp-md acp-md--streaming">{content}</div>;
@@ -130,7 +154,7 @@ export const MarkdownContent = memo(function MarkdownContent({
   return (
     <div ref={rootRef} className="acp-md">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-        {normalizedContent}
+        {protectedContent}
       </ReactMarkdown>
     </div>
   );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { KATEX_DELIMITERS, markdownRenderMode, normalizeLatexDelimiters } from "./markdown";
+import { KATEX_DELIMITERS, markdownRenderMode, protectLatexDelimiters } from "./markdown";
 
 describe("markdownRenderMode", () => {
   it("skips markdown while streaming so each token does not re-parse the whole bubble", () => {
@@ -9,10 +9,14 @@ describe("markdownRenderMode", () => {
   });
 });
 
-describe("normalizeLatexDelimiters", () => {
-  it("normalizes model-style inline and display delimiters", () => {
-    expect(normalizeLatexDelimiters("Inline \\(x^2\\) and display:\n\\[x+y=z\\]"))
-      .toBe("Inline $x^2$ and display:\n$$x+y=z$$");
+describe("protectLatexDelimiters", () => {
+  it("protects model-style delimiters without converting them to dollar syntax", () => {
+    const protectedText = protectLatexDelimiters("Inline \\(x^2\\) and display:\n\\[x+y=z\\]");
+    expect(protectedText).not.toContain("\\(");
+    expect(protectedText).not.toContain("\\[");
+    expect(protectedText).not.toContain("$");
+    expect(protectedText).toContain("x^2");
+    expect(protectedText).toContain("x+y=z");
   });
 
   it("does not alter inline code or fenced code blocks", () => {
@@ -23,13 +27,11 @@ describe("normalizeLatexDelimiters", () => {
       "```",
       "\\[rendered\\]",
     ].join("\n");
-    expect(normalizeLatexDelimiters(source)).toBe([
-      "Use `\\(literal\\)` then $rendered$.",
-      "```tex",
-      "\\[literal\\]",
-      "```",
-      "$$rendered$$",
-    ].join("\n"));
+    const protectedText = protectLatexDelimiters(source);
+    expect(protectedText).toContain("`\\(literal\\)`");
+    expect(protectedText).toContain("```tex\n\\[literal\\]\n```");
+    expect(protectedText).not.toContain("then \\(rendered\\)");
+    expect(protectedText).not.toContain("```\n\\[rendered\\]");
   });
 });
 

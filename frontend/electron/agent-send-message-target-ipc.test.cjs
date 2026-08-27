@@ -64,6 +64,34 @@ test("agent spawn-subagent IPC preserves parent thread and request", async () =>
   assert.deepEqual(result, { ok: true, content: "spawned" });
 });
 
+test("agent send-message IPC forwards image content blocks to the bridge", async () => {
+  const { handlers, commands } = createHandlerHarness();
+  const contentBlocksJson = JSON.stringify([{
+    type: "image",
+    data_url: "data:image/png;base64,iVBORw0KGgo=",
+    mime_type: "image/png",
+  }]);
+
+  await handlers.get("agent-send-message")(
+    null,
+    "local-thread-image",
+    "What is in this image?",
+    null,
+    null,
+    contentBlocksJson,
+    null,
+  );
+
+  assert.deepEqual(commands, [{
+    type: "send-message",
+    thread_id: "local-thread-image",
+    content: "What is in this image?",
+    session_id: null,
+    target_agent_id: null,
+    content_blocks_json: contentBlocksJson,
+  }]);
+});
+
 test("agent send-message IPC forwards the selected agent to the daemon", async () => {
   const { handlers, commands } = createHandlerHarness();
 

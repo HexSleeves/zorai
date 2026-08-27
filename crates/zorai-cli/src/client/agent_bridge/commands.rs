@@ -26,6 +26,7 @@ where
             content,
             session_id,
             context_messages,
+            content_blocks_json,
             target_agent_id,
         } => {
             let context_messages_json =
@@ -36,7 +37,7 @@ where
                     content,
                     session_id,
                     context_messages_json,
-                    content_blocks_json: None,
+                    content_blocks_json,
                     client_surface: Some(zorai_protocol::ClientSurface::Electron),
                     target_agent_id,
                 })
@@ -1395,12 +1396,14 @@ mod tests {
                 content,
                 session_id,
                 context_messages,
+                content_blocks_json,
                 target_agent_id,
             } => {
                 assert_eq!(thread_id.as_deref(), Some("thread-1"));
                 assert_eq!(content, "hello");
                 assert!(session_id.is_none());
                 assert!(context_messages.is_none());
+                assert!(content_blocks_json.is_none());
                 assert_eq!(target_agent_id.as_deref(), Some("weles"));
             }
             other => panic!("expected SendMessage command, got {other:?}"),
@@ -1482,6 +1485,41 @@ mod tests {
                     Some(zorai_protocol::ClientSurface::Electron)
                 );
                 assert_eq!(target_agent_id.as_deref(), Some("weles"));
+            }
+            other => panic!("expected AgentSendMessage, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn send_message_command_preserves_image_content_blocks() {
+        let blocks = r#"[{\"type\":\"image\",\"data_url\":\"data:image/png;base64,iVBORw0KGgo=\",\"mime_type\":\"image/png\"}]"#;
+        let line = serde_json::json!({
+            "type": "send-message",
+            "thread_id": "thread-image",
+            "content": "what is in this picture?",
+            "session_id": null,
+            "context_messages": null,
+            "content_blocks_json": blocks,
+            "target_agent_id": null,
+        })
+        .to_string();
+        let message = emitted_client_message(&line).await;
+
+        match message {
+            ClientMessage::AgentSendMessage {
+                thread_id,
+                content,
+                content_blocks_json,
+                client_surface,
+                ..
+            } => {
+                assert_eq!(thread_id.as_deref(), Some("thread-image"));
+                assert_eq!(content, "what is in this picture?");
+                assert_eq!(content_blocks_json.as_deref(), Some(blocks));
+                assert_eq!(
+                    client_surface,
+                    Some(zorai_protocol::ClientSurface::Electron)
+                );
             }
             other => panic!("expected AgentSendMessage, got {other:?}"),
         }

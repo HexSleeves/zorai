@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { collectClipboardFiles, readSpeechToTextContent, readSpeechToTextError } from "./composerMedia";
+import {
+  buildAttachmentSendPayload,
+  collectClipboardFiles,
+  readSpeechToTextContent,
+  readSpeechToTextError,
+} from "./composerMedia";
 
 describe("speech-to-text result parsing", () => {
   it("reads a daemon plain-text payload that arrives as event data", () => {
@@ -52,5 +57,25 @@ describe("collectClipboardFiles", () => {
     const files = collectClipboardFiles(clipboardData);
     expect(files).toHaveLength(1);
     expect(files[0]?.name).toBe("shot.png");
+  });
+});
+
+describe("buildAttachmentSendPayload", () => {
+  it("serializes image data URLs for both local preview and daemon transport", () => {
+    const dataUrl = "data:image/png;base64,iVBORw0KGgo=";
+    const payload = buildAttachmentSendPayload("what is shown?", [{
+      id: "image-1",
+      name: "picture.png",
+      size: 11,
+      kind: "image",
+      mimeType: "image/png",
+      dataUrl,
+    }]);
+
+    expect(payload.localContentBlocks).toEqual([
+      { type: "text", text: "what is shown?" },
+      { type: "image", data_url: dataUrl, mime_type: "image/png" },
+    ]);
+    expect(JSON.parse(payload.contentBlocksJson ?? "null")).toEqual(payload.localContentBlocks);
   });
 });

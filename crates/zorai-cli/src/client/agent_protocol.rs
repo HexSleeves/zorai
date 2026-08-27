@@ -41,6 +41,8 @@ pub(super) enum AgentBridgeCommand {
         #[serde(default, deserialize_with = "deserialize_context_messages")]
         context_messages: Option<Vec<zorai_protocol::AgentDbMessage>>,
         #[serde(default)]
+        content_blocks_json: Option<String>,
+        #[serde(default)]
         target_agent_id: Option<String>,
     },
     InternalDelegate {
