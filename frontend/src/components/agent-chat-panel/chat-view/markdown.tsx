@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useMemo, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import type { Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -45,77 +45,96 @@ const markdownComponents: Components = {
   ),
 };
 
-const LATEX_MARKERS = {
-  inlineOpen: "\uE000",
-  inlineClose: "\uE001",
-  displayOpen: "\uE002",
-  displayClose: "\uE003",
-} as const;
+const MATH_TOKEN_OPEN = "\uE100";
+const MATH_TOKEN_CLOSE = "\uE101";
 
-export function protectLatexDelimiters(content: string): string {
-  let fenceMarker: string | null = null;
-  return content
-    .split("\n")
-    .map((line) => {
-      const fence = line.match(/^\s*(`{3,}|~{3,})/);
-      if (fence) {
-        const marker = fence[1][0];
-        if (fenceMarker === null) fenceMarker = marker;
-        else if (fenceMarker === marker) fenceMarker = null;
-        return line;
-      }
-      if (fenceMarker !== null) return line;
-      return protectLatexOutsideInlineCode(line);
-    })
-    .join("\n");
-}
+export type ProtectedMath = {
+  content: string;
+  segments: string[];
+};
 
-function protectLatexOutsideInlineCode(line: string): string {
+const MATH_PAIRS = [
+  { left: "\\begin{equation*}", right: "\\end{equation*}" },
+  { left: "\\begin{equation}", right: "\\end{equation}" },
+  { left: "\\begin{align*}", right: "\\end{align*}" },
+  { left: "\\begin{align}", right: "\\end{align}" },
+  { left: "\\begin{gather*}", right: "\\end{gather*}" },
+  { left: "\\begin{gather}", right: "\\end{gather}" },
+  { left: "\\[", right: "\\]" },
+  { left: "\\(", right: "\\)" },
+  { left: "$$", right: "$$" },
+] as const;
+
+export function protectMathSegments(source: string): ProtectedMath {
+  const segments: string[] = [];
   let output = "";
   let cursor = 0;
-  while (cursor < line.length) {
-    if (line[cursor] !== "`") {
-      const nextCode = line.indexOf("`", cursor);
-      const end = nextCode < 0 ? line.length : nextCode;
-      output += protectLatexText(line.slice(cursor, end));
+  let fence: "`" | "~" | null = null;
+
+  while (cursor < source.length) {
+    if (cursor === 0 || source[cursor - 1] === "\n") {
+      const lineEnd = source.indexOf("\n", cursor);
+      const end = lineEnd < 0 ? source.length : lineEnd;
+      const line = source.slice(cursor, end);
+      const fenceMatch = line.match(/^\s*(`{3,}|~{3,})/);
+      if (fenceMatch) {
+        const marker = fenceMatch[1][0] as "`" | "~";
+        if (fence === null) fence = marker;
+        else if (fence === marker) fence = null;
+        output += source.slice(cursor, lineEnd < 0 ? end : end + 1);
+        cursor = lineEnd < 0 ? end : end + 1;
+        continue;
+      }
+    }
+
+    if (fence !== null) {
+      output += source[cursor];
+      cursor += 1;
+      continue;
+    }
+
+    if (source[cursor] === "`") {
+      let ticks = 1;
+      while (source[cursor + ticks] === "`") ticks += 1;
+      const marker = "`".repeat(ticks);
+      const closing = source.indexOf(marker, cursor + ticks);
+      const end = closing < 0 ? source.length : closing + ticks;
+      output += source.slice(cursor, end);
       cursor = end;
       continue;
     }
 
-    let ticks = 1;
-    while (line[cursor + ticks] === "`") ticks += 1;
-    const marker = "`".repeat(ticks);
-    const closing = line.indexOf(marker, cursor + ticks);
-    if (closing < 0) {
-      output += protectLatexText(line.slice(cursor));
-      break;
+    const pair = MATH_PAIRS.find(({ left }) => source.startsWith(left, cursor));
+    if (pair) {
+      const closing = source.indexOf(pair.right, cursor + pair.left.length);
+      if (closing >= 0) {
+        const end = closing + pair.right.length;
+        const index = segments.push(source.slice(cursor, end)) - 1;
+        output += `${MATH_TOKEN_OPEN}${index}${MATH_TOKEN_CLOSE}`;
+        cursor = end;
+        continue;
+      }
     }
-    output += line.slice(cursor, closing + ticks);
-    cursor = closing + ticks;
+
+    output += source[cursor];
+    cursor += 1;
   }
-  return output;
+
+  return { content: output, segments };
 }
 
-function protectLatexText(text: string): string {
-  return text
-    .replace(/\\\[/g, LATEX_MARKERS.displayOpen)
-    .replace(/\\\]/g, LATEX_MARKERS.displayClose)
-    .replace(/\\\(/g, LATEX_MARKERS.inlineOpen)
-    .replace(/\\\)/g, LATEX_MARKERS.inlineClose);
-}
-
-function restoreLatexDelimiters(root: HTMLElement): void {
+function restoreMathSegments(root: HTMLElement, segments: string[]): void {
+  if (segments.length === 0) return;
+  const tokenPattern = new RegExp(`${MATH_TOKEN_OPEN}(\\d+)${MATH_TOKEN_CLOSE}`, "g");
   const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
   const textNodes: Text[] = [];
   while (walker.nextNode()) textNodes.push(walker.currentNode as Text);
   for (const node of textNodes) {
-    const parent = node.parentElement;
-    if (parent?.closest("pre, code, .no-math, .katex")) continue;
-    const restored = node.data
-      .split(LATEX_MARKERS.inlineOpen).join("\\(")
-      .split(LATEX_MARKERS.inlineClose).join("\\)")
-      .split(LATEX_MARKERS.displayOpen).join("\\[")
-      .split(LATEX_MARKERS.displayClose).join("\\]");
+    if (node.parentElement?.closest("pre, code, .no-math, .katex")) continue;
+    const restored = node.data.replace(tokenPattern, (_match, rawIndex: string) => {
+      const index = Number(rawIndex);
+      return Number.isInteger(index) ? segments[index] ?? _match : _match;
+    });
     if (restored !== node.data) node.data = restored;
   }
 }
@@ -133,12 +152,15 @@ export const MarkdownContent = memo(function MarkdownContent({
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
   const renderMode = markdownRenderMode(streaming);
-  const protectedContent = renderMode === "markdown" ? protectLatexDelimiters(content) : content;
+  const protectedMath = useMemo(
+    () => renderMode === "markdown" ? protectMathSegments(content) : { content, segments: [] },
+    [content, renderMode],
+  );
 
   useEffect(() => {
     const root = rootRef.current;
     if (!root || renderMode === "plain") return;
-    restoreLatexDelimiters(root);
+    restoreMathSegments(root, protectedMath.segments);
     renderMathInElement(root, {
       delimiters: [...KATEX_DELIMITERS],
       ignoredTags: ["script", "noscript", "style", "textarea", "pre", "code", "option"],
@@ -146,7 +168,7 @@ export const MarkdownContent = memo(function MarkdownContent({
       throwOnError: false,
       strict: "ignore",
     });
-  }, [protectedContent, renderMode]);
+  }, [protectedMath, renderMode]);
 
   if (renderMode === "plain") {
     return <div ref={rootRef} className="acp-md acp-md--streaming">{content}</div>;
@@ -154,7 +176,7 @@ export const MarkdownContent = memo(function MarkdownContent({
   return (
     <div ref={rootRef} className="acp-md">
       <ReactMarkdown remarkPlugins={[remarkGfm]} components={markdownComponents}>
-        {protectedContent}
+        {protectedMath.content}
       </ReactMarkdown>
     </div>
   );

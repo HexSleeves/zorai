@@ -425,7 +425,7 @@ export function ThreadComposer({
         <div className="zorai-composer-actions">
           <div className="zorai-composer-actions__left">
             {compact ? (
-              <CodeThreadRuntimeSwitcher thread={runtime.activeThread ?? null} variant="composer" />
+              <CodeThreadRuntimeSwitcher key={runtime.activeThread?.id ?? "none"} thread={runtime.activeThread ?? null} variant="composer" />
             ) : showTargetSelector ? (
               <label className="zorai-composer-target">
                 <select
@@ -461,7 +461,7 @@ export function ThreadComposer({
               </label>
             ) : null}
             <div className="zorai-composer-mode">
-              {runtime.activeThread ? <ThreadEffortGauge thread={runtime.activeThread} /> : null}
+              {runtime.activeThread ? <ThreadEffortGauge key={runtime.activeThread.id} thread={runtime.activeThread} /> : null}
               <ManagedSecurityShield />
             </div>
             <input
@@ -522,7 +522,7 @@ export function ThreadComposer({
           </div>
 
           <div className="zorai-composer-actions__right">
-            <ComposerContextCircle thread={runtime.activeThread ?? null} messages={runtime.messages} />
+            <ComposerContextCircle key={runtime.activeThread?.id ?? "none"} thread={runtime.activeThread ?? null} messages={runtime.messages} />
             {queue.editingId ? (
               <>
                 <button

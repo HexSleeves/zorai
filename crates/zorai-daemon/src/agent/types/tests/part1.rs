@@ -439,14 +439,22 @@ fn z_ai_coding_plan_catalog_uses_current_supported_models() {
     );
     assert_eq!(
         provider.models.get(1).map(|model| model.id),
-        Some("glm-5-turbo")
+        Some("glm-5.3-flash")
     );
     assert_eq!(
         provider.models.get(1).map(|model| model.context_window),
-        Some(200_000)
+        Some(1_000_000)
     );
     assert_eq!(
         provider.models.get(2).map(|model| model.id),
+        Some("glm-5-turbo")
+    );
+    assert_eq!(
+        provider.models.get(2).map(|model| model.context_window),
+        Some(200_000)
+    );
+    assert_eq!(
+        provider.models.get(3).map(|model| model.id),
         Some("glm-4.7")
     );
 }

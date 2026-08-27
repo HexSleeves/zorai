@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { KATEX_DELIMITERS, markdownRenderMode, protectLatexDelimiters } from "./markdown";
+import { KATEX_DELIMITERS, markdownRenderMode, protectMathSegments } from "./markdown";
 
 describe("markdownRenderMode", () => {
   it("skips markdown while streaming so each token does not re-parse the whole bubble", () => {
@@ -9,17 +9,22 @@ describe("markdownRenderMode", () => {
   });
 });
 
-describe("protectLatexDelimiters", () => {
-  it("protects model-style delimiters without converting them to dollar syntax", () => {
-    const protectedText = protectLatexDelimiters("Inline \\(x^2\\) and display:\n\\[x+y=z\\]");
-    expect(protectedText).not.toContain("\\(");
-    expect(protectedText).not.toContain("\\[");
-    expect(protectedText).not.toContain("$");
-    expect(protectedText).toContain("x^2");
-    expect(protectedText).toContain("x+y=z");
+describe("protectMathSegments", () => {
+  it("protects the entire multiline formula shown in the GUI regression", () => {
+    const formula = [
+      "\\[ \\widehat{\\Delta}_{p,c,g}",
+      "= \\alpha_c \\Delta^{K562}_{p,g} + \\beta_c + R\\theta(p,c,g) \\]",
+    ].join("\n");
+    const protectedMath = protectMathSegments(`Baseline:\n\n${formula}\n\nwhere:`);
+
+    expect(protectedMath.segments).toEqual([formula]);
+    expect(protectedMath.content).not.toContain("\\widehat");
+    expect(protectedMath.content).not.toContain("_{p,c,g}");
+    expect(protectedMath.content).toContain("Baseline:");
+    expect(protectedMath.content).toContain("where:");
   });
 
-  it("does not alter inline code or fenced code blocks", () => {
+  it("does not extract inline code or fenced code blocks", () => {
     const source = [
       "Use `\\(literal\\)` then \\(rendered\\).",
       "```tex",
@@ -27,11 +32,10 @@ describe("protectLatexDelimiters", () => {
       "```",
       "\\[rendered\\]",
     ].join("\n");
-    const protectedText = protectLatexDelimiters(source);
-    expect(protectedText).toContain("`\\(literal\\)`");
-    expect(protectedText).toContain("```tex\n\\[literal\\]\n```");
-    expect(protectedText).not.toContain("then \\(rendered\\)");
-    expect(protectedText).not.toContain("```\n\\[rendered\\]");
+    const protectedMath = protectMathSegments(source);
+    expect(protectedMath.segments).toEqual(["\\(rendered\\)", "\\[rendered\\]"]);
+    expect(protectedMath.content).toContain("`\\(literal\\)`");
+    expect(protectedMath.content).toContain("```tex\n\\[literal\\]\n```");
   });
 });
 

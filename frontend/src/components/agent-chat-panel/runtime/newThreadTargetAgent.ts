@@ -9,3 +9,19 @@ export function resolveNewThreadTargetAgent(
   }
   return thread?.targetAgentId?.trim() || null;
 }
+
+let pendingUnboundThreadBindId: string | null = null;
+
+export function notePendingUnboundThreadBind(localThreadId: string | null | undefined): void {
+  const id = localThreadId?.trim() || "";
+  pendingUnboundThreadBindId = id || null;
+}
+
+export function isPendingUnboundThreadBind(localThreadId: string | null | undefined): boolean {
+  const id = localThreadId?.trim() || "";
+  return Boolean(id) && pendingUnboundThreadBindId === id;
+}
+
+export function clearPendingUnboundThreadBind(): void {
+  pendingUnboundThreadBindId = null;
+}

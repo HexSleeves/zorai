@@ -592,6 +592,7 @@ function FeaturesPanel() {
   const agentSettings = useAgentStore((state) => state.agentSettings);
   const updateAgentSetting = useAgentStore((state) => state.updateAgentSetting);
   const providerAuthStates = useAgentStore((state) => state.providerAuthStates);
+  const subAgents = useAgentStore((state) => state.subAgents);
   const providerIds = useProviderIds(agentSettings);
   const providerOptions = useProviderOptions(agentSettings);
   const audioSttProviderOptions = filterAudioProviderOptions(providerOptions, "stt");
@@ -741,9 +742,24 @@ function FeaturesPanel() {
           </select>
         </SettingRow>
       </Panel>
+      <Panel section="Features" title="Code review">
+        <SettingRow label="Review Agent" description="Agent or subagent that runs code review from the GUI Code tab.">
+          <select className="zorai-input" value={agentSettings.code_review_agent} onChange={(event) => updateAgentSetting("code_review_agent", event.target.value)}>
+            {codeReviewAgentOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+            {subAgents.map((subAgent) => <option key={subAgent.id} value={subAgent.id}>{subAgent.name}</option>)}
+          </select>
+        </SettingRow>
+        <NumberRow label="Commits per review" description="How many latest commits the reviewer examines." value={agentSettings.code_review_commit_window} onChange={(value) => updateAgentSetting("code_review_commit_window", value)} min={1} max={50} />
+      </Panel>
     </SettingsGrid>
   );
 }
+
+const codeReviewAgentOptions = [
+  { value: "weles", label: "Weles (built-in reviewer)" },
+  { value: "swarog", label: "Svarog" },
+  { value: "rarog", label: "Rarog" },
+];
 
 function AdvancedPanel() {
   const agentSettings = useAgentStore((state) => state.agentSettings);

@@ -458,6 +458,7 @@ describe("frontend curated media provider catalog", () => {
     ]);
     expect(getProviderModels("z.ai").map((model) => model.id)).toEqual([
       "glm-4-plus",
+      "glm-5.3-flash",
       "glm-5.1",
       "glm-5",
       "glm-4",
@@ -466,6 +467,7 @@ describe("frontend curated media provider catalog", () => {
     ]);
     expect(getProviderModels("z.ai-coding-plan").map((model) => model.id)).toEqual([
       "glm-5.3",
+      "glm-5.3-flash",
       "glm-5-turbo",
       "glm-4.7",
       "glm-5",
@@ -486,6 +488,7 @@ describe("frontend curated media provider catalog", () => {
     ]);
     expect(getProviderModels("alibaba-coding-plan").map((model) => model.id)).toEqual([
       "qwen3.6-plus",
+      "qwen3.8-flash",
       "qwen3-coder-plus",
       "qwen3-coder-next",
       "glm-5",

@@ -243,6 +243,7 @@ fn kimi_coding_static_catalog_preserves_provider_default_model() {
 fn z_ai_static_catalog_preserves_provider_default_model() {
     let models = known_models_for_provider(PROVIDER_ID_Z_AI);
     assert!(models.iter().any(|model| model.id == "glm-4-plus"));
+    assert!(models.iter().any(|model| model.id == "glm-5.3-flash"));
     assert!(models.iter().any(|model| model.id == "glm-4-air"));
     assert!(!models.iter().any(|model| model.id == "glm-4.7"));
     assert!(!models.iter().any(|model| model.id == "glm-4.7-air"));
@@ -260,6 +261,7 @@ fn z_ai_coding_static_catalog_uses_current_supported_models() {
         models.first().map(|model| model.id.as_str()),
         Some("glm-5.3")
     );
+    assert!(models.iter().any(|model| model.id == "glm-5.3-flash"));
     assert!(models.iter().any(|model| model.id == "glm-5-turbo"));
     assert!(models.iter().any(|model| model.id == "glm-4.7"));
     assert!(models.iter().any(|model| model.id == "glm-5"));
@@ -276,6 +278,7 @@ fn z_ai_coding_static_catalog_uses_current_supported_models() {
 fn alibaba_coding_static_catalog_preserves_provider_default_model() {
     let models = known_models_for_provider(PROVIDER_ID_ALIBABA_CODING_PLAN);
     assert!(models.iter().any(|model| model.id == "qwen3.6-plus"));
+    assert!(models.iter().any(|model| model.id == "qwen3.8-flash"));
     assert!(!models.iter().any(|model| model.id == "qwen3.5-plus"));
     assert_eq!(
         default_model_for_provider_auth(PROVIDER_ID_ALIBABA_CODING_PLAN, "api_key"),

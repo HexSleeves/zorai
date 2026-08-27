@@ -32,8 +32,12 @@ import { CodeLargeFileGate, exceedsCodeFileLimit } from "@/zorai/features/code/C
 import { WorkspaceExplorerTree } from "@/zorai/features/code/WorkspaceExplorerTree";
 import { WorkspacePathDialog, type WorkspacePathOperation } from "@/zorai/features/code/WorkspacePathDialog";
 import { WorkspaceSourceControlChanges } from "@/zorai/features/code/WorkspaceSourceControlChanges";
-import { confirmWorkspaceDiscard, runWorkspaceGitBulkMutation, runWorkspaceGitMutation } from "@/zorai/features/code/workspaceGitActions";
-import { loadWorkspaceRootState, runWorkspacePathMutation } from "@/zorai/features/code/workspaceRefresh";
+import { BranchSwitcher } from "@/zorai/features/code/BranchSwitcher";
+import { CommitGraph } from "@/zorai/features/code/CommitGraph";
+import { AgentReviewPanel } from "@/zorai/features/code/AgentReviewPanel";
+import { buildReviewPrompt, NO_ISSUES_MARKER, parseReviewFindings, useCodeReviewStore } from "@/zorai/features/code/codeReview";
+import { confirmWorkspaceDiscard, runWorkspaceGitMutation } from "@/zorai/features/code/workspaceGitActions";
+import { loadWorkspaceRootState, loadWorkspaceGitState, runWorkspacePathMutation } from "@/zorai/features/code/workspaceRefresh";
 
 const WorkspaceCodeEditor = lazy(() => import("@/components/WorkspaceCodeEditor").then((module) => ({ default: module.WorkspaceCodeEditor })));
 const WorkspaceDiffEditor = lazy(() => import("@/components/WorkspaceCodeEditor").then((module) => ({ default: module.WorkspaceDiffEditor })));
@@ -46,8 +50,9 @@ function statusLabel(entry?: ZoraiWorkspaceGitStatus) {
   return (entry.worktreeStatus.trim() || entry.indexStatus.trim()).slice(0, 1);
 }
 
-export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null } = {}) {
+export function WorkspaceWorkbench({ openedRoot, agentInputController }: { openedRoot?: string | null; agentInputController?: { input: string; setInput: (value: string) => void } | null } = {}) {
   const bridge = getBridge();
+  const agentPanelRuntimeRefForInput = agentInputController ?? null;
   const activeThreadId = useAgentStore((state) => state.activeThreadId);
   const activeDaemonThreadId = useAgentStore((state) => state.threads.find((thread) => thread.id === state.activeThreadId)?.daemonThreadId ?? state.activeThreadId);
   const activeWorkspace = useWorkspaceStore((state) => state.activeWorkspace());
@@ -164,6 +169,24 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     }
   }, [bridge]);
 
+  const refreshGitOnly = useCallback(async (root = contextRootRef.current) => {
+    if (!root || !bridge?.workspaceGitStatus) return;
+    try {
+      const gitState = await loadWorkspaceGitState(
+        { workspaceGitStatus: bridge.workspaceGitStatus, workspaceGitOverview: bridge.workspaceGitOverview },
+        root,
+      );
+      const currentRoot = activeThreadIdRef.current
+        ? useWorkspaceContextStore.getState().byThreadId[activeThreadIdRef.current]?.root
+        : undefined;
+      if (currentRoot && currentRoot !== root) return;
+      setGitStatus(gitState.statuses);
+      setGitOverview(gitState.overview);
+    } catch {
+      // Git-only refresh is best-effort; the next full refresh recovers.
+    }
+  }, [bridge]);
+
   useEffect(() => { void useWorkspaceContextStore.getState().hydrate(); }, []);
   useEffect(() => {
     const path = context?.activeFile;
@@ -259,11 +282,24 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     let subscriptionId: string | null = null;
     let disposed = false;
     const watchedRoot = context.root;
+    // Coalesce watcher bursts: the file watcher can emit several batches in
+    // quick succession (saves, git ops, LSP touches). Refresh git state at
+    // most once per trailing window instead of per batch.
+    let refreshTimer: number | null = null;
+    let refreshInFlight: Promise<void> | null = null;
+    const scheduleGitRefresh = () => {
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
+      refreshTimer = window.setTimeout(() => {
+        refreshTimer = null;
+        if (refreshInFlight) return;
+        refreshInFlight = refreshGitOnly(watchedRoot).finally(() => { refreshInFlight = null; });
+      }, 300);
+    };
     const unsubscribe = bridge.onWorkspaceFilesChanged((batch) => {
       if (batch.root !== watchedRoot || (subscriptionId && batch.subscriptionId !== subscriptionId)) return;
       invalidateWorkspaceFileIndex(watchedRoot);
       void getWorkspaceFiles(bridge, watchedRoot, { force: true }).then((files) => setIndexedFiles(files)).catch(() => {});
-      void refreshRoot(watchedRoot).catch(() => {});
+      scheduleGitRefresh();
       const currentActive = activeDocument;
       if (!currentActive) return;
       const activeChange = batch.changes.some((change) => change.path === currentActive.path);
@@ -292,10 +328,11 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
     }).catch(() => {});
     return () => {
       disposed = true;
+      if (refreshTimer !== null) window.clearTimeout(refreshTimer);
       if (typeof unsubscribe === "function") unsubscribe();
       if (subscriptionId) void bridge.workspaceWatchStop?.(subscriptionId);
     };
-  }, [activeDocument?.path, activeDocument?.hash, bridge, context?.root, refreshRoot]);
+  }, [activeDocument?.path, activeDocument?.hash, bridge, context?.root, refreshRoot, refreshGitOnly]);
   useEffect(() => {
     if (!context?.root || !activeDocument || !bridge?.workspaceReadFile || bridge.workspaceWatchStart) return;
     const timer = window.setInterval(() => {
@@ -841,7 +878,7 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
         if (action === "stage") return bridge?.workspaceGitStage?.(context.root!, filePath);
         if (action === "unstage") return bridge?.workspaceGitUnstage?.(context.root!, filePath);
         return bridge?.workspaceGitDiscard?.(context.root!, filePath);
-      }, () => refreshRoot());
+      }, () => refreshGitOnly(context.root));
       if (action === "discard" && activeDocument?.path === filePath) await reloadActiveFile();
       setError(null);
     } catch (reason: any) { setError(reason?.message ?? String(reason)); }
@@ -849,10 +886,17 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
 
   const runBulkGitAction = async (action: "stage" | "unstage", entries: ZoraiWorkspaceGitStatus[]) => {
     if (!context?.root) return;
+    const paths = entries.map((entry) => entry.path);
     try {
-      await runWorkspaceGitBulkMutation(entries, (entry) => action === "stage"
-        ? bridge?.workspaceGitStage?.(context.root!, entry.path)
-        : bridge?.workspaceGitUnstage?.(context.root!, entry.path), () => refreshRoot());
+      await runWorkspaceGitMutation(async () => {
+        const result = action === "stage"
+          ? await bridge?.workspaceGitStageMany?.(context.root!, paths)
+          : await bridge?.workspaceGitUnstageMany?.(context.root!, paths);
+        if (result) {
+          setGitStatus(result);
+        }
+        return result;
+      }, () => refreshGitOnly(context.root));
       setError(null);
     } catch (reason: any) { setError(reason?.message ?? String(reason)); }
   };
@@ -867,6 +911,72 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
       setError(null);
     } catch (reason: any) { setError(reason?.message ?? String(reason)); }
   };
+
+  const reviewStateApi = useCodeReviewStore.getState();
+  const agentPanelRuntimeRef = useRef<{ input: string; setInput: (value: string) => void } | null>(agentPanelRuntimeRefForInput);
+  agentPanelRuntimeRef.current = agentPanelRuntimeRefForInput;
+  const prefillAgentInput = (text: string, mode: "replace" | "append") => {
+    if (!activeThreadId) return;
+    const runtimeAny = agentPanelRuntimeRef.current;
+    if (!runtimeAny) return;
+    if (mode === "replace") {
+      runtimeAny.setInput(text);
+      return;
+    }
+    const current = typeof runtimeAny.input === "string" ? runtimeAny.input : "";
+    runtimeAny.setInput(current.trim() ? `${current.trimEnd()}\n\n${text}` : text);
+  };
+
+  const runAgentReview = async (root: string): Promise<string | null> => {
+    if (!bridge?.agentSpawnSubagent || !activeDaemonThreadId) return null;
+    const agentSettings = useAgentStore.getState().agentSettings;
+    const commitWindow = agentSettings.code_review_commit_window || 5;
+    const store = useCodeReviewStore.getState();
+    store.startReview(root);
+    try {
+      const history = await bridge.workspaceGitHistory?.(root, { limit: commitWindow }) ?? [];
+      if (history.length === 0) {
+        store.finishReview(root, [], "");
+        return null;
+      }
+      const detailResults = await Promise.all(history.map(async (commit) => {
+        const detail = await bridge.workspaceGitCommitDetail?.(root, commit.hash).catch(() => null);
+        return detail ? { ...commit, body: detail.body, files: detail.files } : commit;
+      }));
+      const diffs = (await Promise.all(history.map(async (commit) => {
+        const diff = await bridge.workspaceGitShow?.(root, "", commit.hash).catch(() => "");
+        return { shortHash: commit.shortHash, diff: diff ?? "" };
+      }))).filter((entry) => entry.diff.trim());
+      const prompt = buildReviewPrompt({
+        root,
+        branch: gitOverview?.branch ?? null,
+        commits: detailResults,
+        diffs,
+      });
+      const result = await bridge.agentSpawnSubagent(activeDaemonThreadId, {
+        title: `Code review · ${root.split(/[\\/]/).slice(-1)[0]}`,
+        description: prompt,
+        cwd: root,
+        priority: "normal",
+      });
+      if (result?.ok === false) {
+        store.failReview(root, result.error ?? "Review agent failed.");
+        return null;
+      }
+      const raw = typeof result?.content === "string" ? result.content : "";
+      if (raw.includes(NO_ISSUES_MARKER)) {
+        store.finishReview(root, [], raw);
+        return raw;
+      }
+      const findings = parseReviewFindings(raw);
+      store.finishReview(root, findings, raw);
+      return raw;
+    } catch (reason: any) {
+      useCodeReviewStore.getState().failReview(root, reason?.message ?? String(reason));
+      return null;
+    }
+  };
+  void reviewStateApi;
 
   const createPath = async (kind: "file" | "directory", requestedPath = newPath) => {
     const targetPath = requestedPath.trim();
@@ -1272,16 +1382,37 @@ export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null 
             ) : null}
             {gitOverview?.isRepository ? (
               <details className="zorai-code-source-control" open>
-                <summary className="zorai-code-source-heading"><span>Source Control ({gitOverview.stagedFiles + gitOverview.unstagedFiles})</span><button type="button" title="Refresh Source Control" aria-label="Refresh Source Control" onClick={(event) => { event.preventDefault(); void refreshRoot(); }}>↻</button></summary>
+                <summary className="zorai-code-source-heading">
+                  <span>Source Control ({gitOverview.stagedFiles + gitOverview.unstagedFiles})</span>
+                  <span className="zorai-code-source-heading-actions">
+                    {bridge?.workspaceGitBranches && bridge?.workspaceGitCheckout ? (
+                      <BranchSwitcher root={context.root} bridge={bridge} currentBranch={gitOverview.branch} onSwitched={() => refreshRoot()} />
+                    ) : null}
+                    <button type="button" title="Refresh Source Control" aria-label="Refresh Source Control" onClick={(event) => { event.preventDefault(); void refreshGitOnly(); }}>↻</button>
+                  </span>
+                </summary>
                 <div className="zorai-workspace-git-overview">
                   <span><strong>{gitOverview.branch || "detached HEAD"}</strong>{gitOverview.upstream ? ` · ${gitOverview.upstream}` : " · no upstream"}</span>
                   <span>↑{gitOverview.ahead} ↓{gitOverview.behind} · {gitOverview.stagedFiles} staged · {gitOverview.unstagedFiles} unstaged</span>
                   <textarea value={commitMessage} onChange={(event) => setCommitMessage(event.target.value)} placeholder="Commit message" rows={2} maxLength={4096} />
                   <button type="button" disabled={committing || !commitMessage.trim() || gitOverview.stagedFiles === 0} onClick={() => void commitStagedChanges()}>{committing ? "Committing…" : "Commit staged"}</button>
                 </div>
+                {bridge?.agentSpawnSubagent ? (
+                  <AgentReviewPanel
+                    root={context.root}
+                    onFindIssues={() => runAgentReview(context.root)}
+                    onPrefillAgentInput={prefillAgentInput}
+                  />
+                ) : null}
               </details>
             ) : null}
             <WorkspaceSourceControlChanges status={gitStatus} onOpen={openFile} onReview={reviewHunks} onAction={runGitAction} onBulkAction={runBulkGitAction} />
+            {gitOverview?.isRepository && bridge?.workspaceGitHistory ? (
+              <details className="zorai-code-commit-graph-section">
+                <summary>GRAPH</summary>
+                <CommitGraph root={context.root} bridge={bridge} />
+              </details>
+            ) : null}
             {searchResults.length > 0 ? <div className="zorai-workspace-search-results">{searchResults.map((result) => <button type="button" key={`${result.path}:${result.line}:${result.column}`} onClick={() => void openFile(result.path, { line: result.line, column: result.column })}><strong>{result.path}:{result.line}</strong><span>{result.preview}</span></button>)}</div> : null}
             {reviewedChange ? (
               <div className="zorai-workspace-hunk-review">

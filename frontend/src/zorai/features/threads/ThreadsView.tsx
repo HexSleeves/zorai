@@ -468,7 +468,7 @@ function ThreadHeader({
             {returnTarget.label}
           </button>
         ) : null}
-        <ThreadRuntimeSummary thread={thread} />
+        <ThreadRuntimeSummary key={thread.id} thread={thread} />
         <ThreadHandoffControl
           daemonLinked={Boolean(thread.daemonThreadId)}
           handoffState={thread.threadHandoffState}

@@ -11,7 +11,7 @@ import { appendDaemonSystemMessage, normalizeBridgePayload, reloadDaemonThreadIn
 import { parseLeadingAgentDirective, type AgentDirective } from "./agentDirective";
 import { waitForThreadStopBarrier } from "./threadStopBarrier";
 import { builtinAgentSetupCandidate, isBuiltinPersonaSetupError } from "./builtinAgentSetupPreflight";
-import { resolveNewThreadTargetAgent } from "./newThreadTargetAgent";
+import { resolveNewThreadTargetAgent, notePendingUnboundThreadBind } from "./newThreadTargetAgent";
 import type { BuiltinAgentSetupState } from "./types";
 
 type PendingBuiltinAgentSetup = BuiltinAgentSetupState & {
@@ -287,7 +287,7 @@ export function useDaemonAgentActions({
         const localThread = localThreadId
           ? useAgentStore.getState().threads.find((entry) => entry.id === localThreadId)
           : undefined;
-        const requestedDaemonThreadId = daemonThreadIdRef.current ?? localThread?.daemonThreadId ?? null;
+        const requestedDaemonThreadId = localThread?.daemonThreadId ?? null;
 
         try {
           const response = await zorai.agentGenerateImage(
@@ -502,7 +502,11 @@ export function useDaemonAgentActions({
 
       daemonLocalThreadRef.current = threadId;
 
-      const daemonThreadId = daemonThreadIdRef.current ?? thread?.daemonThreadId ?? null;
+      const daemonThreadId = thread?.daemonThreadId ?? null;
+      if (!daemonThreadId) {
+        daemonThreadIdRef.current = null;
+        notePendingUnboundThreadBind(threadId);
+      }
       let contextMessages: unknown[] | undefined;
       if (!daemonThreadId) {
         const existingMessages = useAgentStore.getState().getThreadMessages(threadId);
@@ -611,8 +615,12 @@ export function useDaemonAgentActions({
       cwd: activeWorkspace?.cwd ?? null,
     });
 
-    const effectiveThreadId = daemonThreadIdRef.current || threadId;
+    const localThread = useAgentStore.getState().threads.find((thread) => thread.id === threadId);
+    const effectiveThreadId = localThread?.daemonThreadId || threadId;
     daemonLocalThreadRef.current = threadId;
+    if (!localThread?.daemonThreadId) {
+      daemonThreadIdRef.current = null;
+    }
 
     addMessage(threadId, {
       role: "user",
@@ -629,8 +637,8 @@ export function useDaemonAgentActions({
       title: goal.slice(0, 72),
       priority: "normal",
       threadId: effectiveThreadId,
-      targetAgentId: useAgentStore.getState().threads.find((thread) => thread.id === threadId)?.targetAgentId
-        ?? useAgentStore.getState().threads.find((thread) => thread.id === threadId)?.agent_name
+      targetAgentId: localThread?.targetAgentId
+        ?? localThread?.agent_name
         ?? null,
       sessionId: provision?.coordinatorSessionId ?? null,
     });

@@ -18,6 +18,45 @@ type ProviderRuntimeConfig = {
   context_window_tokens?: number | null;
 };
 
+export function draftThreadForOwnerSnapshot(
+  owner: { agentId?: string | null; agentName?: string | null },
+  fallbackAgentName: string,
+): AgentThread {
+  return {
+    id: "draft",
+    daemonThreadId: null,
+    workspaceId: null,
+    surfaceId: null,
+    paneId: null,
+    agent_name: owner.agentName?.trim() || fallbackAgentName,
+    targetAgentId: owner.agentId?.trim() || null,
+    title: "New Conversation",
+    createdAt: 0,
+    updatedAt: 0,
+    messageCount: 0,
+    totalInputTokens: 0,
+    totalOutputTokens: 0,
+    totalTokens: 0,
+    compactionCount: 0,
+    lastMessagePreview: "",
+  };
+}
+
+export function snapshotThreadOwnerRuntimeProfile(
+  thread: AgentThread,
+  subAgents: SubAgentDefinition[],
+  agentSettings: AgentSettings,
+  conciergeConfig: Pick<ConciergeConfig, "provider" | "model" | "reasoning_effort">,
+): Pick<AgentThread, "profileProvider" | "profileModel" | "profileReasoningEffort" | "profileContextWindowTokens"> {
+  const profile = resolveThreadOwnerRuntimeProfile(thread, subAgents, agentSettings, conciergeConfig);
+  return {
+    profileProvider: profile.provider.trim() || null,
+    profileModel: profile.model.trim() || null,
+    profileReasoningEffort: profile.effort.trim() || null,
+    profileContextWindowTokens: profile.contextWindowTokens > 0 ? Math.trunc(profile.contextWindowTokens) : null,
+  };
+}
+
 export function resolveThreadOwnerRuntimeProfile(
   thread: AgentThread,
   subAgents: SubAgentDefinition[],

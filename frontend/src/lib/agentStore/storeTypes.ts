@@ -73,6 +73,10 @@ export interface AgentState {
     agentId?: string | null;
     agentName?: string | null;
     activate?: boolean;
+    profileProvider?: string | null;
+    profileModel?: string | null;
+    profileReasoningEffort?: string | null;
+    profileContextWindowTokens?: number | null;
   }) => string;
   deleteThread: (id: string) => void;
   setActiveThread: (id: string | null) => void;

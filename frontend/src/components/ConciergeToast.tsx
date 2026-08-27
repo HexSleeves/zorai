@@ -44,7 +44,10 @@ export function ConciergeToast() {
             zIndex: 2147483647,
             maxWidth: "30vw",
             maxHeight: "80vh",
-            overflow: "auto",
+            overflow: "hidden",
+            display: "flex",
+            flexDirection: "column",
+            justifyContent: "space-between",
             background: "var(--bg-void)",
             border: "1px solid var(--accent)",
             borderRadius: 8,
@@ -54,7 +57,7 @@ export function ConciergeToast() {
             <div style={{ fontSize: 10, color: "var(--accent)", fontWeight: 700, marginBottom: 6, textTransform: "uppercase", letterSpacing: "0.05em" }}>
                 Concierge
             </div>
-            <div style={{ fontSize: 12, color: "var(--text-primary)", lineHeight: 1.5, marginBottom: 10 }}>
+            <div style={{ fontSize: 12, color: "var(--text-primary)", lineHeight: 1.5, marginBottom: 10, overflow: "auto" }}>
                 <MarkdownContent content={welcome.content} />
             </div>
             <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
