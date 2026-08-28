@@ -1812,5 +1812,11 @@ pub(crate) fn now_ts() -> u64 {
     integrity_helpers::now_ts()
 }
 
+pub(crate) const SQLITE_SAFE_VARIABLE_LIMIT: usize = 900;
+
+pub(crate) fn sqlite_in_chunk_size(bind_copies: usize) -> usize {
+    (SQLITE_SAFE_VARIABLE_LIMIT / bind_copies.max(1)).max(1)
+}
+
 #[cfg(test)]
 mod tests;

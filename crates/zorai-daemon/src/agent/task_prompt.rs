@@ -80,7 +80,7 @@ pub(super) fn build_task_prompt(task: &AgentTask) -> String {
         ));
         if task.source == "goal_run" {
             prompt.push_str(
-                "\nDo not call submit_goal_step_verdict from this implementation task; that tool is only for goal verification tasks. To signal this step is ready for review, complete all todos, create the required step completion marker artifact, and then finish your normal task response.",
+                "\nDo not call submit_goal_step_verdict from this implementation task; that tool is only for goal verification tasks. To signal this step is ready for review, complete all todos, create the required step completion marker artifact (or the residual blocked marker if the step cannot honestly succeed), and then finish your normal task response. Do not cancel this task or a sibling goal-step task to force progress.",
             );
         }
     }
@@ -730,8 +730,10 @@ mod tests {
         );
         assert!(
             prompt.contains("Do not call submit_goal_step_verdict")
+                && prompt.contains("residual blocked marker")
+                && prompt.contains("Do not cancel this task or a sibling goal-step task")
                 && prompt.contains("finish your normal task response"),
-            "main goal tasks should be told how to signal completion without verifier-only tools"
+            "main goal tasks should be told how to signal completion or residual blockage without cancelling sibling steps"
         );
     }
 

@@ -2918,6 +2918,32 @@ async fn list_goal_run_thread_refs_for_thread_ids_selects_thread_metadata_withou
 }
 
 #[tokio::test]
+async fn list_goal_run_thread_refs_for_thread_ids_chunks_large_in_lists() -> Result<()> {
+    let (store, root) = make_test_store().await?;
+
+    let mut direct = sample_goal_run_record("goal-thread-ref-chunk", 20);
+    direct.thread_id = Some("thread-ref-chunk-hit".to_string());
+    direct.status = GoalRunStatus::Running;
+    store.upsert_goal_run(&direct).await?;
+
+    let mut thread_ids = (0..300)
+        .map(|index| format!("thread-ref-chunk-miss-{index}"))
+        .collect::<Vec<_>>();
+    thread_ids.push("thread-ref-chunk-hit".to_string());
+
+    let refs = store
+        .list_goal_run_thread_refs_for_thread_ids(&thread_ids)
+        .await?;
+
+    assert_eq!(refs.len(), 1);
+    assert_eq!(refs[0].id, "goal-thread-ref-chunk");
+    assert_eq!(refs[0].thread_id.as_deref(), Some("thread-ref-chunk-hit"));
+
+    fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn list_goal_run_thread_refs_for_statuses_selects_thread_metadata_without_hydrating_steps(
 ) -> Result<()> {
     let (store, root) = make_test_store().await?;

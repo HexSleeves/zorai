@@ -497,15 +497,22 @@ impl AgentEngine {
             anyhow::bail!("goal run completion blocked: not all steps are completed");
         }
         for step_index in 0..snapshot.steps.len() {
-            let marker_path = crate::agent::goal_dossier::goal_step_completion_marker_path(
+            let complete_path = crate::agent::goal_dossier::goal_step_completion_marker_path(
                 &self.data_dir,
                 goal_run_id,
                 step_index,
             );
-            if tokio::fs::metadata(&marker_path).await.is_err() {
+            let blocked_path = crate::agent::goal_dossier::goal_step_blocked_marker_path(
+                &self.data_dir,
+                goal_run_id,
+                step_index,
+            );
+            if tokio::fs::metadata(&complete_path).await.is_err()
+                && tokio::fs::metadata(&blocked_path).await.is_err()
+            {
                 anyhow::bail!(
                     "goal run completion blocked: missing step completion marker {}",
-                    marker_path.display()
+                    complete_path.display()
                 );
             }
         }
@@ -853,6 +860,10 @@ impl AgentEngine {
         }
         if let Some(updated) = maybe_updated {
             self.persist_goal_runs().await;
+            self.quiesce_goal_execution_tree(&updated, true).await;
+            for task_id in self.goal_related_task_ids(&updated).await {
+                let _ = self.cancel_task(&task_id).await;
+            }
             self.cancel_goal_wakeups(goal_run_id).await;
             crate::governance::record_transition_audit(
                 &self.history,

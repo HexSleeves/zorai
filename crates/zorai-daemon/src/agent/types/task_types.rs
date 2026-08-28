@@ -245,7 +245,14 @@ pub struct TaskCompletionContract {
     pub terminal_status: Option<TaskStatus>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub child_result: Option<ChildResultContract>,
+    #[serde(default)]
+    pub open_completion_attempts: u32,
+    #[serde(default)]
+    pub dispatch_finish_attempts: u32,
 }
+
+pub const OPEN_COMPLETION_CONTRACT_ATTEMPT_LIMIT: u32 = 3;
+pub const GOAL_STEP_DISPATCH_FINISH_LIMIT: u32 = 12;
 
 fn default_completion_contract_version() -> u32 {
     1
@@ -264,6 +271,8 @@ impl Default for TaskCompletionContract {
             blocked_reason: None,
             terminal_status: None,
             child_result: None,
+            open_completion_attempts: 0,
+            dispatch_finish_attempts: 0,
         }
     }
 }

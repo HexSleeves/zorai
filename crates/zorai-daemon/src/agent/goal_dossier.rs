@@ -372,6 +372,14 @@ pub(crate) fn goal_step_completion_marker_relative_path(
 }
 
 #[cfg(test)]
+pub(crate) fn goal_step_blocked_marker_relative_path(
+    goal_run_id: &str,
+    step_index: usize,
+) -> std::path::PathBuf {
+    projection::goal_step_blocked_marker_relative_path(goal_run_id, step_index)
+}
+
+#[cfg(test)]
 pub(crate) fn goal_inventory_dir(
     data_dir: &std::path::Path,
     goal_run_id: &str,
@@ -410,6 +418,22 @@ pub(crate) fn goal_step_completion_marker_path(
     projection::goal_step_completion_marker_path(data_dir, goal_run_id, step_index)
 }
 
+pub(crate) fn goal_step_blocked_marker_path(
+    data_dir: &std::path::Path,
+    goal_run_id: &str,
+    step_index: usize,
+) -> std::path::PathBuf {
+    projection::goal_step_blocked_marker_path(data_dir, goal_run_id, step_index)
+}
+
+pub(crate) fn goal_step_present_marker_path(
+    data_dir: &std::path::Path,
+    goal_run_id: &str,
+    step_index: usize,
+) -> Option<std::path::PathBuf> {
+    projection::goal_step_present_marker_path(data_dir, goal_run_id, step_index)
+}
+
 pub(crate) fn goal_final_review_marker_path(
     data_dir: &std::path::Path,
     goal_run_id: &str,
@@ -442,9 +466,16 @@ pub(crate) fn goal_step_completion_marker_prompt_block_for_data_dir(
         "## Goal Step Completion Marker\n\
          - Current step: Step {human_step_number} of {total_steps}\n\
          - Required completion marker: {marker_path}\n\
-         - This step cannot be marked complete until that file exists.\n\
-         - Before finishing, create that file with a short summary of what was completed and any outputs produced for this step.",
+         - Residual alternative: {blocked_path}\n\
+         - Prefer the completion marker when the step succeeded. If the step is honestly blocked (cannot meet success criteria, do not fake success), write the residual file instead and stop. Do not loop, cancel, or advance past a blocked gate.\n\
+         - This step cannot finish until one of those files exists.",
         marker_path = marker_path.display(),
+        blocked_path = projection::goal_step_blocked_marker_path(
+            data_dir,
+            &goal_run.id,
+            goal_run.current_step_index,
+        )
+        .display(),
     ))
 }
 

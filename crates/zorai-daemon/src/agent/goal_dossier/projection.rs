@@ -129,6 +129,10 @@ pub(crate) fn goal_step_completion_marker_filename(step_index: usize) -> String 
     format!("step-{}-complete.md", step_index.saturating_add(1))
 }
 
+pub(crate) fn goal_step_blocked_marker_filename(step_index: usize) -> String {
+    format!("step-{}-blocked.md", step_index.saturating_add(1))
+}
+
 pub(crate) fn goal_final_review_marker_filename() -> &'static str {
     "final-review-passed.md"
 }
@@ -144,6 +148,15 @@ pub(crate) fn goal_step_completion_marker_relative_path(
 ) -> PathBuf {
     goal_inventory_relative_execution_dir(goal_run_id)
         .join(goal_step_completion_marker_filename(step_index))
+}
+
+#[cfg(test)]
+pub(crate) fn goal_step_blocked_marker_relative_path(
+    goal_run_id: &str,
+    step_index: usize,
+) -> PathBuf {
+    goal_inventory_relative_execution_dir(goal_run_id)
+        .join(goal_step_blocked_marker_filename(step_index))
 }
 
 pub(crate) fn goal_inventory_dir(data_dir: &Path, goal_run_id: &str) -> PathBuf {
@@ -169,6 +182,28 @@ pub(crate) fn goal_step_completion_marker_path(
 ) -> PathBuf {
     goal_inventory_execution_dir(data_dir, goal_run_id)
         .join(goal_step_completion_marker_filename(step_index))
+}
+
+pub(crate) fn goal_step_blocked_marker_path(
+    data_dir: &Path,
+    goal_run_id: &str,
+    step_index: usize,
+) -> PathBuf {
+    goal_inventory_execution_dir(data_dir, goal_run_id)
+        .join(goal_step_blocked_marker_filename(step_index))
+}
+
+pub(crate) fn goal_step_present_marker_path(
+    data_dir: &Path,
+    goal_run_id: &str,
+    step_index: usize,
+) -> Option<PathBuf> {
+    let complete = goal_step_completion_marker_path(data_dir, goal_run_id, step_index);
+    if complete.is_file() {
+        return Some(complete);
+    }
+    let blocked = goal_step_blocked_marker_path(data_dir, goal_run_id, step_index);
+    blocked.is_file().then_some(blocked)
 }
 
 pub(crate) fn goal_final_review_marker_path(data_dir: &Path, goal_run_id: &str) -> PathBuf {

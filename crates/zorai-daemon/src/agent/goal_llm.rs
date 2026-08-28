@@ -389,6 +389,7 @@ impl AgentEngine {
         );
     }
 
+    #[cfg(test)]
     pub(super) async fn request_goal_replan(
         &self,
         goal_run: &GoalRun,
@@ -417,6 +418,7 @@ impl AgentEngine {
              Produce strict JSON only with the shape:\n\
              {{\"title\":\"...\",\"summary\":\"...\",\"steps\":[{{\"title\":\"...\",\"instructions\":\"...\",\"kind\":\"reason|command|research|memory|skill|divergent\",\"success_criteria\":\"...\",\"execution_binding\":null,\"verification_binding\":null,\"proof_checks\":[{{\"id\":\"...\",\"title\":\"...\",\"summary\":null}}],\"session_id\":null,\"llm_confidence\":\"confident|likely|uncertain|guessing\",\"llm_confidence_rationale\":\"...\"}}],\"rejected_alternatives\":[\"...\"]}}\n\
              Return only the revised remaining steps, not the full history.\n\
+             Do not skip a blocked scientific gate. If the failed step was a selection or decision that produced no valid result, keep repairing that step or insert repair work before later freeze or packaging steps. Do not drop remaining later steps unless they are now impossible.\n\
              Limit the revised plan to {max_steps} remaining steps and at most {max_rejected} rejected alternatives.\n\
              For each step, include `llm_confidence` and `llm_confidence_rationale` based on your own self-assessment.\n\
              Use `execution_binding` / `verification_binding` only when the routing is clear, with `builtin:<id>` or `subagent:<id>`.\n\
@@ -565,6 +567,7 @@ impl AgentEngine {
             .await
     }
 
+    #[cfg(test)]
     async fn run_goal_structured_for_replan<T: serde::de::DeserializeOwned>(
         &self,
         prompt: &str,

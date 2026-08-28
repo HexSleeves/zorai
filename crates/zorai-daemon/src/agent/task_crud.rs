@@ -1509,7 +1509,7 @@ impl AgentEngine {
         }
     }
 
-    async fn goal_related_task_ids(&self, goal_run: &GoalRun) -> Vec<String> {
+    pub(in crate::agent) async fn goal_related_task_ids(&self, goal_run: &GoalRun) -> Vec<String> {
         let mut task_ids = declared_goal_task_ids(goal_run);
         let mut thread_ids = declared_goal_thread_ids(goal_run);
 
@@ -1615,7 +1615,7 @@ impl AgentEngine {
         task_ids
     }
 
-    async fn pause_goal_tasks(&self, goal_run: &GoalRun) {
+    pub(in crate::agent) async fn pause_goal_tasks(&self, goal_run: &GoalRun) {
         for task_id in self.goal_related_task_ids(goal_run).await {
             let task = self
                 .list_tasks_filtered(&crate::history::AgentTaskListQuery {
@@ -1763,7 +1763,11 @@ impl AgentEngine {
         thread_ids
     }
 
-    async fn quiesce_goal_execution_tree(&self, goal_run: &GoalRun, cancel: bool) {
+    pub(in crate::agent) async fn quiesce_goal_execution_tree(
+        &self,
+        goal_run: &GoalRun,
+        cancel: bool,
+    ) {
         let thread_ids = self.goal_execution_thread_ids(goal_run).await;
         for thread_id in &thread_ids {
             let _ = self.stop_stream(thread_id).await;

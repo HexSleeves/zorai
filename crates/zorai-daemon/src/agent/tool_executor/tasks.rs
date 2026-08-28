@@ -1806,14 +1806,60 @@ pub(crate) async fn execute_get_todos(
     .to_string())
 }
 
+pub(crate) fn goal_run_worker_may_cancel_target(caller: &AgentTask, target: &AgentTask) -> bool {
+    if caller.source != "goal_run" {
+        return true;
+    }
+    caller.id == target.id || target.parent_task_id.as_deref() == Some(caller.id.as_str())
+}
+
+async fn ensure_goal_run_cancel_allowed(
+    agent: &AgentEngine,
+    caller_task_id: Option<&str>,
+    target_task_id: &str,
+) -> Result<()> {
+    let Some(caller_id) = caller_task_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    else {
+        return Ok(());
+    };
+    let Some(caller) = task_by_id_for_tool_scope(agent, caller_id).await else {
+        return Ok(());
+    };
+    if caller.source != "goal_run" {
+        return Ok(());
+    }
+    let Some(target) = task_by_id_for_tool_scope(agent, target_task_id).await else {
+        return Ok(());
+    };
+    if goal_run_worker_may_cancel_target(&caller, &target) {
+        return Ok(());
+    }
+    let mut current = target.parent_task_id.clone();
+    while let Some(parent_id) = current {
+        if parent_id == caller.id {
+            return Ok(());
+        }
+        current = task_by_id_for_tool_scope(agent, &parent_id)
+            .await
+            .and_then(|task| task.parent_task_id);
+    }
+    anyhow::bail!(
+        "goal-run workers may only cancel themselves or descendant tasks, not sibling goal-step tasks"
+    )
+}
+
 pub(crate) async fn execute_cancel_task(
     args: &serde_json::Value,
     agent: &AgentEngine,
+    caller_task_id: Option<&str>,
 ) -> Result<String> {
     let task_id = args
         .get("task_id")
         .and_then(|value| value.as_str())
         .ok_or_else(|| anyhow::anyhow!("missing 'task_id' argument"))?;
+    ensure_goal_run_cancel_allowed(agent, caller_task_id, task_id).await?;
     let cancelled = agent.cancel_task(task_id).await;
     if cancelled {
         return Ok(serde_json::json!({
@@ -2008,4 +2054,94 @@ pub(crate) async fn execute_cancel_wakeup(
         "cancelled": cancelled,
     })
     .to_string())
+}
+
+#[cfg(test)]
+mod cancel_scope_tests {
+    use super::goal_run_worker_may_cancel_target;
+    use crate::agent::types::{AgentTask, TaskPriority, TaskStatus};
+
+    fn task(id: &str, source: &str, parent: Option<&str>) -> AgentTask {
+        AgentTask {
+            id: id.to_string(),
+            title: id.to_string(),
+            description: String::new(),
+            status: TaskStatus::Queued,
+            priority: TaskPriority::Normal,
+            progress: 0,
+            created_at: 1,
+            started_at: None,
+            completed_at: None,
+            error: None,
+            result: None,
+            thread_id: None,
+            source: source.to_string(),
+            notify_on_complete: false,
+            notify_channels: Vec::new(),
+            dependencies: Vec::new(),
+            command: None,
+            session_id: None,
+            goal_run_id: None,
+            goal_run_title: None,
+            goal_step_id: None,
+            goal_step_title: None,
+            parent_task_id: parent.map(ToString::to_string),
+            parent_thread_id: None,
+            runtime: "daemon".to_string(),
+            retry_count: 0,
+            max_retries: 0,
+            next_retry_at: None,
+            scheduled_at: None,
+            blocked_reason: None,
+            awaiting_approval_id: None,
+            policy_fingerprint: None,
+            approval_expires_at: None,
+            containment_scope: None,
+            compensation_status: None,
+            compensation_summary: None,
+            lane_id: None,
+            last_error: None,
+            logs: Vec::new(),
+            completion_contract: None,
+            tool_whitelist: None,
+            tool_blacklist: None,
+            context_budget_tokens: None,
+            context_overflow_action: None,
+            termination_conditions: None,
+            success_criteria: None,
+            max_duration_secs: None,
+            supervisor_config: None,
+            override_provider: None,
+            override_model: None,
+            override_api_transport: None,
+            override_system_prompt: None,
+            sub_agent_def_id: None,
+        }
+    }
+
+    #[test]
+    fn goal_run_worker_can_cancel_self_and_children_but_not_siblings() {
+        let caller = task("step-4", "goal_run", None);
+        assert!(goal_run_worker_may_cancel_target(
+            &caller,
+            &task("step-4", "goal_run", None)
+        ));
+        assert!(goal_run_worker_may_cancel_target(
+            &caller,
+            &task("child", "subagent", Some("step-4"))
+        ));
+        assert!(!goal_run_worker_may_cancel_target(
+            &caller,
+            &task("step-5", "goal_run", None)
+        ));
+    }
+
+    #[test]
+    fn non_goal_run_callers_are_not_restricted() {
+        let caller = task("user-task", "user", None);
+        assert!(goal_run_worker_may_cancel_target(
+            &caller,
+            &task("other", "goal_run", None)
+        ));
+    }
 }

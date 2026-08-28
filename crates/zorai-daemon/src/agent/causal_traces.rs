@@ -9,6 +9,7 @@ mod helpers;
 mod persistence;
 #[path = "causal_traces/reporting.rs"]
 mod reporting;
+#[cfg(test)]
 pub(crate) use helpers::estimate_plan_success;
 #[cfg(test)]
 pub(crate) use helpers::{
@@ -279,6 +280,7 @@ impl AgentEngine {
             .unwrap_or(0)
     }
 
+    #[cfg(test)]
     pub(super) async fn persist_recovery_near_miss_trace(
         &self,
         goal_run: &GoalRun,

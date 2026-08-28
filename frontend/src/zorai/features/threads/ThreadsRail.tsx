@@ -35,7 +35,7 @@ export function ThreadsRail() {
   const loadedAgentFilterRef = useRef<string | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const goalThreadIdSet = useMemo(() => goalThreadIds(runtime.goalRunsForTrace), [runtime.goalRunsForTrace]);
-  const daemonAgentFilter = useMemo(() => daemonAgentFilterForThreadTab(tab), [tab]);
+  const daemonAgentFilter = useMemo(() => daemonAgentFilterForThreadTab(tab, subAgents), [subAgents, tab]);
   const fetchKey = daemonAgentFilter ?? "__all__";
   const fetchThreadList = runtime.fetchThreadList;
   const sourceThreads = useMemo(() => {

@@ -12,6 +12,7 @@ struct GoalCompletionMarkerContext {
     human_step_number: usize,
     total_steps: usize,
     absolute_path: std::path::PathBuf,
+    blocked_path: std::path::PathBuf,
 }
 
 fn completion_marker_retry_key(goal_run_id: &str, step_id: &str) -> String {
@@ -22,10 +23,12 @@ fn completion_marker_prompt(context: &GoalCompletionMarkerContext) -> String {
     format!(
         "Required completion marker is missing for Step {} of {}.\n\
          Create file: {}\n\
-         Do not consider this step complete until that file exists.",
+         If this step is honestly blocked and must not be faked as success, create {} instead and stop.\n\
+         Do not consider this step complete until one of those files exists.",
         context.human_step_number,
         context.total_steps,
         context.absolute_path.display(),
+        context.blocked_path.display(),
     )
 }
 
@@ -66,6 +69,11 @@ fn current_step_completion_marker_context(
         human_step_number: goal_run.current_step_index.saturating_add(1),
         total_steps: goal_run.steps.len(),
         absolute_path: super::goal_dossier::goal_step_completion_marker_path(
+            &engine.data_dir,
+            &goal_run.id,
+            goal_run.current_step_index,
+        ),
+        blocked_path: super::goal_dossier::goal_step_blocked_marker_path(
             &engine.data_dir,
             &goal_run.id,
             goal_run.current_step_index,
@@ -1394,10 +1402,13 @@ impl AgentEngine {
         let Some(marker_context) = current_step_completion_marker_context(self, &snapshot) else {
             return Ok(());
         };
-        if tokio::fs::metadata(&marker_context.absolute_path)
+        let complete_marker_present = tokio::fs::metadata(&marker_context.absolute_path)
             .await
-            .is_err()
-        {
+            .is_ok();
+        let blocked_marker_present = tokio::fs::metadata(&marker_context.blocked_path)
+            .await
+            .is_ok();
+        if !complete_marker_present && !blocked_marker_present {
             self.requeue_goal_step_for_missing_completion_marker(&snapshot, task, &marker_context)
                 .await?;
             return Ok(());
@@ -1567,6 +1578,15 @@ impl AgentEngine {
         )
         .await;
 
+        if blocked_marker_present && !complete_marker_present {
+            self.pause_goal_run_for_operator_decision(
+                goal_run_id,
+                "Goal step finished with a residual blocked marker. Resume only if later steps should continue; otherwise stop.",
+            )
+            .await?;
+            return Ok(());
+        }
+
         if updated.current_step_index >= updated.steps.len() {
             self.complete_goal_run(goal_run_id).await?;
         }
@@ -1672,201 +1692,70 @@ impl AgentEngine {
             }
         }
 
-        if snapshot.replan_count < snapshot.max_replans
-            && snapshot.current_step_index < snapshot.steps.len()
-        {
-            let planner_owner_profile = self.planner_owner_profile().await;
-            {
-                let mut goal_runs = self.goal_runs.lock().await;
-                if let Some(goal_run) = goal_runs.iter_mut().find(|item| item.id == goal_run_id) {
-                    if goal_run.planner_owner_profile.as_ref() != Some(&planner_owner_profile) {
-                        goal_run.planner_owner_profile = Some(planner_owner_profile.clone());
-                        goal_run.updated_at = now_millis();
-                    }
-                }
-            }
-            self.persist_goal_runs().await;
+        self.cancel_task_and_descendants(&task.id).await;
 
-            let revised = self.request_goal_replan(&snapshot, &failure).await?;
-            self.persist_goal_plan_causal_trace(&snapshot, &revised, Some(&failure))
-                .await;
-            self.persist_recovery_near_miss_trace(&snapshot, task, &failure, &revised)
-                .await;
-            let updated = {
-                let mut goal_runs = self.goal_runs.lock().await;
-                let Some(goal_run) = goal_runs.iter_mut().find(|item| item.id == goal_run_id)
-                else {
-                    anyhow::bail!("goal run disappeared during replan");
-                };
-                super::super::goal_run_apply_thread_routing(goal_run, task.thread_id.clone());
-                let default_session_id = goal_run.session_id.clone();
-                if let Some(step) = goal_run.steps.get_mut(goal_run.current_step_index) {
-                    step.status = GoalRunStepStatus::Failed;
-                    step.completed_at = Some(now_millis());
-                    step.error = Some(failure.clone());
-                }
-                let insert_at = goal_run.current_step_index.saturating_add(1);
-                // Before truncating dropped future steps, mark any that were
-                // still `Pending` as `Skipped` and record their ids in a goal
-                // run event. The truncate immediately discards the entries
-                // themselves, but the event preserves what the previous plan
-                // intended to do — useful when an operator audits a heavily
-                // replanned goal.
-                let skipped_ids =
-                    mark_dropped_pending_steps_as_skipped(&mut goal_run.steps, insert_at);
-                if !skipped_ids.is_empty() {
-                    goal_run.events.push(make_goal_run_event(
-                        "replan_skipped_steps",
-                        "previously-planned steps dropped during replan",
-                        Some(skipped_ids.join(",")),
-                    ));
-                }
-                goal_run.steps.truncate(insert_at);
-                for (offset, step) in revised.steps.into_iter().enumerate() {
-                    goal_run.steps.push(GoalRunStep {
-                        id: format!("goal_step_{}", Uuid::new_v4()),
-                        position: insert_at + offset,
-                        title: step.title,
-                        instructions: step.instructions,
-                        kind: step.kind,
-                        success_criteria: step.success_criteria,
-                        session_id: step.session_id.or_else(|| default_session_id.clone()),
-                        status: GoalRunStepStatus::Pending,
-                        task_id: None,
-                        summary: None,
-                        error: None,
-                        started_at: None,
-                        completed_at: None,
-                    });
-                }
-                for (position, step) in goal_run.steps.iter_mut().enumerate() {
-                    step.position = position;
-                }
-                goal_run.current_step_index = insert_at;
-                let next_step = goal_run.steps.get(goal_run.current_step_index);
-                goal_run.current_step_title = next_step.map(|step| step.title.clone());
-                goal_run.current_step_kind = next_step.map(|step| step.kind.clone());
-                goal_run.planner_owner_profile = Some(planner_owner_profile.clone());
-                goal_run.current_step_owner_profile = None;
-                goal_run.replan_count = goal_run.replan_count.saturating_add(1);
-                goal_run.status = GoalRunStatus::Running;
-                goal_run.updated_at = now_millis();
-                goal_run.last_error = Some(failure.clone());
-                goal_run.failure_cause = Some(failure.clone());
-                goal_run.reflection_summary = Some(revised.summary.clone());
-                goal_run.awaiting_approval_id = None;
-                goal_run.active_task_id = None;
-                goal_run.events.push(make_goal_run_event(
-                    "replan",
-                    "goal plan revised after failed step",
-                    Some(failure.clone()),
-                ));
-                if insert_at > 0 {
-                    let failed_step_id = goal_run.steps[insert_at - 1].id.clone();
-                    if task.source == GOAL_VERIFICATION_SOURCE {
-                        super::goal_dossier::set_goal_unit_verification_state(
-                            goal_run,
-                            &failed_step_id,
-                            GoalProjectionState::Failed,
-                            failure.clone(),
-                            vec!["verification failed and triggered a replan".to_string()],
-                            Some("verification failure"),
-                            Some(failure.clone()),
-                        );
-                    } else {
-                        super::goal_dossier::set_goal_unit_report(
-                            goal_run,
-                            &failed_step_id,
-                            GoalProjectionState::Failed,
-                            failure.clone(),
-                            vec!["step failed and triggered a replan".to_string()],
-                        );
-                    }
-                }
-                super::goal_dossier::set_goal_resume_decision(
-                    goal_run,
-                    GoalResumeAction::Replan,
-                    "step_failed_replan",
-                    Some(failure.clone()),
-                    vec![format!("replan_count={}", goal_run.replan_count)],
-                );
-                goal_run.clone()
-            };
-            self.persist_goal_runs().await;
-            self.emit_goal_run_update(&updated, Some("Goal replanned after failure".into()));
-            self.record_provenance_event(
-                "replan_triggered",
-                "goal replan triggered after failed step",
-                serde_json::json!({
-                    "goal_run_id": updated.id,
-                    "task_id": task.id,
-                    "failure": failure,
-                    "replan_count": updated.replan_count,
-                }),
-                Some(updated.id.as_str()),
-                Some(task.id.as_str()),
-                updated.thread_id.as_deref(),
-                None,
-                None,
+        if self
+            .pause_goal_run_for_recoverable_provider_error(
+                goal_run_id,
+                &anyhow::anyhow!(failure.clone()),
             )
-            .await;
-            self.record_provenance_event(
-                "recovery_triggered",
-                "goal recovery path recorded",
-                serde_json::json!({
-                    "goal_run_id": updated.id,
-                    "task_id": task.id,
-                    "failure": failure,
-                    "mode": "replan_after_failure",
-                }),
-                Some(updated.id.as_str()),
-                Some(task.id.as_str()),
-                updated.thread_id.as_deref(),
-                None,
-                None,
-            )
-            .await;
+            .await
+        {
             return Ok(());
         }
 
-        if task.source == GOAL_VERIFICATION_SOURCE {
-            let mut goal_runs = self.goal_runs.lock().await;
-            if let Some(goal_run) = goal_runs.iter_mut().find(|item| item.id == goal_run_id) {
-                if let Some(step_id) = goal_run
-                    .steps
-                    .get(goal_run.current_step_index)
-                    .map(|step| step.id.clone())
-                {
-                    super::goal_dossier::set_goal_unit_verification_state(
-                        goal_run,
-                        &step_id,
-                        GoalProjectionState::Failed,
-                        failure.clone(),
-                        vec!["verification failed".to_string()],
-                        Some("verification failure"),
-                        Some(failure.clone()),
-                    );
-                }
-            }
+        if task.status == TaskStatus::Cancelled {
+            self.pause_goal_run_for_operator_decision(
+                goal_run_id,
+                "Goal step task was cancelled. Resume to retry the same step, or stop the goal.",
+            )
+            .await?;
+            return Ok(());
         }
 
-        self.record_provenance_event(
-            "step_failed",
-            "goal step failed",
-            serde_json::json!({
-                "goal_run_id": snapshot.id,
-                "task_id": task.id,
-                "failure": failure,
-            }),
-            Some(snapshot.id.as_str()),
-            Some(task.id.as_str()),
-            snapshot.thread_id.as_deref(),
-            None,
-            None,
-        )
-        .await;
-        self.fail_goal_run(goal_run_id, &failure, "execution", task.thread_id.clone())
-            .await;
+        self.requeue_goal_step_to_pending(goal_run_id, &failure, Some(task))
+            .await?;
+        Ok(())
+    }
+
+    pub(in crate::agent) async fn pause_goal_run_for_operator_decision(
+        &self,
+        goal_run_id: &str,
+        message: &str,
+    ) -> Result<()> {
+        let updated = {
+            let mut goal_runs = self.goal_runs.lock().await;
+            let Some(goal_run) = goal_runs.iter_mut().find(|item| item.id == goal_run_id) else {
+                anyhow::bail!("goal run missing while pausing for operator decision");
+            };
+            if goal_run.status.is_terminal() {
+                return Ok(());
+            }
+            goal_run.status = GoalRunStatus::Paused;
+            goal_run.updated_at = now_millis();
+            goal_run.completed_at = None;
+            goal_run.last_error = Some(message.to_string());
+            goal_run.failure_cause = None;
+            goal_run.awaiting_approval_id = None;
+            goal_run.active_task_id = None;
+            goal_run.events.push(make_goal_run_event(
+                "operator_pause",
+                "goal run paused for operator decision",
+                Some(message.to_string()),
+            ));
+            super::goal_dossier::set_goal_resume_decision(
+                goal_run,
+                GoalResumeAction::Pause,
+                "operator_decision",
+                Some(message.to_string()),
+                Vec::new(),
+            );
+            goal_run.clone()
+        };
+        self.persist_goal_runs().await;
+        self.pause_goal_tasks(&updated).await;
+        self.quiesce_goal_execution_tree(&updated, false).await;
+        self.emit_goal_run_update(&updated, Some(message.into()));
         Ok(())
     }
 }
@@ -1876,6 +1765,7 @@ impl AgentEngine {
 /// steps so the caller can record them in a replan event. Steps that have
 /// already transitioned past `Pending` (InProgress/Completed/Failed/Skipped)
 /// are left alone — they represent work the prior plan actually did.
+#[cfg(test)]
 fn mark_dropped_pending_steps_as_skipped(
     steps: &mut [GoalRunStep],
     insert_at: usize,

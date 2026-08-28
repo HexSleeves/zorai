@@ -909,6 +909,61 @@ async fn latest_non_empty_message_content_for_thread_ids_uses_sql_projection() -
 }
 
 #[tokio::test]
+async fn latest_recovery_prompt_content_falls_back_to_system_seed() -> Result<()> {
+    let (store, root) = make_test_store().await?;
+    store
+        .create_thread(&AgentDbThread {
+            id: "thread-goal-system-seed".to_string(),
+            workspace_id: None,
+            surface_id: None,
+            pane_id: None,
+            agent_name: None,
+            title: "Goal thread".to_string(),
+            created_at: 100,
+            updated_at: 100,
+            message_count: 0,
+            total_tokens: 0,
+            last_preview: String::new(),
+            metadata_json: None,
+        })
+        .await?;
+    store
+        .add_message(&AgentDbMessage {
+            id: "goal-system-seed".to_string(),
+            thread_id: "thread-goal-system-seed".to_string(),
+            created_at: 1000,
+            role: "system".to_string(),
+            content: "Continue the current goal step: Select candidate".to_string(),
+            provider: None,
+            model: None,
+            input_tokens: None,
+            output_tokens: None,
+            total_tokens: None,
+            cost_usd: None,
+            reasoning: None,
+            tool_calls_json: None,
+            metadata_json: None,
+        })
+        .await?;
+
+    assert_eq!(
+        store
+            .latest_user_message_content("thread-goal-system-seed")
+            .await?,
+        None
+    );
+    assert_eq!(
+        store
+            .latest_recovery_prompt_content("thread-goal-system-seed")
+            .await?,
+        Some("Continue the current goal step: Select candidate".to_string())
+    );
+
+    fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn gateway_approval_ids_for_thread_extracts_ids_in_sql_order() -> Result<()> {
     let (store, root) = make_test_store().await?;
     for thread_id in ["thread-gateway-approval", "thread-other-gateway-approval"] {

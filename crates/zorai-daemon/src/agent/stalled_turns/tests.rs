@@ -729,6 +729,93 @@ async fn supervise_stalled_turns_retries_with_internal_ping_and_continue() {
 }
 
 #[tokio::test]
+async fn supervise_stalled_turns_retries_system_seeded_thread_without_user_message() {
+    let engine = build_test_engine("Recovered.").await;
+    let now = super::now_millis();
+    let thread_id = "thread-recovery-system-seed";
+
+    let mut seed = AgentMessage::user(
+        "Goal thread seed: continue the current step",
+        now.saturating_sub(61_000),
+    );
+    seed.role = MessageRole::System;
+    {
+        let mut threads = engine.threads.write().await;
+        threads.insert(
+            thread_id.to_string(),
+            AgentThread {
+                id: thread_id.to_string(),
+                agent_name: None,
+                title: "Recovery thread".to_string(),
+                messages: vec![
+                    seed,
+                    AgentMessage {
+                        id: "assistant-recovery-system-seed".to_string(),
+                        role: MessageRole::Assistant,
+                        content: "Excellent. Let me start drafting the redesigned landing page."
+                            .to_string(),
+                        content_blocks: Vec::new(),
+                        tool_calls: None,
+                        tool_call_id: None,
+                        tool_name: None,
+                        tool_arguments: None,
+                        tool_status: None,
+                        weles_review: None,
+                        input_tokens: 0,
+                        output_tokens: 0,
+                        cost: None,
+                        provider: None,
+                        model: None,
+                        api_transport: None,
+                        response_id: None,
+                        upstream_message: None,
+                        provider_final_result: None,
+                        author_agent_id: None,
+                        author_agent_name: None,
+                        reasoning: None,
+                        message_kind: crate::agent::types::AgentMessageKind::Normal,
+                        compaction_strategy: None,
+                        compaction_payload: None,
+                        offloaded_payload_id: None,
+                        tool_output_preview_path: None,
+                        structural_refs: Vec::new(),
+                        pinned_for_compaction: false,
+                        timestamp: now.saturating_sub(60_000),
+                        feedback: None,
+                    },
+                ],
+                pinned: false,
+                upstream_thread_id: None,
+                upstream_transport: None,
+                upstream_provider: None,
+                upstream_model: None,
+                upstream_assistant_id: None,
+                total_input_tokens: 0,
+                total_output_tokens: 0,
+                created_at: now,
+                updated_at: now,
+            },
+        );
+    }
+    engine.persist_thread_by_id(thread_id).await;
+
+    engine
+        .supervise_stalled_turns()
+        .await
+        .expect("stalled-turn supervision should retry without a prior user message");
+
+    let threads = engine.threads.read().await;
+    let thread = threads.get(thread_id).expect("thread should exist");
+    assert!(thread.messages.iter().any(|message| {
+        message.role == MessageRole::System
+            && message.content.contains("WELES stalled-turn recovery")
+    }));
+    assert!(thread.messages.iter().any(|message| {
+        message.role == MessageRole::Assistant && message.content.contains("Recovered.")
+    }));
+}
+
+#[tokio::test]
 async fn collect_stalled_turn_observations_detects_idle_active_reasoning_stream() {
     let engine = build_test_engine("Acknowledged.").await;
     let now = super::now_millis();
