@@ -33,6 +33,7 @@ pub(crate) fn managed_alias_args(
         "language_hint",
         "wait_for_completion",
         "timeout_seconds",
+        "notify_on_completion",
     ] {
         if let Some(value) = args.get(key) {
             mapped.insert(key.to_string(), value.clone());
@@ -379,7 +380,7 @@ pub(crate) async fn execute_managed_command(
                     return Ok((
                         format!(
                             "{queued_summary}\nbackground_task_id: {execution_id}\noperation_id: {execution_id}\nCommand auto-backgrounded (requested timeout {}s > max 600s). \
-                             A background monitor will notify this thread when the command completes. Use get_operation_status with this operation_id if you need more details before then. `get_background_task_status` remains available as a compatibility alias.",
+                             {BACKGROUND_OPERATION_COMPLETION_GUIDANCE} `get_background_task_status` remains available as a compatibility alias.",
                             requested_timeout,
                         ),
                         None,
@@ -387,7 +388,7 @@ pub(crate) async fn execute_managed_command(
                 }
                 return Ok((
                     format!(
-                        "{queued_summary}\nbackground_task_id: {execution_id}\noperation_id: {execution_id}\nNot waiting for completion because wait_for_completion=false. A background monitor will notify this thread when the command completes. Use get_operation_status with this operation_id if you need more details before then. `get_background_task_status` remains available as a compatibility alias."
+                        "{queued_summary}\nbackground_task_id: {execution_id}\noperation_id: {execution_id}\nNot waiting for completion because wait_for_completion=false. {BACKGROUND_OPERATION_COMPLETION_GUIDANCE} `get_background_task_status` remains available as a compatibility alias."
                     ),
                     None,
                 ));
@@ -476,141 +477,4 @@ pub(crate) async fn execute_managed_command(
             serde_json::to_string(&other).unwrap_or_else(|_| "<unserializable>".to_string())
         )),
     }
-}
-
-pub(crate) async fn execute_get_background_task_status(
-    args: &serde_json::Value,
-    session_manager: &Arc<SessionManager>,
-) -> Result<String> {
-    let background_task_id = args
-        .get("background_task_id")
-        .and_then(|value| value.as_str())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("missing 'background_task_id' argument"))?;
-
-    execute_operation_status_lookup(background_task_id, session_manager, true).await
-}
-
-pub(crate) async fn execute_get_operation_status(
-    args: &serde_json::Value,
-    session_manager: &Arc<SessionManager>,
-) -> Result<String> {
-    let operation_id = args
-        .get("operation_id")
-        .and_then(|value| value.as_str())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("missing 'operation_id' argument"))?;
-
-    execute_operation_status_lookup(operation_id, session_manager, false).await
-}
-
-async fn execute_operation_status_lookup(
-    operation_id: &str,
-    session_manager: &Arc<SessionManager>,
-    compatibility_alias: bool,
-) -> Result<String> {
-    if let Some(payload) =
-        operation_status_payload(operation_id, session_manager, compatibility_alias).await?
-    {
-        return Ok(payload.to_string());
-    }
-
-    if let Some(resolved_id) =
-        crate::server::operation_registry().resolve_unique_id_by_first_segment(operation_id)
-    {
-        if let Some(mut payload) =
-            operation_status_payload(&resolved_id, session_manager, compatibility_alias).await?
-        {
-            payload["requested_operation_id"] = serde_json::Value::String(operation_id.to_string());
-            payload["status_note"] = serde_json::Value::String(format!(
-                "Requested operation id {operation_id} was not found; it was resolved to {resolved_id} because that is the only registered operation sharing the same leading UUID segment. Use the exact operation_id {resolved_id} in future calls."
-            ));
-            return Ok(payload.to_string());
-        }
-    }
-
-    Err(anyhow::anyhow!("unknown operation id: {operation_id}"))
-}
-
-async fn operation_status_payload(
-    operation_id: &str,
-    session_manager: &Arc<SessionManager>,
-    compatibility_alias: bool,
-) -> Result<Option<serde_json::Value>> {
-    if let Some(status) = session_manager
-        .get_background_task_status(operation_id)
-        .await?
-    {
-        let mut payload = serde_json::json!({
-            "operation_id": status.background_task_id,
-            "kind": status.kind,
-            "state": status.state,
-            "background_task_id": operation_id,
-        });
-
-        if let Some(session_id) = status.session_id {
-            payload["session_id"] = serde_json::Value::String(session_id);
-        }
-        if let Some(position) = status.position {
-            payload["position"] = serde_json::Value::Number(position.into());
-        }
-        if let Some(command) = status.command {
-            payload["command"] = serde_json::Value::String(command);
-        }
-        if let Some(exit_code) = status.exit_code {
-            payload["exit_code"] = serde_json::Value::Number(exit_code.into());
-        }
-        if let Some(duration_ms) = status.duration_ms {
-            payload["duration_ms"] = serde_json::Value::Number(duration_ms.into());
-        }
-        if let Some(snapshot_path) = status.snapshot_path {
-            payload["snapshot_path"] = serde_json::Value::String(snapshot_path);
-        }
-        if !compatibility_alias {
-            payload
-                .as_object_mut()
-                .map(|obj| obj.remove("background_task_id"));
-        }
-
-        return Ok(Some(payload));
-    }
-
-    if let Some(snapshot) = crate::server::operation_registry().snapshot(operation_id) {
-        let mut payload = serde_json::json!({
-            "operation_id": snapshot.operation_id,
-            "kind": snapshot.kind,
-            "state": snapshot.state,
-            "revision": snapshot.revision,
-        });
-        if let Some(dedup) = snapshot.dedup {
-            payload["dedup"] = serde_json::Value::String(dedup);
-        }
-        if let Some(terminal_result) =
-            crate::server::operation_registry().terminal_result(operation_id)
-        {
-            if let Some(exit_code) = terminal_result
-                .get("exit_code")
-                .and_then(|value| value.as_i64())
-            {
-                payload["exit_code"] = serde_json::Value::Number(exit_code.into());
-            }
-            payload["terminal_result"] = terminal_result;
-        } else if matches!(
-            payload["kind"].as_str(),
-            Some(tool_names::BASH_COMMAND | tool_names::RUN_TERMINAL_COMMAND)
-        ) && matches!(payload["state"].as_str(), Some("accepted" | "started"))
-        {
-            payload["status_hint"] = serde_json::Value::String(
-                "Final terminal payload will appear under `terminal_result` once this background headless command reaches completed or failed. Do not rerun it in foreground just to inspect output.".to_string(),
-            );
-        }
-        if compatibility_alias {
-            payload["background_task_id"] = serde_json::Value::String(operation_id.to_string());
-        }
-        return Ok(Some(payload));
-    }
-
-    Ok(None)
 }

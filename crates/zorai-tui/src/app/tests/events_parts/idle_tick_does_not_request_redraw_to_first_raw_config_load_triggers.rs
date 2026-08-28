@@ -73,7 +73,10 @@ pub(super) fn activity_state_does_not_force_spinner_repaints() {
     model.agent_activity = Some("Thinking".to_string());
 
     assert!(!model.wants_fast_tick());
-    assert!(!model.on_tick_elapsed(20), "unchanged activity state must wait for an event-driven redraw");
+    assert!(
+        !model.on_tick_elapsed(20),
+        "unchanged activity state must wait for an event-driven redraw"
+    );
 }
 
 #[test]

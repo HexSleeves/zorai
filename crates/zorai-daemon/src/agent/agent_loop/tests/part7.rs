@@ -656,7 +656,7 @@ async fn metacognitive_warning_repeated_tool_calls_remain_advisory() {
 }
 
 #[tokio::test]
-async fn repeated_get_operation_status_polling_is_not_suppressed_as_stuck_loop() {
+async fn repeated_get_operation_status_polling_is_suppressed_as_busy_wait() {
     let root = tempdir().unwrap();
     let manager = SessionManager::new_test(root.path()).await;
     let record = crate::server::operation_registry()
@@ -719,27 +719,36 @@ async fn repeated_get_operation_status_polling_is_not_suppressed_as_stuck_loop()
     assert_eq!(
         operation_status_results.len(),
         4,
-        "identical operation status polling calls should all execute"
+        "the agent still issued four identical status calls"
     );
-    assert!(
-        operation_status_results.iter().all(|message| {
-            message.tool_status.as_deref() == Some("done")
+    assert_eq!(
+        operation_status_results
+            .iter()
+            .filter(|message| message.tool_status.as_deref() == Some("done")
                 && message.content.contains(&record.operation_id)
-                && message.content.contains("\"kind\":\"scripted_poll\"")
-        }),
-        "operation status polling should return real status payloads: {:?}",
+                && message.content.contains("\"kind\":\"scripted_poll\""))
+            .count(),
+        1,
+        "only the first snapshot should execute: {:?}",
         operation_status_results
             .iter()
             .map(|message| message.content.as_str())
             .collect::<Vec<_>>()
     );
-    assert!(!thread.messages.iter().any(|message| {
-        message.role == MessageRole::Tool
-            && message.tool_name.as_deref() == Some("get_operation_status")
-            && message
+    assert!(
+        operation_status_results
+            .iter()
+            .filter(|message| message
                 .content
-                .contains("Repeated identical tool call suppressed")
-    }));
+                .contains("Repeated get_operation_status polling suppressed"))
+            .count()
+            >= 3,
+        "later identical polls should be suppressed: {:?}",
+        operation_status_results
+            .iter()
+            .map(|message| message.content.as_str())
+            .collect::<Vec<_>>()
+    );
 }
 
 #[tokio::test]

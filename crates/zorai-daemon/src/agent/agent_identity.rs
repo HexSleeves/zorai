@@ -290,6 +290,7 @@ pub(crate) fn is_explicit_builtin_persona_scope(alias: &str) -> bool {
             | PERUN_AGENT_ID
             | MOKOSH_AGENT_ID
             | DAZHBOG_AGENT_ID
+            | ROD_AGENT_ID
     )
 }
 
@@ -297,6 +298,9 @@ pub(crate) fn builtin_persona_overrides<'a>(
     config: &'a AgentConfig,
     alias: &str,
 ) -> Option<&'a BuiltinPersonaOverrides> {
+    if !is_explicit_builtin_persona_scope(alias) {
+        return None;
+    }
     match canonical_agent_id(alias) {
         SWAROZYC_AGENT_ID => Some(&config.builtin_sub_agents.swarozyc),
         RADOGOST_AGENT_ID => Some(&config.builtin_sub_agents.radogost),
@@ -305,8 +309,47 @@ pub(crate) fn builtin_persona_overrides<'a>(
         PERUN_AGENT_ID => Some(&config.builtin_sub_agents.perun),
         MOKOSH_AGENT_ID => Some(&config.builtin_sub_agents.mokosh),
         DAZHBOG_AGENT_ID => Some(&config.builtin_sub_agents.dazhbog),
+        ROD_AGENT_ID => Some(&config.builtin_sub_agents.rod),
         _ => None,
     }
+}
+
+pub(crate) fn builtin_persona_overrides_mut<'a>(
+    config: &'a mut AgentConfig,
+    alias: &str,
+) -> Option<&'a mut BuiltinPersonaOverrides> {
+    if !is_explicit_builtin_persona_scope(alias) {
+        return None;
+    }
+    match canonical_agent_id(alias) {
+        SWAROZYC_AGENT_ID => Some(&mut config.builtin_sub_agents.swarozyc),
+        RADOGOST_AGENT_ID => Some(&mut config.builtin_sub_agents.radogost),
+        DOMOWOJ_AGENT_ID => Some(&mut config.builtin_sub_agents.domowoj),
+        SWIETOWIT_AGENT_ID => Some(&mut config.builtin_sub_agents.swietowit),
+        PERUN_AGENT_ID => Some(&mut config.builtin_sub_agents.perun),
+        MOKOSH_AGENT_ID => Some(&mut config.builtin_sub_agents.mokosh),
+        DAZHBOG_AGENT_ID => Some(&mut config.builtin_sub_agents.dazhbog),
+        ROD_AGENT_ID => Some(&mut config.builtin_sub_agents.rod),
+        _ => None,
+    }
+}
+
+pub(crate) fn configurable_sub_agent_mut<'a>(
+    sub_agents: &'a mut [SubAgentDefinition],
+    aliases: &[&str],
+) -> Option<&'a mut SubAgentDefinition> {
+    sub_agents.iter_mut().find(|def| {
+        aliases.iter().copied().any(|alias| {
+            let trimmed = alias.trim();
+            !trimmed.is_empty()
+                && (def.id.eq_ignore_ascii_case(trimmed)
+                    || def.name.eq_ignore_ascii_case(trimmed)
+                    || def
+                        .id
+                        .strip_suffix("_builtin")
+                        .is_some_and(|value| value.eq_ignore_ascii_case(trimmed)))
+        })
+    })
 }
 
 pub(crate) fn builtin_persona_requires_setup(config: &AgentConfig, alias: &str) -> bool {
@@ -631,6 +674,8 @@ mod tests {
         assert_eq!(canonical_agent_name("mokosh"), "Mokosh");
         assert_eq!(canonical_agent_id("dazhbog"), "dazhbog");
         assert_eq!(canonical_agent_name("dazhbog"), "Dazhbog");
+        assert_eq!(canonical_agent_id("rod"), ROD_AGENT_ID);
+        assert_eq!(canonical_agent_name("Rod"), ROD_AGENT_NAME);
     }
 
     #[test]

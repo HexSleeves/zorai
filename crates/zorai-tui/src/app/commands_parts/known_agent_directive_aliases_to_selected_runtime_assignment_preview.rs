@@ -16,6 +16,7 @@ impl TuiModel {
             "perun".to_string(),
             "mokosh".to_string(),
             "dazhbog".to_string(),
+            "rod".to_string(),
         ];
         for entry in &self.subagents.entries {
             aliases.push(entry.id.clone());
@@ -51,6 +52,7 @@ impl TuiModel {
             "perun" => "perun",
             "mokosh" => "mokosh",
             "dazhbog" => "dazhbog",
+            "rod" => "rod",
             _ => return true,
         };
         let Some(entry) = raw
@@ -137,7 +139,14 @@ impl TuiModel {
         let agent_name = self.participant_display_name(agent_id);
         let is_unconfigured_builtin = matches!(
             agent_id.trim().to_ascii_lowercase().as_str(),
-            "swarozyc" | "radogost" | "domowoj" | "swietowit" | "perun" | "mokosh" | "dazhbog"
+            "swarozyc"
+                | "radogost"
+                | "domowoj"
+                | "swietowit"
+                | "perun"
+                | "mokosh"
+                | "dazhbog"
+                | "rod"
         ) && !self.builtin_persona_configured(agent_id);
         if is_unconfigured_builtin {
             self.open_builtin_persona_setup_flow(

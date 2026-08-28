@@ -1324,7 +1324,7 @@ async fn get_operation_status_resolves_mistyped_id_by_unique_first_segment() {
     let mangled = format!("{first_segment}-1111-4111-8111-111111111111");
 
     let args = serde_json::json!({ "operation_id": mangled });
-    let result = execute_get_operation_status(&args, &manager)
+    let result = execute_get_operation_status(&args, &manager, None, None)
         .await
         .expect("a mistyped id with a unique correct leading segment should still resolve");
     let payload: serde_json::Value =
@@ -2146,6 +2146,137 @@ async fn get_operation_status_returns_server_operation_snapshot() {
     assert_eq!(payload["operation_id"], record.operation_id);
     assert_eq!(payload["kind"], "skill_publish");
     assert_eq!(payload["state"], "completed");
+}
+
+#[tokio::test]
+async fn get_operation_status_wait_blocks_until_terminal_state() {
+    let root = tempdir().expect("tempdir should succeed");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager.clone(), AgentConfig::default(), root.path()).await;
+    let (event_tx, _) = broadcast::channel(8);
+
+    let record = crate::server::operation_registry()
+        .accept_operation("skill_publish", Some("tool-test:wait-complete".to_string()));
+    crate::server::operation_registry().mark_started(&record.operation_id);
+    engine
+        .register_operation_wakeup(
+            "thread-operation-status-wait",
+            "skill_publish",
+            &record.operation_id,
+            true,
+        )
+        .await;
+
+    let operation_id = record.operation_id.clone();
+    tokio::spawn(async move {
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        crate::server::operation_registry().mark_completed(&operation_id);
+    });
+
+    let tool_call = ToolCall::with_default_weles_review(
+        "tool-operation-status-wait".to_string(),
+        ToolFunction {
+            name: "get_operation_status".to_string(),
+            arguments: serde_json::json!({
+                "operation_id": record.operation_id,
+                "wait": true,
+                "timeout_seconds": 5,
+            })
+            .to_string(),
+        },
+    );
+
+    let result = execute_tool(
+        &tool_call,
+        &engine,
+        "thread-operation-status-wait",
+        None,
+        &manager,
+        None,
+        &event_tx,
+        root.path(),
+        &engine.http_client,
+        None,
+    )
+    .await;
+
+    assert!(
+        !result.is_error,
+        "wait=true should return the completed operation: {}",
+        result.content
+    );
+    let payload: serde_json::Value =
+        serde_json::from_str(&result.content).expect("status payload should be valid JSON");
+    assert_eq!(payload["state"], "completed");
+    assert_eq!(payload["waited"], true);
+    assert_eq!(engine.pending_operation_wakeup_count().await, 0);
+}
+
+#[tokio::test]
+async fn get_operation_status_wait_times_out_without_polling_hint_loop() {
+    let root = tempdir().expect("tempdir should succeed");
+    let manager = SessionManager::new_test(root.path()).await;
+    let record = crate::server::operation_registry()
+        .accept_operation("skill_publish", Some("tool-test:wait-timeout".to_string()));
+    crate::server::operation_registry().mark_started(&record.operation_id);
+
+    let started = std::time::Instant::now();
+    let result = execute_get_operation_status(
+        &serde_json::json!({
+            "operation_id": record.operation_id,
+            "wait": true,
+            "timeout_seconds": 1,
+        }),
+        &manager,
+        None,
+        None,
+    )
+    .await
+    .expect("wait timeout should still return a snapshot");
+    assert!(
+        started.elapsed() >= Duration::from_millis(900),
+        "wait=true should block in the daemon instead of returning immediately"
+    );
+
+    let payload: serde_json::Value =
+        serde_json::from_str(&result).expect("status payload should be valid JSON");
+    assert_eq!(payload["state"], "started");
+    assert_eq!(payload["wait_timed_out"], true);
+    assert!(
+        payload["next_step"]
+            .as_str()
+            .is_some_and(|value| value.contains("wait=true")),
+        "timed-out wait should tell the agent to wait again or continue, not poll: {}",
+        payload
+    );
+}
+
+#[tokio::test]
+async fn get_operation_status_snapshot_tells_agent_not_to_poll() {
+    let root = tempdir().expect("tempdir should succeed");
+    let manager = SessionManager::new_test(root.path()).await;
+    let record = crate::server::operation_registry()
+        .accept_operation("skill_publish", Some("tool-test:no-poll".to_string()));
+    crate::server::operation_registry().mark_started(&record.operation_id);
+
+    let result = execute_get_operation_status(
+        &serde_json::json!({ "operation_id": record.operation_id }),
+        &manager,
+        None,
+        None,
+    )
+    .await
+    .expect("snapshot lookup should succeed");
+    let payload: serde_json::Value =
+        serde_json::from_str(&result).expect("status payload should be valid JSON");
+    assert_eq!(payload["state"], "started");
+    assert!(
+        payload["next_step"]
+            .as_str()
+            .is_some_and(|value| value.contains("Do not poll")),
+        "non-terminal snapshot should forbid polling: {}",
+        payload
+    );
 }
 
 #[tokio::test]
@@ -4112,6 +4243,14 @@ async fn list_agents_returns_effective_runtime_targets() {
     assert_eq!(
         dazhbog.get("name").and_then(|value| value.as_str()),
         Some("Dazhbog")
+    );
+    let rod = rows
+        .iter()
+        .find(|row| row.get("agent").and_then(|value| value.as_str()) == Some("rod"))
+        .expect("rod row should be present");
+    assert_eq!(
+        rod.get("name").and_then(|value| value.as_str()),
+        Some("Rod")
     );
     let weles = rows
         .iter()

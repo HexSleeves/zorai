@@ -32,14 +32,41 @@ fn should_suppress_busy_wait_poll(
     previous_signature: Option<&str>,
     consecutive_same_tool_calls: u32,
     has_active_subagents: bool,
+    blocking_wait: bool,
 ) -> bool {
-    has_active_subagents
-        && matches!(
-            tool_name,
-            zorai_protocol::tool_names::LIST_AGENTS | zorai_protocol::tool_names::LIST_SUBAGENTS
-        )
-        && previous_signature.is_some_and(|value| value == current_signature)
+    previous_signature.is_some_and(|value| value == current_signature)
         && consecutive_same_tool_calls >= 1
+        && match tool_name {
+            zorai_protocol::tool_names::LIST_AGENTS
+            | zorai_protocol::tool_names::LIST_SUBAGENTS => has_active_subagents,
+            zorai_protocol::tool_names::GET_OPERATION_STATUS
+            | zorai_protocol::tool_names::GET_BACKGROUND_TASK_STATUS => !blocking_wait,
+            _ => false,
+        }
+}
+
+fn tool_call_requests_blocking_wait(tc: &ToolCall) -> bool {
+    serde_json::from_str::<serde_json::Value>(&tc.function.arguments)
+        .ok()
+        .and_then(|value| value.get("wait").and_then(|wait| wait.as_bool()))
+        .unwrap_or(false)
+}
+
+fn busy_wait_poll_suppression_message(tool_name: &str) -> (&'static str, String) {
+    match tool_name {
+        zorai_protocol::tool_names::LIST_AGENTS => (
+            "Repeated list_agents polling suppressed while child subagents are still running.",
+            "Repeated list_agents polling suppressed. `list_agents` does not report spawned child progress. Do not busy-wait while child subagents are active; continue unrelated work or send a normal response so zorai can resume you when children finish.".to_string(),
+        ),
+        zorai_protocol::tool_names::LIST_SUBAGENTS => (
+            "Repeated list_subagents polling suppressed while child subagents are still running.",
+            "Repeated list_subagents polling suppressed because the agent appears to be busy-waiting on active child subagents. Use list_subagents only for occasional snapshots, then continue other work or send a normal response so zorai can resume you when children finish.".to_string(),
+        ),
+        _ => (
+            "Repeated get_operation_status polling suppressed.",
+            "Repeated get_operation_status polling suppressed. Do not poll background operations. Call get_operation_status once with wait=true to block until completion, or continue other work so this thread can auto-resume when the operation finishes.".to_string(),
+        ),
+    }
 }
 
 fn allows_repeated_identical_tool_calls(tool_name: &str) -> bool {
@@ -760,19 +787,9 @@ impl<'a> SendMessageRunner<'a> {
             self.previous_tool_signature.as_deref(),
             self.consecutive_same_tool_calls,
             has_active_subagents,
+            tool_call_requests_blocking_wait(tc),
         ) {
-            let (summary, content) = if tc.function.name == zorai_protocol::tool_names::LIST_AGENTS
-            {
-                (
-                    "Repeated list_agents polling suppressed while child subagents are still running.",
-                    "Repeated list_agents polling suppressed. `list_agents` does not report spawned child progress. Do not busy-wait while child subagents are active; continue unrelated work or send a normal response so zorai can resume you when children finish.".to_string(),
-                )
-            } else {
-                (
-                    "Repeated list_subagents polling suppressed while child subagents are still running.",
-                    "Repeated list_subagents polling suppressed because the agent appears to be busy-waiting on active child subagents. Use list_subagents only for occasional snapshots, then continue other work or send a normal response so zorai can resume you when children finish.".to_string(),
-                )
-            };
+            let (summary, content) = busy_wait_poll_suppression_message(&tc.function.name);
             self.engine.emit_workflow_notice(
                 &self.tid,
                 "tool-stall",
@@ -1083,6 +1100,7 @@ mod tests {
             Some("list_agents:{}"),
             1,
             true,
+            false,
         ));
     }
 
@@ -1094,6 +1112,7 @@ mod tests {
             Some("spawn_subagent:{\"title\":\"review\"}"),
             1,
             true,
+            false,
         ));
     }
 
@@ -1104,6 +1123,31 @@ mod tests {
             "read_file:{\"path\":\"PROJECT.md\"}",
             Some("read_file:{\"path\":\"PROJECT.md\"}"),
             1,
+            true,
+            false,
+        ));
+    }
+
+    #[test]
+    fn busy_wait_poll_detection_flags_repeated_operation_status_without_wait() {
+        assert!(super::should_suppress_busy_wait_poll(
+            zorai_protocol::tool_names::GET_OPERATION_STATUS,
+            r#"get_operation_status:{"operation_id":"op-1"}"#,
+            Some(r#"get_operation_status:{"operation_id":"op-1"}"#),
+            1,
+            false,
+            false,
+        ));
+    }
+
+    #[test]
+    fn busy_wait_poll_detection_allows_blocking_operation_status_wait() {
+        assert!(!super::should_suppress_busy_wait_poll(
+            zorai_protocol::tool_names::GET_OPERATION_STATUS,
+            r#"get_operation_status:{"operation_id":"op-1","wait":true}"#,
+            Some(r#"get_operation_status:{"operation_id":"op-1","wait":true}"#),
+            1,
+            false,
             true,
         ));
     }

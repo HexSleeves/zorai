@@ -94,7 +94,8 @@ fn execution_fields_for_agent(
         | crate::agent::agent_identity::SWIETOWIT_AGENT_ID
         | crate::agent::agent_identity::PERUN_AGENT_ID
         | crate::agent::agent_identity::MOKOSH_AGENT_ID
-        | crate::agent::agent_identity::DAZHBOG_AGENT_ID => {
+        | crate::agent::agent_identity::DAZHBOG_AGENT_ID
+        | crate::agent::agent_identity::ROD_AGENT_ID => {
             let overrides =
                 crate::agent::agent_identity::builtin_persona_overrides(config, &target)?;
             Some(AgentExecutionFields {
@@ -138,41 +139,23 @@ fn apply_context_window_to_target(
         WELES_AGENT_ID => {
             config.builtin_sub_agents.weles.context_window_tokens = Some(tokens);
         }
-        crate::agent::agent_identity::SWAROZYC_AGENT_ID => {
-            config.builtin_sub_agents.swarozyc.context_window_tokens = Some(tokens);
-        }
-        crate::agent::agent_identity::RADOGOST_AGENT_ID => {
-            config.builtin_sub_agents.radogost.context_window_tokens = Some(tokens);
-        }
-        crate::agent::agent_identity::DOMOWOJ_AGENT_ID => {
-            config.builtin_sub_agents.domowoj.context_window_tokens = Some(tokens);
-        }
-        crate::agent::agent_identity::SWIETOWIT_AGENT_ID => {
-            config.builtin_sub_agents.swietowit.context_window_tokens = Some(tokens);
-        }
-        crate::agent::agent_identity::PERUN_AGENT_ID => {
-            config.builtin_sub_agents.perun.context_window_tokens = Some(tokens);
-        }
-        crate::agent::agent_identity::MOKOSH_AGENT_ID => {
-            config.builtin_sub_agents.mokosh.context_window_tokens = Some(tokens);
-        }
-        crate::agent::agent_identity::DAZHBOG_AGENT_ID => {
-            config.builtin_sub_agents.dazhbog.context_window_tokens = Some(tokens);
-        }
         _ => {
-            let sub_agent = config
-                .sub_agents
-                .iter_mut()
-                .find(|candidate| {
-                    candidate.id.eq_ignore_ascii_case(target)
-                        || candidate.name.eq_ignore_ascii_case(original_target.trim())
-                })
-                .ok_or_else(|| {
-                    anyhow::anyhow!(
-                        "unknown agent '{}'. Use `list_agents` to inspect valid targets.",
-                        original_target.trim()
-                    )
-                })?;
+            if let Some(overrides) =
+                crate::agent::agent_identity::builtin_persona_overrides_mut(config, target)
+            {
+                overrides.context_window_tokens = Some(tokens);
+                return Ok(());
+            }
+            let sub_agent = crate::agent::agent_identity::configurable_sub_agent_mut(
+                &mut config.sub_agents,
+                &[target, original_target],
+            )
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "unknown agent '{}'. Use `list_agents` to inspect valid targets.",
+                    original_target.trim()
+                )
+            })?;
             sub_agent.context_window_tokens = Some(tokens);
         }
     }

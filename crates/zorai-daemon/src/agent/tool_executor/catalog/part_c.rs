@@ -156,7 +156,7 @@ pub(crate) fn add_available_tools_part_c(
                 "cwd": { "type": "string", "description": "Optional working directory" },
                 "wait_for_completion": { "type": "boolean", "description": "Wait for completion and return exit status/output summary (default: true). On the TUI surface, long-running executions detach after a short foreground grace and continue as a background operation." },
                 "timeout_seconds": { "type": "integer", "minimum": 0, "maximum": 600, "description": "Wait timeout when wait_for_completion=true (default: 30, max: 600). Above 600 the execution auto-backgrounds, returns an `operation_id`, and will auto-notify the thread on completion." },
-                "notify_on_completion": { "type": "boolean", "description": "When backgrounded, automatically resume this thread on completion (default: false). When false the completion is still recorded in the thread for your next turn, but no autonomous turn is started; poll get_operation_status if you need the result sooner. Set true only when you must act on the result immediately." }
+                "notify_on_completion": { "type": "boolean", "description": "When backgrounded, automatically resume this thread on completion (default: true). Set false only for fire-and-forget work you will not act on. Do not poll get_operation_status; if you need the result before continuing, call get_operation_status with wait=true." }
             },
             "required": ["code"]
         }),
@@ -271,7 +271,7 @@ pub(crate) fn add_available_tools_part_c(
             "include_dom": { "type": "boolean", "description": "For browser panels: include page DOM text content. Ignored for terminal panes." }
         }
     })));
-    tools.push(tool_def(tool_names::RUN_TERMINAL_COMMAND, "Execute a shell command through a zorai-managed terminal session. This runs in the app's terminal context (not a daemon-native subprocess). For long-running work, prefer non-blocking execution; background operations will auto-notify the thread when they complete, and `get_operation_status` is available when you need more details. Use this for shell-native networking such as `curl -I`, range requests, large or binary downloads, or streaming transfers; for browser-readable text pages, prefer `web_search` or `fetch_url`.", serde_json::json!({
+    tools.push(tool_def(tool_names::RUN_TERMINAL_COMMAND, "Execute a shell command through a zorai-managed terminal session. This runs in the app's terminal context (not a daemon-native subprocess). For long-running work, prefer non-blocking execution; this thread auto-resumes when background operations complete. Do not poll `get_operation_status`; call it once with `wait=true` only if you need the result before doing more work. Use this for shell-native networking such as `curl -I`, range requests, large or binary downloads, or streaming transfers; for browser-readable text pages, prefer `web_search` or `fetch_url`.", serde_json::json!({
         "type": "object",
         "properties": {
             "command": { "type": "string", "description": "Shell command to execute in a managed terminal session" },
@@ -284,11 +284,11 @@ pub(crate) fn add_available_tools_part_c(
             "language_hint": { "type": "string", "description": "Optional language hint for validation" },
             "wait_for_completion": { "type": "boolean", "description": "Wait for completion and return exit status/output summary (default: true)" },
             "timeout_seconds": { "type": "integer", "description": "Wait timeout when wait_for_completion=true (default: 30, max: 600). Above 600 the command auto-backgrounds, returns an `operation_id`, and will auto-notify the thread on completion." },
-            "notify_on_completion": { "type": "boolean", "description": "When backgrounded, automatically resume this thread on completion (default: false). When false the completion is still recorded in the thread for your next turn, but no autonomous turn is started; poll get_operation_status if you need the result sooner. Set true only when you must act on the result immediately." }
+            "notify_on_completion": { "type": "boolean", "description": "When backgrounded, automatically resume this thread on completion (default: true). Set false only for fire-and-forget work you will not act on. Do not poll get_operation_status; if you need the result before continuing, call get_operation_status with wait=true." }
         },
         "required": ["command"]
     })));
-    tools.push(tool_def(tool_names::EXECUTE_MANAGED_COMMAND, "Queue a command in a daemon-managed terminal lane. By default this tool waits for completion and returns final status/output tail. If session is omitted, uses the first active terminal session. For non-blocking execution, background operations will auto-notify the thread when they complete, and `get_operation_status` is available when you need more details. Use this for shell-native networking such as `curl -I`, range requests, large or binary downloads, or streaming transfers; for browser-readable text pages, prefer `web_search` or `fetch_url`.", serde_json::json!({
+    tools.push(tool_def(tool_names::EXECUTE_MANAGED_COMMAND, "Queue a command in a daemon-managed terminal lane. By default this tool waits for completion and returns final status/output tail. If session is omitted, uses the first active terminal session. For non-blocking execution, this thread auto-resumes when background operations complete. Do not poll `get_operation_status`; call it once with `wait=true` only if you need the result before doing more work. Use this for shell-native networking such as `curl -I`, range requests, large or binary downloads, or streaming transfers; for browser-readable text pages, prefer `web_search` or `fetch_url`.", serde_json::json!({
         "type": "object",
         "properties": {
             "command": { "type": "string", "description": "Shell command to run in the managed terminal session" },
@@ -301,21 +301,25 @@ pub(crate) fn add_available_tools_part_c(
             "language_hint": { "type": "string", "description": "Optional language hint for validation" },
             "wait_for_completion": { "type": "boolean", "description": "Wait for completion and return exit status/output summary (default: true)" },
             "timeout_seconds": { "type": "integer", "description": "Wait timeout when wait_for_completion=true (default: 30, max: 600). Above 600 the command auto-backgrounds, returns an `operation_id`, and will auto-notify the thread on completion." },
-            "notify_on_completion": { "type": "boolean", "description": "When backgrounded, automatically resume this thread on completion (default: false). When false the completion is still recorded in the thread for your next turn, but no autonomous turn is started; poll get_operation_status if you need the result sooner. Set true only when you must act on the result immediately." }
+            "notify_on_completion": { "type": "boolean", "description": "When backgrounded, automatically resume this thread on completion (default: true). Set false only for fire-and-forget work you will not act on. Do not poll get_operation_status; if you need the result before continuing, call get_operation_status with wait=true." }
         },
         "required": ["command", "rationale"]
     })));
-    tools.push(tool_def(tool_names::GET_OPERATION_STATUS, "Look up the current lifecycle state of a previously accepted asynchronous operation by its operation_id. Background operations will auto-notify the thread with their completion status and result, so use this tool when you need more details or an explicit status check. For background terminal commands, pass the returned operation_id here; `background_task_id` is the same value for compatibility. When a background headless shell command completes or fails, this response includes `terminal_result` with the captured payload and exit code.", serde_json::json!({
+    tools.push(tool_def(tool_names::GET_OPERATION_STATUS, "Look up an asynchronous operation by operation_id. Do not poll this tool. If you need the result before doing more work, set wait=true so the daemon blocks until completion (or timeout) and returns the final payload in one call. Otherwise continue other work; this thread auto-resumes when the operation finishes. Snapshot-only calls (wait=false) are for a single check, not a loop. For background terminal commands, pass the returned operation_id; `background_task_id` is the same value for compatibility. When a background headless shell command completes or fails, this response includes `terminal_result` with the captured payload and exit code.", serde_json::json!({
         "type": "object",
         "properties": {
-            "operation_id": { "type": "string", "description": "Asynchronous operation handle returned by a non-blocking tool or daemon operation" }
+            "operation_id": { "type": "string", "description": "Asynchronous operation handle returned by a non-blocking tool or daemon operation" },
+            "wait": { "type": "boolean", "description": "When true, block in the daemon until the operation reaches completed/failed/cancelled or timeout_seconds elapses (default: false). Use this instead of polling." },
+            "timeout_seconds": { "type": "integer", "minimum": 0, "maximum": 3600, "description": "Max seconds to wait when wait=true (default: 600, max: 3600). Ignored when wait=false." }
         },
         "required": ["operation_id"]
     })));
-    tools.push(tool_def(tool_names::GET_BACKGROUND_TASK_STATUS, "Compatibility alias for background managed-terminal commands. Prefer `get_operation_status`; this tool accepts the same ID under the older `background_task_id` name.", serde_json::json!({
+    tools.push(tool_def(tool_names::GET_BACKGROUND_TASK_STATUS, "Compatibility alias for background managed-terminal commands. Prefer `get_operation_status` with wait=true instead of polling this tool.", serde_json::json!({
         "type": "object",
         "properties": {
-            "background_task_id": { "type": "string", "description": "Execution handle returned as background_task_id by a non-blocking managed terminal command" }
+            "background_task_id": { "type": "string", "description": "Execution handle returned as background_task_id by a non-blocking managed terminal command" },
+            "wait": { "type": "boolean", "description": "When true, block in the daemon until completion or timeout (default: false). Prefer get_operation_status with wait=true." },
+            "timeout_seconds": { "type": "integer", "minimum": 0, "maximum": 3600, "description": "Max seconds to wait when wait=true (default: 600, max: 3600)" }
         },
         "required": ["background_task_id"]
     })));

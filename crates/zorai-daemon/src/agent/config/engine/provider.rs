@@ -44,6 +44,9 @@ impl AgentEngine {
             crate::agent::agent_identity::DAZHBOG_AGENT_ID => {
                 crate::agent::agent_identity::DAZHBOG_AGENT_ID.to_string()
             }
+            crate::agent::agent_identity::ROD_AGENT_ID => {
+                crate::agent::agent_identity::ROD_AGENT_ID.to_string()
+            }
             _ if normalized
                 == crate::agent::agent_identity::WELES_AGENT_NAME.to_ascii_lowercase() =>
             {
@@ -154,71 +157,27 @@ impl AgentEngine {
                 updated.builtin_sub_agents.weles.model = Some(model.to_string());
                 Ok(updated)
             }
-            crate::agent::agent_identity::SWAROZYC_AGENT_ID => {
-                self.validate_non_main_agent_provider_model(&current, provider_id, model)?;
-                let mut updated = current;
-                updated.builtin_sub_agents.swarozyc.provider = Some(provider_id.to_string());
-                updated.builtin_sub_agents.swarozyc.model = Some(model.to_string());
-                Ok(updated)
-            }
-            crate::agent::agent_identity::RADOGOST_AGENT_ID => {
-                self.validate_non_main_agent_provider_model(&current, provider_id, model)?;
-                let mut updated = current;
-                updated.builtin_sub_agents.radogost.provider = Some(provider_id.to_string());
-                updated.builtin_sub_agents.radogost.model = Some(model.to_string());
-                Ok(updated)
-            }
-            crate::agent::agent_identity::DOMOWOJ_AGENT_ID => {
-                self.validate_non_main_agent_provider_model(&current, provider_id, model)?;
-                let mut updated = current;
-                updated.builtin_sub_agents.domowoj.provider = Some(provider_id.to_string());
-                updated.builtin_sub_agents.domowoj.model = Some(model.to_string());
-                Ok(updated)
-            }
-            crate::agent::agent_identity::SWIETOWIT_AGENT_ID => {
-                self.validate_non_main_agent_provider_model(&current, provider_id, model)?;
-                let mut updated = current;
-                updated.builtin_sub_agents.swietowit.provider = Some(provider_id.to_string());
-                updated.builtin_sub_agents.swietowit.model = Some(model.to_string());
-                Ok(updated)
-            }
-            crate::agent::agent_identity::PERUN_AGENT_ID => {
-                self.validate_non_main_agent_provider_model(&current, provider_id, model)?;
-                let mut updated = current;
-                updated.builtin_sub_agents.perun.provider = Some(provider_id.to_string());
-                updated.builtin_sub_agents.perun.model = Some(model.to_string());
-                Ok(updated)
-            }
-            crate::agent::agent_identity::MOKOSH_AGENT_ID => {
-                self.validate_non_main_agent_provider_model(&current, provider_id, model)?;
-                let mut updated = current;
-                updated.builtin_sub_agents.mokosh.provider = Some(provider_id.to_string());
-                updated.builtin_sub_agents.mokosh.model = Some(model.to_string());
-                Ok(updated)
-            }
-            crate::agent::agent_identity::DAZHBOG_AGENT_ID => {
-                self.validate_non_main_agent_provider_model(&current, provider_id, model)?;
-                let mut updated = current;
-                updated.builtin_sub_agents.dazhbog.provider = Some(provider_id.to_string());
-                updated.builtin_sub_agents.dazhbog.model = Some(model.to_string());
-                Ok(updated)
-            }
             _ => {
                 self.validate_non_main_agent_provider_model(&current, provider_id, model)?;
                 let mut updated = current;
-                let sub_agent = updated
-                    .sub_agents
-                    .iter_mut()
-                    .find(|candidate| {
-                        candidate.id.eq_ignore_ascii_case(&target)
-                            || candidate.name.eq_ignore_ascii_case(target_agent.trim())
-                    })
-                    .ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "unknown agent '{}'. Use `list_agents` to inspect valid targets.",
-                            target_agent.trim()
-                        )
-                    })?;
+                if let Some(overrides) = crate::agent::agent_identity::builtin_persona_overrides_mut(
+                    &mut updated,
+                    &target,
+                ) {
+                    overrides.provider = Some(provider_id.to_string());
+                    overrides.model = Some(model.to_string());
+                    return Ok(updated);
+                }
+                let sub_agent = crate::agent::agent_identity::configurable_sub_agent_mut(
+                    &mut updated.sub_agents,
+                    &[target_agent, target.as_str()],
+                )
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "unknown agent '{}'. Use `list_agents` to inspect valid targets.",
+                        target_agent.trim()
+                    )
+                })?;
                 sub_agent.provider = provider_id.to_string();
                 sub_agent.model = model.to_string();
                 Ok(updated)
@@ -271,63 +230,26 @@ impl AgentEngine {
                     (!reasoning_effort.is_empty()).then_some(reasoning_effort);
                 Ok(updated)
             }
-            crate::agent::agent_identity::SWAROZYC_AGENT_ID => {
-                let mut updated = current;
-                updated.builtin_sub_agents.swarozyc.reasoning_effort =
-                    (!reasoning_effort.is_empty()).then_some(reasoning_effort);
-                Ok(updated)
-            }
-            crate::agent::agent_identity::RADOGOST_AGENT_ID => {
-                let mut updated = current;
-                updated.builtin_sub_agents.radogost.reasoning_effort =
-                    (!reasoning_effort.is_empty()).then_some(reasoning_effort);
-                Ok(updated)
-            }
-            crate::agent::agent_identity::DOMOWOJ_AGENT_ID => {
-                let mut updated = current;
-                updated.builtin_sub_agents.domowoj.reasoning_effort =
-                    (!reasoning_effort.is_empty()).then_some(reasoning_effort);
-                Ok(updated)
-            }
-            crate::agent::agent_identity::SWIETOWIT_AGENT_ID => {
-                let mut updated = current;
-                updated.builtin_sub_agents.swietowit.reasoning_effort =
-                    (!reasoning_effort.is_empty()).then_some(reasoning_effort);
-                Ok(updated)
-            }
-            crate::agent::agent_identity::PERUN_AGENT_ID => {
-                let mut updated = current;
-                updated.builtin_sub_agents.perun.reasoning_effort =
-                    (!reasoning_effort.is_empty()).then_some(reasoning_effort);
-                Ok(updated)
-            }
-            crate::agent::agent_identity::MOKOSH_AGENT_ID => {
-                let mut updated = current;
-                updated.builtin_sub_agents.mokosh.reasoning_effort =
-                    (!reasoning_effort.is_empty()).then_some(reasoning_effort);
-                Ok(updated)
-            }
-            crate::agent::agent_identity::DAZHBOG_AGENT_ID => {
-                let mut updated = current;
-                updated.builtin_sub_agents.dazhbog.reasoning_effort =
-                    (!reasoning_effort.is_empty()).then_some(reasoning_effort);
-                Ok(updated)
-            }
             _ => {
                 let mut updated = current;
-                let sub_agent = updated
-                    .sub_agents
-                    .iter_mut()
-                    .find(|candidate| {
-                        candidate.id.eq_ignore_ascii_case(&target)
-                            || candidate.name.eq_ignore_ascii_case(target_agent.trim())
-                    })
-                    .ok_or_else(|| {
-                        anyhow::anyhow!(
-                            "unknown agent '{}'. Use `list_agents` to inspect valid targets.",
-                            target_agent.trim()
-                        )
-                    })?;
+                if let Some(overrides) = crate::agent::agent_identity::builtin_persona_overrides_mut(
+                    &mut updated,
+                    &target,
+                ) {
+                    overrides.reasoning_effort =
+                        (!reasoning_effort.is_empty()).then_some(reasoning_effort);
+                    return Ok(updated);
+                }
+                let sub_agent = crate::agent::agent_identity::configurable_sub_agent_mut(
+                    &mut updated.sub_agents,
+                    &[target_agent, target.as_str()],
+                )
+                .ok_or_else(|| {
+                    anyhow::anyhow!(
+                        "unknown agent '{}'. Use `list_agents` to inspect valid targets.",
+                        target_agent.trim()
+                    )
+                })?;
                 sub_agent.reasoning_effort =
                     (!reasoning_effort.is_empty()).then_some(reasoning_effort);
                 Ok(updated)

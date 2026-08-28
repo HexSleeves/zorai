@@ -130,7 +130,7 @@ pub(crate) async fn execute_python_execute(
                 .unwrap_or_default();
             return Ok((
                 format!(
-                    "Python execution detached{cwd_suffix} as background operation {operation_id} after {}s foreground grace.\nbackground_task_id: {operation_id}\noperation_id: {operation_id}\nwait_for_completion=true exceeded the TUI foreground grace window. A background monitor will notify this thread when the command completes. Use get_operation_status with this operation_id if you need more details before then.",
+                    "Python execution detached{cwd_suffix} as background operation {operation_id} after {}s foreground grace.\nbackground_task_id: {operation_id}\noperation_id: {operation_id}\nwait_for_completion=true exceeded the TUI foreground grace window. {BACKGROUND_OPERATION_COMPLETION_GUIDANCE}",
                     foreground_wait.as_secs()
                 ),
                 None,
@@ -250,7 +250,7 @@ fn spawn_python_execute_background(
     if auto_background {
         Ok((
             format!(
-                "{queued_summary}\nbackground_task_id: {operation_id}\noperation_id: {operation_id}\nPython execution auto-backgrounded (requested timeout {}s > max 600s). A background monitor will notify this thread when the command completes. Use get_operation_status with this operation_id if you need more details before then.",
+                "{queued_summary}\nbackground_task_id: {operation_id}\noperation_id: {operation_id}\nPython execution auto-backgrounded (requested timeout {}s > max 600s). {BACKGROUND_OPERATION_COMPLETION_GUIDANCE}",
                 requested_timeout,
             ),
             None,
@@ -258,7 +258,7 @@ fn spawn_python_execute_background(
     } else {
         Ok((
             format!(
-                "{queued_summary}\nbackground_task_id: {operation_id}\noperation_id: {operation_id}\nNot waiting for completion because wait_for_completion=false. A background monitor will notify this thread when the command completes. Use get_operation_status with this operation_id if you need more details before then."
+                "{queued_summary}\nbackground_task_id: {operation_id}\noperation_id: {operation_id}\nNot waiting for completion because wait_for_completion=false. {BACKGROUND_OPERATION_COMPLETION_GUIDANCE}"
             ),
             None,
         ))

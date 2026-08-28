@@ -1712,10 +1712,17 @@ async fn dispatch_tool_execution(
             }
         }
         tool_names::GET_OPERATION_STATUS => {
-            execute_get_operation_status(args, session_manager).await
+            execute_get_operation_status(args, session_manager, Some(agent), cancel_token.clone())
+                .await
         }
         tool_names::GET_BACKGROUND_TASK_STATUS => {
-            execute_get_background_task_status(args, session_manager).await
+            execute_get_background_task_status(
+                args,
+                session_manager,
+                Some(agent),
+                cancel_token.clone(),
+            )
+            .await
         }
         tool_names::ALLOCATE_TERMINAL => {
             execute_allocate_terminal(args, session_manager, session_id, event_tx).await
@@ -2367,7 +2374,7 @@ pub fn execute_tool<'a>(
                     .dispatch_args
                     .get("notify_on_completion")
                     .and_then(|value| value.as_bool())
-                    .unwrap_or(false);
+                    .unwrap_or(true);
                 agent
                     .register_operation_wakeups_from_tool_result(
                         thread_id,
