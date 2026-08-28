@@ -24,8 +24,6 @@ export type SendMessagePayload = {
 export type ChatViewProps = {
   messages: AgentMessage[];
   todos: AgentTodoItem[];
-  input: string;
-  setInput: React.Dispatch<React.SetStateAction<string>>;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
   onKeyDown: (event: React.KeyboardEvent) => void;
   agentSettings: {

@@ -60,8 +60,6 @@ describe("ChatView participants", () => {
       <ChatView
         messages={[]}
         todos={[]}
-        input=""
-        setInput={() => { }}
         inputRef={createRef<HTMLTextAreaElement>()}
         onKeyDown={() => { }}
         agentSettings={{

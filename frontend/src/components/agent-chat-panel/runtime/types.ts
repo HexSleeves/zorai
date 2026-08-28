@@ -85,8 +85,6 @@ export type AgentChatPanelRuntimeValue = {
   transcripts: TranscriptStoreState["transcripts"];
   scopePaneId: string | null;
   scopeController: ReturnType<typeof getTerminalController>;
-  input: string;
-  setInput: React.Dispatch<React.SetStateAction<string>>;
   historyQuery: string;
   setHistoryQuery: React.Dispatch<React.SetStateAction<string>>;
   symbolQuery: string;

@@ -6,6 +6,11 @@ import { fetchAgentRuns, isSubagentRun, type AgentRun } from "@/lib/agentRuns";
 import { fetchThreadTodos } from "@/lib/agentTodos";
 import { beginThreadLoading } from "@/zorai/features/threads/threadLoadingStore";
 import {
+  composerDraftIsImageCommand,
+  useComposerDraftStore,
+  writeComposerDraftInput,
+} from "@/zorai/features/threads/composerDraftStore";
+import {
   draftThreadForOwnerSnapshot,
   snapshotThreadOwnerRuntimeProfile,
 } from "@/zorai/features/threads/threadOwnerRuntime";
@@ -373,7 +378,6 @@ export function useAgentChatPanelProviderValue(): {
   const transcripts = useTranscriptStore((state) => state.transcripts);
   const addNotification = useNotificationStore((state) => state.addNotification);
 
-  const [input, setInput] = useState("");
   const [view, setView] = useState<AgentChatPanelView>("threads");
   const [chatBackView, setChatBackView] = useState<AgentChatPanelView>("threads");
   const [historyQuery, setHistoryQuery] = useState("");
@@ -624,10 +628,7 @@ export function useAgentChatPanelProviderValue(): {
     endProgrammaticThreadHistoryScroll();
   }, [messages.length]);
 
-  const inputIsImageCommand = useMemo(() => {
-    const trimmed = input.trim();
-    return trimmed === "/image" || trimmed.startsWith("/image ");
-  }, [input]);
+  const inputIsImageCommand = useComposerDraftStore((state) => composerDraftIsImageCommand(state.input));
 
   useEffect(() => {
     if (isOpen && (activeThreadId || inputIsImageCommand)) {
@@ -645,7 +646,7 @@ export function useAgentChatPanelProviderValue(): {
       useWorkspaceStore.setState({ agentPanelOpen: true });
       setChatBackView("threads");
       setView("chat");
-      setInput(prompt ? `/image ${prompt}` : "/image ");
+      writeComposerDraftInput(prompt ? `/image ${prompt}` : "/image ");
       window.setTimeout(() => inputRef.current?.focus(), 50);
     };
 
@@ -1137,12 +1138,12 @@ export function useAgentChatPanelProviderValue(): {
   }, [activeThreadId, agentSettings.agent_backend]);
 
   const handleSend = useCallback(() => {
-    const text = input.trim();
+    const text = useComposerDraftStore.getState().input.trim();
     if (!text) return;
     setFollowThreadHistoryBottom(true);
     sendMessage({ text });
-    setInput("");
-  }, [input, sendMessage]);
+    writeComposerDraftInput("");
+  }, [sendMessage]);
 
   const handleKeyDown = useCallback((event: React.KeyboardEvent) => {
     if (event.key === "Enter" && !event.shiftKey) {
@@ -1219,8 +1220,6 @@ export function useAgentChatPanelProviderValue(): {
     transcripts,
     scopePaneId,
     scopeController,
-    input,
-    setInput,
     historyQuery,
     setHistoryQuery,
     symbolQuery,
@@ -1290,7 +1289,6 @@ export function useAgentChatPanelProviderValue(): {
     historyHits,
     historyQuery,
     historySummary,
-    input,
     isStreamingResponse,
     latestContextSnapshot,
     memory,
