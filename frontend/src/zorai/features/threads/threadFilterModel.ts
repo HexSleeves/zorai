@@ -167,12 +167,23 @@ export function resolveThreadCreationAgent(
   };
 }
 
-export function daemonAgentFilterForThreadTab(tab: ThreadFilterTab): string | null {
+export function daemonAgentFilterForThreadTab(
+  tab: ThreadFilterTab,
+  subAgents: SubAgentDefinition[] = [],
+): string | null {
   if (tab === "svarog") return "svarog";
   if (tab === "rarog") return "rarog";
   if (tab === "weles") return "weles";
-  if (tab.startsWith("agent:")) return tab.slice("agent:".length) || null;
-  return null;
+  if (!tab.startsWith("agent:")) return null;
+  const id = tab.slice("agent:".length).trim();
+  if (!id) return null;
+  const definition = subAgents.find((entry) => {
+    const entryId = normalizeAgentTabId(entry.id);
+    const entryName = normalizeAgentTabId(entry.name);
+    return entryId === id || entryName === id;
+  });
+  const name = (definition?.name ?? "").trim();
+  return name || id;
 }
 
 function matchesThreadTab(
@@ -203,17 +214,20 @@ function threadMatchesAgentTab(
     return false;
   }
   const flags = threadTabFlags(thread, goalThreadIds);
-  if (flags.agentId === agentTabId) {
+  const threadName = (thread.agent_name ?? "").trim().toLowerCase();
+  if (flags.agentId === agentTabId || threadName === agentTabId) {
     return true;
   }
-  const wantedName = (thread.agent_name ?? "").trim().toLowerCase();
-  if (!wantedName) {
+  if (!threadName) {
     return false;
   }
-  return subAgents.some((entry) => (
-    normalizeAgentTabId(entry.id) === agentTabId
-    && (entry.name ?? "").trim().toLowerCase() === wantedName
-  ));
+  return subAgents.some((entry) => {
+    const entryId = normalizeAgentTabId(entry.id);
+    const entryName = (entry.name ?? "").trim().toLowerCase();
+    const tabMatches = entryId === agentTabId || entryName === agentTabId || normalizeAgentTabId(entry.name) === agentTabId;
+    const threadMatches = threadName === entryName || flags.agentId === entryId || flags.agentId === entryName;
+    return Boolean(tabMatches && threadMatches);
+  });
 }
 
 function matchesSvarogTabExclusions(thread: AgentThread, goalThreadIds: Set<string>): boolean {

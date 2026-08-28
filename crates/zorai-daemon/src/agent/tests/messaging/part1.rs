@@ -1155,6 +1155,149 @@ async fn handoff_activation_emits_thread_reload_event_for_visible_thread() {
     );
 }
 
+fn configured_user_subagent(id: &str, name: &str, enabled: bool) -> SubAgentDefinition {
+    SubAgentDefinition {
+        base_url: None,
+        claude_permission_mode: None,
+        id: id.to_string(),
+        name: name.to_string(),
+        provider: "openai".to_string(),
+        model: "gpt-5.4-mini".to_string(),
+        role: Some("specialist".to_string()),
+        system_prompt: Some("Handle delegated work.".to_string()),
+        tool_whitelist: None,
+        tool_blacklist: None,
+        context_budget_tokens: None,
+        context_window_tokens: None,
+        max_duration_secs: None,
+        supervisor_config: None,
+        enabled,
+        builtin: false,
+        immutable_identity: false,
+        disable_allowed: true,
+        delete_allowed: true,
+        protected_reason: None,
+        reasoning_effort: None,
+        api_transport: None,
+        openrouter_provider_order: Vec::new(),
+        openrouter_provider_ignore: Vec::new(),
+        openrouter_allow_fallbacks: None,
+        huggingface_provider: None,
+        created_at: 1,
+    }
+}
+
+async fn insert_plain_handoff_thread(engine: &AgentEngine, thread_id: &str) {
+    let mut threads = engine.threads.write().await;
+    threads.insert(
+        thread_id.to_string(),
+        AgentThread {
+            id: thread_id.to_string(),
+            agent_name: Some(MAIN_AGENT_NAME.to_string()),
+            title: "Code thread".to_string(),
+            created_at: 1,
+            updated_at: 1,
+            pinned: false,
+            upstream_thread_id: None,
+            upstream_transport: None,
+            upstream_provider: None,
+            upstream_model: None,
+            upstream_assistant_id: None,
+            total_input_tokens: 0,
+            total_output_tokens: 0,
+            messages: vec![AgentMessage::user("switch me", 1)],
+        },
+    );
+}
+
+fn push_handoff_request(
+    thread_id: &str,
+    target_agent_id: &str,
+) -> crate::agent::PendingThreadHandoffActivation {
+    crate::agent::PendingThreadHandoffActivation {
+        thread_id: thread_id.to_string(),
+        kind: crate::agent::ThreadHandoffKind::Push,
+        target_agent_id: Some(target_agent_id.to_string()),
+        requested_by: crate::agent::ThreadHandoffRequestedBy::User,
+        reason: "Operator switched the Code thread runtime".to_string(),
+        summary: "Switch active responder to the selected subagent".to_string(),
+    }
+}
+
+#[tokio::test]
+async fn handoff_activation_accepts_configured_user_subagent_on_plain_thread() {
+    let root = tempdir().unwrap();
+    let manager = SessionManager::new_test(root.path()).await;
+    let mut config = AgentConfig::default();
+    let subagent_id = "subagent-1781800311670";
+    config
+        .sub_agents
+        .push(configured_user_subagent(subagent_id, "hf", true));
+    let engine = AgentEngine::new_test(manager, config, root.path()).await;
+    let thread_id = "thread_code_user_subagent_handoff";
+    insert_plain_handoff_thread(&engine, thread_id).await;
+
+    engine
+        .apply_thread_handoff_activation(&push_handoff_request(thread_id, subagent_id), None)
+        .await
+        .expect(
+            "configured user subagents must be valid handoff targets on non-participant threads",
+        );
+
+    let state = engine
+        .thread_handoff_state(thread_id)
+        .await
+        .expect("handoff state should exist");
+    assert_eq!(state.active_agent_id, subagent_id);
+    assert_eq!(
+        state
+            .responder_stack
+            .last()
+            .map(|frame| frame.agent_name.as_str()),
+        Some("hf")
+    );
+}
+
+#[tokio::test]
+async fn handoff_activation_rejects_unknown_or_disabled_user_subagent_on_plain_thread() {
+    let root = tempdir().unwrap();
+    let manager = SessionManager::new_test(root.path()).await;
+    let mut config = AgentConfig::default();
+    config.sub_agents.push(configured_user_subagent(
+        "subagent-disabled",
+        "disabled-specialist",
+        false,
+    ));
+    let engine = AgentEngine::new_test(manager, config, root.path()).await;
+    let thread_id = "thread_code_unknown_subagent_handoff";
+    insert_plain_handoff_thread(&engine, thread_id).await;
+
+    let unknown_error = engine
+        .apply_thread_handoff_activation(&push_handoff_request(thread_id, "subagent-missing"), None)
+        .await
+        .expect_err("unknown user subagents must not become handoff targets");
+    assert!(
+        unknown_error
+            .to_string()
+            .contains("unknown handoff target: subagent-missing"),
+        "unexpected error: {unknown_error}"
+    );
+
+    let disabled_error = engine
+        .apply_thread_handoff_activation(
+            &push_handoff_request(thread_id, "subagent-disabled"),
+            None,
+        )
+        .await
+        .expect_err("disabled user subagents must not become handoff targets");
+    assert!(
+        disabled_error
+            .to_string()
+            .contains("unknown handoff target: subagent-disabled"),
+        "unexpected error: {disabled_error}"
+    );
+}
+
 #[tokio::test]
 async fn delete_thread_messages_rehydrates_and_clears_invalid_continuation() {
     let root = tempdir().unwrap();

@@ -597,3 +597,56 @@ async fn stale_approval_is_invalidated_before_resolution() {
         .as_deref()
         .is_some_and(|reason| reason.contains("governance conditions changed")));
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn yolo_managed_command_queues_when_governance_constraints_cannot_be_honored() {
+    let root = tempfile::tempdir().expect("tempdir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let (session_id, _rx) = manager
+        .spawn(
+            Some("/bin/sh".to_string()),
+            None,
+            Some("/mnt/e/gitlab/it/zorai".to_string()),
+            None,
+            80,
+            24,
+        )
+        .await
+        .expect("spawn test session");
+
+    let mut request = ManagedCommandRequest {
+        command: "set -a; . /etc/environment; set +a; echo ok".to_string(),
+        rationale: "read process-scoped environment then continue".to_string(),
+        allow_network: true,
+        sandbox_enabled: false,
+        security_level: zorai_protocol::SecurityLevel::Moderate,
+        cwd: Some("/tmp".to_string()),
+        language_hint: Some("bash".to_string()),
+        source: zorai_protocol::ManagedCommandSource::Agent,
+    };
+
+    let moderate = manager
+        .execute_managed_command(session_id, request.clone())
+        .await
+        .expect("moderate dispatch should return a daemon message");
+    match moderate {
+        DaemonMessage::ManagedCommandRejected { message, .. } => {
+            assert!(
+                message.contains("cannot honor governance constraints"),
+                "moderate must fail closed when sandbox/scope constraints cannot be honored: {message}"
+            );
+        }
+        other => panic!("expected moderate rejection, got {other:?}"),
+    }
+
+    request.security_level = zorai_protocol::SecurityLevel::Yolo;
+    let yolo = manager
+        .execute_managed_command(session_id, request)
+        .await
+        .expect("yolo dispatch should return a daemon message");
+    assert!(
+        matches!(yolo, DaemonMessage::ManagedCommandQueued { .. }),
+        "operator YOLO must queue the same command instead of inheriting dispatch gating: {yolo:?}"
+    );
+}

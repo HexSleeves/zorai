@@ -236,6 +236,9 @@ pub(in crate::agent) fn refresh_task_queue_state(
             }
 
             if task.status == TaskStatus::Blocked {
+                if !blocked_reason_clears_when_resources_free(task) {
+                    continue;
+                }
                 task.status = TaskStatus::Queued;
                 task.blocked_reason = None;
                 task.logs.push(make_task_log_entry(
@@ -328,7 +331,8 @@ pub(in crate::agent) fn select_ready_task_indices(
     for (index, task) in queued {
         if let Some(goal_run_id) = task.goal_run_id.as_deref() {
             match goal_run_statuses.get(goal_run_id) {
-                Some(GoalRunStatus::AwaitingApproval) | None => continue,
+                Some(status) if goal_run_status_blocks_dispatch(*status) => continue,
+                None => continue,
                 Some(_) => {}
             }
         }
@@ -438,6 +442,37 @@ pub(in crate::agent) fn is_task_terminal_status(status: TaskStatus) -> bool {
             | TaskStatus::Failed
             | TaskStatus::Cancelled
     )
+}
+
+fn goal_run_status_blocks_dispatch(status: GoalRunStatus) -> bool {
+    status.is_terminal()
+        || matches!(
+            status,
+            GoalRunStatus::AwaitingApproval
+                | GoalRunStatus::Paused
+                | GoalRunStatus::Blocked
+                | GoalRunStatus::Planning
+        )
+}
+
+fn blocked_reason_clears_when_resources_free(task: &AgentTask) -> bool {
+    match task.blocked_reason.as_deref() {
+        Some(reason)
+            if reason.starts_with("waiting for lane availability:")
+                || reason.starts_with("waiting for workspace lock:")
+                || reason.starts_with("waiting for subagent slot:")
+                || reason.starts_with("waiting for dependencies:")
+                || reason.starts_with("scheduled for ") =>
+        {
+            true
+        }
+        Some(reason) if reason.starts_with("completion contract remains open") => {
+            task.completion_contract.as_ref().is_some_and(|contract| {
+                contract.open_completion_attempts < OPEN_COMPLETION_CONTRACT_ATTEMPT_LIMIT
+            })
+        }
+        _ => false,
+    }
 }
 
 pub(in crate::agent) fn task_enforces_workspace_lock(task: &AgentTask) -> bool {

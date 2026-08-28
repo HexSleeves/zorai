@@ -20,6 +20,12 @@ pub const ALIBABA_CODING_MODELS: &[ModelDefinition] = &[
         modalities: TEXT_IMAGE,
     },
     ModelDefinition {
+        id: "qwen3.8-flash",
+        name: "Qwen3.8 Flash",
+        context_window: 1_000_000,
+        modalities: TEXT_IMAGE,
+    },
+    ModelDefinition {
         id: "glm-5",
         name: "GLM-5",
         context_window: 202752,

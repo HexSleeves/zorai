@@ -64,17 +64,18 @@ describe("codeLayoutStore", () => {
   it("clamps setter inputs into the panel min/max range", () => {
     const store = createCodeLayoutStore(createMemoryStorage());
 
+    // Panel maxes are unbounded (1280000); huge-but-finite values persist as-is.
     store.getState().setExplorerPreferredWidth(9999);
     store.getState().setAgentPreferredWidth(-50);
 
-    expect(store.getState().explorerPreferredWidth).toBe(CODE_EXPLORER_MAX_WIDTH);
+    expect(store.getState().explorerPreferredWidth).toBe(9999);
     expect(store.getState().agentPreferredWidth).toBe(CODE_AGENT_MIN_WIDTH);
 
     store.getState().setExplorerPreferredWidth(10);
     store.getState().setAgentPreferredWidth(9999);
 
     expect(store.getState().explorerPreferredWidth).toBe(CODE_EXPLORER_MIN_WIDTH);
-    expect(store.getState().agentPreferredWidth).toBe(CODE_AGENT_MAX_WIDTH);
+    expect(store.getState().agentPreferredWidth).toBe(9999);
   });
 
   it("resets both widths to their defaults", () => {
@@ -124,7 +125,8 @@ describe("codeLayoutStore", () => {
     const store = createCodeLayoutStore(storage);
     await store.persist.rehydrate();
 
-    expect(store.getState().explorerPreferredWidth).toBe(CODE_EXPLORER_MAX_WIDTH);
+    // 700 is within the unbounded max; only sub-min values get clamped.
+    expect(store.getState().explorerPreferredWidth).toBe(700);
     expect(store.getState().agentPreferredWidth).toBe(CODE_AGENT_MIN_WIDTH);
   });
 

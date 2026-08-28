@@ -5,6 +5,10 @@ import { getAgentBridge, shouldUseDaemonRuntime } from "@/lib/agentDaemonConfig"
 import { fetchAgentRuns, isSubagentRun, type AgentRun } from "@/lib/agentRuns";
 import { fetchThreadTodos } from "@/lib/agentTodos";
 import { beginThreadLoading } from "@/zorai/features/threads/threadLoadingStore";
+import {
+  draftThreadForOwnerSnapshot,
+  snapshotThreadOwnerRuntimeProfile,
+} from "@/zorai/features/threads/threadOwnerRuntime";
 import { resolveReactChatHistoryMessageLimit } from "@/lib/chatHistoryPageSize";
 import { deriveSpawnedAgentTree } from "@/lib/spawnedAgentTree";
 import type { SpawnedAgentTree } from "@/lib/spawnedAgentTree";
@@ -336,7 +340,7 @@ export function useAgentChatPanelProviderValue(): {
   const threads = useAgentStore((state) => state.threads);
   const activeThreadId = useAgentStore((state) => state.activeThreadId);
   const threadHistoryStack = useAgentStore((state) => state.threadHistoryStack);
-  const createThread = useAgentStore((state) => state.createThread);
+  const storeCreateThread = useAgentStore((state) => state.createThread);
   const deleteThread = useAgentStore((state) => state.deleteThread);
   const setActiveThread = useAgentStore((state) => state.setActiveThread);
   const openSpawnedThreadInStore = useAgentStore((state) => state.openSpawnedThread);
@@ -388,6 +392,26 @@ export function useAgentChatPanelProviderValue(): {
   const goalRunWorkspacesRef = useRef<Record<string, string>>({});
   const threadPageLoadChainRef = useRef<Promise<unknown>>(Promise.resolve());
   const latestLoadedThreadIdRef = useRef<string | null>(null);
+
+  const createThread = useCallback((opts: Parameters<typeof storeCreateThread>[0]) => {
+    const state = useAgentStore.getState();
+    const profile = snapshotThreadOwnerRuntimeProfile(
+      draftThreadForOwnerSnapshot(
+        { agentId: opts.agentId, agentName: opts.agentName },
+        state.agentSettings.agent_name,
+      ),
+      state.subAgents,
+      state.agentSettings,
+      state.conciergeConfig,
+    );
+    const id = storeCreateThread({ ...opts, ...profile });
+    if (opts.activate !== false) {
+      daemonLocalThreadRef.current = id;
+      daemonThreadIdRef.current = null;
+      latestLoadedThreadIdRef.current = id;
+    }
+    return id;
+  }, [storeCreateThread]);
 
   useDaemonAgentEvents({
     agentBackend: agentSettings.agent_backend,

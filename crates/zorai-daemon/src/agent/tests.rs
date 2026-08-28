@@ -950,6 +950,10 @@ async fn request_goal_replan_includes_recovery_guidance_when_present() {
         body.contains("replanned into smaller scoped steps"),
         "expected recovery guidance text in the replan prompt"
     );
+    assert!(
+        body.contains("Do not skip a blocked scientific gate"),
+        "expected replan prompt to keep repairing a blocked selection or gate step"
+    );
 }
 
 #[tokio::test]

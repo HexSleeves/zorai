@@ -73,7 +73,7 @@ export function ThreadsContext() {
       {activeThread ? (
         <section className="zorai-thread-runtime-setup">
           <div className="zorai-section-label">Runtime</div>
-          <ThreadRuntimeBar thread={activeThread} />
+          <ThreadRuntimeBar key={activeThread.id} thread={activeThread} />
         </section>
       ) : null}
 

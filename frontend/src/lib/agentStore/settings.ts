@@ -215,6 +215,8 @@ export interface AgentSettings {
   compact_threshold_pct: number;
   keep_recent_on_compact: number;
   weles_max_concurrent_reviews: number;
+  code_review_agent: string;
+  code_review_commit_window: number;
   compaction: AgentCompactionSettings;
   skill_recommendation: AgentSkillRecommendationSettings;
   mlflow_tracing: AgentMlflowTracingSettings;
@@ -350,6 +352,8 @@ export const DEFAULT_AGENT_SETTINGS: AgentSettings = {
   compact_threshold_pct: 80,
   keep_recent_on_compact: 10,
   weles_max_concurrent_reviews: 2,
+  code_review_agent: "weles",
+  code_review_commit_window: 5,
   compaction: {
     strategy: "heuristic",
     weles: {
@@ -474,6 +478,14 @@ export function normalizeAutoRefreshIntervalSecs(value: unknown): number {
   return Math.max(0, Math.min(86_400, Math.trunc(numericValue)));
 }
 
+export function normalizeCodeReviewCommitWindow(value: unknown): number {
+  const numericValue = Number(value);
+  if (!Number.isFinite(numericValue)) {
+    return DEFAULT_AGENT_SETTINGS.code_review_commit_window;
+  }
+  return Math.max(1, Math.min(50, Math.trunc(numericValue)));
+}
+
 export function loadAgentSettings(): AgentSettings {
   return { ...DEFAULT_AGENT_SETTINGS };
 }
@@ -544,6 +556,8 @@ export type DiskAgentSettings = Partial<AgentSettings> & {
   compact_threshold_pct?: number;
   keep_recent_on_compact?: number;
   weles_max_concurrent_reviews?: number;
+  code_review_agent?: string;
+  code_review_commit_window?: number;
   builtin_sub_agents?: {
     weles?: {
       max_concurrent_reviews?: number;
@@ -816,6 +830,13 @@ export function normalizeAgentSettingsFromSource(source: DiskAgentSettings): Age
       source.weles_max_concurrent_reviews
       ?? source.builtin_sub_agents?.weles?.max_concurrent_reviews
       ?? DEFAULT_AGENT_SETTINGS.weles_max_concurrent_reviews,
+    code_review_agent:
+      typeof source.code_review_agent === "string" && source.code_review_agent.trim()
+        ? source.code_review_agent.trim()
+        : DEFAULT_AGENT_SETTINGS.code_review_agent,
+    code_review_commit_window: normalizeCodeReviewCommitWindow(
+      source.code_review_commit_window ?? DEFAULT_AGENT_SETTINGS.code_review_commit_window,
+    ),
     compaction: {
       strategy: source.compaction?.strategy ?? DEFAULT_AGENT_SETTINGS.compaction.strategy,
       weles: {

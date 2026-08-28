@@ -147,6 +147,49 @@ describe("agentStore spawned thread navigation", () => {
     expect(createdThread?.targetAgentId).toBe("reviewer");
   });
 
+  it("stores the selected agent runtime profile instead of a previously viewed overlay", () => {
+    const previous = makeThread("thread-a");
+    previous.profileProvider = "openrouter";
+    previous.profileModel = "model-thread-a";
+    resetStoreState([previous], "thread-a", []);
+
+    const createdThreadId = useAgentStore.getState().createThread({
+      title: "mokosh-thread",
+      agentId: "mokosh",
+      agentName: "Mokosh",
+      profileProvider: "z.ai-coding-plan",
+      profileModel: "glm-5",
+      profileReasoningEffort: "medium",
+      profileContextWindowTokens: 202_752,
+    });
+    const createdThread = useAgentStore.getState().threads.find((thread) => thread.id === createdThreadId);
+    const previousThread = useAgentStore.getState().threads.find((thread) => thread.id === "thread-a");
+
+    expect(createdThread?.profileProvider).toBe("z.ai-coding-plan");
+    expect(createdThread?.profileModel).toBe("glm-5");
+    expect(createdThread?.profileReasoningEffort).toBe("medium");
+    expect(createdThread?.profileContextWindowTokens).toBe(202_752);
+    expect(previousThread?.profileProvider).toBe("openrouter");
+  });
+
+  it("clears leftover runtime profile when reassigning an unsent thread owner", () => {
+    const local = makeThread("thread-a");
+    local.profileProvider = "openrouter";
+    local.profileModel = "model-thread-a";
+    resetStoreState([local], "thread-a", []);
+
+    useAgentStore.getState().setThreadOwner("thread-a", {
+      agentId: "mokosh",
+      agentName: "Mokosh",
+    });
+    const updated = useAgentStore.getState().threads.find((thread) => thread.id === "thread-a");
+
+    expect(updated?.agent_name).toBe("Mokosh");
+    expect(updated?.targetAgentId).toBe("mokosh");
+    expect(updated?.profileProvider).toBeNull();
+    expect(updated?.profileModel).toBeNull();
+  });
+
   it("clears spawned-thread history when creating a new thread", () => {
     resetStoreState([makeThread("thread-a"), makeThread("thread-b")], "thread-b", ["thread-a"]);
 

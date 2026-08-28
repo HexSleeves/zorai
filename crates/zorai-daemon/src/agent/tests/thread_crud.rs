@@ -760,6 +760,18 @@ async fn list_threads_filtered_matches_user_defined_subagent_agent_name() {
             vec![AgentMessage::user("hello", 10)],
         ),
     );
+    engine.threads.write().await.insert(
+        "thread-svarog".to_string(),
+        make_thread(
+            "thread-svarog",
+            Some(crate::agent::agent_identity::MAIN_AGENT_NAME),
+            "Svarog thread",
+            false,
+            11,
+            21,
+            vec![AgentMessage::user("main", 11)],
+        ),
+    );
 
     let listed = engine
         .list_threads_filtered(&ThreadListFilter {
@@ -769,6 +781,121 @@ async fn list_threads_filtered_matches_user_defined_subagent_agent_name() {
         .await;
 
     assert_eq!(list_ids(&listed), vec!["thread-dola"]);
+
+    let listed_by_id = engine
+        .list_threads_filtered(&ThreadListFilter {
+            agent_name: Some("dola".to_string()),
+            ..ThreadListFilter::default()
+        })
+        .await;
+    assert_eq!(list_ids(&listed_by_id), vec!["thread-dola"]);
+
+    let listed_main = engine
+        .list_threads_filtered(&ThreadListFilter {
+            agent_name: Some("svarog".to_string()),
+            ..ThreadListFilter::default()
+        })
+        .await;
+    assert_eq!(list_ids(&listed_main), vec!["thread-svarog"]);
+}
+
+#[tokio::test]
+async fn list_threads_filtered_matches_registry_id_without_collapsing_to_main() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let mut config = AgentConfig::default();
+    config.sub_agents.push(SubAgentDefinition {
+        base_url: None,
+        claude_permission_mode: None,
+        id: "subagent-1777065727944".to_string(),
+        name: "DeepSeekorrr".to_string(),
+        provider: "openai".to_string(),
+        model: "gpt-5.4-mini".to_string(),
+        role: Some("specialist".to_string()),
+        system_prompt: Some("Handle delegated work.".to_string()),
+        tool_whitelist: None,
+        tool_blacklist: None,
+        context_budget_tokens: None,
+        context_window_tokens: None,
+        max_duration_secs: None,
+        supervisor_config: None,
+        enabled: true,
+        builtin: false,
+        immutable_identity: false,
+        disable_allowed: true,
+        delete_allowed: true,
+        protected_reason: None,
+        reasoning_effort: None,
+        api_transport: None,
+        openrouter_provider_order: Vec::new(),
+        openrouter_provider_ignore: Vec::new(),
+        openrouter_allow_fallbacks: None,
+        huggingface_provider: None,
+        created_at: 1,
+    });
+    let engine = AgentEngine::new_test(manager, config.clone(), root.path()).await;
+
+    engine.threads.write().await.insert(
+        "thread-deepseek".to_string(),
+        make_thread(
+            "thread-deepseek",
+            Some("DeepSeekorrr"),
+            "DeepSeek thread",
+            false,
+            10,
+            40,
+            vec![AgentMessage::user("hello", 10)],
+        ),
+    );
+    engine.threads.write().await.insert(
+        "thread-svarog".to_string(),
+        make_thread(
+            "thread-svarog",
+            Some(crate::agent::agent_identity::MAIN_AGENT_NAME),
+            "Svarog thread",
+            false,
+            11,
+            30,
+            vec![AgentMessage::user("main", 11)],
+        ),
+    );
+    engine.persist_thread_by_id("thread-deepseek").await;
+    engine.persist_thread_by_id("thread-svarog").await;
+
+    let rehydrated = AgentEngine::new_test(
+        SessionManager::new_test(root.path()).await,
+        config,
+        root.path(),
+    )
+    .await;
+
+    let listed = rehydrated
+        .list_threads_filtered(&ThreadListFilter {
+            agent_name: Some("subagent-1777065727944".to_string()),
+            ..ThreadListFilter::default()
+        })
+        .await;
+    assert_eq!(
+        list_ids(&listed),
+        vec!["thread-deepseek"],
+        "GUI keys subagent tabs by registry id while threads persist the display name"
+    );
+
+    let listed_by_name = rehydrated
+        .list_threads_filtered(&ThreadListFilter {
+            agent_name: Some("DeepSeekorrr".to_string()),
+            ..ThreadListFilter::default()
+        })
+        .await;
+    assert_eq!(list_ids(&listed_by_name), vec!["thread-deepseek"]);
+
+    let listed_main = rehydrated
+        .list_threads_filtered(&ThreadListFilter {
+            agent_name: Some("svarog".to_string()),
+            ..ThreadListFilter::default()
+        })
+        .await;
+    assert_eq!(list_ids(&listed_main), vec!["thread-svarog"]);
 }
 
 #[tokio::test]

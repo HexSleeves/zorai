@@ -154,6 +154,7 @@ pub(super) fn known_models_for_provider_auth(
         ],
         PROVIDER_ID_Z_AI => &[
             ("glm-4-plus", "GLM-4 Plus", 128_000),
+            ("glm-5.3-flash", "GLM-5.3 Flash", 1_000_000),
             ("glm-5.2", "GLM-5.2", 204_800),
             ("glm-5.1", "GLM-5.1", 204_800),
             ("glm-5", "GLM-5", 128_000),
@@ -163,6 +164,7 @@ pub(super) fn known_models_for_provider_auth(
         ],
         PROVIDER_ID_Z_AI_CODING_PLAN => &[
             ("glm-5.3", "GLM-5.3", 1_000_000),
+            ("glm-5.3-flash", "GLM-5.3 Flash", 1_000_000),
             ("glm-5-turbo", "GLM-5 Turbo", 200_000),
             ("glm-4.7", "GLM-4.7", 200_000),
             ("glm-5", "GLM-5", 128_000),
@@ -232,6 +234,7 @@ pub(super) fn known_models_for_provider_auth(
         ],
         PROVIDER_ID_ALIBABA_CODING_PLAN => &[
             ("qwen3.6-plus", "Qwen3.6 Plus", 983_616),
+            ("qwen3.8-flash", "Qwen3.8 Flash", 1_000_000),
             ("qwen3-coder-plus", "Qwen3 Coder Plus", 997_952),
             ("qwen3-coder-next", "Qwen3 Coder Next", 204_800),
             ("glm-5", "GLM-5", 202_752),

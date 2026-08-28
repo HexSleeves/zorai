@@ -1043,10 +1043,15 @@ impl AgentEngine {
         &self,
         filter: &ThreadListFilter,
     ) -> Vec<AgentThread> {
+        let config = self.config.read().await.clone();
+        let (agent_names, include_empty_agent_name) =
+            persisted_thread_agent_name_filter(filter.agent_name.as_deref(), &config);
         let threads = self.threads.read().await;
         let mut list: Vec<AgentThread> = threads
             .values()
-            .filter(|thread| thread_matches_list_filter(thread, filter))
+            .filter(|thread| {
+                thread_matches_list_filter(thread, filter, &agent_names, include_empty_agent_name)
+            })
             .map(summarize_thread_for_list)
             .collect();
 
@@ -1671,14 +1676,22 @@ fn persisted_thread_agent_name_filter(
     };
 
     let target = crate::agent::agent_identity::resolve_agent_target(agent_name, &config.sub_agents);
-    let mut names = vec![target.agent_name, agent_name.to_string()];
-    let canonical = canonical_thread_agent_name(Some(agent_name));
-    names.push(canonical.to_string());
+    let explicit_main = crate::agent::agent_identity::is_main_agent_scope(agent_name);
+    let resolved_unknown_as_main = !explicit_main
+        && target
+            .scope_id
+            .eq_ignore_ascii_case(crate::agent::agent_identity::MAIN_AGENT_ID);
 
-    let include_empty_agent_name =
-        canonical.eq_ignore_ascii_case(crate::agent::agent_identity::MAIN_AGENT_NAME);
+    let mut names = vec![agent_name.to_string()];
+    if !resolved_unknown_as_main {
+        names.push(target.agent_name);
+        names.push(target.scope_id);
+    }
+
+    let include_empty_agent_name = explicit_main;
     if include_empty_agent_name {
         names.extend([
+            crate::agent::agent_identity::MAIN_AGENT_NAME.to_string(),
             crate::agent::agent_identity::MAIN_AGENT_ID.to_string(),
             crate::agent::agent_identity::MAIN_AGENT_PUBLIC_ALIAS.to_string(),
             crate::agent::agent_identity::MAIN_AGENT_ALIAS.to_string(),
@@ -1715,18 +1728,26 @@ fn summarize_persisted_thread_for_list(thread: zorai_protocol::AgentDbThread) ->
     }
 }
 
-fn canonical_thread_agent_name(agent_name: Option<&str>) -> &'static str {
-    let normalized = agent_name.unwrap_or("").trim();
-    if normalized.is_empty() {
-        return crate::agent::agent_identity::canonical_agent_name(
-            crate::agent::agent_identity::MAIN_AGENT_ID,
-        );
+fn thread_matches_agent_name_filter(
+    thread: &AgentThread,
+    agent_names: &[String],
+    include_empty_agent_name: bool,
+) -> bool {
+    let actual = thread.agent_name.as_deref().map(str::trim).unwrap_or("");
+    if actual.is_empty() {
+        return include_empty_agent_name;
     }
-
-    crate::agent::agent_identity::canonical_agent_name(normalized)
+    agent_names
+        .iter()
+        .any(|name| name.eq_ignore_ascii_case(actual))
 }
 
-fn thread_matches_list_filter(thread: &AgentThread, filter: &ThreadListFilter) -> bool {
+fn thread_matches_list_filter(
+    thread: &AgentThread,
+    filter: &ThreadListFilter,
+    agent_names: &[String],
+    include_empty_agent_name: bool,
+) -> bool {
     if !thread_is_query_visible(thread, filter.include_internal) {
         return false;
     }
@@ -1761,12 +1782,10 @@ fn thread_matches_list_filter(thread: &AgentThread, filter: &ThreadListFilter) -
         }
     }
 
-    if let Some(agent_name) = filter.agent_name.as_deref() {
-        let expected = canonical_thread_agent_name(Some(agent_name));
-        let actual = canonical_thread_agent_name(thread.agent_name.as_deref());
-        if !actual.eq_ignore_ascii_case(expected) {
-            return false;
-        }
+    if filter.agent_name.is_some()
+        && !thread_matches_agent_name_filter(thread, agent_names, include_empty_agent_name)
+    {
+        return false;
     }
 
     if let Some(title_query) = filter

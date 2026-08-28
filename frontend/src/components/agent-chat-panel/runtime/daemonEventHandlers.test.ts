@@ -5,6 +5,7 @@ import {
   handleGatewayIncomingEvent,
   handleThreadCreatedEvent,
 } from "./daemonEventHandlers";
+import { clearPendingUnboundThreadBind, notePendingUnboundThreadBind } from "./newThreadTargetAgent";
 
 vi.mock("@/lib/agentTodos", () => ({
   fetchThreadTodos: vi.fn(async () => []),
@@ -124,6 +125,7 @@ describe("handleGatewayIncomingEvent", () => {
 
 describe("handleThreadCreatedEvent", () => {
   beforeEach(() => {
+    clearPendingUnboundThreadBind();
     useAgentStore.setState({
       threads: [
         makeThread("local-open", "daemon-open", "Threads view clearing and scroll bug"),
@@ -194,6 +196,7 @@ describe("handleThreadCreatedEvent", () => {
     const daemonLocalThreadRef = { current: "local-new" as string | null };
     const daemonThreadIdRef = { current: null as string | null };
     const pendingGatewayMessagesRef = { current: [] as any[] };
+    notePendingUnboundThreadBind("local-new");
 
     handleThreadCreatedEvent({
       event: {
@@ -217,5 +220,43 @@ describe("handleThreadCreatedEvent", () => {
     expect(useAgentStore.getState().threads.find((thread) => thread.id === "local-new")?.daemonThreadId)
       .toBe("daemon-from-send");
     expect(useAgentStore.getState().threads).toHaveLength(1);
+  });
+
+  it("does not attach a background thread_created onto a newly started unbound conversation", () => {
+    useAgentStore.setState({
+      threads: [makeThread("local-new", null, "New Conversation")],
+      messages: { "local-new": [] },
+      todos: {},
+      activeThreadId: "local-new",
+      threadHistoryStack: [],
+    } as any);
+    const daemonLocalThreadRef = { current: "local-new" as string | null };
+    const daemonThreadIdRef = { current: null as string | null };
+    const pendingGatewayMessagesRef = { current: [] as any[] };
+
+    handleThreadCreatedEvent({
+      event: {
+        thread_id: "daemon-from-previous-visit",
+        title: "Previous conversation",
+      },
+      activePaneId: null,
+      addMessage: useAgentStore.getState().addMessage,
+      createThread: useAgentStore.getState().createThread,
+      daemonLocalThreadRef,
+      daemonThreadIdRef,
+      pendingGatewayMessagesRef,
+      setActiveThread: useAgentStore.getState().setActiveThread,
+      setDaemonTodosByThread: vi.fn(),
+      setThreadDaemonId: useAgentStore.getState().setThreadDaemonId,
+      setThreadTodos: useAgentStore.getState().setThreadTodos,
+      setView: vi.fn(),
+    });
+
+    expect(useAgentStore.getState().threads.find((thread) => thread.id === "local-new")?.daemonThreadId)
+      .toBeNull();
+    expect(daemonThreadIdRef.current).toBeNull();
+    expect(useAgentStore.getState().activeThreadId).toBe("local-new");
+    expect(useAgentStore.getState().threads.some((thread) => thread.daemonThreadId === "daemon-from-previous-visit"))
+      .toBe(true);
   });
 });

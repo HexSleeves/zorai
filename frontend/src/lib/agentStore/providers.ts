@@ -136,6 +136,7 @@ const GITHUB_COPILOT_MODELS: ModelDefinition[] = [
 
 const ZAI_MODELS: ModelDefinition[] = [
   { id: "glm-4-plus", name: "GLM-4 Plus", contextWindow: 128000 },
+  { id: "glm-5.3-flash", name: "GLM-5.3 Flash", contextWindow: 1_000_000, modalities: M_TI },
   { id: "glm-5.1", name: "GLM-5.1", contextWindow: 204800 },
   { id: "glm-5", name: "GLM-5", contextWindow: 128000 },
   { id: "glm-4", name: "GLM-4", contextWindow: 128000 },
@@ -145,6 +146,7 @@ const ZAI_MODELS: ModelDefinition[] = [
 
 const ZAI_CODING_MODELS: ModelDefinition[] = [
   { id: "glm-5.3", name: "GLM-5.3", contextWindow: 1_000_000 },
+  { id: "glm-5.3-flash", name: "GLM-5.3 Flash", contextWindow: 1_000_000, modalities: M_TI },
   { id: "glm-5-turbo", name: "GLM-5 Turbo", contextWindow: 200_000 },
   { id: "glm-4.7", name: "GLM-4.7", contextWindow: 200_000 },
   { id: "glm-5", name: "GLM-5", contextWindow: 128000 },
@@ -196,6 +198,7 @@ const MINIMAX_MODELS: ModelDefinition[] = [
 
 const ALIBABA_CODING_MODELS: ModelDefinition[] = [
   { id: "qwen3.6-plus", name: "Qwen3.6 Plus", contextWindow: 983616 },
+  { id: "qwen3.8-flash", name: "Qwen3.8 Flash", contextWindow: 1_000_000, modalities: M_TI },
   { id: "qwen3-coder-plus", name: "Qwen3 Coder Plus", contextWindow: 997952 },
   { id: "qwen3-coder-next", name: "Qwen3 Coder Next", contextWindow: 204800 },
   { id: "glm-5", name: "GLM-5", contextWindow: 202752 },

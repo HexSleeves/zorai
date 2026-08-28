@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_AGENT_SETTINGS } from "@/lib/agentStore/settings";
 import type { AgentThread, SubAgentDefinition } from "@/lib/agentStore";
-import { resolveThreadOwnerRuntimeProfile } from "./threadOwnerRuntime";
+import { resolveThreadOwnerRuntimeProfile, snapshotThreadOwnerRuntimeProfile, draftThreadForOwnerSnapshot } from "./threadOwnerRuntime";
 
 function thread(partial: Partial<AgentThread> = {}): AgentThread {
   return {
@@ -110,5 +110,35 @@ describe("thread owner runtime profile", () => {
 
     expect(profile.provider).toBe("opencode-go");
     expect(profile.model).toBe("meta/muse-spark-1.2-contributor-free");
+  });
+
+  it("snapshots the selected agent profile instead of a previously visited thread overlay", () => {
+    const settings = {
+      ...DEFAULT_AGENT_SETTINGS,
+      active_provider: "openai" as const,
+      openai: { ...DEFAULT_AGENT_SETTINGS.openai, model: "gpt-5.5" },
+    };
+    const subAgents = [{
+      id: "mokosh",
+      name: "Mokosh",
+      provider: "z.ai-coding-plan",
+      model: "glm-5",
+      reasoning_effort: "medium",
+      context_window_tokens: 202_752,
+      enabled: true,
+      created_at: 1,
+    } as SubAgentDefinition];
+
+    const snapshot = snapshotThreadOwnerRuntimeProfile(
+      draftThreadForOwnerSnapshot({ agentId: "mokosh", agentName: "Mokosh" }, "Svarog"),
+      subAgents,
+      settings,
+      {},
+    );
+
+    expect(snapshot.profileProvider).toBe("z.ai-coding-plan");
+    expect(snapshot.profileModel).toBe("glm-5");
+    expect(snapshot.profileReasoningEffort).toBe("medium");
+    expect(snapshot.profileContextWindowTokens).toBe(202_752);
   });
 });

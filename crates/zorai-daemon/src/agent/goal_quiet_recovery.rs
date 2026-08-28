@@ -175,18 +175,22 @@ impl AgentEngine {
     ) -> Result<()> {
         let prior_user_message = match self
             .history
-            .latest_user_message_content(&candidate.thread_id)
+            .latest_recovery_prompt_content(&candidate.thread_id)
             .await
         {
             Ok(Some(content)) => content,
-            Ok(None) => anyhow::bail!(
-                "thread {} has no prior user message for quiet-goal recovery",
-                candidate.thread_id
+            Ok(None) => format!(
+                "Continue the current goal step: {}",
+                candidate
+                    .current_step_title
+                    .as_deref()
+                    .filter(|title| !title.trim().is_empty())
+                    .unwrap_or("current step")
             ),
             Err(error) => {
                 return Err(error).with_context(|| {
                     format!(
-                        "failed to query persisted prior user message for quiet-goal recovery on thread {}",
+                        "failed to query persisted recovery prompt for quiet-goal recovery on thread {}",
                         candidate.thread_id
                     )
                 });
@@ -744,6 +748,101 @@ mod tests {
                 && message
                     .content
                     .contains("Write short implementation spec for autosearch plugin scaffold")
+        }));
+        assert!(thread.messages.iter().any(|message| {
+            message.role == MessageRole::Assistant && message.content.contains("Recovered.")
+        }));
+    }
+
+    #[tokio::test]
+    async fn supervise_quiet_goal_runs_resumes_system_seeded_goal_thread() {
+        let engine = build_test_engine("Recovered.").await;
+        let now = now_millis();
+        let thread_id = "thread-goal-quiet-system-seed";
+        let task_id = "task-goal-quiet-system-seed";
+
+        engine
+            .goal_runs
+            .lock()
+            .await
+            .push_back(sample_running_goal(now, thread_id, task_id));
+        engine.persist_goal_runs().await;
+        engine
+            .tasks
+            .lock()
+            .await
+            .push_back(sample_main_goal_task(now, thread_id, task_id));
+        engine.persist_tasks().await;
+        engine.thread_todos.write().await.insert(
+            thread_id.to_string(),
+            vec![
+                TodoItem {
+                    id: "todo-1".to_string(),
+                    content: "Write short implementation spec for autosearch plugin scaffold"
+                        .to_string(),
+                    status: TodoStatus::InProgress,
+                    position: 0,
+                    step_index: Some(0),
+                    created_at: now.saturating_sub(600_000),
+                    updated_at: now.saturating_sub(600_000),
+                },
+                TodoItem {
+                    id: "todo-2".to_string(),
+                    content: "Capture implementation artifact and validation notes".to_string(),
+                    status: TodoStatus::Pending,
+                    position: 1,
+                    step_index: Some(0),
+                    created_at: now.saturating_sub(600_000),
+                    updated_at: now.saturating_sub(600_000),
+                },
+            ],
+        );
+
+        let mut seed = AgentMessage::user(
+            "Continue the goal until it is actually complete",
+            now.saturating_sub(900_000),
+        );
+        seed.role = MessageRole::System;
+        {
+            let mut threads = engine.threads.write().await;
+            threads.insert(
+                thread_id.to_string(),
+                AgentThread {
+                    id: thread_id.to_string(),
+                    agent_name: None,
+                    title: "Quiet goal thread".to_string(),
+                    messages: vec![
+                        seed,
+                        assistant_message(
+                            "I finished my current thread job after updating the goal todos.",
+                            now.saturating_sub(600_000),
+                        ),
+                    ],
+                    pinned: false,
+                    upstream_thread_id: None,
+                    upstream_transport: None,
+                    upstream_provider: None,
+                    upstream_model: None,
+                    upstream_assistant_id: None,
+                    total_input_tokens: 0,
+                    total_output_tokens: 0,
+                    created_at: now.saturating_sub(900_000),
+                    updated_at: now.saturating_sub(600_000),
+                },
+            );
+        }
+        engine.persist_thread_by_id(thread_id).await;
+
+        engine
+            .supervise_quiet_goal_runs()
+            .await
+            .expect("quiet goal recovery should succeed without a prior user message");
+
+        let threads = engine.threads.read().await;
+        let thread = threads.get(thread_id).expect("goal thread should exist");
+        assert!(thread.messages.iter().any(|message| {
+            message.role == MessageRole::System
+                && message.content.contains("WELES quiet-goal recovery")
         }));
         assert!(thread.messages.iter().any(|message| {
             message.role == MessageRole::Assistant && message.content.contains("Recovered.")

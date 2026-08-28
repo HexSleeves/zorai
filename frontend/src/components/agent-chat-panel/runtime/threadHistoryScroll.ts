@@ -2,7 +2,7 @@ export const THREAD_HISTORY_SCROLL_THRESHOLD_PX = 24;
 export const THREAD_HISTORY_OLDER_LOAD_DEBOUNCE_MS = 200;
 export const THREAD_HISTORY_OLDER_LOAD_COOLDOWN_MS = 400;
 
-export type ThreadHistoryScrollAction = "load-older" | "trim-latest" | "none";
+export type ThreadHistoryScrollAction = "load-older" | "none";
 
 let followBottom = true;
 let ignoreScroll = false;
@@ -71,7 +71,7 @@ export function resolveThreadHistoryScrollAction(params: {
   olderHistoryExhausted = false;
   if (atBottom) {
     followBottom = true;
-    return "trim-latest";
+    return "none";
   }
   followBottom = false;
   return "none";
@@ -80,9 +80,7 @@ export function resolveThreadHistoryScrollAction(params: {
 export function consumeThreadHistoryScroll(options: {
   scroller: HTMLElement;
   loadOlder?: () => Promise<boolean>;
-  trimLatest?: () => boolean;
   onFollowBottomChange?: (follow: boolean) => void;
-  onTrimmed?: () => void;
   now?: number;
 }): void {
   if (shouldIgnoreThreadHistoryScroll() || olderLoadInFlight) return;
@@ -97,10 +95,6 @@ export function consumeThreadHistoryScroll(options: {
   }
   if (action === "load-older") {
     scheduleOlderThreadHistoryLoad(options.scroller, options.loadOlder, options.now);
-    return;
-  }
-  if (action === "trim-latest" && options.trimLatest?.()) {
-    options.onTrimmed?.();
   }
 }
 

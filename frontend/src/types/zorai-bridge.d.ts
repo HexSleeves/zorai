@@ -345,6 +345,28 @@ declare global {
         cost_usd: number;
     };
 
+    type ZoraiDailyStatisticsRow = {
+        day_start: number;
+        day_key: string;
+        input_tokens: number;
+        output_tokens: number;
+        total_tokens: number;
+        cost_usd: number;
+        request_count: number;
+    };
+
+    type ZoraiSessionStatisticsRow = {
+        thread_id: string;
+        title: string;
+        updated_at: number;
+        provider_models: string[];
+        request_count: number;
+        input_tokens: number;
+        output_tokens: number;
+        total_tokens: number;
+        cost_usd: number;
+    };
+
     type ZoraiAgentStatisticsSnapshot = {
         window: ZoraiStatisticsWindow;
         generated_at: number;
@@ -354,6 +376,11 @@ declare global {
         models: ZoraiModelStatisticsRow[];
         top_models_by_tokens: ZoraiModelStatisticsRow[];
         top_models_by_cost: ZoraiModelStatisticsRow[];
+        daily: ZoraiDailyStatisticsRow[];
+        sessions: ZoraiSessionStatisticsRow[];
+        session_total: number;
+        session_limit: number;
+        session_offset: number;
     };
 
     type ZoraiWorkspaceOperator = "user" | "svarog";
@@ -562,6 +589,7 @@ declare global {
         gitDiff?: (targetPath: string, filePath?: string | null) => Promise<string>;
         workspaceOpen?: (rootPath: string) => Promise<{ root: string; name: string; gitRoot: string | null; isGitRepository: boolean }>;
         workspaceSelectFolder?: () => Promise<{ canceled: boolean; root: { root: string; name: string; gitRoot: string | null; isGitRepository: boolean } | null }>;
+        workspaceSelectFile?: () => Promise<{ canceled: boolean; path: string | null }>;
         workspaceListDirectory?: (rootPath: string, relativePath?: string, options?: { includeIgnored?: boolean }) => Promise<ZoraiWorkspaceEntry[]>;
         workspaceStatFile?: (rootPath: string, relativePath: string) => Promise<{ path: string; sizeBytes: number; modifiedAt: number }>;
         workspaceReadFile?: (rootPath: string, relativePath: string, options?: { maxBytes?: number }) => Promise<ZoraiWorkspaceFile>;
@@ -572,7 +600,7 @@ declare global {
         workspaceGitStatus?: (rootPath: string) => Promise<ZoraiWorkspaceGitStatus[]>;
         workspaceGitOverview?: (rootPath: string) => Promise<ZoraiWorkspaceGitOverview>;
         workspaceGitCommit?: (rootPath: string, message: string) => Promise<{ commit: string; subject: string; overview: ZoraiWorkspaceGitOverview; status: ZoraiWorkspaceGitStatus[] }>;
-        workspaceGitHistory?: (rootPath: string, options?: { limit?: number }) => Promise<Array<{ hash: string; shortHash: string; author: string; date: string; subject: string }>>;
+        workspaceGitHistory?: (rootPath: string, options?: { limit?: number; graph?: boolean }) => Promise<Array<{ hash: string; shortHash: string; author: string; date: string; subject: string; parents?: string[]; refs?: string[] }>>;
         workspaceGitCommitDetail?: (rootPath: string, commitHash: string) => Promise<{ hash: string; author: string; date: string; subject: string; body: string; files: Array<{ status: string; path: string }> }>;
         workspaceGitConflicts?: (rootPath: string) => Promise<Array<{ path: string }>>;
         workspaceGitListWorktrees?: (rootPath: string) => Promise<ZoraiGitWorktree[]>;
@@ -581,7 +609,11 @@ declare global {
         workspaceGitReviewWorktree?: (rootPath: string, worktreePath: string) => Promise<ZoraiWorktreeReview>;
         workspaceGitIntegrateWorktree?: (rootPath: string, worktreePath: string, commitHashes: string[]) => Promise<{ integratedCommits: string[]; overview: ZoraiWorkspaceGitOverview; status: ZoraiWorkspaceGitStatus[]; review: ZoraiWorktreeReview }>;
         workspaceGitStage?: (rootPath: string, relativePath: string) => Promise<ZoraiWorkspaceGitStatus[]>;
+        workspaceGitStageMany?: (rootPath: string, relativePaths: string[]) => Promise<ZoraiWorkspaceGitStatus[]>;
         workspaceGitUnstage?: (rootPath: string, relativePath: string) => Promise<ZoraiWorkspaceGitStatus[]>;
+        workspaceGitUnstageMany?: (rootPath: string, relativePaths: string[]) => Promise<ZoraiWorkspaceGitStatus[]>;
+        workspaceGitBranches?: (rootPath: string) => Promise<Array<{ name: string; isCurrent: boolean }>>;
+        workspaceGitCheckout?: (rootPath: string, branch: string) => Promise<{ overview: ZoraiWorkspaceGitOverview; status: ZoraiWorkspaceGitStatus[] }>;
         workspaceGitDiscard?: (rootPath: string, relativePath: string) => Promise<ZoraiWorkspaceGitStatus[]>;
         workspaceGitHunks?: (rootPath: string, relativePath: string, options?: { staged?: boolean }) => Promise<ZoraiWorkspaceGitHunk[]>;
         workspaceGitApplyHunk?: (rootPath: string, relativePath: string, hunkId: string, action: "stage" | "unstage" | "discard") => Promise<{ status: ZoraiWorkspaceGitStatus[]; hunks: ZoraiWorkspaceGitHunk[] }>;
@@ -785,7 +817,7 @@ declare global {
                 operator_profile_scheduler_fallback?: boolean;
             };
         } | null>;
-        agentGetStatistics?: (window?: ZoraiStatisticsWindow) => Promise<ZoraiAgentStatisticsSnapshot | null | unknown>;
+        agentGetStatistics?: (window?: ZoraiStatisticsWindow, sessionLimit?: number, sessionOffset?: number) => Promise<ZoraiAgentStatisticsSnapshot | null | unknown>;
         agentInspectPrompt?: (agentId?: string | null) => Promise<{
             agent_id: string;
             agent_name: string;

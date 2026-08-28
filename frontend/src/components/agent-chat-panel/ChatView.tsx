@@ -33,7 +33,6 @@ export function ChatView({
   activeThread,
   messagesEndRef,
   onLoadOlderMessages,
-  onTrimMessagesToLatestWindow,
   onSendMessage,
   onSendParticipantSuggestion,
   onDismissParticipantSuggestion,
@@ -84,12 +83,6 @@ export function ChatView({
     consumeThreadHistoryScroll({
       scroller: event.currentTarget,
       loadOlder: onLoadOlderMessages,
-      trimLatest: onTrimMessagesToLatestWindow,
-      onTrimmed: () => {
-        requestAnimationFrame(() => {
-          messagesEndRef.current?.scrollIntoView({ block: "end" });
-        });
-      },
     });
   };
 

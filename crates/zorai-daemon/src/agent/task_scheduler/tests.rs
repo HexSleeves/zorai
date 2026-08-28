@@ -200,3 +200,94 @@ fn select_ready_task_indices_blocks_weles_when_lane_pool_is_exhausted() {
         Some("waiting for lane availability: weles")
     );
 }
+
+#[test]
+fn select_ready_task_indices_skips_tasks_for_cancelled_and_paused_goals() {
+    let mut tasks = VecDeque::new();
+    tasks.push_back(make_task(
+        "cancelled-goal-task",
+        TaskStatus::Queued,
+        Some("goal-cancelled"),
+    ));
+    tasks.push_back(make_task(
+        "paused-goal-task",
+        TaskStatus::Queued,
+        Some("goal-paused"),
+    ));
+    tasks.push_back(make_task("independent-task", TaskStatus::Queued, None));
+
+    let mut goal_run_statuses = HashMap::new();
+    goal_run_statuses.insert("goal-cancelled".to_string(), GoalRunStatus::Cancelled);
+    goal_run_statuses.insert("goal-paused".to_string(), GoalRunStatus::Paused);
+    let selected =
+        select_ready_task_indices(&tasks, &[], &goal_run_statuses, &make_default_config());
+
+    assert_eq!(
+        selected,
+        vec![(2, "daemon-main".to_string())],
+        "queued tasks for cancelled or paused goals must not dispatch"
+    );
+}
+
+#[test]
+fn refresh_task_queue_state_clears_open_contract_blocks_before_attempt_limit() {
+    let mut tasks = VecDeque::new();
+    let mut contract_blocked =
+        make_task("contract-open", TaskStatus::Blocked, Some("goal-running"));
+    contract_blocked.blocked_reason =
+        Some("completion contract remains open: required deliverable: marker".to_string());
+    contract_blocked.completion_contract = Some(TaskCompletionContract {
+        open_completion_attempts: 1,
+        ..TaskCompletionContract::default()
+    });
+    let mut exhausted_contract = make_task(
+        "contract-exhausted",
+        TaskStatus::Blocked,
+        Some("goal-running"),
+    );
+    exhausted_contract.blocked_reason = Some(
+        "completion contract remains open after 3 attempts: required deliverable: marker"
+            .to_string(),
+    );
+    exhausted_contract.completion_contract = Some(TaskCompletionContract {
+        open_completion_attempts: OPEN_COMPLETION_CONTRACT_ATTEMPT_LIMIT,
+        ..TaskCompletionContract::default()
+    });
+    let mut paused_blocked = make_task(
+        "goal-paused-task",
+        TaskStatus::Blocked,
+        Some("goal-running"),
+    );
+    paused_blocked.blocked_reason = Some("goal_paused:\"queued\"".to_string());
+    let mut lane_blocked = make_task("lane-wait", TaskStatus::Blocked, None);
+    lane_blocked.blocked_reason = Some("waiting for lane availability: daemon-main".to_string());
+    tasks.push_back(contract_blocked);
+    tasks.push_back(exhausted_contract);
+    tasks.push_back(paused_blocked);
+    tasks.push_back(lane_blocked);
+
+    let updates = refresh_task_queue_state(&mut tasks, 1, &[], &make_default_config());
+
+    assert_eq!(tasks[0].status, TaskStatus::Queued);
+    assert_eq!(tasks[1].status, TaskStatus::Blocked);
+    assert_eq!(tasks[2].status, TaskStatus::Blocked);
+    assert_eq!(tasks[3].status, TaskStatus::Queued);
+    assert!(
+        updates
+            .iter()
+            .any(|task| task.id == "contract-open" && task.status == TaskStatus::Queued),
+        "multi-turn goal steps must requeue while the open-completion budget remains"
+    );
+    assert!(
+        updates
+            .iter()
+            .all(|task| task.id != "contract-exhausted" && task.id != "goal-paused-task"),
+        "exhausted contracts and goal-paused blocks must stay blocked"
+    );
+    assert!(
+        updates
+            .iter()
+            .any(|task| task.id == "lane-wait" && task.status == TaskStatus::Queued),
+        "resource-wait blocks should still clear when the lane is free"
+    );
+}

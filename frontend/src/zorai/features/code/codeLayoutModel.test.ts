@@ -51,8 +51,9 @@ describe("resolveCodePanelWidths", () => {
       agentOpen: true,
     });
 
-    expect(resolved.explorer).toBe(CODE_EXPLORER_MAX_WIDTH);
-    expect(resolved.explorer).toBe(520);
+    // Panel maxes are unbounded (1280000); the viewport is the real limit, so
+    // 800 fits as-is and 40 floors at the agent minimum.
+    expect(resolved.explorer).toBe(800);
     expect(resolved.agent).toBe(CODE_AGENT_MIN_WIDTH);
     expect(resolved.agent).toBe(260);
   });
@@ -124,13 +125,15 @@ describe("resolveCodePanelWidths", () => {
 
 describe("maxCodePanelWidth", () => {
   it("caps explorer width at its max while preserving the editor minimum", () => {
+    // Maxes are unbounded; the viewport-derived available space is the cap.
+    const expected = 1600 - 68 - 10 - 380 - 320;
     expect(
       maxCodePanelWidth({
         panel: "explorer",
         viewportWidth: 1600,
         otherWidth: 320,
       }),
-    ).toBe(CODE_EXPLORER_MAX_WIDTH);
+    ).toBe(expected);
   });
 
   it("caps agent width at the space left after the editor minimum", () => {
@@ -154,13 +157,14 @@ describe("maxCodePanelWidth", () => {
   });
 
   it("accounts for a collapsed sibling when computing the max", () => {
+    const expected = 1200 - 68 - 10 - 380 - CODE_COLLAPSED_EXPLORER_WIDTH;
     expect(
       maxCodePanelWidth({
         panel: "agent",
         viewportWidth: 1200,
         otherWidth: CODE_COLLAPSED_EXPLORER_WIDTH,
       }),
-    ).toBe(CODE_AGENT_MAX_WIDTH);
+    ).toBe(expected);
   });
 });
 
@@ -177,14 +181,16 @@ describe("adjustCodePanelWidth", () => {
     expect(adjustCodePanelWidth("explorer", 180, "ArrowLeft", false)).toBe(
       CODE_EXPLORER_MIN_WIDTH,
     );
-    expect(adjustCodePanelWidth("explorer", 520, "ArrowRight", false)).toBe(
-      CODE_EXPLORER_MAX_WIDTH,
-    );
+    // Max is unbounded (1280000); 520 + step stays within it.
+    expect(adjustCodePanelWidth("explorer", 520, "ArrowRight", false)).toBe(530);
+    expect(adjustCodePanelWidth("explorer", 300, "End", false)).toBe(CODE_EXPLORER_MAX_WIDTH);
   });
 
   it("clamps at the agent bounds", () => {
     expect(adjustCodePanelWidth("agent", 260, "ArrowLeft", false)).toBe(CODE_AGENT_MIN_WIDTH);
-    expect(adjustCodePanelWidth("agent", 640, "ArrowRight", false)).toBe(CODE_AGENT_MAX_WIDTH);
+    // Max is unbounded; 640 + step stays within it.
+    expect(adjustCodePanelWidth("agent", 640, "ArrowRight", false)).toBe(650);
+    expect(adjustCodePanelWidth("agent", 300, "End", false)).toBe(CODE_AGENT_MAX_WIDTH);
   });
 
   it("jumps to min on Home and max on End", () => {

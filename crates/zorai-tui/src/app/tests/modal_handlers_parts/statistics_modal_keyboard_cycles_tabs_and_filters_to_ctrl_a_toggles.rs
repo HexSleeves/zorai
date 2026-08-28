@@ -36,6 +36,11 @@ fn statistics_modal_keyboard_cycles_tabs_and_filters() {
         }],
         top_models_by_tokens: Vec::new(),
         top_models_by_cost: Vec::new(),
+        daily: Vec::new(),
+        sessions: Vec::new(),
+        session_total: 0,
+        session_limit: 25,
+        session_offset: 0,
     });
 
     let quit = model.handle_key_modal(

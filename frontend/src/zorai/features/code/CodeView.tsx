@@ -1,14 +1,16 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { LoadingState } from "@/components/LoadingState";
 import { WorkspaceWorkbench } from "@/components/WorkspaceWorkbench";
 import { useAgentChatPanelRuntime } from "@/components/agent-chat-panel/runtime/context";
 import { useAgentStore } from "@/lib/agentStore";
 import { useWorkspaceContextStore } from "@/lib/workspaceContextStore";
+import { useWorkspaceEditorRequestStore } from "@/lib/workspaceEditorRequestStore";
 import { openThreadTarget } from "../threads/openThreadTarget";
 import { CodeEmptyState } from "./CodeEmptyState";
 import { preloadCodeEditor } from "./codeEditorPreload";
 export { CodeAgentPane } from "./CodeAgentPane";
 import { useCodeWorkspaceBindingStore } from "./codeWorkspaceBindingStore";
+import { emitCodeRailAction, subscribeCodeRailActions, type CodeRailAction } from "./codeRailActions";
 import {
   displayRootName,
   type ZoraiWorkspaceSelection,
@@ -41,14 +43,147 @@ const NOOP_OPEN_WORKSPACE: CodeOpenWorkspaceBoundary = () => {};
 
 export function CodeRail() {
   const lastRoot = useCodeWorkspaceBindingStore((state) => state.lastRoot);
+  const threadsByRoot = useCodeWorkspaceBindingStore((state) => state.threadsByRoot);
+  const closeRoot = useCodeWorkspaceBindingStore((state) => state.closeRoot);
+  const [recentOpen, setRecentOpen] = useState(false);
+  const recentRef = useRef<HTMLDivElement | null>(null);
+
+  const recentRoots = useMemo(() => {
+    const known = Object.keys(threadsByRoot);
+    if (!lastRoot) return known.slice(0, 10);
+    const rest = known.filter((root) => root !== lastRoot).slice(0, 9);
+    return lastRoot ? [lastRoot, ...rest].slice(0, 10) : rest;
+  }, [threadsByRoot, lastRoot]);
+
+  useEffect(() => {
+    if (!recentOpen) return;
+    const onPointerDown = (event: globalThis.PointerEvent) => {
+      if (!recentRef.current?.contains(event.target as Node)) setRecentOpen(false);
+    };
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
+      if (event.key === "Escape") setRecentOpen(false);
+    };
+    document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [recentOpen]);
 
   return (
     <div className="zorai-code-explorer">
       <div className="zorai-code-project" title={lastRoot ?? undefined}>
         <strong>{lastRoot ? displayRootName(lastRoot) : "No folder open"}</strong>
+        <div className="zorai-code-project-actions" role="group" aria-label="Code workspace actions">
+          <button
+            type="button"
+            className="zorai-code-project-btn"
+            title="Open file (any path, outside the workspace is fine)"
+            aria-label="Open file"
+            onClick={() => emitCodeRailAction({ kind: "open-file" })}
+          >
+            <FileOpenIcon />
+          </button>
+          <button
+            type="button"
+            className="zorai-code-project-btn"
+            title="Open folder (switch Code workspace)"
+            aria-label="Open folder"
+            onClick={() => emitCodeRailAction({ kind: "open-folder" })}
+          >
+            <FolderOpenIcon />
+          </button>
+          <div ref={recentRef} className="zorai-code-project-recent">
+            <button
+              type="button"
+              className="zorai-code-project-btn"
+              title="Open recent folder"
+              aria-label="Open recent folder"
+              aria-expanded={recentOpen}
+              aria-haspopup="menu"
+              onClick={() => setRecentOpen((value) => !value)}
+            >
+              <HistoryIcon />
+            </button>
+            {recentOpen ? (
+              <div className="zorai-code-recent-menu" role="menu" aria-label="Recent folders">
+                {recentRoots.length === 0 ? (
+                  <div className="zorai-code-recent-empty" role="menuitem" aria-disabled="true">
+                    No recent folders
+                  </div>
+                ) : (
+                  recentRoots.map((root) => {
+                    const isCurrent = root === lastRoot;
+                    return (
+                      <div
+                        key={root}
+                        className={isCurrent ? "zorai-code-recent-item is-current" : "zorai-code-recent-item"}
+                        role="menuitem"
+                      >
+                        <button
+                          type="button"
+                          className="zorai-code-recent-item-open"
+                          title={root}
+                          onClick={() => {
+                            setRecentOpen(false);
+                            if (isCurrent) return;
+                            emitCodeRailAction({ kind: "open-recent", root });
+                          }}
+                        >
+                          <strong>{displayRootName(root)}</strong>
+                          <span>{root}</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="zorai-code-recent-item-remove"
+                          title="Remove from recent"
+                          aria-label={`Remove ${displayRootName(root)} from recent`}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            closeRoot(root);
+                          }}
+                        >
+                          ×
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            ) : null}
+          </div>
+        </div>
       </div>
       <div id="zorai-code-explorer-host" className="zorai-code-explorer-scroll" aria-label="Code Explorer" />
     </div>
+  );
+}
+
+function FileOpenIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z" />
+      <path d="M14 3v6h6" />
+    </svg>
+  );
+}
+
+function FolderOpenIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v1H3z" />
+      <path d="M3 10h18l-2 8a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z" />
+    </svg>
+  );
+}
+
+function HistoryIcon() {
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true">
+      <circle cx="12" cy="12" r="8" />
+      <path d="M12 8v5l3 2" />
+    </svg>
   );
 }
 
@@ -136,8 +271,77 @@ export function CodeView({
     void activateRootThread({ root: boundRoot, name, gitRoot: null, isGitRepository: false });
   }, [activateRootThread, boundRoot]);
 
+  // Subscribe to rail-initiated actions (CodeRail is mounted as a sibling via
+  // ZoraiShell.renderRail; events arrive on the bus).
+  useEffect(() => {
+    const unsubscribe = subscribeCodeRailActions((action: CodeRailAction) => {
+      if (action.kind === "open-folder") {
+        void (async () => {
+          try {
+            const bridge = window.zorai;
+            if (!bridge?.workspaceSelectFolder) return;
+            const selection = await bridge.workspaceSelectFolder();
+            if (selection.canceled || !selection.root) return;
+            handleRootSelected(selection.root, "picker");
+          } catch {
+            // Native picker failure leaves the current root untouched.
+          }
+        })();
+        return;
+      }
+      if (action.kind === "open-recent") {
+        void (async () => {
+          try {
+            const bridge = window.zorai;
+            if (!bridge?.workspaceOpen) return;
+            const validated = await bridge.workspaceOpen(action.root);
+            handleRootSelected(validated, "picker");
+          } catch {
+            // Stale recent entry — prune so it stops surfacing.
+            useCodeWorkspaceBindingStore.getState().removeRootBinding(action.root);
+          }
+        })();
+        return;
+      }
+      if (action.kind === "open-file") {
+        void (async () => {
+          try {
+            const bridge = window.zorai;
+            if (!bridge?.workspaceSelectFile) return;
+            const selection = await bridge.workspaceSelectFile();
+            if (selection.canceled || !selection.path) return;
+            // We need a code thread + workbench to actually host the editor.
+            // If no root is bound, fall back to lastRoot if present; otherwise no-op.
+            let localId = codeThreadLocalIdRef.current;
+            if (!localId) {
+              const stored = useCodeWorkspaceBindingStore.getState().lastRoot;
+              if (!stored) return;
+              const activeRuntime = runtimeRef.current;
+              const threads = useAgentStore.getState().threads;
+              const fallback = threads.find((thread) => thread.title.startsWith("Code · "));
+              if (!fallback) return;
+              localId = fallback.id;
+              codeThreadLocalIdRef.current = localId;
+              activeRuntime.openThread(localId);
+            }
+            useWorkspaceEditorRequestStore.getState().requestFileView(localId, selection.path, "edit", { external: true });
+          } catch {
+            // File picker failure leaves the editor state untouched.
+          }
+        })();
+        return;
+      }
+    });
+    return unsubscribe;
+  }, [handleRootSelected]);
+
   return boundRoot ? (
-    activatingRoot ? <CodeSurfaceSkeleton label={`Opening ${displayRootName(boundRoot)}…`} /> : <WorkspaceWorkbench openedRoot={boundRoot} />
+    activatingRoot ? <CodeSurfaceSkeleton label={`Opening ${displayRootName(boundRoot)}…`} /> : (
+      <WorkspaceWorkbench
+        openedRoot={boundRoot}
+        agentInputController={{ input: runtime.input, setInput: runtime.setInput }}
+      />
+    )
   ) : (
     <section className="zorai-code-surface zorai-code-surface--empty">
       <CodeEmptyState

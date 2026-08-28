@@ -903,70 +903,76 @@ impl HistoryStore {
         if thread_ids.is_empty() {
             return Ok(Vec::new());
         }
-
-        let placeholders = std::iter::repeat("?")
-            .take(thread_ids.len())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let sql = format!(
-            "SELECT
-                 thread_id,
-                 role,
-                 CASE
-                     WHEN role = 'assistant'
-                          AND typeof(tool_calls_json) = 'text'
-                          AND json_valid(tool_calls_json)
-                          AND json_array_length(tool_calls_json) > 0
-                     THEN tool_calls_json
-                     ELSE NULL
-                 END AS tool_calls_json,
-                 CASE
-                     WHEN role = 'tool'
-                          AND typeof(metadata_json) = 'text'
-                          AND json_valid(metadata_json)
-                     THEN COALESCE(
-                         json_extract(metadata_json, '$.tool_call_id'),
-                         json_extract(metadata_json, '$.toolCallId')
-                     )
-                     ELSE NULL
-                 END AS tool_call_id
-             FROM agent_messages
-             WHERE thread_id IN ({placeholders})
-               AND deleted_at IS NULL
-             ORDER BY thread_id ASC, created_at ASC, id ASC"
-        );
-        let values = thread_ids
-            .iter()
-            .cloned()
-            .map(db::Value::Text)
-            .collect::<Vec<_>>();
-        let rows = self
-            .read_db
-            .query(&sql, db::Params::Positional(values))
-            .await?;
-
+        let chunk_size = sqlite_in_chunk_size(1);
         let mut unanswered: Vec<String> = Vec::new();
-        let mut current_thread: Option<String> = None;
-        let mut buffer: Vec<(String, Option<String>, Option<String>)> = Vec::new();
-        for row in rows.iter() {
-            let thread_id = row.get::<String>(0)?;
-            let role = row.get::<String>(1)?;
-            let tool_calls_json = row.get::<Option<String>>(2)?;
-            let tool_call_id = row.get::<Option<String>>(3)?;
-            if current_thread.as_deref() != Some(thread_id.as_str()) {
-                if let Some(prev_id) = current_thread.take() {
-                    if scan_messages_for_unanswered_tool_calls(&buffer) {
-                        unanswered.push(prev_id);
+        let mut seen = std::collections::HashSet::new();
+        for chunk in thread_ids.chunks(chunk_size) {
+            let placeholders = std::iter::repeat("?")
+                .take(chunk.len())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql = format!(
+                "SELECT
+                     thread_id,
+                     role,
+                     CASE
+                         WHEN role = 'assistant'
+                              AND typeof(tool_calls_json) = 'text'
+                              AND json_valid(tool_calls_json)
+                              AND json_array_length(tool_calls_json) > 0
+                         THEN tool_calls_json
+                         ELSE NULL
+                     END AS tool_calls_json,
+                     CASE
+                         WHEN role = 'tool'
+                              AND typeof(metadata_json) = 'text'
+                              AND json_valid(metadata_json)
+                         THEN COALESCE(
+                             json_extract(metadata_json, '$.tool_call_id'),
+                             json_extract(metadata_json, '$.toolCallId')
+                         )
+                         ELSE NULL
+                     END AS tool_call_id
+                 FROM agent_messages
+                 WHERE thread_id IN ({placeholders})
+                   AND deleted_at IS NULL
+                 ORDER BY thread_id ASC, created_at ASC, id ASC"
+            );
+            let values = chunk
+                .iter()
+                .cloned()
+                .map(db::Value::Text)
+                .collect::<Vec<_>>();
+            let rows = self
+                .read_db
+                .query(&sql, db::Params::Positional(values))
+                .await?;
+
+            let mut current_thread: Option<String> = None;
+            let mut buffer: Vec<(String, Option<String>, Option<String>)> = Vec::new();
+            for row in rows.iter() {
+                let thread_id = row.get::<String>(0)?;
+                let role = row.get::<String>(1)?;
+                let tool_calls_json = row.get::<Option<String>>(2)?;
+                let tool_call_id = row.get::<Option<String>>(3)?;
+                if current_thread.as_deref() != Some(thread_id.as_str()) {
+                    if let Some(prev_id) = current_thread.take() {
+                        if scan_messages_for_unanswered_tool_calls(&buffer)
+                            && seen.insert(prev_id.clone())
+                        {
+                            unanswered.push(prev_id);
+                        }
                     }
+                    current_thread = Some(thread_id);
+                    buffer.clear();
                 }
-                current_thread = Some(thread_id);
-                buffer.clear();
+                buffer.push((role, tool_calls_json, tool_call_id));
             }
-            buffer.push((role, tool_calls_json, tool_call_id));
-        }
-        if let Some(prev_id) = current_thread.take() {
-            if scan_messages_for_unanswered_tool_calls(&buffer) {
-                unanswered.push(prev_id);
+            if let Some(prev_id) = current_thread.take() {
+                if scan_messages_for_unanswered_tool_calls(&buffer) && seen.insert(prev_id.clone())
+                {
+                    unanswered.push(prev_id);
+                }
             }
         }
         Ok(unanswered)
@@ -1055,47 +1061,49 @@ impl HistoryStore {
         if thread_ids.is_empty() {
             return Ok(std::collections::HashMap::new());
         }
-
-        let placeholders = std::iter::repeat("?")
-            .take(thread_ids.len())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let sql = format!(
-            "WITH ranked_messages AS (
-                SELECT
-                    message.thread_id,
-                    message.content,
-                    ROW_NUMBER() OVER (
-                        PARTITION BY message.thread_id
-                        ORDER BY message.created_at DESC, message.rowid DESC
-                    ) AS row_number
-                FROM agent_messages message
-                JOIN agent_threads thread
-                  ON thread.id = message.thread_id
-                 AND thread.deleted_at IS NULL
-                WHERE message.thread_id IN ({placeholders})
-                  AND message.deleted_at IS NULL
-                  AND TRIM(
-                    message.content,
-                    char(9) || char(10) || char(11) || char(12) || char(13) || char(32)
-                  ) != ''
-             )
-             SELECT thread_id, content
-             FROM ranked_messages
-             WHERE row_number = 1"
-        );
-        let values = thread_ids
-            .iter()
-            .cloned()
-            .map(db::Value::Text)
-            .collect::<Vec<_>>();
-        let rows = self
-            .read_db
-            .query(&sql, db::Params::Positional(values))
-            .await?;
+        let chunk_size = sqlite_in_chunk_size(1);
         let mut messages = std::collections::HashMap::new();
-        for row in rows.iter() {
-            messages.insert(row.get::<String>(0)?, row.get::<String>(1)?);
+        for chunk in thread_ids.chunks(chunk_size) {
+            let placeholders = std::iter::repeat("?")
+                .take(chunk.len())
+                .collect::<Vec<_>>()
+                .join(", ");
+            let sql = format!(
+                "WITH ranked_messages AS (
+                    SELECT
+                        message.thread_id,
+                        message.content,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY message.thread_id
+                            ORDER BY message.created_at DESC, message.rowid DESC
+                        ) AS row_number
+                    FROM agent_messages message
+                    JOIN agent_threads thread
+                      ON thread.id = message.thread_id
+                     AND thread.deleted_at IS NULL
+                    WHERE message.thread_id IN ({placeholders})
+                      AND message.deleted_at IS NULL
+                      AND TRIM(
+                        message.content,
+                        char(9) || char(10) || char(11) || char(12) || char(13) || char(32)
+                      ) != ''
+                 )
+                 SELECT thread_id, content
+                 FROM ranked_messages
+                 WHERE row_number = 1"
+            );
+            let values = chunk
+                .iter()
+                .cloned()
+                .map(db::Value::Text)
+                .collect::<Vec<_>>();
+            let rows = self
+                .read_db
+                .query(&sql, db::Params::Positional(values))
+                .await?;
+            for row in rows.iter() {
+                messages.insert(row.get::<String>(0)?, row.get::<String>(1)?);
+            }
         }
         Ok(messages)
     }
@@ -2201,6 +2209,19 @@ impl HistoryStore {
             )
             .await?;
         row.map(|row| row.get::<String>(0)).transpose()
+    }
+
+    pub async fn latest_recovery_prompt_content(&self, thread_id: &str) -> Result<Option<String>> {
+        if let Some(content) = self.latest_user_message_content(thread_id).await? {
+            if !content.trim().is_empty() {
+                return Ok(Some(content));
+            }
+        }
+        Ok(self
+            .latest_non_empty_message_content_for_thread_ids(&[thread_id.to_string()])
+            .await?
+            .remove(thread_id)
+            .filter(|content| !content.trim().is_empty()))
     }
 
     pub async fn latest_assistant_message(

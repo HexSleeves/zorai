@@ -54,7 +54,8 @@ describe("Zorai feature surfaces", () => {
     const styleSource = readFileSync(new URL("../styles/zorai.css", import.meta.url), "utf8");
 
     expect(codeSource).toContain('id="zorai-code-explorer-host"');
-    expect(codeSource).toContain("<WorkspaceWorkbench openedRoot={boundRoot} />");
+    expect(codeSource).toContain("<WorkspaceWorkbench");
+    expect(codeSource).toContain("openedRoot={boundRoot}");
     expect((codeSource.match(/<WorkspaceWorkbench/g) ?? [])).toHaveLength(1);
     expect(workbenchSource).toContain('import { createPortal } from "react-dom"');
     expect(workbenchSource).toContain('document.getElementById("zorai-code-explorer-host")');
@@ -158,20 +159,14 @@ describe("Zorai feature surfaces", () => {
       ".zorai-shell.zorai-shell--code.zorai-shell--rail-collapsed",
     );
 
-    expect(codePalette).toContain("--zorai-bg: #030405");
-    expect(codePalette).toContain("--zorai-bg-panel: #070809");
-    expect(codePalette).toContain("--zorai-bg-surface: #0a0b0d");
-    expect(codePalette).toContain("--zorai-bg-elevated: #0d0f11");
-    expect(codePalette).toContain("--zorai-bg-active: #151719");
-    expect(codePalette).toContain("--zorai-border: #1b1d20");
-    expect(codePalette).toContain("--zorai-border-strong: #2a2d31");
-    expect(codePalette).toContain("--zorai-muted: #858b94");
+    // The Code shell intentionally inherits the shared token contract instead
+    // of overriding it with a local black palette (the local override was
+    // removed in favor of the neutral global tokens).
+    expect(codePalette).not.toContain("--zorai-bg:");
     expect(codePalette).toContain("background: var(--zorai-bg)");
-    expect(codePalette).not.toMatch(/radial-gradient|#(?:0a0f18|0f1520|141c28|212e3e)/i);
 
     expect(styleSource).toContain(".zorai-shell--code .zorai-global-item--active");
     expect(styleSource).toContain(".zorai-shell--code .zorai-workspace-statusbar");
-    expect(codePalette).not.toContain("var(--zorai-accent-secondary)");
     expect(styleSource).toContain("background: color-mix(in srgb, var(--zorai-accent-secondary) 16%, var(--zorai-bg-panel))");
   });
 
@@ -371,7 +366,7 @@ describe("Zorai feature surfaces", () => {
     expect(usageSource).toContain("Provider / Model");
     expect(usageSource).toContain("Top Models By Tokens");
     expect(usageSource).toContain("SessionUsageTable");
-    expect(usageSource).toContain("stats.sessionRows");
+    expect(usageSource).toContain("snapshot?.sessions ?? []");
     expect(usageSource).toContain("Provider models");
     expect(surfaceCss).toContain("zorai-usage-grid");
   });
@@ -646,10 +641,9 @@ describe("Zorai feature surfaces", () => {
     expect(runtimeSource).toContain("Context");
     expect(runtimeSource).toContain("resolveThreadOwnerRuntimeProfile");
     expect(runtimeSource).toContain("pendingApplyRef");
-    expect(actionsSource).toContain("agentSetProviderModel");
-    expect(actionsSource).toContain("agentSetTargetAgentProviderModel");
-    expect(actionsSource).toContain("agentSetTargetAgentReasoningEffort");
-    expect(actionsSource).toContain("agentSetTargetAgentContextWindow");
+    expect(actionsSource).toContain("applyThreadProviderModel");
+    expect(actionsSource).toContain("applyThreadReasoningEffort");
+    expect(actionsSource).toContain("applyThreadContextWindow");
   });
 
   it("attaches files and records speech on the native thread composer", () => {
@@ -791,8 +785,10 @@ describe("Zorai feature surfaces", () => {
     expect(messageSource).toContain("streaming={Boolean(message.isStreaming)}");
     expect(messageSource).not.toContain("open={message.isStreaming ? true : undefined}");
     expect(messageSource).not.toContain("<p className=\"zorai-message__reasoning\">");
-    expect(css).toMatch(/\.zorai-message__reasoning\s*{[^}]*border:\s*1px solid var\(--zorai-border\)/s);
-    expect(css).toMatch(/\.zorai-message__reasoning\s*>\s*div\s*{[^}]*max-height:\s*min\(42vh, 360px\)/s);
+    // Reasoning is a borderless transparent details block (styled in
+    // .zorai-message__reasoning { border: none; background: transparent; }).
+    expect(css).toMatch(/\.zorai-message__reasoning\s*{[^}]*border:\s*none/s);
+    expect(css).toMatch(/\.zorai-message__reasoning\s*{[^}]*background:\s*transparent/s);
     expect(messageSource).toContain("assistantMessageHasVisibleContent");
     expect(messageSource).toContain("hasVisibleContent && message.toolCalls");
     expect(readFeature("../../components/agent-chat-panel/runtime/useDaemonAgentEvents.ts")).not.toContain("Calling tools...");

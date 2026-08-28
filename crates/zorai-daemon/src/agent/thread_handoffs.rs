@@ -400,6 +400,24 @@ fn thread_handoff_approval_command(request: &PendingThreadHandoffActivation) -> 
 }
 
 impl AgentEngine {
+    async fn resolve_plain_thread_handoff_target(
+        &self,
+        target_alias: &str,
+    ) -> Result<(String, String)> {
+        if let Some(resolved) = resolve_thread_handoff_agent(target_alias) {
+            return Ok(resolved);
+        }
+        let trimmed = target_alias.trim();
+        if let Some(sub_agent) = self.list_sub_agents().await.into_iter().find(|entry| {
+            entry.enabled
+                && (entry.id.eq_ignore_ascii_case(trimmed)
+                    || entry.name.eq_ignore_ascii_case(trimmed))
+        }) {
+            return Ok((sub_agent.id, sub_agent.name));
+        }
+        anyhow::bail!("unknown handoff target: {target_alias}");
+    }
+
     pub(crate) async fn apply_operator_thread_handoff(
         &self,
         thread_id: &str,
@@ -652,8 +670,8 @@ impl AgentEngine {
                     }
                     (resolved_id, resolved_name)
                 } else {
-                    resolve_thread_handoff_agent(target_alias)
-                        .ok_or_else(|| anyhow::anyhow!("unknown handoff target: {target_alias}"))?
+                    self.resolve_plain_thread_handoff_target(target_alias)
+                        .await?
                 };
                 if target_agent_id == from_agent_id {
                     anyhow::bail!("cannot hand off a thread to the current active responder");

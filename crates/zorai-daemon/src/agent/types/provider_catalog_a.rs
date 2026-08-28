@@ -158,6 +158,12 @@ pub const QWEN_MODELS: &[ModelDefinition] = &[
 
 pub const ZAI_MODELS: &[ModelDefinition] = &[
     ModelDefinition {
+        id: "glm-5.3-flash",
+        name: "GLM-5.3 Flash",
+        context_window: 1_000_000,
+        modalities: TEXT_IMAGE,
+    },
+    ModelDefinition {
         id: "glm-5.2",
         name: "GLM-5.2",
         context_window: 1000000,
@@ -207,6 +213,12 @@ pub const ZAI_CODING_MODELS: &[ModelDefinition] = &[
         name: "GLM-5.3",
         context_window: 1_000_000,
         modalities: TEXT_ONLY,
+    },
+    ModelDefinition {
+        id: "glm-5.3-flash",
+        name: "GLM-5.3 Flash",
+        context_window: 1_000_000,
+        modalities: TEXT_IMAGE,
     },
     ModelDefinition {
         id: "glm-5-turbo",

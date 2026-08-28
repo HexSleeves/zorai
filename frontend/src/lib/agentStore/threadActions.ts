@@ -104,6 +104,13 @@ export function createThreadActions(
         upstreamProvider: null,
         upstreamModel: null,
         upstreamAssistantId: null,
+        profileProvider: opts.profileProvider?.trim() || null,
+        profileModel: opts.profileModel?.trim() || null,
+        profileReasoningEffort: opts.profileReasoningEffort?.trim() || null,
+        profileContextWindowTokens: typeof opts.profileContextWindowTokens === "number"
+          && opts.profileContextWindowTokens > 0
+          ? Math.trunc(opts.profileContextWindowTokens)
+          : null,
       };
       set((state) => {
         const activate = opts.activate !== false;
@@ -340,6 +347,14 @@ export function createThreadActions(
             agent_name: agentName,
             targetAgentId: agentId,
             updatedAt: Date.now(),
+            ...(thread.daemonThreadId
+              ? {}
+              : {
+                profileProvider: null,
+                profileModel: null,
+                profileReasoningEffort: null,
+                profileContextWindowTokens: null,
+              }),
           };
           return updatedThread;
         });

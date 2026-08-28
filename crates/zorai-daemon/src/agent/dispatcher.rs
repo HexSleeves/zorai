@@ -8,6 +8,7 @@ enum RecoverableGoalPauseReason {
     RateLimit,
     TemporaryProvider,
     Transport,
+    AuthConfiguration,
 }
 
 impl RecoverableGoalPauseReason {
@@ -17,6 +18,7 @@ impl RecoverableGoalPauseReason {
             Self::RateLimit => "goal_provider_rate_limit",
             Self::TemporaryProvider => "goal_provider_temporary",
             Self::Transport => "goal_provider_transport",
+            Self::AuthConfiguration => "goal_provider_auth",
         }
     }
 
@@ -26,6 +28,7 @@ impl RecoverableGoalPauseReason {
             Self::RateLimit => "provider rate limit",
             Self::TemporaryProvider => "temporary provider outage",
             Self::Transport => "network transport problem",
+            Self::AuthConfiguration => "provider authentication or API key",
         }
     }
 }
@@ -42,9 +45,7 @@ fn recoverable_goal_pause_reason(message: &str) -> Option<RecoverableGoalPauseRe
             "rate_limit" => Some(RecoverableGoalPauseReason::RateLimit),
             "temporary_upstream" => Some(RecoverableGoalPauseReason::TemporaryProvider),
             "transient_transport" => Some(RecoverableGoalPauseReason::Transport),
-            "auth_configuration" if mentions_provider_credit_problem(&combined) => {
-                Some(RecoverableGoalPauseReason::ProviderCredits)
-            }
+            "auth_configuration" => Some(RecoverableGoalPauseReason::AuthConfiguration),
             _ => None,
         };
     }
@@ -155,6 +156,9 @@ fn apply_dispatched_task_success_update(
     active_child_ids: &[String],
     now: u64,
 ) {
+    if is_task_terminal_status(task.status) {
+        return;
+    }
     if outcome.interrupted_for_approval
         || crate::agent::tool_executor::task_is_awaiting_parent(task)
     {
@@ -236,6 +240,7 @@ fn apply_dispatched_task_success_update(
             },
             Some(report.summary.clone()),
         ));
+        record_goal_step_dispatch_finish(task);
         return;
     }
     if outcome.terminated_for_budget {
@@ -245,7 +250,11 @@ fn apply_dispatched_task_success_update(
     } else {
         apply_successful_completion_transition(task, now);
     }
-    let completion_blocked = task.status == TaskStatus::Blocked && !waiting_for_subagents;
+    let completion_blocked = !waiting_for_subagents
+        && matches!(
+            task.status,
+            TaskStatus::Blocked | TaskStatus::AwaitingApproval
+        );
     task.progress = if waiting_for_subagents {
         task.progress.max(90)
     } else if completion_blocked {
@@ -270,7 +279,9 @@ fn apply_dispatched_task_success_update(
     } else {
         None
     };
-    task.awaiting_approval_id = None;
+    if !matches!(task.status, TaskStatus::AwaitingApproval) {
+        task.awaiting_approval_id = None;
+    }
     task.error = if outcome.terminated_for_budget {
         Some(budget_exceeded_reason.clone())
     } else {
@@ -307,6 +318,40 @@ fn apply_dispatched_task_success_update(
             None
         },
     ));
+    record_goal_step_dispatch_finish(task);
+}
+
+fn record_goal_step_dispatch_finish(task: &mut AgentTask) {
+    if task.source != "goal_run" || is_task_terminal_status(task.status) {
+        return;
+    }
+    if matches!(task.status, TaskStatus::AwaitingApproval) {
+        return;
+    }
+    let attempts = {
+        let contract = task
+            .completion_contract
+            .get_or_insert_with(TaskCompletionContract::default);
+        contract.dispatch_finish_attempts = contract.dispatch_finish_attempts.saturating_add(1);
+        contract.dispatch_finish_attempts
+    };
+    if attempts < GOAL_STEP_DISPATCH_FINISH_LIMIT {
+        return;
+    }
+    task.status = TaskStatus::AwaitingApproval;
+    task.progress = task.progress.max(90).min(99);
+    task.completed_at = None;
+    task.awaiting_approval_id = Some(format!("goal-step-dispatch-budget:{}", task.id));
+    task.blocked_reason = Some(format!(
+        "goal step exceeded {attempts} dispatch finishes without completing"
+    ));
+    task.logs.push(make_task_log_entry(
+        task.retry_count,
+        TaskLogLevel::Warn,
+        "execution",
+        "goal step dispatch budget exhausted",
+        task.blocked_reason.clone(),
+    ));
 }
 
 fn apply_successful_completion_transition(task: &mut AgentTask, now: u64) {
@@ -315,15 +360,35 @@ fn apply_successful_completion_transition(task: &mut AgentTask, now: u64) {
             task.blocked_reason = None;
             task.error = None;
             task.last_error = None;
+            if let Some(contract) = task.completion_contract.as_mut() {
+                contract.open_completion_attempts = 0;
+                contract.dispatch_finish_attempts = 0;
+            }
         }
         Err(reasons) => {
-            task.status = TaskStatus::Blocked;
-            task.progress = task.progress.max(90).min(99);
-            task.completed_at = None;
-            task.blocked_reason = Some(format!(
-                "completion contract remains open: {}",
-                reasons.join("; ")
-            ));
+            let attempts = if let Some(contract) = task.completion_contract.as_mut() {
+                contract.open_completion_attempts =
+                    contract.open_completion_attempts.saturating_add(1);
+                contract.open_completion_attempts
+            } else {
+                1
+            };
+            let detail = format!("completion contract remains open: {}", reasons.join("; "));
+            if attempts >= OPEN_COMPLETION_CONTRACT_ATTEMPT_LIMIT {
+                task.status = TaskStatus::AwaitingApproval;
+                task.progress = task.progress.max(90).min(99);
+                task.completed_at = None;
+                task.awaiting_approval_id = Some(format!("open-completion-contract:{}", task.id));
+                task.blocked_reason = Some(format!(
+                    "completion contract remains open after {attempts} attempts: {}",
+                    reasons.join("; ")
+                ));
+            } else {
+                task.status = TaskStatus::Blocked;
+                task.progress = task.progress.max(90).min(99);
+                task.completed_at = None;
+                task.blocked_reason = Some(detail);
+            }
             task.error = None;
             task.last_error = None;
         }
@@ -335,6 +400,9 @@ fn apply_dispatched_task_failure_update(
     error_text: &str,
     retry_delay_ms: u64,
 ) {
+    if is_task_terminal_status(task.status) {
+        return;
+    }
     task.retry_count = task.retry_count.saturating_add(1);
     task.error = Some(error_text.to_string());
     task.last_error = Some(error_text.to_string());
@@ -348,7 +416,7 @@ fn apply_dispatched_task_failure_update(
         Some(error_text.to_string()),
     ));
 
-    if task.retry_count <= task.max_retries {
+    if recoverable_goal_pause_reason(error_text).is_none() && task.retry_count <= task.max_retries {
         task.status = TaskStatus::FailedAnalyzing;
         task.completed_at = None;
         task.next_retry_at = Some(now_millis().saturating_add(retry_delay_ms));
@@ -783,7 +851,7 @@ impl AgentEngine {
         }
     }
 
-    async fn pause_goal_run_for_recoverable_provider_error(
+    pub(in crate::agent) async fn pause_goal_run_for_recoverable_provider_error(
         &self,
         goal_run_id: &str,
         error: &anyhow::Error,
@@ -803,10 +871,7 @@ impl AgentEngine {
             let Some(goal_run) = goal_runs.iter_mut().find(|item| item.id == goal_run_id) else {
                 return false;
             };
-            if matches!(
-                goal_run.status,
-                GoalRunStatus::Completed | GoalRunStatus::Failed | GoalRunStatus::Cancelled
-            ) {
+            if goal_run.status.is_terminal() {
                 return false;
             }
             goal_run.status = GoalRunStatus::Paused;
@@ -851,6 +916,8 @@ impl AgentEngine {
         };
 
         self.persist_goal_runs().await;
+        self.pause_goal_tasks(&updated).await;
+        self.quiesce_goal_execution_tree(&updated, false).await;
         crate::governance::record_transition_audit(
             &self.history,
             crate::governance::TransitionKind::LaneRetry,
@@ -903,10 +970,15 @@ impl AgentEngine {
             None => return Ok(()),
         };
 
-        if matches!(
-            goal_run.status,
-            GoalRunStatus::AwaitingApproval | GoalRunStatus::Planning
-        ) {
+        if goal_run.status.is_terminal()
+            || matches!(
+                goal_run.status,
+                GoalRunStatus::AwaitingApproval
+                    | GoalRunStatus::Planning
+                    | GoalRunStatus::Paused
+                    | GoalRunStatus::Blocked
+            )
+        {
             return Ok(());
         }
 
@@ -1213,15 +1285,14 @@ impl AgentEngine {
                                 goal.steps
                                     .iter()
                                     .position(|step| step.id == goal_step_id)
-                                    .map(|index| {
-                                        crate::agent::goal_dossier::goal_step_completion_marker_path(
+                                    .and_then(|index| {
+                                        crate::agent::goal_dossier::goal_step_present_marker_path(
                                             &self.data_dir,
                                             goal_run_id,
                                             index,
                                         )
                                     })
                             })
-                            .filter(|path| path.is_file())
                             .map(|path| path.display().to_string()),
                         _ => None,
                     }
@@ -3205,6 +3276,181 @@ mod tests {
             .as_deref()
             .unwrap_or_default()
             .contains("usable subagent outcome report"));
+    }
+
+    #[test]
+    fn dispatched_success_does_not_resurrect_cancelled_task() {
+        let mut task = terminal_notification_test_task(
+            "cancelled-live",
+            "Select candidate",
+            TaskStatus::Cancelled,
+            Vec::new(),
+        );
+        let outcome = SendMessageOutcome {
+            thread_id: "thread-cancelled-live".into(),
+            stream_generation: 0,
+            interrupted_for_approval: false,
+            terminated_for_budget: false,
+            subagent_report: None,
+            upstream_message: None,
+            provider_final_result: None,
+            fresh_runner_retry: None,
+            handoff_restart: None,
+        };
+
+        apply_dispatched_task_success_update(&mut task, &outcome, &[], 99);
+
+        assert_eq!(task.status, TaskStatus::Cancelled);
+        assert_eq!(task.completed_at, Some(3));
+    }
+
+    #[test]
+    fn open_completion_contract_escalates_after_three_attempts() {
+        let mut task = terminal_notification_test_task(
+            "contract-open-cap",
+            "Write the step marker",
+            TaskStatus::InProgress,
+            Vec::new(),
+        );
+        task.completed_at = None;
+        task.completion_contract = Some(TaskCompletionContract {
+            required_deliverables: vec![TaskCompletionRequirement {
+                description: "required goal step completion marker".into(),
+                completed: false,
+                evidence: None,
+            }],
+            ..TaskCompletionContract::default()
+        });
+        let outcome = SendMessageOutcome {
+            thread_id: "thread-contract-open-cap".into(),
+            stream_generation: 0,
+            interrupted_for_approval: false,
+            terminated_for_budget: false,
+            subagent_report: None,
+            upstream_message: None,
+            provider_final_result: None,
+            fresh_runner_retry: None,
+            handoff_restart: None,
+        };
+
+        apply_dispatched_task_success_update(&mut task, &outcome, &[], 10);
+        assert_eq!(task.status, TaskStatus::Blocked);
+        assert_eq!(
+            task.completion_contract
+                .as_ref()
+                .map(|contract| contract.open_completion_attempts),
+            Some(1)
+        );
+
+        apply_dispatched_task_success_update(&mut task, &outcome, &[], 11);
+        assert_eq!(task.status, TaskStatus::Blocked);
+        assert_eq!(
+            task.completion_contract
+                .as_ref()
+                .map(|contract| contract.open_completion_attempts),
+            Some(2)
+        );
+
+        apply_dispatched_task_success_update(&mut task, &outcome, &[], 12);
+        assert_eq!(task.status, TaskStatus::AwaitingApproval);
+        assert_eq!(
+            task.awaiting_approval_id.as_deref(),
+            Some("open-completion-contract:contract-open-cap")
+        );
+        assert!(task
+            .blocked_reason
+            .as_deref()
+            .unwrap_or_default()
+            .contains("after 3 attempts"));
+    }
+
+    #[test]
+    fn goal_step_dispatch_budget_escalates_after_twelve_finishes() {
+        let mut task = terminal_notification_test_task(
+            "goal-step-dispatch-budget",
+            "Keep working the step",
+            TaskStatus::InProgress,
+            Vec::new(),
+        );
+        task.source = "goal_run".to_string();
+        task.completed_at = None;
+        task.completion_contract = Some(TaskCompletionContract::default());
+        let outcome = SendMessageOutcome {
+            thread_id: "thread-goal-step-dispatch-budget".into(),
+            stream_generation: 0,
+            interrupted_for_approval: false,
+            terminated_for_budget: false,
+            subagent_report: None,
+            upstream_message: None,
+            provider_final_result: None,
+            fresh_runner_retry: None,
+            handoff_restart: None,
+        };
+        let active_children = ["child-1".to_string()];
+
+        for finish in 1..GOAL_STEP_DISPATCH_FINISH_LIMIT {
+            apply_dispatched_task_success_update(
+                &mut task,
+                &outcome,
+                &active_children,
+                finish as u64,
+            );
+            assert_eq!(task.status, TaskStatus::Blocked);
+            assert_eq!(
+                task.completion_contract
+                    .as_ref()
+                    .map(|contract| contract.dispatch_finish_attempts),
+                Some(finish)
+            );
+        }
+
+        apply_dispatched_task_success_update(
+            &mut task,
+            &outcome,
+            &active_children,
+            GOAL_STEP_DISPATCH_FINISH_LIMIT as u64,
+        );
+        assert_eq!(task.status, TaskStatus::AwaitingApproval);
+        assert_eq!(
+            task.awaiting_approval_id.as_deref(),
+            Some("goal-step-dispatch-budget:goal-step-dispatch-budget")
+        );
+        assert_eq!(
+            task.completion_contract
+                .as_ref()
+                .map(|contract| contract.dispatch_finish_attempts),
+            Some(GOAL_STEP_DISPATCH_FINISH_LIMIT)
+        );
+    }
+
+    #[test]
+    fn auth_configuration_is_a_recoverable_goal_pause() {
+        let message = format!(
+            "invalid API key{}{}",
+            crate::agent::llm_client::UPSTREAM_DIAGNOSTICS_MARKER,
+            serde_json::json!({
+                "class": "auth_configuration",
+                "summary": "invalid API key",
+                "diagnostics": {}
+            })
+        );
+        assert_eq!(
+            recoverable_goal_pause_reason(&message),
+            Some(RecoverableGoalPauseReason::AuthConfiguration)
+        );
+
+        let mut task = terminal_notification_test_task(
+            "auth-fail",
+            "Call the provider",
+            TaskStatus::InProgress,
+            Vec::new(),
+        );
+        task.max_retries = 3;
+        task.retry_count = 0;
+        task.completed_at = None;
+        apply_dispatched_task_failure_update(&mut task, &message, 1_000);
+        assert_eq!(task.status, TaskStatus::Failed);
+        assert_eq!(task.retry_count, 1);
     }
 
     #[tokio::test]

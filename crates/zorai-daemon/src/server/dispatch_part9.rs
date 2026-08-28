@@ -173,8 +173,16 @@ pub(crate) async fn dispatch_part9(
             framed.send(msg).await?;
         }
 
-        ClientMessage::AgentStatisticsQuery { window } => {
-            match agent.history.get_agent_statistics(window).await {
+        ClientMessage::AgentStatisticsQuery {
+            window,
+            session_limit,
+            session_offset,
+        } => {
+            match agent
+                .history
+                .get_agent_statistics(window, session_limit, session_offset)
+                .await
+            {
                 Ok(snapshot) => {
                     framed
                         .send(DaemonMessage::AgentStatisticsResponse {

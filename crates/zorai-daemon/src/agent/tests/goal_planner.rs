@@ -634,6 +634,50 @@ async fn fail_goal_run_advances_active_thread_and_execution_thread_list() {
 }
 
 #[tokio::test]
+async fn fail_goal_run_cancels_related_live_tasks() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let goal_run_id = "goal-fail-cancels-orphan";
+    engine
+        .goal_runs
+        .lock()
+        .await
+        .push_back(sample_goal_run(goal_run_id));
+
+    let mut orphan = sample_completed_goal_task(goal_run_id, "task-orphan-step", "goal_run");
+    orphan.status = TaskStatus::InProgress;
+    orphan.progress = 40;
+    orphan.completed_at = None;
+    orphan.result = None;
+    engine
+        .history
+        .upsert_agent_task(&orphan)
+        .await
+        .expect("persist orphan task");
+    engine.tasks.lock().await.push_back(orphan.clone());
+
+    engine
+        .fail_goal_run(
+            goal_run_id,
+            "goal cancelled after replan budget",
+            "goal-run",
+            None,
+        )
+        .await;
+
+    let live = engine
+        .tasks
+        .lock()
+        .await
+        .iter()
+        .find(|task| task.id == orphan.id)
+        .cloned()
+        .expect("orphan task should remain visible after goal failure");
+    assert_eq!(live.status, TaskStatus::Cancelled);
+}
+
+#[tokio::test]
 async fn enqueue_goal_run_step_marks_supervised_task_as_awaiting_approval_before_dispatch() {
     let root = tempdir().expect("temp dir");
     let manager = SessionManager::new_test(root.path()).await;
@@ -986,7 +1030,7 @@ async fn dispatcher_pauses_goal_run_on_transient_planning_transport_failure() {
 }
 
 #[tokio::test]
-async fn handle_goal_run_step_failure_preserves_planner_owner_profile_when_replan_request_fails() {
+async fn handle_goal_run_step_failure_preserves_planner_owner_profile_when_retrying_same_step() {
     let root = tempdir().expect("temp dir");
     let manager = SessionManager::new_test(root.path()).await;
     let mut config = AgentConfig::default();
@@ -997,11 +1041,16 @@ async fn handle_goal_run_step_failure_preserves_planner_owner_profile_when_repla
     config.auto_retry = false;
     config.max_retries = 0;
     config.max_tool_loops = 1;
-    config.base_url = "http://127.0.0.1:9/v1".to_string();
     let expected_provider = config.provider.clone();
     let expected_model = config.model.clone();
     let expected_reasoning = Some(config.reasoning_effort.clone());
     let engine = AgentEngine::new_test(manager, config.clone(), root.path()).await;
+    let expected_owner = runtime_owner_profile(
+        crate::agent::agent_identity::MAIN_AGENT_NAME,
+        &expected_provider,
+        &expected_model,
+        expected_reasoning.as_deref(),
+    );
 
     let goal_run_id = "goal-replan-failure-owner";
     let mut goal_run = sample_goal_run_with_kind(
@@ -1013,71 +1062,20 @@ async fn handle_goal_run_step_failure_preserves_planner_owner_profile_when_repla
     goal_run.current_step_index = 0;
     goal_run.current_step_title = Some("step-1".to_string());
     goal_run.current_step_kind = Some(GoalRunStepKind::Command);
+    goal_run.planner_owner_profile = Some(expected_owner.clone());
     engine.goal_runs.lock().await.push_back(goal_run.clone());
 
-    let failed_task = AgentTask {
-        id: "task-replan-owner".to_string(),
-        title: "failed step".to_string(),
-        description: "failed step".to_string(),
-        status: TaskStatus::Failed,
-        priority: TaskPriority::Normal,
-        progress: 0,
-        created_at: now_millis(),
-        started_at: Some(now_millis().saturating_sub(5_000)),
-        completed_at: Some(now_millis()),
-        error: Some("managed command failed permanently".to_string()),
-        result: None,
-        thread_id: Some("thread-replan-owner".to_string()),
-        source: "goal_run".to_string(),
-        notify_on_complete: false,
-        notify_channels: Vec::new(),
-        dependencies: Vec::new(),
-        command: None,
-        session_id: None,
-        goal_run_id: Some(goal_run_id.to_string()),
-        goal_run_title: Some(goal_run.title.clone()),
-        goal_step_id: Some("step-1".to_string()),
-        goal_step_title: Some("step-1".to_string()),
-        parent_task_id: None,
-        parent_thread_id: None,
-        runtime: "daemon".to_string(),
-        retry_count: 0,
-        max_retries: 0,
-        next_retry_at: None,
-        scheduled_at: None,
-        blocked_reason: None,
-        awaiting_approval_id: None,
-        policy_fingerprint: None,
-        approval_expires_at: None,
-        containment_scope: None,
-        compensation_status: None,
-        compensation_summary: None,
-        lane_id: None,
-        last_error: Some("managed command failed permanently".to_string()),
-        logs: Vec::new(),
-        completion_contract: None,
-        tool_whitelist: None,
-        tool_blacklist: None,
-        context_budget_tokens: None,
-        context_overflow_action: None,
-        termination_conditions: None,
-        success_criteria: None,
-        max_duration_secs: None,
-        supervisor_config: None,
-        override_provider: None,
-        override_model: None,
-        override_api_transport: None,
-        override_system_prompt: None,
-        sub_agent_def_id: None,
-    };
+    let mut failed_task = sample_completed_goal_task(goal_run_id, "task-replan-owner", "goal_run");
+    failed_task.status = TaskStatus::Failed;
+    failed_task.progress = 0;
+    failed_task.error = Some("managed command failed permanently".to_string());
+    failed_task.last_error = failed_task.error.clone();
+    failed_task.thread_id = Some("thread-replan-owner".to_string());
 
-    let result = engine
+    engine
         .handle_goal_run_step_failure(goal_run_id, &failed_task)
-        .await;
-    assert!(
-        result.is_err(),
-        "replan should fail against a dead endpoint"
-    );
+        .await
+        .expect("same-step retry should not require a replan LLM call");
 
     let persisted = engine
         .history
@@ -1086,21 +1084,18 @@ async fn handle_goal_run_step_failure_preserves_planner_owner_profile_when_repla
         .expect("goal runs should be readable from history")
         .into_iter()
         .find(|goal_run| goal_run.id == goal_run_id)
-        .expect("goal run should still exist after failed replan");
-    let planner_owner = persisted
-        .planner_owner_profile
-        .as_ref()
-        .expect("failed replan should retain planner attribution");
+        .expect("goal run should still exist after same-step retry");
     assert_eq!(
-        planner_owner,
-        &runtime_owner_profile(
-            crate::agent::agent_identity::MAIN_AGENT_NAME,
-            &expected_provider,
-            &expected_model,
-            expected_reasoning.as_deref()
-        )
+        persisted.planner_owner_profile.as_ref(),
+        Some(&expected_owner)
     );
     assert_eq!(persisted.status, GoalRunStatus::Running);
+    assert_eq!(persisted.steps[0].status, GoalRunStepStatus::Pending);
+    assert_eq!(persisted.steps.len(), 1);
+    assert!(persisted
+        .step_failure_history
+        .iter()
+        .any(|entry| entry.contains("managed command failed permanently")));
 }
 
 #[tokio::test]
@@ -1718,6 +1713,22 @@ async fn write_step_completion_marker(engine: &AgentEngine, goal_run_id: &str, s
         .expect("write step completion marker");
 }
 
+async fn write_step_blocked_marker(engine: &AgentEngine, goal_run_id: &str, step_index: usize) {
+    let path = crate::agent::goal_dossier::goal_step_blocked_marker_path(
+        &engine.data_dir,
+        goal_run_id,
+        step_index,
+    );
+    if let Some(parent) = path.parent() {
+        tokio::fs::create_dir_all(parent)
+            .await
+            .expect("create marker parent dir");
+    }
+    tokio::fs::write(&path, format!("step {} blocked\n", step_index + 1))
+        .await
+        .expect("write step blocked marker");
+}
+
 #[test]
 fn goal_step_completion_marker_path_uses_human_step_number() {
     let marker =
@@ -1725,6 +1736,16 @@ fn goal_step_completion_marker_path_uses_human_step_number() {
     assert_eq!(
         marker.to_string_lossy(),
         ".zorai/goals/goal-marker/inventory/execution/step-1-complete.md"
+    );
+}
+
+#[test]
+fn goal_step_blocked_marker_path_uses_human_step_number() {
+    let marker =
+        crate::agent::goal_dossier::goal_step_blocked_marker_relative_path("goal-marker", 0);
+    assert_eq!(
+        marker.to_string_lossy(),
+        ".zorai/goals/goal-marker/inventory/execution/step-1-blocked.md"
     );
 }
 
@@ -3114,6 +3135,86 @@ async fn handle_goal_run_step_completion_records_dossier_report_and_advance_deci
 }
 
 #[tokio::test]
+async fn handle_goal_run_step_completion_pauses_after_residual_blocked_marker() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let goal_run_id = "goal-step-blocked-marker";
+
+    let mut goal_run = sample_goal_run_with_kind(
+        goal_run_id,
+        GoalRunStepKind::Command,
+        "Select a candidate or stop honestly",
+    );
+    goal_run.steps[0].status = GoalRunStepStatus::InProgress;
+    goal_run.steps[0].task_id = Some("task-step-blocked".to_string());
+    goal_run.steps.push(GoalRunStep {
+        id: "step-2".to_string(),
+        position: 1,
+        title: "step-2".to_string(),
+        instructions: "freeze the candidate".to_string(),
+        kind: GoalRunStepKind::Research,
+        success_criteria: "candidate frozen".to_string(),
+        session_id: None,
+        status: GoalRunStepStatus::Pending,
+        task_id: None,
+        summary: None,
+        error: None,
+        started_at: None,
+        completed_at: None,
+    });
+    engine.goal_runs.lock().await.push_back(goal_run);
+
+    let completed_task = sample_completed_goal_task(goal_run_id, "task-step-blocked", "goal_run");
+    write_step_blocked_marker(&engine, goal_run_id, 0).await;
+
+    engine
+        .handle_goal_run_step_completion(goal_run_id, &completed_task)
+        .await
+        .expect("implementation completion should queue mandatory review");
+
+    let review_task = engine
+        .tasks
+        .lock()
+        .await
+        .iter()
+        .find(|task| task.source == "goal_verification")
+        .cloned()
+        .expect("review task should exist");
+    let mut completed_review = review_task.clone();
+    completed_review.status = TaskStatus::Completed;
+    completed_review.result = Some("no honest candidate".to_string());
+    write_goal_step_review_record(
+        &engine,
+        &completed_review,
+        GoalStepReviewVerdict::Pass,
+        "residual block accepted",
+    )
+    .await;
+
+    engine
+        .handle_goal_run_step_completion(goal_run_id, &completed_review)
+        .await
+        .expect("blocked-marker completion should pause for an operator decision");
+
+    let updated = engine
+        .get_goal_run(goal_run_id)
+        .await
+        .expect("goal run should still exist");
+    assert_eq!(updated.status, GoalRunStatus::Paused);
+    assert_eq!(updated.steps[0].status, GoalRunStepStatus::Completed);
+    assert_eq!(updated.current_step_index, 1);
+    assert_eq!(
+        updated
+            .dossier
+            .as_ref()
+            .and_then(|dossier| dossier.latest_resume_decision.as_ref())
+            .map(|decision| decision.action),
+        Some(GoalResumeAction::Pause)
+    );
+}
+
+#[tokio::test]
 async fn handle_goal_run_step_completion_does_not_advance_with_incomplete_current_step_todos() {
     let root = tempdir().expect("temp dir");
     let manager = SessionManager::new_test(root.path()).await;
@@ -4313,48 +4414,10 @@ async fn enqueue_goal_run_step_starts_debate_session_for_debate_kind() {
 }
 
 #[tokio::test]
-async fn handle_goal_run_step_failure_surfaces_strained_replan_summary_guidance() {
+async fn handle_goal_run_step_failure_retries_same_step_instead_of_auto_replan() {
     let root = tempdir().expect("temp dir");
     let manager = SessionManager::new_test(root.path()).await;
-    let recorded_bodies =
-        std::sync::Arc::new(std::sync::Mutex::new(std::collections::VecDeque::new()));
-    let mut config = AgentConfig::default();
-    config.provider = "openai".to_string();
-    config.base_url = crate::agent::tests::spawn_goal_recording_server(
-        recorded_bodies,
-        serde_json::json!({
-            "title": "Recovery plan",
-            "summary": "Retry with the normal recovery flow.",
-            "steps": [
-                {
-                    "title": "Narrow the failing command",
-                    "instructions": "Reduce scope and retry the command.",
-                    "kind": "command",
-                    "success_criteria": "command succeeds",
-                    "session_id": null,
-                    "llm_confidence": "likely",
-                    "llm_confidence_rationale": "bounded retry"
-                }
-            ],
-            "rejected_alternatives": ["Alternative A: repeat the same broad command"]
-        })
-        .to_string(),
-    )
-    .await;
-    config.model = "gpt-4o-mini".to_string();
-    config.api_key = "test-key".to_string();
-    config.api_transport = ApiTransport::ChatCompletions;
-    config.auto_retry = false;
-    config.max_retries = 0;
-    config.max_tool_loops = 1;
-    let engine = AgentEngine::new_test(manager, config, root.path()).await;
-
-    {
-        let mut model = engine.operator_model.write().await;
-        model.cognitive_style.message_count = 1;
-        model.operator_satisfaction.score = 0.18;
-        model.operator_satisfaction.label = "strained".to_string();
-    }
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
 
     let goal_run_id = "goal-strained-replan-summary";
     let mut goal_run = sample_goal_run_with_kind(
@@ -4366,104 +4429,69 @@ async fn handle_goal_run_step_failure_surfaces_strained_replan_summary_guidance(
     goal_run.current_step_index = 0;
     goal_run.current_step_title = Some("step-1".to_string());
     goal_run.current_step_kind = Some(GoalRunStepKind::Command);
-    engine.goal_runs.lock().await.push_back(goal_run.clone());
+    engine.goal_runs.lock().await.push_back(goal_run);
 
-    let failed_task = AgentTask {
-        id: "task-strained-replan".to_string(),
-        title: "failed step".to_string(),
-        description: "failed step".to_string(),
-        status: TaskStatus::Failed,
-        priority: TaskPriority::Normal,
-        progress: 0,
-        created_at: now_millis(),
-        started_at: Some(now_millis().saturating_sub(5_000)),
-        completed_at: Some(now_millis()),
-        error: Some("managed command failed permanently".to_string()),
-        result: None,
-        thread_id: Some("thread-strained-replan".to_string()),
-        source: "goal_run".to_string(),
-        notify_on_complete: false,
-        notify_channels: Vec::new(),
-        dependencies: Vec::new(),
-        command: None,
-        session_id: None,
-        goal_run_id: Some(goal_run_id.to_string()),
-        goal_run_title: Some(goal_run.title.clone()),
-        goal_step_id: Some("step-1".to_string()),
-        goal_step_title: Some("step-1".to_string()),
-        parent_task_id: None,
-        parent_thread_id: None,
-        runtime: "daemon".to_string(),
-        retry_count: 0,
-        max_retries: 0,
-        next_retry_at: None,
-        scheduled_at: None,
-        blocked_reason: None,
-        awaiting_approval_id: None,
-        policy_fingerprint: None,
-        approval_expires_at: None,
-        containment_scope: None,
-        compensation_status: None,
-        compensation_summary: None,
-        lane_id: None,
-        last_error: Some("managed command failed permanently".to_string()),
-        logs: Vec::new(),
-        completion_contract: None,
-        tool_whitelist: None,
-        tool_blacklist: None,
-        context_budget_tokens: None,
-        context_overflow_action: None,
-        termination_conditions: None,
-        success_criteria: None,
-        max_duration_secs: None,
-        supervisor_config: None,
-        override_provider: None,
-        override_model: None,
-        override_api_transport: None,
-        override_system_prompt: None,
-        sub_agent_def_id: None,
-    };
+    let mut failed_task =
+        sample_completed_goal_task(goal_run_id, "task-strained-replan", "goal_run");
+    failed_task.status = TaskStatus::Failed;
+    failed_task.progress = 0;
+    failed_task.error = Some("managed command failed permanently".to_string());
+    failed_task.last_error = failed_task.error.clone();
+    failed_task.thread_id = Some("thread-strained-replan".to_string());
 
     engine
         .handle_goal_run_step_failure(goal_run_id, &failed_task)
         .await
-        .expect("replan should succeed");
+        .expect("same-step retry should succeed without calling the planner");
 
     let updated = engine
         .get_goal_run(goal_run_id)
         .await
-        .expect("goal run should exist after replan");
-    let summary = updated
-        .reflection_summary
-        .as_deref()
-        .expect("replan summary should be surfaced");
-    assert!(summary.contains("Meta-cognitive intervention:"));
-    assert!(summary.contains("Conservative execution mode:"));
-    assert!(summary.contains("prefer proven tools"));
-    assert!(summary.contains("keep iteration bounds short"));
-    let dossier = updated
-        .dossier
-        .expect("replan should preserve dossier state");
+        .expect("goal run should exist after same-step retry");
+    assert_eq!(updated.status, GoalRunStatus::Running);
+    assert_eq!(updated.current_step_index, 0);
+    assert_eq!(updated.steps.len(), 1);
+    assert_eq!(updated.steps[0].status, GoalRunStepStatus::Pending);
+    assert!(updated.reflection_summary.is_none());
+    assert!(updated
+        .step_failure_history
+        .iter()
+        .any(|entry| entry.contains("managed command failed permanently")));
+}
+
+#[tokio::test]
+async fn handle_goal_run_step_failure_pauses_when_step_task_is_cancelled() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let goal_run_id = "goal-cancelled-step-pause";
+    let mut goal_run =
+        sample_goal_run_with_kind(goal_run_id, GoalRunStepKind::Command, "Select a candidate");
+    goal_run.current_step_index = 0;
+    engine.goal_runs.lock().await.push_back(goal_run);
+
+    let mut cancelled = sample_completed_goal_task(goal_run_id, "task-cancelled-step", "goal_run");
+    cancelled.status = TaskStatus::Cancelled;
+    cancelled.progress = 0;
+    cancelled.result = None;
+
+    engine
+        .handle_goal_run_step_failure(goal_run_id, &cancelled)
+        .await
+        .expect("cancelled step should pause for an operator decision");
+
+    let updated = engine
+        .get_goal_run(goal_run_id)
+        .await
+        .expect("goal run should exist after cancel pause");
+    assert_eq!(updated.status, GoalRunStatus::Paused);
     assert_eq!(
-        dossier
-            .latest_resume_decision
+        updated
+            .dossier
             .as_ref()
-            .expect("replan should record resume decision")
-            .action,
-        GoalResumeAction::Replan
-    );
-    assert_eq!(
-        dossier.units[0]
-            .report
-            .as_ref()
-            .expect("failed unit should capture a report")
-            .state,
-        GoalProjectionState::Failed
-    );
-    assert_eq!(dossier.units[0].status, GoalProjectionState::Failed);
-    assert_eq!(
-        dossier.units[0].summary.as_deref(),
-        Some("managed command failed permanently")
+            .and_then(|dossier| dossier.latest_resume_decision.as_ref())
+            .map(|decision| decision.action),
+        Some(GoalResumeAction::Pause)
     );
 }
 

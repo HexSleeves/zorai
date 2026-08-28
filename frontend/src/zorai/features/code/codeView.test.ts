@@ -69,3 +69,52 @@ describe("CodeView controller stability contract", () => {
     expect(emptyStateSource).toContain("NOOP_ROOT_SELECTED");
   });
 });
+
+describe("CodeRail action surface", () => {
+  const source = readSource("./CodeView.tsx");
+
+  it("renders open file, open folder, and recent buttons inside zorai-code-project", () => {
+    expect(source).toContain('className="zorai-code-project"');
+    expect(source).toContain('className="zorai-code-project-actions"');
+    expect(source).toContain('aria-label="Open file"');
+    expect(source).toContain('aria-label="Open folder"');
+    expect(source).toContain('aria-label="Open recent folder"');
+  });
+
+  it("emits rail actions through the codeRailActions bus", () => {
+    expect(source).toContain('emitCodeRailAction({ kind: "open-file" })');
+    expect(source).toContain('emitCodeRailAction({ kind: "open-folder" })');
+    expect(source).toContain('emitCodeRailAction({ kind: "open-recent", root })');
+  });
+
+  it("subscribes CodeView to the bus so rail buttons reach the mounted Code view", () => {
+    expect(source).toContain("subscribeCodeRailActions(");
+    expect(source).toContain('action.kind === "open-folder"');
+    expect(source).toContain('action.kind === "open-recent"');
+    expect(source).toContain('action.kind === "open-file"');
+  });
+
+  it("uses the existing workspaceSelectFolder flow for open-folder", () => {
+    expect(source).toContain("bridge.workspaceSelectFolder()");
+    expect(source).toContain('handleRootSelected(selection.root, "picker")');
+  });
+
+  it("uses the existing workspaceOpen re-validation for open-recent", () => {
+    expect(source).toContain("bridge.workspaceOpen(action.root)");
+    expect(source).toContain('handleRootSelected(validated, "picker")');
+  });
+
+  it("requests external file edits via workspaceEditorRequestStore with the external flag", () => {
+    expect(source).toContain('requestFileView(localId, selection.path, "edit", { external: true })');
+  });
+
+  it("lists recent roots from codeWorkspaceBindingStore, current first, capped at 10", () => {
+    expect(source).toContain("Object.keys(threadsByRoot)");
+    expect(source).toContain("slice(0, 10)");
+    expect(source).toContain("root === lastRoot");
+  });
+
+  it("exposes closeRoot for pruning recent entries", () => {
+    expect(source).toContain("closeRoot(root)");
+  });
+});

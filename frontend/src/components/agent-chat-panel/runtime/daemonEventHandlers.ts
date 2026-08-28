@@ -12,6 +12,10 @@ import {
   appendDaemonSystemMessage,
   normalizeBridgePayload,
 } from "./daemonHelpers";
+import {
+  clearPendingUnboundThreadBind,
+  isPendingUnboundThreadBind,
+} from "./newThreadTargetAgent";
 
 export function handleThreadTitleUpdatedEvent({ event }: { event: any }) {
   const threadId = typeof event?.thread_id === "string" ? event.thread_id : "";
@@ -108,9 +112,13 @@ export function handleThreadCreatedEvent({
   const isOurBoundThread = currentDaemonId === event.thread_id;
   const isOurUnboundLocalThread = Boolean(currentLocalId)
     && currentDaemonId === null
-    && pendingGatewayMessages.length === 0;
+    && pendingGatewayMessages.length === 0
+    && isPendingUnboundThreadBind(currentLocalId);
 
   if (isOurBoundThread || isOurUnboundLocalThread) {
+    if (isOurUnboundLocalThread) {
+      clearPendingUnboundThreadBind();
+    }
     daemonThreadIdRef.current = event.thread_id;
     if (currentLocalId) {
       setThreadDaemonId(currentLocalId, event.thread_id);

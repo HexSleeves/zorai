@@ -107,6 +107,16 @@ function registerCoreIpcHandlers(ipcMain, options) {
         const validated = await workspaceService.openWorkspace(selection.filePaths[0]);
         return { canceled: false, root: validated };
     });
+    ipcMain.handle('workspace-select-file', async () => {
+        const selection = await dialog.showOpenDialog({
+            title: 'Open File',
+            properties: ['openFile'],
+        });
+        if (!selection || selection.canceled !== false || !Array.isArray(selection.filePaths) || selection.filePaths.length === 0) {
+            return { canceled: true, path: null };
+        }
+        return { canceled: false, path: selection.filePaths[0] };
+    });
     ipcMain.handle('workspace-list-directory', (_event, rootPath, relativePath, runtimeOptions) => workspaceService.listWorkspaceDirectory(rootPath, relativePath, runtimeOptions));
     ipcMain.handle('workspace-stat-file', (_event, rootPath, relativePath) => workspaceService.statWorkspaceFile(rootPath, relativePath));
     ipcMain.handle('workspace-read-file', (_event, rootPath, relativePath, runtimeOptions) => workspaceService.readWorkspaceFile(rootPath, relativePath, runtimeOptions));
@@ -126,7 +136,11 @@ function registerCoreIpcHandlers(ipcMain, options) {
     ipcMain.handle('workspace-git-review-worktree', (_event, rootPath, worktreePath) => workspaceService.workspaceGitReviewWorktree(rootPath, worktreePath));
     ipcMain.handle('workspace-git-integrate-worktree', (_event, rootPath, worktreePath, commitHashes) => workspaceService.workspaceGitIntegrateWorktree(rootPath, worktreePath, commitHashes));
     ipcMain.handle('workspace-git-stage', (_event, rootPath, relativePath) => workspaceService.workspaceGitStage(rootPath, relativePath));
+    ipcMain.handle('workspace-git-stage-many', (_event, rootPath, relativePaths) => workspaceService.workspaceGitStageMany(rootPath, relativePaths));
     ipcMain.handle('workspace-git-unstage', (_event, rootPath, relativePath) => workspaceService.workspaceGitUnstage(rootPath, relativePath));
+    ipcMain.handle('workspace-git-unstage-many', (_event, rootPath, relativePaths) => workspaceService.workspaceGitUnstageMany(rootPath, relativePaths));
+    ipcMain.handle('workspace-git-branches', (_event, rootPath) => workspaceService.workspaceGitBranches(rootPath));
+    ipcMain.handle('workspace-git-checkout', (_event, rootPath, branch) => workspaceService.workspaceGitCheckout(rootPath, branch));
     ipcMain.handle('workspace-git-discard', (_event, rootPath, relativePath) => workspaceService.workspaceGitDiscard(rootPath, relativePath));
     ipcMain.handle('workspace-git-hunks', (_event, rootPath, relativePath, runtimeOptions) => workspaceService.workspaceGitHunks(rootPath, relativePath, runtimeOptions));
     ipcMain.handle('workspace-git-apply-hunk', (_event, rootPath, relativePath, hunkId, action) => workspaceService.workspaceGitApplyHunk(rootPath, relativePath, hunkId, action));

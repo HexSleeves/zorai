@@ -1766,10 +1766,10 @@ mod memory_graph;
 mod metacognition;
 mod offloaded_payloads;
 mod operator_profile;
+pub(crate) mod prompt_queue;
 mod protocol_candidates;
 mod protocol_registry;
 mod provenance;
-pub(crate) mod prompt_queue;
 mod routines;
 mod row_mapping;
 mod schema;
@@ -1810,6 +1810,12 @@ use task_enums::*;
 
 pub(crate) fn now_ts() -> u64 {
     integrity_helpers::now_ts()
+}
+
+pub(crate) const SQLITE_SAFE_VARIABLE_LIMIT: usize = 900;
+
+pub(crate) fn sqlite_in_chunk_size(bind_copies: usize) -> usize {
+    (SQLITE_SAFE_VARIABLE_LIMIT / bind_copies.max(1)).max(1)
 }
 
 #[cfg(test)]

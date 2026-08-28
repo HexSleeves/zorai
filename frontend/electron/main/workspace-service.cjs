@@ -442,6 +442,18 @@ async function workspaceGitHistory(rootPath, options = {}) {
     const gitRoot = await resolveGitRoot(root);
     if (!gitRoot) return [];
     const limit = Math.max(1, Math.min(Number(options.limit) || 50, 200));
+    if (options.graph) {
+        const graphLimit = Math.max(1, Math.min(Number(options.limit) || 200, 1000));
+        const { stdout } = await execFileAsync('git', ['log', '--all', '--topo-order', `-${graphLimit}`, '--date=iso-strict', '--format=%H%x00%h%x00%an%x00%ad%x00%s%x00%P%x00%D'], { cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER });
+        return stdout.split(/\r?\n/).filter(Boolean).map((line) => {
+            const [hash, shortHash, author, date, subject, parentsRaw, refsRaw] = line.split('\0');
+            return {
+                hash, shortHash, author, date, subject,
+                parents: parentsRaw ? parentsRaw.split(' ').filter(Boolean) : [],
+                refs: refsRaw ? refsRaw.split(', ').map((ref) => ref.replace(/^HEAD -> /, '')).filter(Boolean) : [],
+            };
+        });
+    }
     const { stdout } = await execFileAsync('git', ['log', `-${limit}`, '--date=iso-strict', '--format=%H%x00%h%x00%an%x00%ad%x00%s'], { cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER });
     return stdout.split(/\r?\n/).filter(Boolean).map((line) => {
         const [hash, shortHash, author, date, subject] = line.split('\0');
@@ -471,6 +483,42 @@ async function workspaceGitConflicts(rootPath) {
     if (!gitRoot) return [];
     const { stdout } = await execFileAsync('git', ['diff', '--name-only', '--diff-filter=U'], { cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER });
     return stdout.split(/\r?\n/).filter(Boolean).map((filePath) => ({ path: filePath }));
+}
+
+const GIT_BRANCH_NAME_PATTERN = /^(?!-)[\w./^~-]+$/;
+
+async function workspaceGitBranches(rootPath) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) return [];
+    const { stdout } = await execFileAsync('git', ['branch', '--format=%(refname:short)%00%(HEAD)'], {
+        cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER,
+    });
+    return stdout.split(/\r?\n/).filter(Boolean).map((line) => {
+        const [name, headMarker] = line.split('\0');
+        return { name, isCurrent: headMarker === '*' };
+    }).sort((left, right) => (right.isCurrent ? 1 : 0) - (left.isCurrent ? 1 : 0) || left.name.localeCompare(right.name));
+}
+
+async function workspaceGitCheckout(rootPath, branch) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) throw workspaceError('WORKSPACE_NOT_GIT_REPOSITORY', 'Workspace is not inside a Git repository.');
+    const normalized = typeof branch === 'string' ? branch.trim() : '';
+    if (!normalized || !GIT_BRANCH_NAME_PATTERN.test(normalized)) {
+        throw workspaceError('WORKSPACE_BRANCH_INVALID', 'Invalid branch name.');
+    }
+    await execFileAsync('git', ['checkout', '--', normalized], {
+        cwd: gitRoot, encoding: 'utf8', timeout: 30000, maxBuffer: GIT_MAX_BUFFER,
+    }).catch(async (error) => {
+        // `git checkout -- <name>` fails for branch names that shadow paths; retry bare.
+        await execFileAsync('git', ['checkout', normalized], {
+            cwd: gitRoot, encoding: 'utf8', timeout: 30000, maxBuffer: GIT_MAX_BUFFER,
+        }).catch(() => {
+            throw workspaceError('WORKSPACE_CHECKOUT_FAILED', error?.stderr?.trim() || error?.message || 'Git checkout failed.');
+        });
+    });
+    return { overview: await workspaceGitOverview(root), status: await workspaceGitStatus(root) };
 }
 
 async function workspaceGitOverview(rootPath) {
@@ -535,6 +583,26 @@ async function workspaceGitStage(rootPath, relativePath) {
     return workspaceGitStatus(root);
 }
 
+function relativeGitPathsOrThrow(rootPath, relativePaths) {
+    const root = canonicalWorkspaceRoot(rootPath);
+    if (!Array.isArray(relativePaths) || relativePaths.length === 0) {
+        throw workspaceError('WORKSPACE_PATH_INVALID', 'No paths provided.');
+    }
+    const resolved = relativePaths.map((relativePath) => resolveWorkspacePath(root, relativePath, { allowMissing: true }));
+    return { root, resolved };
+}
+
+async function workspaceGitStageMany(rootPath, relativePaths) {
+    const { root, resolved } = relativeGitPathsOrThrow(rootPath, relativePaths);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) throw workspaceError('WORKSPACE_NOT_GIT_REPOSITORY', 'Workspace is not inside a Git repository.');
+    const gitPaths = resolved.map((entry) => path.relative(gitRoot, entry.absolutePath));
+    await execFileAsync('git', ['add', '--', ...gitPaths], {
+        cwd: gitRoot, encoding: 'utf8', timeout: 30000, maxBuffer: GIT_MAX_BUFFER,
+    });
+    return workspaceGitStatus(root);
+}
+
 async function workspaceGitUnstage(rootPath, relativePath) {
     const root = canonicalWorkspaceRoot(rootPath);
     const gitRoot = await resolveGitRoot(root);
@@ -546,6 +614,21 @@ async function workspaceGitUnstage(rootPath, relativePath) {
     }).catch(async () => {
         await execFileAsync('git', ['reset', 'HEAD', '--', gitPath], {
             cwd: gitRoot, encoding: 'utf8', timeout: 10000, maxBuffer: GIT_MAX_BUFFER,
+        });
+    });
+    return workspaceGitStatus(root);
+}
+
+async function workspaceGitUnstageMany(rootPath, relativePaths) {
+    const { root, resolved } = relativeGitPathsOrThrow(rootPath, relativePaths);
+    const gitRoot = await resolveGitRoot(root);
+    if (!gitRoot) throw workspaceError('WORKSPACE_NOT_GIT_REPOSITORY', 'Workspace is not inside a Git repository.');
+    const gitPaths = resolved.map((entry) => path.relative(gitRoot, entry.absolutePath));
+    await execFileAsync('git', ['restore', '--staged', '--', ...gitPaths], {
+        cwd: gitRoot, encoding: 'utf8', timeout: 30000, maxBuffer: GIT_MAX_BUFFER,
+    }).catch(async () => {
+        await execFileAsync('git', ['reset', 'HEAD', '--', ...gitPaths], {
+            cwd: gitRoot, encoding: 'utf8', timeout: 30000, maxBuffer: GIT_MAX_BUFFER,
         });
     });
     return workspaceGitStatus(root);
@@ -730,6 +813,8 @@ module.exports = {
     parseGitWorktreeList,
     parseUnifiedDiffHunks,
     workspaceGitApplyHunk,
+    workspaceGitBranches,
+    workspaceGitCheckout,
     workspaceGitCommit,
     workspaceGitCommitDetail,
     workspaceGitConflicts,
@@ -745,7 +830,9 @@ module.exports = {
     workspaceGitRemoveWorktree,
     workspaceGitReviewWorktree,
     workspaceGitStage,
+    workspaceGitStageMany,
     workspaceGitStatus,
     workspaceGitUnstage,
+    workspaceGitUnstageMany,
     writeWorkspaceFile,
 };

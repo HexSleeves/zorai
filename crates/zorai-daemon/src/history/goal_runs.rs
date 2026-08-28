@@ -1,6 +1,22 @@
 use super::*;
 use crate::agent::types::{GoalAgentAssignment, GoalRuntimeOwnerProfile};
 
+fn thread_id_four_copy_chunk_size(extra_binds: usize) -> usize {
+    ((SQLITE_SAFE_VARIABLE_LIMIT.saturating_sub(extra_binds)) / 4).max(1)
+}
+
+fn four_copy_thread_id_binds(thread_ids: &[String]) -> (String, Vec<db::Value>) {
+    let placeholders = std::iter::repeat("?")
+        .take(thread_ids.len())
+        .collect::<Vec<_>>()
+        .join(", ");
+    let mut values = Vec::with_capacity(thread_ids.len() * 4);
+    for _ in 0..4 {
+        values.extend(thread_ids.iter().cloned().map(db::Value::Text));
+    }
+    (placeholders, values)
+}
+
 /// Narrow projection of `goal_runs` columns the concierge welcome actually
 /// reads. Lets `concierge_goal_context` skip the heavy 46-column scan +
 /// JSON-blob deserialization that `list_goal_runs_filtered` performs.
@@ -825,51 +841,62 @@ impl HistoryStore {
         if thread_ids.is_empty() {
             return Ok(None);
         }
-
-        let placeholders = std::iter::repeat("?")
-            .take(thread_ids.len())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let sql = format!(
-            "SELECT id, status, title, updated_at, \
-                                                (SELECT title FROM goal_run_steps \
-                                                    WHERE goal_run_steps.goal_run_id = goal_runs.id \
-                                                        AND goal_run_steps.deleted_at IS NULL \
-                                                        AND goal_run_steps.ordinal = goal_runs.current_step_index \
-                                                    LIMIT 1) AS current_step_title, \
-                    plan_summary \
-               FROM goal_runs \
-              WHERE deleted_at IS NULL \
-                AND (thread_id IN ({placeholders}) \
-                  OR root_thread_id IN ({placeholders}) \
-                  OR active_thread_id IN ({placeholders}) \
-                  OR EXISTS ( \
-                     SELECT 1 \
-                       FROM json_each(COALESCE(goal_runs.execution_thread_ids_json, '[]')) \
-                      WHERE json_each.value IN ({placeholders}) \
-                  )) \
-              ORDER BY updated_at DESC, id DESC \
-              LIMIT 1"
-        );
-        let mut values = Vec::with_capacity(thread_ids.len() * 4);
-        for _ in 0..4 {
-            values.extend(thread_ids.iter().cloned().map(db::Value::Text));
+        let chunk_size = thread_id_four_copy_chunk_size(0);
+        let mut best: Option<GoalRunStatusReplyRef> = None;
+        for chunk in thread_ids.chunks(chunk_size) {
+            let (placeholders, values) = four_copy_thread_id_binds(chunk);
+            let sql = format!(
+                "SELECT id, status, title, updated_at, \
+                                                    (SELECT title FROM goal_run_steps \
+                                                        WHERE goal_run_steps.goal_run_id = goal_runs.id \
+                                                            AND goal_run_steps.deleted_at IS NULL \
+                                                            AND goal_run_steps.ordinal = goal_runs.current_step_index \
+                                                        LIMIT 1) AS current_step_title, \
+                        plan_summary \
+                   FROM goal_runs \
+                  WHERE deleted_at IS NULL \
+                    AND (thread_id IN ({placeholders}) \
+                      OR root_thread_id IN ({placeholders}) \
+                      OR active_thread_id IN ({placeholders}) \
+                      OR EXISTS ( \
+                         SELECT 1 \
+                           FROM json_each(COALESCE(goal_runs.execution_thread_ids_json, '[]')) \
+                          WHERE json_each.value IN ({placeholders}) \
+                      )) \
+                  ORDER BY updated_at DESC, id DESC \
+                  LIMIT 1"
+            );
+            let row = self
+                .read_db
+                .query_opt(&sql, db::Params::Positional(values))
+                .await?;
+            let candidate = row
+                .map(|row| -> anyhow::Result<GoalRunStatusReplyRef> {
+                    Ok(GoalRunStatusReplyRef {
+                        id: row.get(0)?,
+                        status: parse_goal_run_status(&row.get::<String>(1)?),
+                        title: row.get(2)?,
+                        updated_at: row.get::<i64>(3)?.max(0) as u64,
+                        current_step_title: row.get(4)?,
+                        plan_summary: row.get(5)?,
+                    })
+                })
+                .transpose()?;
+            if let Some(candidate) = candidate {
+                let take = match &best {
+                    Some(current) => {
+                        candidate.updated_at > current.updated_at
+                            || (candidate.updated_at == current.updated_at
+                                && candidate.id > current.id)
+                    }
+                    None => true,
+                };
+                if take {
+                    best = Some(candidate);
+                }
+            }
         }
-        let row = self
-            .read_db
-            .query_opt(&sql, db::Params::Positional(values))
-            .await?;
-        row.map(|row| -> anyhow::Result<GoalRunStatusReplyRef> {
-            Ok(GoalRunStatusReplyRef {
-                id: row.get(0)?,
-                status: parse_goal_run_status(&row.get::<String>(1)?),
-                title: row.get(2)?,
-                updated_at: row.get::<i64>(3)?.max(0) as u64,
-                current_step_title: row.get(4)?,
-                plan_summary: row.get(5)?,
-            })
-        })
-        .transpose()
+        Ok(best)
     }
 
     pub(crate) async fn list_goal_run_status_refs_for_statuses(
@@ -1183,35 +1210,36 @@ impl HistoryStore {
         if thread_ids.is_empty() {
             return Ok(Vec::new());
         }
-
-        let placeholders = std::iter::repeat("?")
-            .take(thread_ids.len())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let sql = format!(
-            "SELECT id FROM goal_runs \
-             WHERE deleted_at IS NULL \
-               AND (thread_id IN ({placeholders}) \
-                 OR root_thread_id IN ({placeholders}) \
-                 OR active_thread_id IN ({placeholders}) \
-                 OR EXISTS ( \
-                    SELECT 1 \
-                      FROM json_each(COALESCE(goal_runs.execution_thread_ids_json, '[]')) \
-                     WHERE json_each.value IN ({placeholders}) \
-                 )) \
-             ORDER BY updated_at DESC, id DESC"
-        );
-        let mut values = Vec::with_capacity(thread_ids.len() * 4);
-        for _ in 0..4 {
-            values.extend(thread_ids.iter().cloned().map(db::Value::Text));
+        let chunk_size = thread_id_four_copy_chunk_size(0);
+        let mut goal_run_ids = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for chunk in thread_ids.chunks(chunk_size) {
+            let (placeholders, values) = four_copy_thread_id_binds(chunk);
+            let sql = format!(
+                "SELECT id FROM goal_runs \
+                 WHERE deleted_at IS NULL \
+                   AND (thread_id IN ({placeholders}) \
+                     OR root_thread_id IN ({placeholders}) \
+                     OR active_thread_id IN ({placeholders}) \
+                     OR EXISTS ( \
+                        SELECT 1 \
+                          FROM json_each(COALESCE(goal_runs.execution_thread_ids_json, '[]')) \
+                         WHERE json_each.value IN ({placeholders}) \
+                     )) \
+                 ORDER BY updated_at DESC, id DESC"
+            );
+            for row in self
+                .read_db
+                .query(&sql, db::Params::Positional(values))
+                .await?
+                .iter()
+            {
+                let goal_run_id = row.get::<String>(0)?;
+                if seen.insert(goal_run_id.clone()) {
+                    goal_run_ids.push(goal_run_id);
+                }
+            }
         }
-        let goal_run_ids = self
-            .read_db
-            .query(&sql, db::Params::Positional(values))
-            .await?
-            .iter()
-            .map(|row| row.get::<String>(0))
-            .collect::<anyhow::Result<Vec<_>>>()?;
 
         let mut goal_runs = Vec::with_capacity(goal_run_ids.len());
         for goal_run_id in goal_run_ids {
@@ -1219,6 +1247,12 @@ impl HistoryStore {
                 goal_runs.push(goal_run);
             }
         }
+        goal_runs.sort_by(|left, right| {
+            right
+                .updated_at
+                .cmp(&left.updated_at)
+                .then(right.id.cmp(&left.id))
+        });
         Ok(goal_runs)
     }
 
@@ -1235,34 +1269,43 @@ impl HistoryStore {
         if thread_ids.is_empty() {
             return Ok(Vec::new());
         }
-
-        let placeholders = std::iter::repeat("?")
-            .take(thread_ids.len())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let sql = format!(
-            "SELECT id, status, updated_at, thread_id, root_thread_id, active_thread_id, execution_thread_ids_json \
-             FROM goal_runs \
-             WHERE deleted_at IS NULL \
-               AND (thread_id IN ({placeholders}) \
-                 OR root_thread_id IN ({placeholders}) \
-                 OR active_thread_id IN ({placeholders}) \
-                 OR EXISTS ( \
-                    SELECT 1 \
-                      FROM json_each(COALESCE(goal_runs.execution_thread_ids_json, '[]')) \
-                     WHERE json_each.value IN ({placeholders}) \
-                 )) \
-             ORDER BY updated_at DESC, id DESC"
-        );
-        let mut values = Vec::with_capacity(thread_ids.len() * 4);
-        for _ in 0..4 {
-            values.extend(thread_ids.iter().cloned().map(db::Value::Text));
+        let chunk_size = thread_id_four_copy_chunk_size(0);
+        let mut merged = Vec::new();
+        let mut seen = std::collections::HashSet::new();
+        for chunk in thread_ids.chunks(chunk_size) {
+            let (placeholders, values) = four_copy_thread_id_binds(chunk);
+            let sql = format!(
+                "SELECT id, status, updated_at, thread_id, root_thread_id, active_thread_id, execution_thread_ids_json \
+                 FROM goal_runs \
+                 WHERE deleted_at IS NULL \
+                   AND (thread_id IN ({placeholders}) \
+                     OR root_thread_id IN ({placeholders}) \
+                     OR active_thread_id IN ({placeholders}) \
+                     OR EXISTS ( \
+                        SELECT 1 \
+                          FROM json_each(COALESCE(goal_runs.execution_thread_ids_json, '[]')) \
+                         WHERE json_each.value IN ({placeholders}) \
+                     )) \
+                 ORDER BY updated_at DESC, id DESC"
+            );
+            let rows = self
+                .read_db
+                .query(&sql, db::Params::Positional(values))
+                .await?;
+            for row in rows.iter() {
+                let entry = map_goal_run_thread_ref_row_db(row)?;
+                if seen.insert(entry.id.clone()) {
+                    merged.push(entry);
+                }
+            }
         }
-        let rows = self
-            .read_db
-            .query(&sql, db::Params::Positional(values))
-            .await?;
-        rows.iter().map(map_goal_run_thread_ref_row_db).collect()
+        merged.sort_by(|left, right| {
+            right
+                .updated_at
+                .cmp(&left.updated_at)
+                .then(right.id.cmp(&left.id))
+        });
+        Ok(merged)
     }
 
     pub(crate) async fn list_goal_run_thread_refs_for_statuses(
@@ -1326,50 +1369,63 @@ impl HistoryStore {
         if thread_ids.is_empty() {
             return Ok(None);
         }
-        let placeholders = std::iter::repeat("?")
-            .take(thread_ids.len())
-            .collect::<Vec<_>>()
-            .join(", ");
-        let status_filter = if statuses.is_empty() {
-            String::new()
-        } else {
-            let status_placeholders = std::iter::repeat("?")
-                .take(statuses.len())
-                .collect::<Vec<_>>()
-                .join(", ");
-            format!(" AND status IN ({status_placeholders})")
-        };
-        let sql = format!(
-            "SELECT id, updated_at FROM goal_runs \
-             WHERE deleted_at IS NULL{status_filter} \
-               AND (thread_id IN ({placeholders}) \
-                 OR root_thread_id IN ({placeholders}) \
-                 OR active_thread_id IN ({placeholders}) \
-                 OR EXISTS ( \
-                    SELECT 1 \
-                      FROM json_each(COALESCE(goal_runs.execution_thread_ids_json, '[]')) \
-                     WHERE json_each.value IN ({placeholders}) \
-                 )) \
-             ORDER BY updated_at DESC, id DESC \
-             LIMIT 1"
-        );
-        let mut values = Vec::with_capacity(statuses.len() + thread_ids.len() * 4);
-        values.extend(
-            statuses
-                .iter()
-                .map(|status| db::Value::Text(goal_run_status_to_str(*status).to_string())),
-        );
-        for _ in 0..4 {
-            values.extend(thread_ids.iter().cloned().map(db::Value::Text));
+        let chunk_size = thread_id_four_copy_chunk_size(statuses.len());
+        let mut best: Option<(String, u64)> = None;
+        for chunk in thread_ids.chunks(chunk_size) {
+            let (placeholders, mut values) = four_copy_thread_id_binds(chunk);
+            let status_filter = if statuses.is_empty() {
+                String::new()
+            } else {
+                let status_placeholders = std::iter::repeat("?")
+                    .take(statuses.len())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!(" AND status IN ({status_placeholders})")
+            };
+            let sql = format!(
+                "SELECT id, updated_at FROM goal_runs \
+                 WHERE deleted_at IS NULL{status_filter} \
+                   AND (thread_id IN ({placeholders}) \
+                     OR root_thread_id IN ({placeholders}) \
+                     OR active_thread_id IN ({placeholders}) \
+                     OR EXISTS ( \
+                        SELECT 1 \
+                          FROM json_each(COALESCE(goal_runs.execution_thread_ids_json, '[]')) \
+                         WHERE json_each.value IN ({placeholders}) \
+                     )) \
+                 ORDER BY updated_at DESC, id DESC \
+                 LIMIT 1"
+            );
+            let mut binds = Vec::with_capacity(statuses.len() + values.len());
+            binds.extend(
+                statuses
+                    .iter()
+                    .map(|status| db::Value::Text(goal_run_status_to_str(*status).to_string())),
+            );
+            binds.append(&mut values);
+            let row = self
+                .read_db
+                .query_opt(&sql, db::Params::Positional(binds))
+                .await?;
+            let candidate = row
+                .map(|row| -> anyhow::Result<(String, u64)> {
+                    Ok((row.get::<String>(0)?, row.get::<i64>(1)?.max(0) as u64))
+                })
+                .transpose()?;
+            if let Some(candidate) = candidate {
+                let take = match &best {
+                    Some((id, updated_at)) => {
+                        candidate.1 > *updated_at
+                            || (candidate.1 == *updated_at && candidate.0 > *id)
+                    }
+                    None => true,
+                };
+                if take {
+                    best = Some(candidate);
+                }
+            }
         }
-        let row = self
-            .read_db
-            .query_opt(&sql, db::Params::Positional(values))
-            .await?;
-        row.map(|row| -> anyhow::Result<(String, u64)> {
-            Ok((row.get::<String>(0)?, row.get::<i64>(1)?.max(0) as u64))
-        })
-        .transpose()
+        Ok(best)
     }
 
     pub(crate) async fn list_active_goal_runs_for_start_request(

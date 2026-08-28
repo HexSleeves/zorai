@@ -1,7 +1,7 @@
 use super::*;
 use crate::agent::llm_client::CopilotInitiator;
 use crate::agent::provider_resolution::apply_provider_model_override;
-use crate::agent::task_worktree::{IsolatedTaskSessionPlan, select_isolated_task_session};
+use crate::agent::task_worktree::{select_isolated_task_session, IsolatedTaskSessionPlan};
 use std::path::Path;
 use zorai_protocol::SecurityLevel;
 
@@ -2336,10 +2336,17 @@ mod tests {
         let sub_agents = vec![SubAgentDefinition {
             id: "kimus".to_string(),
             name: "Kimus".to_string(),
-            description: "Executor".to_string(),
-            system_prompt: "Handle delegated work.".to_string(),
             provider: "alibaba-token-plan".to_string(),
             model: "qwen3.8-max-preview".to_string(),
+            base_url: None,
+            role: None,
+            system_prompt: Some("Handle delegated work.".to_string()),
+            tool_whitelist: None,
+            tool_blacklist: None,
+            context_budget_tokens: None,
+            context_window_tokens: Some(128_000),
+            max_duration_secs: None,
+            supervisor_config: None,
             enabled: true,
             builtin: false,
             immutable_identity: false,
@@ -2348,12 +2355,11 @@ mod tests {
             protected_reason: None,
             reasoning_effort: Some("medium".to_string()),
             api_transport: None,
-            context_window_tokens: Some(128_000),
+            claude_permission_mode: None,
             openrouter_provider_order: Vec::new(),
             openrouter_provider_ignore: Vec::new(),
             openrouter_allow_fallbacks: None,
             huggingface_provider: None,
-            base_url: None,
             created_at: 1,
         }];
         let profile = ThreadExecutionProfile {

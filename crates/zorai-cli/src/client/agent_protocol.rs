@@ -41,6 +41,8 @@ pub(super) enum AgentBridgeCommand {
         #[serde(default, deserialize_with = "deserialize_context_messages")]
         context_messages: Option<Vec<zorai_protocol::AgentDbMessage>>,
         #[serde(default)]
+        content_blocks_json: Option<String>,
+        #[serde(default)]
         target_agent_id: Option<String>,
     },
     InternalDelegate {
@@ -514,6 +516,10 @@ pub(super) enum AgentBridgeCommand {
     #[serde(rename = "agent-get-statistics")]
     GetStatistics {
         window: zorai_protocol::AgentStatisticsWindow,
+        #[serde(default)]
+        session_limit: Option<usize>,
+        #[serde(default)]
+        session_offset: Option<usize>,
     },
     EnqueuePrompt {
         thread_id: String,

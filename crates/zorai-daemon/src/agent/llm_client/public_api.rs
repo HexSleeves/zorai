@@ -672,7 +672,50 @@ fn audio_format_from_mime_type(mime_type: &str) -> Option<&'static str> {
 fn api_content_to_json(content: &ApiContent) -> serde_json::Value {
     match content {
         ApiContent::Text(text) => serde_json::Value::String(text.clone()),
-        ApiContent::Blocks(blocks) => serde_json::Value::Array(blocks.clone()),
+        ApiContent::Blocks(blocks) => {
+            serde_json::Value::Array(map_api_blocks_to_chat_completions_blocks(blocks))
+        }
+    }
+}
+
+fn map_api_blocks_to_chat_completions_blocks(
+    blocks: &[serde_json::Value],
+) -> Vec<serde_json::Value> {
+    blocks
+        .iter()
+        .filter_map(map_api_block_to_chat_completions_block)
+        .collect()
+}
+
+fn map_api_block_to_chat_completions_block(block: &serde_json::Value) -> Option<serde_json::Value> {
+    let block_type = block
+        .get("type")
+        .and_then(|value| value.as_str())
+        .unwrap_or_default();
+    match block_type {
+        "input_text" | "text" => block
+            .get("text")
+            .and_then(|value| value.as_str())
+            .map(|text| {
+                serde_json::json!({
+                    "type": "text",
+                    "text": text,
+                })
+            }),
+        "input_image" | "image_url" => {
+            let image_url = block.get("image_url")?;
+            let url = image_url
+                .get("url")
+                .and_then(|value| value.as_str())
+                .or_else(|| image_url.as_str())
+                .filter(|url| !url.trim().is_empty())?;
+            Some(serde_json::json!({
+                "type": "image_url",
+                "image_url": { "url": url },
+            }))
+        }
+        "input_audio" => Some(block.clone()),
+        _ => None,
     }
 }
 

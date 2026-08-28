@@ -211,11 +211,42 @@ describe("thread filters", () => {
     }).map((item) => item.id)).toEqual(["review-thread"]);
   });
 
+  it("keeps custom subagent threads when the picker tab is a registry id", () => {
+    const named = thread({ id: "ds-thread", agent_name: "DeepSeekorrr" });
+    const other = thread({ id: "glmus-thread", agent_name: "glmus" });
+    const svarog = thread({ id: "svarog-thread", agent_name: "Svarog" });
+    const subAgents = [
+      { id: "subagent-1777065727944", name: "DeepSeekorrr", builtin: false } as SubAgentDefinition,
+      { id: "subagent-1781800311670", name: "glmus", builtin: false } as SubAgentDefinition,
+    ];
+
+    expect(filterThreads([named, other, svarog], {
+      tab: "agent:subagent-1777065727944",
+      dateFilter: "all",
+      fromDate: "",
+      toDate: "",
+      goalThreadIds: new Set(),
+      subAgents,
+    }).map((item) => item.id)).toEqual(["ds-thread"]);
+
+    expect(filterThreads([named, other, svarog], {
+      tab: "agent:subagent-1781800311670",
+      dateFilter: "all",
+      fromDate: "",
+      toDate: "",
+      goalThreadIds: new Set(),
+      subAgents,
+    }).map((item) => item.id)).toEqual(["glmus-thread"]);
+  });
+
   it("maps agent-backed tabs to daemon agent filters", () => {
     expect(daemonAgentFilterForThreadTab("svarog")).toBe("svarog");
     expect(daemonAgentFilterForThreadTab("rarog")).toBe("rarog");
     expect(daemonAgentFilterForThreadTab("weles")).toBe("weles");
     expect(daemonAgentFilterForThreadTab("agent:domowoj")).toBe("domowoj");
+    expect(daemonAgentFilterForThreadTab("agent:subagent-1777065727944", [
+      { id: "subagent-1777065727944", name: "DeepSeekorrr", builtin: false } as SubAgentDefinition,
+    ])).toBe("DeepSeekorrr");
     expect(daemonAgentFilterForThreadTab("goals")).toBeNull();
     expect(daemonAgentFilterForThreadTab("workspace")).toBeNull();
     expect(daemonAgentFilterForThreadTab("internal")).toBeNull();

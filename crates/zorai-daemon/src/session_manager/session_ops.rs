@@ -7,7 +7,7 @@ use crate::governance::{
 };
 use crate::history::{ApprovalRecordRow, AuditEntryRow, GovernanceEvaluationRow};
 use serde_json::json;
-use zorai_protocol::ApprovalPayload;
+use zorai_protocol::{ApprovalPayload, SecurityLevel};
 
 fn transition_kind_str(kind: &TransitionKind) -> &'static str {
     match kind {
@@ -829,6 +829,24 @@ impl SessionManager {
 
         let workspace_id = session.lock().await.workspace_id().map(ToOwned::to_owned);
         let execution_id = format!("exec_{}", Uuid::new_v4());
+        if matches!(request.security_level, SecurityLevel::Yolo) {
+            let (position, snapshot) = queue_with_snapshot(
+                &self.snapshots,
+                &session,
+                workspace_id.clone(),
+                id,
+                execution_id.clone(),
+                request,
+                "yolo pre-execution checkpoint",
+            )
+            .await?;
+            return Ok(DaemonMessage::ManagedCommandQueued {
+                id,
+                execution_id,
+                position,
+                snapshot,
+            });
+        }
         let governance_input = governance_input_for_managed_command(
             &execution_id,
             &request,

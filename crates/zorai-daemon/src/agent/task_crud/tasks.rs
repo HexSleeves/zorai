@@ -751,6 +751,32 @@ impl AgentEngine {
         true
     }
 
+    pub(in crate::agent) async fn cancel_task_and_descendants(&self, task_id: &str) {
+        let children = self
+            .list_tasks_filtered(&crate::history::AgentTaskListQuery {
+                id: None,
+                status: None,
+                statuses: Vec::new(),
+                source: None,
+                thread_id: None,
+                thread_ids: Vec::new(),
+                goal_run_id: None,
+                parent_task_id: Some(task_id.to_string()),
+                awaiting_approval_id: None,
+                supervisor_config_present: false,
+                exclude_terminal_statuses: true,
+                order_by_recent_activity_desc: false,
+                limit: None,
+                ids: Vec::new(),
+                parent_task_ids: Vec::new(),
+            })
+            .await;
+        for child in children {
+            Box::pin(self.cancel_task_and_descendants(&child.id)).await;
+        }
+        let _ = self.cancel_task(task_id).await;
+    }
+
     pub async fn handle_task_approval_resolution(
         &self,
         approval_id: &str,

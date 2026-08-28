@@ -744,6 +744,30 @@ pub struct ModelStatisticsRow {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DailyStatisticsRow {
+    pub day_start: u64,
+    pub day_key: String,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub total_tokens: u64,
+    pub cost_usd: f64,
+    pub request_count: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SessionStatisticsRow {
+    pub thread_id: String,
+    pub title: String,
+    pub updated_at: u64,
+    pub provider_models: Vec<String>,
+    pub request_count: u64,
+    pub input_tokens: u64,
+    pub output_tokens: u64,
+    pub total_tokens: u64,
+    pub cost_usd: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct AgentStatisticsSnapshot {
     pub window: AgentStatisticsWindow,
     pub generated_at: u64,
@@ -753,6 +777,16 @@ pub struct AgentStatisticsSnapshot {
     pub models: Vec<ModelStatisticsRow>,
     pub top_models_by_tokens: Vec<ModelStatisticsRow>,
     pub top_models_by_cost: Vec<ModelStatisticsRow>,
+    #[serde(default)]
+    pub daily: Vec<DailyStatisticsRow>,
+    #[serde(default)]
+    pub sessions: Vec<SessionStatisticsRow>,
+    #[serde(default)]
+    pub session_total: u64,
+    #[serde(default)]
+    pub session_limit: u64,
+    #[serde(default)]
+    pub session_offset: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

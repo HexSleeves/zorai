@@ -1,7 +1,7 @@
 use super::part1::*;
 use super::*;
 use crate::agent::provider_auth_store;
-use crate::agent::types::{AgentMessage, MessageRole};
+use crate::agent::types::{AgentContentBlock, AgentMessage, MessageRole};
 use crate::test_support::EnvGuard;
 use std::collections::VecDeque;
 use std::sync::atomic::AtomicUsize;
@@ -180,6 +180,82 @@ fn chat_completion_messages_null_assistant_content_for_tool_calls() {
     assert_eq!(serialized[1]["role"], "assistant");
     assert!(serialized[1]["content"].is_null());
     assert_eq!(serialized[1]["tool_calls"][0]["id"], "call_1");
+}
+
+#[test]
+fn chat_completions_rewrites_responses_image_block_types() {
+    let mut message = AgentMessage::user("hi", 1);
+    message.content_blocks = vec![
+        AgentContentBlock::text("hi"),
+        AgentContentBlock::Image {
+            url: None,
+            data_url: Some("data:image/png;base64,abc".to_string()),
+            mime_type: Some("image/png".to_string()),
+        },
+    ];
+
+    let api_messages = messages_to_api_format(&[message]);
+    let ApiContent::Blocks(internal_blocks) = &api_messages[0].content else {
+        panic!("image attachments must stay structured in the shared API format");
+    };
+    assert_eq!(internal_blocks[0]["type"], "input_text");
+    assert_eq!(internal_blocks[1]["type"], "input_image");
+    assert_eq!(internal_blocks[1]["image_url"], "data:image/png;base64,abc");
+
+    let responses = messages_to_responses_input(PROVIDER_ID_OPENAI, &api_messages, None);
+    assert_eq!(responses[0]["content"][0]["type"], "input_text");
+    assert_eq!(responses[0]["content"][1]["type"], "input_image");
+
+    let serialized =
+        build_chat_completion_messages("system prompt", &api_messages).expect("serialize");
+    assert_eq!(
+        serialized[1]["content"],
+        serde_json::json!([
+            {"type": "text", "text": "hi"},
+            {
+                "type": "image_url",
+                "image_url": {"url": "data:image/png;base64,abc"}
+            }
+        ])
+    );
+}
+
+#[test]
+fn chat_completions_keeps_already_valid_multimodal_blocks() {
+    let messages = vec![ApiMessage {
+        role: "user".to_string(),
+        content: ApiContent::Blocks(vec![
+            serde_json::json!({"type": "text", "text": "describe this"}),
+            serde_json::json!({
+                "type": "image_url",
+                "image_url": {"url": "https://example.test/cat.png"}
+            }),
+            serde_json::json!({
+                "type": "input_audio",
+                "input_audio": {"data": "abc", "format": "wav"}
+            }),
+        ]),
+        reasoning: None,
+        tool_call_id: None,
+        name: None,
+        tool_calls: None,
+    }];
+
+    let serialized = build_chat_completion_messages("system prompt", &messages).expect("serialize");
+    assert_eq!(
+        serialized[1]["content"],
+        serde_json::json!([
+            {"type": "text", "text": "describe this"},
+            {
+                "type": "image_url",
+                "image_url": {"url": "https://example.test/cat.png"}
+            },
+            {
+                "type": "input_audio",
+                "input_audio": {"data": "abc", "format": "wav"}
+            }
+        ])
+    );
 }
 
 #[test]

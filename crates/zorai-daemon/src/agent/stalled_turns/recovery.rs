@@ -67,18 +67,15 @@ impl AgentEngine {
         }
         let prior_user_message = match self
             .history
-            .latest_user_message_content(&candidate.thread_id)
+            .latest_recovery_prompt_content(&candidate.thread_id)
             .await
         {
             Ok(Some(content)) => content,
-            Ok(None) => anyhow::bail!(
-                "thread {} has no prior user message for stalled-turn retry",
-                candidate.thread_id
-            ),
+            Ok(None) => "Continue the current goal step: current step".to_string(),
             Err(error) => {
                 return Err(error).with_context(|| {
                     format!(
-                        "failed to query persisted prior user message for stalled-turn retry on thread {}",
+                        "failed to query persisted recovery prompt for stalled-turn retry on thread {}",
                         candidate.thread_id
                     )
                 });
