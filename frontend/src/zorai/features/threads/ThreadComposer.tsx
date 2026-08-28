@@ -14,6 +14,7 @@ import {
 import type { ComposerAttachment } from "@/components/agent-chat-panel/chat-view/types";
 import { useAgentStore } from "@/lib/agentStore";
 import { useWorkspaceContextStore } from "@/lib/workspaceContextStore";
+import { useComposerDraftStore } from "./composerDraftStore";
 import { useComposerInputHistory } from "./composerInputHistory";
 import { applyComposerTextareaSize } from "./composerTextareaSize";
 import { ThreadComposerQueue } from "./ThreadComposerQueue";
@@ -45,6 +46,8 @@ export function ThreadComposer({
   compact?: boolean;
 } = {}) {
   const runtime = useAgentChatPanelRuntime();
+  const input = useComposerDraftStore((state) => state.input);
+  const setInput = useComposerDraftStore((state) => state.setInput);
   const agentSettings = useAgentStore((state) => state.agentSettings);
   const activeThreadId = useAgentStore((state) => state.activeThreadId);
   const workspaceContext = useWorkspaceContextStore((state) => activeThreadId ? state.byThreadId[activeThreadId] : undefined);
@@ -88,14 +91,14 @@ export function ThreadComposer({
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
   const discardCaptureRef = useRef(false);
-  const history = useComposerInputHistory(runtime.input, runtime.setInput, runtime.inputRef);
-  const budgetNotice = activeThreadBudgetExceededNotice(
+  const history = useComposerInputHistory(input, setInput, runtime.inputRef);
+  const budgetNotice = useMemo(() => activeThreadBudgetExceededNotice(
     runtime.activeThread?.daemonThreadId,
     runtime.messages,
     runtime.spawnedAgentTree,
-  );
+  ), [runtime.activeThread?.daemonThreadId, runtime.messages, runtime.spawnedAgentTree]);
   const queue = useDaemonPromptQueue(runtime.activeThread?.daemonThreadId);
-  const canSend = Boolean(runtime.input.trim() || attachments.length > 0);
+  const canSend = Boolean(input.trim() || attachments.length > 0);
   const assignOwnerDirectly = canAssignComposerOwnerDirectly(runtime.activeThread, runtime.messages.length);
   const ttsAvailable = agentSettings.audio_tts_enabled && Boolean(getBridge()?.agentTextToSpeech);
   const updateAgentSetting = useAgentStore((state) => state.updateAgentSetting);
@@ -130,7 +133,7 @@ export function ThreadComposer({
   useEffect(() => {
     const el = inputRef.current;
     if (el) applyComposerTextareaSize(el);
-  }, [inputRef, runtime.input]);
+  }, [inputRef, input]);
 
   const appendFiles = async (files: File[]) => {
     if (files.length === 0) return;
@@ -140,7 +143,7 @@ export function ThreadComposer({
 
   const sendCurrentInput = async () => {
     if (budgetNotice || isStreamingResponse || targetPending) return;
-    const payload = buildAttachmentSendPayload(runtime.input, attachments);
+    const payload = buildAttachmentSendPayload(input, attachments);
     if (!payload.text && !payload.contentBlocksJson) return;
     setTargetError(null);
 
@@ -164,7 +167,7 @@ export function ThreadComposer({
         return;
       }
       history.remember(payload.text);
-      runtime.setInput("");
+      setInput("");
       setAttachments([]);
       setComposerTarget(targetAfterAcceptedDispatch(composerTarget));
       return;
@@ -185,37 +188,37 @@ export function ThreadComposer({
 
     history.remember(payload.text);
     sendMessage(payload);
-    runtime.setInput("");
+    setInput("");
     setAttachments([]);
   };
 
   const queueCurrentInput = () => {
     if (budgetNotice) return;
-    const payload = buildAttachmentSendPayload(runtime.input, attachments);
+    const payload = buildAttachmentSendPayload(input, attachments);
     if (!payload.text && !payload.contentBlocksJson) return;
     history.remember(payload.text);
     void queue.enqueue(payload).then((ok) => {
       if (!ok) return;
-      runtime.setInput("");
+      setInput("");
       setAttachments([]);
     });
   };
 
   const updateQueuedInput = () => {
     if (!queue.editingId) return;
-    const payload = buildAttachmentSendPayload(runtime.input, attachments);
+    const payload = buildAttachmentSendPayload(input, attachments);
     if (!payload.text && !payload.contentBlocksJson) return;
     history.remember(payload.text);
     void queue.updateQueued(queue.editingId, payload).then((ok) => {
       if (!ok) return;
-      runtime.setInput("");
+      setInput("");
       setAttachments([]);
     });
   };
 
   const startEditQueued = (item: (typeof queue.queuedMessages)[number]) => {
     queue.startEdit(item);
-    runtime.setInput(item.text);
+    setInput(item.text);
     setAttachments([]);
   };
 
@@ -290,7 +293,7 @@ export function ThreadComposer({
           pushToast("Transcription was empty.");
           return;
         }
-        runtime.setInput((current) => (current.trim() ? `${current.trimEnd()} ${transcript}` : transcript));
+        setInput((current) => (current.trim() ? `${current.trimEnd()} ${transcript}` : transcript));
       } catch (error) {
         console.error("speech-to-text failed", error);
         if (!discardCaptureRef.current) {
@@ -410,10 +413,10 @@ export function ThreadComposer({
       <div className="zorai-composer-box">
         <textarea
           ref={inputRef}
-          value={runtime.input}
+          value={input}
           onChange={(event) => {
             history.commit();
-            runtime.setInput(event.target.value);
+            setInput(event.target.value);
             applyComposerTextareaSize(event.currentTarget);
           }}
           onClick={() => history.commit()}
@@ -532,7 +535,7 @@ export function ThreadComposer({
                   aria-label="Cancel edit"
                   onClick={() => {
                     queue.cancelEdit();
-                    runtime.setInput("");
+                    setInput("");
                     setAttachments([]);
                   }}
                 >

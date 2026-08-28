@@ -281,7 +281,7 @@ pub(super) fn build_system_prompt(
              - Before running actions that truly need an existing terminal, call `list_terminals` to discover current live session IDs and CWD.\n\
              - Do not force a `session` argument in normal TUI chat or goal-run turns just because a previous frontend session existed. Omit `session` unless you intentionally target a known live terminal or the operator explicitly asked you to reuse one.\n\
              - When you do target a live terminal, reuse that `session` value across related tool calls so all actions stay in one terminal context.\n\
-                - For long-running terminal work, prefer non-blocking execution: set `wait_for_completion=false` or use `timeout_seconds > 600`, capture the returned `operation_id`, and rely on the background monitor; it will auto-notify this thread with completion status and result. Use `get_operation_status` when you need more details or an explicit status check.\n\
+                - For long-running terminal work, prefer non-blocking execution: set `wait_for_completion=false` or use `timeout_seconds > 600`, capture the returned `operation_id`, and continue other work. This thread auto-resumes when the command finishes. Do not poll `get_operation_status`. If you cannot continue without the result, call `get_operation_status` once with `wait=true`.\n\
              - If a command is still running, timed out while still active, or is waiting for interactive completion, treat that terminal as occupied and switch to another terminal/session before continuing other work.\n\
              - If you need another terminal in the same agent workspace, call `allocate_terminal`, then continue with the returned session ID.\n\
              - If the operator asks to use another terminal, call `list_terminals` again and switch explicitly.\n",
@@ -763,8 +763,8 @@ mod tests {
             None,
         );
 
-        assert!(prompt.contains("will auto-notify this thread"));
-        assert!(prompt.contains("Use `get_operation_status` when you need more details"));
+        assert!(prompt.contains("Do not poll `get_operation_status`"));
+        assert!(prompt.contains("wait=true"));
     }
 
     #[tokio::test]

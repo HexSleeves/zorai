@@ -38,7 +38,14 @@ impl TuiModel {
         ) {
             if matches!(
                 directive.agent_alias.to_ascii_lowercase().as_str(),
-                "swarozyc" | "radogost" | "domowoj" | "swietowit" | "perun" | "mokosh" | "dazhbog"
+                "swarozyc"
+                    | "radogost"
+                    | "domowoj"
+                    | "swietowit"
+                    | "perun"
+                    | "mokosh"
+                    | "dazhbog"
+                    | "rod"
             ) && !self.builtin_persona_configured(&directive.agent_alias)
             {
                 self.open_builtin_persona_prompt_setup_flow(

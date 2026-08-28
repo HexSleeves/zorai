@@ -276,8 +276,6 @@ export function AgentChatPanelChatSurface() {
         <ChatView
           messages={runtime.messages}
           todos={runtime.todos}
-          input={runtime.input}
-          setInput={runtime.setInput}
           inputRef={runtime.inputRef}
           onKeyDown={runtime.handleKeyDown}
           agentSettings={runtime.agentSettings}

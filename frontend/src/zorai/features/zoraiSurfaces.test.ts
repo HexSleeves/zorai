@@ -47,6 +47,20 @@ describe("Zorai feature surfaces", () => {
     expect(threadsSource).toContain("buildDisplayItems(runtime.messages)");
   });
 
+  it("keeps composer draft text out of the shared panel runtime so typing does not rerender the thread", () => {
+    const composerSource = readFeature("./threads/ThreadComposer.tsx");
+    const threadsSource = readFeature("./threads/ThreadsView.tsx");
+    const providerSource = readFeature("../../components/agent-chat-panel/runtime/useAgentChatPanelProviderValue.ts");
+    const runtimeTypes = readFeature("../../components/agent-chat-panel/runtime/types.ts");
+
+    expect(composerSource).toContain("useComposerDraftStore((state) => state.input)");
+    expect(threadsSource).not.toContain("useComposerDraftStore");
+    expect(providerSource).not.toContain('const [input, setInput] = useState("");');
+    expect(providerSource).toContain("useComposerDraftStore.getState().input");
+    expect(runtimeTypes).not.toContain("input: string;");
+    expect(runtimeTypes).not.toContain("setInput:");
+  });
+
   it("portals the workspace Explorer into the Code rail while keeping one workbench owner", () => {
     const codeSource = readFeature("./code/CodeView.tsx");
     const workbenchSource = readFeature("../../components/WorkspaceWorkbench.tsx");

@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAgentStore, type AgentThread, type AgentMessage } from "@/lib/agentStore";
 import { getBridge } from "@/lib/bridge";
@@ -42,7 +42,7 @@ type Props = {
   messages: AgentMessage[];
 };
 
-export function ComposerContextCircle({ thread, messages }: Props) {
+export const ComposerContextCircle = memo(function ComposerContextCircle({ thread, messages }: Props) {
   const agentSettings = useAgentStore((state) => state.agentSettings);
   const conciergeConfig = useAgentStore((state) => state.conciergeConfig);
   const subAgents = useAgentStore((state) => state.subAgents);
@@ -222,4 +222,4 @@ export function ComposerContextCircle({ thread, messages }: Props) {
         : null}
     </div>
   );
-}
+});

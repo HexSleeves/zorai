@@ -424,6 +424,8 @@ pub struct BuiltinSubAgentOverrides {
     pub mokosh: BuiltinPersonaOverrides,
     #[serde(default)]
     pub dazhbog: BuiltinPersonaOverrides,
+    #[serde(default)]
+    pub rod: BuiltinPersonaOverrides,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

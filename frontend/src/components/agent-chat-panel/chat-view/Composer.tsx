@@ -4,6 +4,7 @@ import type { ComposerAttachment } from "./types";
 import { blobToBase64, collectClipboardFiles, collectMediaRecorderBlob, mediaRecorderOptions, readComposerAttachment, readSpeechToTextContent, readSpeechToTextError, stopMediaTracks } from "./composerMedia";
 import { useAgentStore } from "@/lib/agentStore";
 import { applyManagedSecurityLevel, managedSecurityLevels } from "@/zorai/features/threads/threadRuntimeActions";
+import { useComposerDraftStore } from "@/zorai/features/threads/composerDraftStore";
 
 function deriveImageComposerState(input: string): { isImageMode: boolean; displayValue: string } {
   const trimmed = input.trimStart();
@@ -20,8 +21,8 @@ function deriveImageComposerState(input: string): { isImageMode: boolean; displa
 }
 
 export function ChatComposer({
-  input,
-  setInput,
+  input: inputProp,
+  setInput: setInputProp,
   attachments,
   setAttachments,
   inputRef,
@@ -35,8 +36,8 @@ export function ChatComposer({
   onStartGoalRun,
   onUpdateReasoningEffort,
 }: {
-  input: string;
-  setInput: React.Dispatch<React.SetStateAction<string>>;
+  input?: string;
+  setInput?: React.Dispatch<React.SetStateAction<string>>;
   attachments: ComposerAttachment[];
   setAttachments: React.Dispatch<React.SetStateAction<ComposerAttachment[]>>;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -63,6 +64,10 @@ export function ChatComposer({
   onStartGoalRun: () => void;
   onUpdateReasoningEffort: (value: string) => void;
 }) {
+  const storeInput = useComposerDraftStore((state) => state.input);
+  const storeSetInput = useComposerDraftStore((state) => state.setInput);
+  const input = inputProp ?? storeInput;
+  const setInput = setInputProp ?? storeSetInput;
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const managedSecurityLevel = useAgentStore((state) => state.agentSettings.managed_security_level);
   const [dropActive, setDropActive] = useState(false);

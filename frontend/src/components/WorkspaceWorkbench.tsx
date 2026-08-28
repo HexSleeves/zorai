@@ -38,6 +38,7 @@ import { AgentReviewPanel } from "@/zorai/features/code/AgentReviewPanel";
 import { buildReviewPrompt, NO_ISSUES_MARKER, parseReviewFindings, useCodeReviewStore } from "@/zorai/features/code/codeReview";
 import { confirmWorkspaceDiscard, runWorkspaceGitMutation } from "@/zorai/features/code/workspaceGitActions";
 import { loadWorkspaceRootState, loadWorkspaceGitState, runWorkspacePathMutation } from "@/zorai/features/code/workspaceRefresh";
+import { useComposerDraftStore } from "@/zorai/features/threads/composerDraftStore";
 
 const WorkspaceCodeEditor = lazy(() => import("@/components/WorkspaceCodeEditor").then((module) => ({ default: module.WorkspaceCodeEditor })));
 const WorkspaceDiffEditor = lazy(() => import("@/components/WorkspaceCodeEditor").then((module) => ({ default: module.WorkspaceDiffEditor })));
@@ -50,9 +51,8 @@ function statusLabel(entry?: ZoraiWorkspaceGitStatus) {
   return (entry.worktreeStatus.trim() || entry.indexStatus.trim()).slice(0, 1);
 }
 
-export function WorkspaceWorkbench({ openedRoot, agentInputController }: { openedRoot?: string | null; agentInputController?: { input: string; setInput: (value: string) => void } | null } = {}) {
+export function WorkspaceWorkbench({ openedRoot }: { openedRoot?: string | null } = {}) {
   const bridge = getBridge();
-  const agentPanelRuntimeRefForInput = agentInputController ?? null;
   const activeThreadId = useAgentStore((state) => state.activeThreadId);
   const activeDaemonThreadId = useAgentStore((state) => state.threads.find((thread) => thread.id === state.activeThreadId)?.daemonThreadId ?? state.activeThreadId);
   const activeWorkspace = useWorkspaceStore((state) => state.activeWorkspace());
@@ -913,18 +913,14 @@ export function WorkspaceWorkbench({ openedRoot, agentInputController }: { opene
   };
 
   const reviewStateApi = useCodeReviewStore.getState();
-  const agentPanelRuntimeRef = useRef<{ input: string; setInput: (value: string) => void } | null>(agentPanelRuntimeRefForInput);
-  agentPanelRuntimeRef.current = agentPanelRuntimeRefForInput;
   const prefillAgentInput = (text: string, mode: "replace" | "append") => {
     if (!activeThreadId) return;
-    const runtimeAny = agentPanelRuntimeRef.current;
-    if (!runtimeAny) return;
+    const { input, setInput } = useComposerDraftStore.getState();
     if (mode === "replace") {
-      runtimeAny.setInput(text);
+      setInput(text);
       return;
     }
-    const current = typeof runtimeAny.input === "string" ? runtimeAny.input : "";
-    runtimeAny.setInput(current.trim() ? `${current.trimEnd()}\n\n${text}` : text);
+    setInput(input.trim() ? `${input.trimEnd()}\n\n${text}` : text);
   };
 
   const runAgentReview = async (root: string): Promise<string | null> => {

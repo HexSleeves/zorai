@@ -924,13 +924,13 @@ fn get_operation_status_tool_is_exposed_with_expected_schema() {
 
     let description = status_tool.function.description.as_str();
     assert!(
-            description.contains("auto-notify"),
-            "get_operation_status should mention automatic background completion notifications: {description}"
-        );
+        description.contains("Do not poll"),
+        "get_operation_status should forbid polling: {description}"
+    );
     assert!(
-            description.contains("need more details"),
-            "get_operation_status should guide agents to use it for additional details after notification: {description}"
-        );
+        description.contains("wait=true"),
+        "get_operation_status should guide agents to blocking wait instead of polling: {description}"
+    );
 
     let properties = status_tool
         .function
@@ -942,6 +942,14 @@ fn get_operation_status_tool_is_exposed_with_expected_schema() {
     assert!(
         properties.get("operation_id").is_some(),
         "schema should include operation_id"
+    );
+    assert!(
+        properties.get("wait").is_some(),
+        "schema should include wait"
+    );
+    assert!(
+        properties.get("timeout_seconds").is_some(),
+        "schema should include timeout_seconds"
     );
     let required = status_tool
         .function

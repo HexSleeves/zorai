@@ -892,6 +892,14 @@ pub(crate) async fn execute_list_agents(agent: &AgentEngine) -> Result<String> {
             "model": config.builtin_sub_agents.dazhbog.model.clone(),
             "switchable": true
         }),
+        serde_json::json!({
+            "agent": crate::agent::agent_identity::ROD_AGENT_ID,
+            "name": crate::agent::agent_identity::ROD_AGENT_NAME,
+            "kind": "builtin",
+            "provider": config.builtin_sub_agents.rod.provider.clone(),
+            "model": config.builtin_sub_agents.rod.model.clone(),
+            "switchable": true
+        }),
     ];
 
     for sub_agent in agent.list_sub_agents().await {

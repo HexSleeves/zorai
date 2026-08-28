@@ -387,7 +387,11 @@ where
             });
             emit_agent_event(&msg.to_string())?;
         }
-        Some(Ok(DaemonMessage::AgentPromptQueueError { thread_id, message, prompts })) => {
+        Some(Ok(DaemonMessage::AgentPromptQueueError {
+            thread_id,
+            message,
+            prompts,
+        })) => {
             let msg = serde_json::json!({
                 "type": "prompt-queue",
                 "data": {

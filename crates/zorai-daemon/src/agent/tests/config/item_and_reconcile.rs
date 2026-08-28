@@ -458,6 +458,80 @@ async fn prepare_agent_context_window_json_updates_user_subagent_not_main() {
 }
 
 #[tokio::test]
+async fn prepare_agent_context_window_json_accepts_user_subagent_display_name() {
+    let root = tempdir().unwrap();
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+
+    let mut config = engine.get_config().await;
+    config.context_window_tokens = 128_000;
+    config.sub_agents.push(test_user_sub_agent(
+        "subagent-1777065727944",
+        "DeepSeekorrr",
+    ));
+    engine.set_config(config).await;
+
+    let prepared = engine
+        .prepare_agent_context_window_json("DeepSeekorrr", 256_000)
+        .await
+        .expect("display-name subagent context window preparation should succeed");
+
+    assert_eq!(
+        prepared
+            .sub_agents
+            .iter()
+            .find(|entry| entry.id == "subagent-1777065727944")
+            .and_then(|entry| entry.context_window_tokens),
+        Some(256_000)
+    );
+}
+
+#[tokio::test]
+async fn prepare_agent_provider_model_json_accepts_user_subagent_id_or_display_name() {
+    let root = tempdir().unwrap();
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+
+    let mut config = engine.get_config().await;
+    config.api_key = "sk-test".to_string();
+    config.sub_agents.push(test_user_sub_agent(
+        "subagent-1777065727944",
+        "DeepSeekorrr",
+    ));
+    engine.set_config(config).await;
+
+    let by_id = engine
+        .prepare_agent_provider_model_json(
+            "subagent-1777065727944",
+            PROVIDER_ID_OPENAI,
+            "gpt-5.4-mini",
+        )
+        .await
+        .expect("registry id should be a valid provider target");
+    assert_eq!(
+        by_id
+            .sub_agents
+            .iter()
+            .find(|entry| entry.id == "subagent-1777065727944")
+            .map(|entry| entry.model.as_str()),
+        Some("gpt-5.4-mini")
+    );
+
+    let by_name = engine
+        .prepare_agent_provider_model_json("DeepSeekorrr", PROVIDER_ID_OPENAI, "gpt-5.4")
+        .await
+        .expect("display name should be a valid provider target");
+    assert_eq!(
+        by_name
+            .sub_agents
+            .iter()
+            .find(|entry| entry.id == "subagent-1777065727944")
+            .map(|entry| entry.model.as_str()),
+        Some("gpt-5.4")
+    );
+}
+
+#[tokio::test]
 async fn prepare_agent_provider_model_json_updates_new_builtin_persona_overrides() {
     let root = tempdir().unwrap();
     let manager = SessionManager::new_test(root.path()).await;
@@ -491,6 +565,31 @@ async fn prepare_agent_provider_model_json_updates_new_builtin_persona_overrides
     assert!(
         current_json["builtin_sub_agents"]["perun"]["model"].is_null(),
         "runtime config should not be mutated during preparation"
+    );
+}
+
+#[tokio::test]
+async fn prepare_agent_provider_model_json_updates_rod_builtin_persona_overrides() {
+    let root = tempdir().unwrap();
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+
+    let mut config = engine.get_config().await;
+    config.api_key = "sk-test".to_string();
+    engine.set_config(config).await;
+
+    let prepared = engine
+        .prepare_agent_provider_model_json("rod", PROVIDER_ID_OPENAI, "gpt-5.4-mini")
+        .await
+        .expect("rod should be a switchable builtin persona");
+
+    assert_eq!(
+        prepared.builtin_sub_agents.rod.provider.as_deref(),
+        Some(PROVIDER_ID_OPENAI)
+    );
+    assert_eq!(
+        prepared.builtin_sub_agents.rod.model.as_deref(),
+        Some("gpt-5.4-mini")
     );
 }
 

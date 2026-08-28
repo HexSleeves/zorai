@@ -8,7 +8,7 @@ pub(crate) fn add_available_tools_part_a(
     if config.tools.bash {
         tools.push(tool_def(
             tool_names::BASH_COMMAND,
-            "Execute a shell command. Non-quick work (scripts, builds, tests) runs in background and returns `background_task_id`/`operation_id` for polling.",
+            "Execute a shell command. Non-quick work (scripts, builds, tests) runs in background and returns `operation_id`. Do not poll status; call `get_operation_status` once with `wait=true` if you need the result now, otherwise continue and this thread auto-resumes on completion.",
             serde_json::json!({
                 "type": "object",
                 "properties": {
@@ -22,7 +22,7 @@ pub(crate) fn add_available_tools_part_a(
                     "language_hint": { "type": "string", "description": "Optional language hint for validation" },
                     "wait_for_completion": { "type": "boolean", "description": "Wait for quick-command result (default: true); non-quick commands always background" },
                     "timeout_seconds": { "type": "integer", "description": "Quick-command wait timeout (default: 30, max: 600); larger values force background" },
-                    "notify_on_completion": { "type": "boolean", "description": "When backgrounded, automatically resume this thread on completion (default: false). When false the completion is still recorded in the thread for your next turn, but no autonomous turn is started; poll get_operation_status if you need the result sooner. Set true only when you must act on the result immediately." }
+                    "notify_on_completion": { "type": "boolean", "description": "When backgrounded, automatically resume this thread on completion (default: true). Set false only for fire-and-forget work you will not act on. Do not poll get_operation_status; if you need the result before continuing, call get_operation_status with wait=true." }
                 },
                 "required": ["command"]
             }),

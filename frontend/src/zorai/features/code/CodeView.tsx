@@ -337,10 +337,7 @@ export function CodeView({
 
   return boundRoot ? (
     activatingRoot ? <CodeSurfaceSkeleton label={`Opening ${displayRootName(boundRoot)}…`} /> : (
-      <WorkspaceWorkbench
-        openedRoot={boundRoot}
-        agentInputController={{ input: runtime.input, setInput: runtime.setInput }}
-      />
+      <WorkspaceWorkbench openedRoot={boundRoot} />
     )
   ) : (
     <section className="zorai-code-surface zorai-code-surface--empty">

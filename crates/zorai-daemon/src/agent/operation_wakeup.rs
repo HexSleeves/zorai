@@ -17,6 +17,18 @@ struct OperationWakeupPayloadRef {
 }
 
 impl AgentEngine {
+    pub(in crate::agent) async fn claim_operation_wakeup(&self, operation_id: &str) -> bool {
+        let operation_id = operation_id.trim();
+        if operation_id.is_empty() {
+            return false;
+        }
+        self.operation_wakeups
+            .lock()
+            .await
+            .remove(operation_id)
+            .is_some()
+    }
+
     pub(in crate::agent) async fn register_operation_wakeup(
         &self,
         thread_id: &str,

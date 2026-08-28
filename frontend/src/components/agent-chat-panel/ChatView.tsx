@@ -20,12 +20,11 @@ import { ToolEventRow } from "./chat-view/ToolEventRow";
 import type { AgentMessage } from "@/lib/agentStore";
 import type { ChatViewProps, ComposerAttachment } from "./chat-view/types";
 import { buildAttachmentSendPayload } from "./chat-view/composerMedia";
+import { readComposerDraftInput, writeComposerDraftInput } from "@/zorai/features/threads/composerDraftStore";
 
 export function ChatView({
   messages,
   todos,
-  input,
-  setInput,
   inputRef,
   onKeyDown,
   agentSettings,
@@ -63,19 +62,19 @@ export function ChatView({
   const lastPlayedToolTtsCallIdRef = useRef<string | null>(null);
 
   const handleSendClick = () => {
-    const text = input.trim();
+    const text = readComposerDraftInput().trim();
     if (!text && composerAttachments.length === 0) return;
     onSendMessage(buildAttachmentSendPayload(text, composerAttachments));
-    setInput("");
+    writeComposerDraftInput("");
     setComposerAttachments([]);
   };
 
   const handleStartGoalRun = async () => {
-    const text = input.trim();
+    const text = readComposerDraftInput().trim();
     if (!text) return;
     const started = await onStartGoalRun(text);
     if (started) {
-      setInput("");
+      writeComposerDraftInput("");
     }
   };
 
@@ -412,8 +411,6 @@ export function ChatView({
       />
 
       <ChatComposer
-        input={input}
-        setInput={setInput}
         attachments={composerAttachments}
         setAttachments={setComposerAttachments}
         inputRef={inputRef}
