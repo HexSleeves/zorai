@@ -32,10 +32,12 @@ import { useDaemonAgentActions } from "./useDaemonAgentActions";
 import { useDaemonAgentEvents } from "./useDaemonAgentEvents";
 import {
   hydrateDaemonThreadIntoLocalState,
+  beginThreadHistoryReplace,
   loadDaemonThreadPageIntoLocalState,
   reloadDaemonThreadIntoLocalState,
   resolveAbsoluteMessageIndex,
   resolveDaemonOwnedThreadId,
+  threadHistoryReplaceEpoch,
   trimDaemonThreadMessagesToLatestWindow,
 } from "./daemonHelpers";
 import {
@@ -349,9 +351,34 @@ export function useAgentChatPanelProviderValue(): {
   const threadHistoryStack = useAgentStore((state) => state.threadHistoryStack);
   const storeCreateThread = useAgentStore((state) => state.createThread);
   const deleteThread = useAgentStore((state) => state.deleteThread);
-  const setActiveThread = useAgentStore((state) => state.setActiveThread);
-  const openSpawnedThreadInStore = useAgentStore((state) => state.openSpawnedThread);
-  const goBackThread = useAgentStore((state) => state.goBackThread);
+  const storeSetActiveThread = useAgentStore((state) => state.setActiveThread);
+  const storeOpenSpawnedThread = useAgentStore((state) => state.openSpawnedThread);
+  const storeGoBackThread = useAgentStore((state) => state.goBackThread);
+  const setActiveThread = useCallback((id: string | null) => {
+    if (id && id !== useAgentStore.getState().activeThreadId) {
+      beginThreadHistoryReplace(id);
+    }
+    storeSetActiveThread(id);
+  }, [storeSetActiveThread]);
+  const openSpawnedThreadInStore = useCallback((fromThreadId: string, toThreadId: string) => {
+    if (toThreadId !== useAgentStore.getState().activeThreadId) {
+      beginThreadHistoryReplace(toThreadId);
+    }
+    storeOpenSpawnedThread(fromThreadId, toThreadId);
+  }, [storeOpenSpawnedThread]);
+  const goBackThread = useCallback(() => {
+    const state = useAgentStore.getState();
+    for (let index = state.threadHistoryStack.length - 1; index >= 0; index -= 1) {
+      const previousId = state.threadHistoryStack[index];
+      if (previousId && state.threads.some((thread) => thread.id === previousId)) {
+        if (previousId !== state.activeThreadId) {
+          beginThreadHistoryReplace(previousId);
+        }
+        break;
+      }
+    }
+    storeGoBackThread();
+  }, [storeGoBackThread]);
   const addMessage = useAgentStore((state) => state.addMessage);
   const deleteMessageFromStore = useAgentStore((state) => state.deleteMessage);
   const updateLastAssistantMessage = useAgentStore((state) => state.updateLastAssistantMessage);
@@ -396,7 +423,6 @@ export function useAgentChatPanelProviderValue(): {
   const daemonLocalThreadRef = useRef<string | null>(null);
   const pendingGatewayMessagesRef = useRef<Array<{ role: "user"; content: string; inputTokens: number; outputTokens: number; totalTokens: number; isCompactionSummary: boolean }>>([]);
   const goalRunWorkspacesRef = useRef<Record<string, string>>({});
-  const threadPageLoadChainRef = useRef<Promise<unknown>>(Promise.resolve());
   const latestLoadedThreadIdRef = useRef<string | null>(null);
 
   const createThread = useCallback((opts: Parameters<typeof storeCreateThread>[0]) => {
@@ -863,6 +889,7 @@ export function useAgentChatPanelProviderValue(): {
     threadId: string,
     direction: "latest" | "older",
   ): Promise<boolean> => {
+    const replaceEpoch = direction === "latest" ? threadHistoryReplaceEpoch(threadId) : undefined;
     const thread = useAgentStore.getState().threads.find((entry) => entry.id === threadId);
     const finishLoading = direction === "latest"
       && thread?.daemonThreadId
@@ -884,6 +911,7 @@ export function useAgentChatPanelProviderValue(): {
           messageLimit,
           messageOffset: 0,
           mergeMode: "replace",
+          replaceEpoch,
           setThreadTodos,
           setDaemonTodosByThread,
         });
@@ -910,11 +938,7 @@ export function useAgentChatPanelProviderValue(): {
       }
     };
 
-    const nextLoad = threadPageLoadChainRef.current
-      .catch(() => undefined)
-      .then(runThreadPageLoad);
-    threadPageLoadChainRef.current = nextLoad.catch(() => undefined);
-    return nextLoad;
+    return runThreadPageLoad();
   }, [agentSettings.react_chat_history_page_size, setThreadTodos]);
 
   const openThread = useCallback((threadId: string) => {

@@ -853,6 +853,8 @@ describe("Zorai feature surfaces", () => {
     expect(source).toContain("onScroll");
     expect(source).toContain("loadOlderThreadMessages");
     expect(source).toContain("consumeThreadHistoryScroll");
+    expect(source).toContain("fillThreadHistoryIfUnscrollable");
+    expect(source).toContain("threadHasOlderHistory");
     expect(railSource).toContain("threadHistoryLabel");
     expect(railSource).toContain("threadTabs");
     expect(railSource).toContain("fixedThreadTabs");
@@ -872,9 +874,11 @@ describe("Zorai feature surfaces", () => {
     expect(runtimeSource.indexOf("const finishLoading")).toBeLessThan(runtimeSource.indexOf("const runThreadPageLoad"));
     expect(runtimeSource).toContain("latestLoadedThreadIdRef");
     expect(runtimeSource).toContain("loadThreadPage(activeThreadId, \"latest\")");
+    expect(runtimeSource).toContain("beginThreadHistoryReplace");
+    expect(runtimeSource).toContain("threadHistoryReplaceEpoch");
+    expect(runtimeSource).not.toContain("threadPageLoadChainRef");
     expect(runtimeSource).toContain("localThreadId: threadId");
     expect(runtimeSource).toContain("messageOffset");
-    expect(runtimeSource).toContain("threadPageLoadChainRef");
     expect(eventsSource).toContain("resolveDaemonEventLocalThreadId");
     expect(eventsSource).toContain("event.thread_id");
   });

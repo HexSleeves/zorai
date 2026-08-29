@@ -8,9 +8,11 @@ import {
   beginProgrammaticThreadHistoryScroll,
   consumeThreadHistoryScroll,
   endProgrammaticThreadHistoryScroll,
+  fillThreadHistoryIfUnscrollable,
   resetThreadHistoryPagination,
   setFollowThreadHistoryBottom,
   shouldFollowThreadHistoryBottom,
+  threadHasOlderHistory,
 } from "@/components/agent-chat-panel/runtime/threadHistoryScroll";
 import { useAgentStore, type AgentThread } from "@/lib/agentStore";
 import { fetchAgentTasks, type AgentQueueTask } from "@/lib/agentTaskQueue";
@@ -208,6 +210,24 @@ export function ThreadsView({
     ),
   });
 
+  useEffect(() => {
+    if (showConversationSkeleton || threadLoadingPending > 0) return;
+    const frame = requestAnimationFrame(() => {
+      fillThreadHistoryIfUnscrollable({
+        scroller: scrollerRef.current,
+        loadOlder: runtime.loadOlderThreadMessages,
+        hasOlderHistory: threadHasOlderHistory(runtime.activeThread),
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [
+    showConversationSkeleton,
+    threadLoadingPending,
+    runtime.activeThread,
+    runtime.loadOlderThreadMessages,
+    runtime.messages.length,
+  ]);
+
   if (showConversationSkeleton && !runtime.activeThread) {
     return <ThreadConversationSkeleton />;
   }
@@ -249,6 +269,7 @@ export function ThreadsView({
     consumeThreadHistoryScroll({
       scroller: event.currentTarget,
       loadOlder: runtime.loadOlderThreadMessages,
+      hasOlderHistory: threadHasOlderHistory(runtime.activeThread),
       onFollowBottomChange: setPinnedToBottom,
     });
   };

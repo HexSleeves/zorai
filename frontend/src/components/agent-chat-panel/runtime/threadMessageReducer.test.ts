@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentMessage } from "@/lib/agentStore";
-import { reconcileThreadMessages } from "./threadMessageReducer";
+import { reconcileThreadMessages, retainLiveLocalMessages } from "./threadMessageReducer";
 
 function message(partial: Partial<AgentMessage> & Pick<AgentMessage, "id" | "role">): AgentMessage {
   return {
@@ -14,6 +14,21 @@ function message(partial: Partial<AgentMessage> & Pick<AgentMessage, "id" | "rol
     ...partial,
   };
 }
+
+describe("retainLiveLocalMessages", () => {
+  it("drops leftover daemon-owned rows so a thread entry cannot keep another conversation", () => {
+    const leftover = message({ id: "daemon-from-other-thread", role: "assistant", content: "other thread" });
+    const queued = message({ id: "queued-prompt:p1", role: "user", content: "queued" });
+    const localSend = message({ id: "msg_9", role: "user", content: "in flight" });
+    const streaming = message({ id: "daemon-stream", role: "assistant", isStreaming: true });
+
+    expect(retainLiveLocalMessages([leftover, queued, localSend, streaming]).map((entry) => entry.id)).toEqual([
+      "queued-prompt:p1",
+      "msg_9",
+      "daemon-stream",
+    ]);
+  });
+});
 
 describe("reconcileThreadMessages", () => {
   it("produces the same image-bearing timeline whether authority arrives before or after local send", () => {

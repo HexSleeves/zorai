@@ -72,7 +72,9 @@ While a goal is running, Goals stays an orchestration surface and Threads stays 
 
 Mission Control exposes:
 
+- tabs: Work, Review, Activity, Threads, Files
 - worker thread and current status
+- worker todos as progress (not a completion gate)
 - the review dialogue (report plus Accept / Soft reject / Hard reject)
 - pause / resume / cancel
 

@@ -20,13 +20,13 @@ describe("conversation skeleton visibility", () => {
     })).toBe(true);
   });
 
-  it("covers the conversation while latest history is loading even if a cache exists", () => {
+  it("does not hide already loaded messages behind a later in-flight fetch", () => {
     expect(shouldShowConversationSkeleton({
       pending: 1,
       hasActiveThread: true,
       loadedMessageCount: 4,
       knownHistory: true,
-    })).toBe(true);
+    })).toBe(false);
   });
 
   it("does not treat a brand-new empty thread as loading", () => {

@@ -180,47 +180,26 @@ pub fn render_with_selection(
         .borders(Borders::ALL)
         .inner(layout.timeline);
     let detail_inner = Block::default().borders(Borders::ALL).inner(layout.details);
-    let details_visible = state.mode() != GoalWorkspaceMode::Goal;
-    // The normal goal view is intentionally one explicit plan/progress pane.
-    // Historical and specialist modes reveal the auxiliary panes on demand.
-    let center_rows = details_visible.then(|| {
-        center_rows(
-            tasks,
-            goal_run_id,
-            state,
-            center_inner.width as usize,
-            theme,
-            tick_counter,
-        )
-    });
-    let detail_rows = details_visible.then(|| {
-        detail_lines(
-            tasks,
-            goal_run_id,
-            state,
-            detail_inner.width as usize,
-            theme,
-        )
-    });
+    let center_rows = center_rows(
+        tasks,
+        goal_run_id,
+        state,
+        center_inner.width as usize,
+        theme,
+        tick_counter,
+    );
+    let detail_rows = detail_lines(
+        tasks,
+        goal_run_id,
+        state,
+        detail_inner.width as usize,
+        theme,
+    );
 
     render_summary(frame, layout.summary, state, theme);
-    let plan_area = if details_visible {
-        layout.plan
-    } else {
-        Rect {
-            x: layout.plan.x,
-            y: layout.plan.y,
-            width: layout
-                .details
-                .x
-                .saturating_add(layout.details.width)
-                .saturating_sub(layout.plan.x),
-            height: layout.plan.height,
-        }
-    };
     render_plan(
         frame,
-        plan_area,
+        layout.plan,
         tasks,
         goal_run_id,
         state,
@@ -228,11 +207,8 @@ pub fn render_with_selection(
         tick_counter,
         mouse_selection,
     );
-    if let (Some(center_rows), Some(detail_rows)) = (center_rows.as_deref(), detail_rows.as_deref())
-    {
-        render_center_pane(frame, layout.timeline, state, theme, center_rows);
-        render_details(frame, layout.details, state, theme, detail_rows);
-    }
+    render_center_pane(frame, layout.timeline, state, theme, &center_rows);
+    render_details(frame, layout.details, state, theme, &detail_rows);
     render_step_footer(frame, layout.footer, tasks, goal_run_id, state, theme);
 }
 
@@ -502,13 +478,11 @@ pub fn selected_text(
 }
 
 const MODE_TABS: &[(GoalWorkspaceMode, &str)] = &[
-    (GoalWorkspaceMode::Goal, "Dossier"),
-    (GoalWorkspaceMode::Files, "Files"),
-    (GoalWorkspaceMode::Progress, "Progress"),
-    (GoalWorkspaceMode::Usage, "Usage"),
-    (GoalWorkspaceMode::ActiveAgent, "Active agent"),
+    (GoalWorkspaceMode::Work, "Work"),
+    (GoalWorkspaceMode::Review, "Review"),
+    (GoalWorkspaceMode::Activity, "Activity"),
     (GoalWorkspaceMode::Threads, "Threads"),
-    (GoalWorkspaceMode::NeedsAttention, "Needs attention"),
+    (GoalWorkspaceMode::Files, "Files"),
 ];
 
 fn render_summary(frame: &mut Frame, area: Rect, state: &GoalWorkspaceState, theme: &ThemeTokens) {
@@ -569,7 +543,7 @@ fn render_plan(
     mouse_selection: Option<(SelectionPoint, SelectionPoint)>,
 ) {
     let block = Block::default()
-        .title(" Plan ")
+        .title(" Goal ")
         .borders(Borders::ALL)
         .border_style(if state.focused_pane() == GoalWorkspacePane::Plan {
             theme.accent_primary
@@ -806,7 +780,7 @@ fn render_step_footer(
     theme: &ThemeTokens,
 ) {
     let block = Block::default()
-        .title(" Step Actions ")
+        .title(" Goal Actions ")
         .borders(Borders::ALL)
         .border_style(theme.fg_dim);
     let inner = block.inner(area);
@@ -832,13 +806,11 @@ struct WorkspaceVisualRow {
 
 fn center_pane_title(mode: GoalWorkspaceMode) -> &'static str {
     match mode {
-        GoalWorkspaceMode::Goal => " Run timeline ",
-        GoalWorkspaceMode::Files => " Files ",
-        GoalWorkspaceMode::Progress => " Progress ",
-        GoalWorkspaceMode::Usage => " Usage ",
-        GoalWorkspaceMode::ActiveAgent => " Active agent ",
+        GoalWorkspaceMode::Work => " Worker progress ",
+        GoalWorkspaceMode::Review => " Supervisor review ",
+        GoalWorkspaceMode::Activity => " Run activity ",
         GoalWorkspaceMode::Threads => " Threads ",
-        GoalWorkspaceMode::NeedsAttention => " Needs attention ",
+        GoalWorkspaceMode::Files => " Files ",
     }
 }
 
@@ -852,55 +824,43 @@ struct FooterSegment {
 fn footer_segments(
     tasks: &TaskState,
     goal_run_id: &str,
-    state: &GoalWorkspaceState,
+    _state: &GoalWorkspaceState,
     theme: &ThemeTokens,
 ) -> Vec<FooterSegment> {
     let mut segments = Vec::new();
     let run = tasks.goal_run_by_id(goal_run_id);
-    let selected_step = selected_goal_step(tasks, goal_run_id, state);
-    if let Some(step) = selected_step {
-        segments.push(FooterSegment {
-            text: format!("{}.", step.order + 1),
-            style: theme.fg_dim,
-            target: None,
-        });
-        let (confidence, cleaned_title) = split_goal_step_title(&step.title);
-        segments.push(FooterSegment {
-            text: format!(" {}", cleaned_title),
-            style: theme.fg_active,
-            target: None,
-        });
-        if let Some(confidence) = confidence {
-            segments.push(FooterSegment {
-                text: format!(" {}", confidence.symbol()),
-                style: confidence.style(theme),
-                target: None,
-            });
-        }
-        segments.push(FooterSegment {
-            text: "  ".to_string(),
-            style: theme.fg_dim,
-            target: None,
-        });
-    } else if run.is_some() {
-        segments.push(FooterSegment {
-            text: "Goal Prompt".to_string(),
-            style: theme.fg_active,
-            target: None,
-        });
-        segments.push(FooterSegment {
-            text: "  ".to_string(),
-            style: theme.fg_dim,
-            target: None,
-        });
-    } else {
+    if run.is_none() {
         return segments;
     }
+    let status_label = if run.is_some_and(|run| {
+        matches!(
+            run.status,
+            Some(crate::state::task::GoalRunStatus::AwaitingReview)
+        )
+    }) {
+        "Supervisor review".to_string()
+    } else {
+        latest_worker_todos(tasks, goal_run_id)
+            .into_iter()
+            .find(|todo| matches!(todo.status, Some(crate::state::task::TodoStatus::InProgress)))
+            .map(|todo| todo.content)
+            .unwrap_or_else(|| "Goal".to_string())
+    };
+    segments.push(FooterSegment {
+        text: status_label,
+        style: theme.fg_active,
+        target: None,
+    });
+    segments.push(FooterSegment {
+        text: "  ".to_string(),
+        style: theme.fg_dim,
+        target: None,
+    });
 
     if let Some(run) = run {
         if let Some((label, style)) = goal_toggle_action_label(run, theme) {
             segments.push(FooterSegment {
-                text: format!("[{label}] Ctrl+S"),
+                text: format!("{label} Ctrl+S"),
                 style,
                 target: Some(GoalWorkspaceHitTarget::FooterAction(
                     GoalWorkspaceAction::ToggleGoalRun,
@@ -996,13 +956,11 @@ fn footer_hit_test(
 
 fn detail_pane_title(mode: GoalWorkspaceMode) -> &'static str {
     match mode {
-        GoalWorkspaceMode::Goal => " Dossier ",
-        GoalWorkspaceMode::Files => " File details ",
-        GoalWorkspaceMode::Progress => " Progress details ",
-        GoalWorkspaceMode::Usage => " Usage details ",
-        GoalWorkspaceMode::ActiveAgent => " Runtime details ",
+        GoalWorkspaceMode::Work => " Work details ",
+        GoalWorkspaceMode::Review => " Review details ",
+        GoalWorkspaceMode::Activity => " Activity details ",
         GoalWorkspaceMode::Threads => " Thread details ",
-        GoalWorkspaceMode::NeedsAttention => " Attention details ",
+        GoalWorkspaceMode::Files => " File details ",
     }
 }
 
@@ -1015,13 +973,11 @@ fn center_rows(
     tick_counter: u64,
 ) -> Vec<WorkspaceVisualRow> {
     match state.mode() {
-        GoalWorkspaceMode::Goal => timeline_rows(tasks, goal_run_id, width, theme, tick_counter),
-        GoalWorkspaceMode::Files => goal_file_rows(goal_run_id, width, theme),
-        GoalWorkspaceMode::Progress => progress_rows(tasks, goal_run_id, theme),
-        GoalWorkspaceMode::Usage => usage_rows(tasks, goal_run_id, theme),
-        GoalWorkspaceMode::ActiveAgent => active_agent_rows(tasks, goal_run_id, theme),
+        GoalWorkspaceMode::Work => work_rows(tasks, goal_run_id, theme),
+        GoalWorkspaceMode::Review => review_rows(tasks, goal_run_id, theme),
+        GoalWorkspaceMode::Activity => timeline_rows(tasks, goal_run_id, width, theme, tick_counter),
         GoalWorkspaceMode::Threads => thread_rows(tasks, goal_run_id, theme),
-        GoalWorkspaceMode::NeedsAttention => attention_rows(tasks, goal_run_id, theme),
+        GoalWorkspaceMode::Files => goal_file_rows(goal_run_id, width, theme),
     }
 }
 
@@ -1079,6 +1035,173 @@ enum AttentionItem {
     Status,
     LastError,
     ProjectionError,
+}
+
+fn latest_worker_todos(tasks: &TaskState, goal_run_id: &str) -> Vec<crate::state::task::TodoItem> {
+    let mut todos: Vec<_> = tasks
+        .goal_step_todos_index(goal_run_id)
+        .into_values()
+        .flatten()
+        .collect();
+    if !todos.is_empty() {
+        todos.sort_by_key(|todo| todo.position);
+        return todos;
+    }
+    let Some(run) = tasks.goal_run_by_id(goal_run_id) else {
+        return Vec::new();
+    };
+    for event in run.events.iter().rev() {
+        if !event.todo_snapshot.is_empty() {
+            return event.todo_snapshot.clone();
+        }
+    }
+    Vec::new()
+}
+
+fn work_rows(
+    tasks: &TaskState,
+    goal_run_id: &str,
+    theme: &ThemeTokens,
+) -> Vec<WorkspaceVisualRow> {
+    let mut rows = Vec::new();
+    let worker_thread = tasks
+        .goal_run_by_id(goal_run_id)
+        .and_then(|run| run.thread_id.clone());
+    for task in tasks.tasks().iter().filter(|task| {
+        task.goal_run_id.as_deref() == Some(goal_run_id)
+            && (worker_thread
+                .as_deref()
+                .is_some_and(|thread_id| task.thread_id.as_deref() == Some(thread_id))
+                || task.parent_task_id.is_none())
+    }) {
+        let activity = match task.status {
+            Some(crate::state::task::TaskStatus::InProgress) => {
+                format!("working {}%", task.progress)
+            }
+            Some(status) => format!("{status:?}").to_ascii_lowercase(),
+            None => "queued".to_string(),
+        };
+        rows.push(WorkspaceVisualRow {
+            target: task
+                .thread_id
+                .clone()
+                .map(GoalWorkspaceHitTarget::ThreadRow),
+            line: Line::from(vec![
+                Span::styled("[worker] ", theme.fg_dim),
+                Span::styled(task.title.clone(), theme.fg_active),
+                Span::raw("  "),
+                Span::styled(activity, theme.fg_dim),
+            ]),
+        });
+    }
+    for todo in latest_worker_todos(tasks, goal_run_id) {
+        rows.push(WorkspaceVisualRow {
+            target: Some(GoalWorkspaceHitTarget::PlanTodo {
+                step_id: String::new(),
+                todo_id: todo.id.clone(),
+            }),
+            line: Line::from(vec![
+                Span::styled(todo_status_chip(todo.status), theme.fg_dim),
+                Span::raw(" "),
+                Span::styled(todo.content, theme.fg_active),
+            ]),
+        });
+    }
+    if let Some(error) = tasks
+        .goal_run_by_id(goal_run_id)
+        .and_then(|run| run.last_error.clone())
+        .filter(|error| !error.trim().is_empty())
+    {
+        rows.push(WorkspaceVisualRow {
+            target: None,
+            line: Line::from(vec![
+                Span::styled("[error] ", theme.accent_danger),
+                Span::styled(error, theme.accent_danger),
+            ]),
+        });
+    }
+    if rows.is_empty() {
+        rows.push(WorkspaceVisualRow {
+            target: None,
+            line: Line::from(Span::styled(
+                "Worker has not recorded progress yet.",
+                theme.fg_dim,
+            )),
+        });
+    }
+    rows
+}
+
+fn review_rows(
+    tasks: &TaskState,
+    goal_run_id: &str,
+    theme: &ThemeTokens,
+) -> Vec<WorkspaceVisualRow> {
+    let Some(run) = tasks.goal_run_by_id(goal_run_id) else {
+        return vec![WorkspaceVisualRow {
+            target: None,
+            line: Line::from(Span::styled("No review state available.", theme.fg_dim)),
+        }];
+    };
+    let mut rows = Vec::new();
+    if matches!(
+        run.status,
+        Some(crate::state::task::GoalRunStatus::AwaitingReview)
+    ) {
+        let report = run
+            .pending_review_report
+            .as_deref()
+            .filter(|value| !value.trim().is_empty())
+            .unwrap_or("The worker asked for supervisor review.");
+        for (index, segment) in wrap_plain_text(report, 52).into_iter().enumerate() {
+            rows.push(WorkspaceVisualRow {
+                target: Some(GoalWorkspaceHitTarget::TimelineRow(0)),
+                line: if index == 0 {
+                    Line::from(vec![
+                        Span::styled("[report] ", theme.accent_secondary),
+                        Span::styled(segment, theme.fg_active),
+                    ])
+                } else {
+                    Line::from(vec![Span::raw("  "), Span::styled(segment, theme.fg_active)])
+                },
+            });
+        }
+    } else {
+        rows.push(WorkspaceVisualRow {
+            target: None,
+            line: Line::from(Span::styled(
+                "No supervisor review is pending. Completeness is decided only by Accept.",
+                theme.fg_dim,
+            )),
+        });
+    }
+    for (event_index, event) in run.events.iter().rev().enumerate() {
+        if !is_review_event(event) {
+            continue;
+        }
+        rows.push(WorkspaceVisualRow {
+            target: Some(GoalWorkspaceHitTarget::TimelineRow(event_index)),
+            line: Line::from(Span::styled(event.message.clone(), theme.fg_active)),
+        });
+        if let Some(details) = event.details.as_deref() {
+            rows.push(WorkspaceVisualRow {
+                target: Some(GoalWorkspaceHitTarget::TimelineRow(event_index)),
+                line: Line::from(vec![
+                    Span::raw("  "),
+                    Span::styled(details.to_string(), theme.fg_dim),
+                ]),
+            });
+        }
+    }
+    rows
+}
+
+fn is_review_event(event: &crate::state::task::GoalRunEvent) -> bool {
+    let haystack = format!("{} {}", event.phase, event.message).to_ascii_lowercase();
+    haystack.contains("review")
+        || haystack.contains("accept")
+        || haystack.contains("reject")
+        || haystack.contains("supervisor")
 }
 
 fn timeline_rows(
@@ -1521,170 +1644,56 @@ fn detail_lines(
     width: usize,
     theme: &ThemeTokens,
 ) -> Vec<(usize, Option<GoalWorkspaceHitTarget>, Line<'static>)> {
-    let selected_step = selected_goal_step(tasks, goal_run_id, state);
     let mut rows = Vec::new();
     let mut visual_row = 0usize;
     let run = tasks.goal_run_by_id(goal_run_id);
     match state.mode() {
-        GoalWorkspaceMode::Goal => {
-            let Some(step) = selected_step else {
-                return Vec::new();
-            };
+        GoalWorkspaceMode::Work => {
+            push_detail_header(&mut rows, &mut visual_row, "Worker progress", theme);
+            let work = work_rows(tasks, goal_run_id, theme);
+            if let Some(row) = work.get(state.selected_timeline_row()) {
+                push_detail_line(&mut rows, &mut visual_row, None, row.line.clone());
+            } else {
+                push_detail_line(
+                    &mut rows,
+                    &mut visual_row,
+                    None,
+                    Line::from(Span::styled("No worker progress selected.", theme.fg_dim)),
+                );
+            }
+            if let Some(error) = run.and_then(|run| run.last_error.as_deref()) {
+                push_detail_wrapped(&mut rows, &mut visual_row, error, theme.accent_danger, width);
+            }
+        }
+        GoalWorkspaceMode::Review => {
+            push_detail_header(&mut rows, &mut visual_row, "Supervisor review", theme);
             if let Some(run) = run {
-                push_detail_header(&mut rows, &mut visual_row, "Selected Step", theme);
-                push_detail_line(
-                    &mut rows,
-                    &mut visual_row,
-                    None,
-                    Line::from({
-                        let mut spans = vec![
-                            Span::styled(format!("{}.", step.order + 1), theme.fg_dim),
-                            Span::raw(" "),
-                        ];
-                        spans.extend(goal_step_title_spans(&step.title, theme.fg_active, theme));
-                        spans
-                    }),
-                );
-                if !step.instructions.is_empty() {
-                    push_detail_wrapped(
-                        &mut rows,
-                        &mut visual_row,
-                        &step.instructions,
-                        theme.fg_dim,
-                        width,
-                    );
-                }
-                if let Some(summary) = step.summary.as_deref() {
-                    push_detail_wrapped(
-                        &mut rows,
-                        &mut visual_row,
-                        summary,
-                        theme.fg_active,
-                        width,
-                    );
-                }
-
-                if let Some(dossier) = run.dossier.as_ref() {
-                    let selected_unit = dossier.units.iter().find(|unit| unit.id == step.id);
-                    let projection_state = selected_unit
-                        .map(|unit| unit.status.as_str())
-                        .unwrap_or(dossier.projection_state.as_str());
-                    let summary = selected_unit
-                        .and_then(|unit| unit.summary.as_deref())
-                        .or(dossier.summary.as_deref());
-                    push_detail_blank(&mut rows, &mut visual_row);
-                    push_detail_header(&mut rows, &mut visual_row, "Execution Dossier", theme);
-                    push_detail_line(
-                        &mut rows,
-                        &mut visual_row,
-                        None,
-                        Line::from(vec![
-                            Span::styled("Projection ", theme.fg_dim),
-                            Span::styled(projection_state.to_string(), theme.fg_active),
-                        ]),
-                    );
-                    if let Some(summary) = summary {
-                        push_detail_wrapped(
-                            &mut rows,
-                            &mut visual_row,
-                            summary,
-                            theme.fg_active,
-                            width,
-                        );
-                    }
-                }
-
-                push_detail_blank(&mut rows, &mut visual_row);
-                push_detail_header(&mut rows, &mut visual_row, "Related Tasks", theme);
-                let related_tasks = related_tasks_for_step(tasks, run, &step);
-                if related_tasks.is_empty() {
-                    push_detail_line(
-                        &mut rows,
-                        &mut visual_row,
-                        None,
-                        Line::from(Span::styled("No related tasks.", theme.fg_dim)),
-                    );
+                if matches!(
+                    run.status,
+                    Some(crate::state::task::GoalRunStatus::AwaitingReview)
+                ) {
+                    let report = run
+                        .pending_review_report
+                        .as_deref()
+                        .filter(|value| !value.trim().is_empty())
+                        .unwrap_or("The worker asked for supervisor review.");
+                    push_detail_wrapped(&mut rows, &mut visual_row, report, theme.fg_active, width);
                 } else {
-                    for task in related_tasks {
-                        push_detail_line(
-                            &mut rows,
-                            &mut visual_row,
-                            Some(GoalWorkspaceHitTarget::DetailTask(task.id.clone())),
-                            Line::from(vec![
-                                Span::styled(todo_task_chip(task.status), theme.fg_dim),
-                                Span::raw(" "),
-                                Span::styled(task.title.clone(), theme.fg_active),
-                            ]),
-                        );
-                        if let Some(thread_id) = task.thread_id.as_deref() {
-                            push_detail_line(
-                                &mut rows,
-                                &mut visual_row,
-                                Some(GoalWorkspaceHitTarget::DetailThread(thread_id.to_string())),
-                                Line::from(vec![
-                                    Span::styled("  [thread] ", theme.fg_dim),
-                                    Span::styled(thread_id.to_string(), theme.accent_primary),
-                                ]),
-                            );
-                        }
-                    }
-                }
-
-                push_detail_blank(&mut rows, &mut visual_row);
-                push_detail_header(&mut rows, &mut visual_row, "Checkpoints", theme);
-                let checkpoints = tasks.goal_step_checkpoints(goal_run_id, step.order as usize);
-                if checkpoints.is_empty() {
                     push_detail_line(
                         &mut rows,
                         &mut visual_row,
                         None,
-                        Line::from(Span::styled("No checkpoints for this step.", theme.fg_dim)),
-                    );
-                } else {
-                    for checkpoint in checkpoints {
-                        push_detail_line(
-                            &mut rows,
-                            &mut visual_row,
-                            Some(GoalWorkspaceHitTarget::DetailCheckpoint(
-                                checkpoint.id.clone(),
-                            )),
-                            Line::from(vec![
-                                Span::styled("• ", theme.accent_secondary),
-                                Span::styled(checkpoint.checkpoint_type.clone(), theme.fg_active),
-                                Span::raw("  "),
-                                Span::styled(short_checkpoint_id(&checkpoint.id), theme.fg_dim),
-                            ]),
-                        );
-                    }
-                }
-            }
-
-            if let Some(run) = run.and_then(|run| run.dossier.as_ref()) {
-                push_detail_blank(&mut rows, &mut visual_row);
-                push_detail_header(&mut rows, &mut visual_row, "Execution Dossier", theme);
-                push_detail_line(
-                    &mut rows,
-                    &mut visual_row,
-                    None,
-                    Line::from(vec![
-                        Span::styled("Projection ", theme.fg_dim),
-                        Span::styled(run.projection_state.clone(), theme.fg_active),
-                    ]),
-                );
-                if let Some(summary) = run.summary.as_deref() {
-                    push_detail_wrapped(
-                        &mut rows,
-                        &mut visual_row,
-                        summary,
-                        theme.fg_active,
-                        width,
+                        Line::from(Span::styled(
+                            "No supervisor review is pending.",
+                            theme.fg_dim,
+                        )),
                     );
                 }
             }
-
+        }
+        GoalWorkspaceMode::Activity => {
             if let Some((selected_event_index, event)) = selected_event(tasks, goal_run_id, state) {
-                push_detail_blank(&mut rows, &mut visual_row);
-                push_detail_header(&mut rows, &mut visual_row, "Selected Timeline Item", theme);
+                push_detail_header(&mut rows, &mut visual_row, "Selected activity", theme);
                 push_detail_line(
                     &mut rows,
                     &mut visual_row,
@@ -1715,22 +1724,16 @@ fn detail_lines(
                     Line::from(vec![
                         Span::styled("[details]", theme.accent_primary),
                         Span::raw("  "),
-                        Span::styled("show timeline item context", theme.fg_dim),
+                        Span::styled("show activity item context", theme.fg_dim),
                     ]),
                 );
-                if let Some(run) = run {
-                    for thread_id in goal_thread_targets(tasks, run) {
-                        push_detail_line(
-                            &mut rows,
-                            &mut visual_row,
-                            Some(GoalWorkspaceHitTarget::DetailThread(thread_id.clone())),
-                            Line::from(vec![
-                                Span::styled("[thread] ", theme.fg_dim),
-                                Span::styled(thread_id, theme.accent_primary),
-                            ]),
-                        );
-                    }
-                }
+            } else {
+                push_detail_line(
+                    &mut rows,
+                    &mut visual_row,
+                    None,
+                    Line::from(Span::styled("Waiting for run events.", theme.fg_dim)),
+                );
             }
         }
         GoalWorkspaceMode::Files => {
@@ -1783,405 +1786,6 @@ fn detail_lines(
                 );
             }
         }
-        GoalWorkspaceMode::Progress => {
-            let items = progress_items(tasks, goal_run_id);
-            let selected = items.get(state.selected_timeline_row());
-            if let Some(item) = selected {
-                match item {
-                    ProgressItem::DossierSummary => {
-                        push_detail_header(&mut rows, &mut visual_row, "Execution Dossier", theme);
-                        if let Some(dossier) = run.and_then(|run| run.dossier.as_ref()) {
-                            push_detail_line(
-                                &mut rows,
-                                &mut visual_row,
-                                None,
-                                Line::from(vec![
-                                    Span::styled("Projection ", theme.fg_dim),
-                                    Span::styled(dossier.projection_state.clone(), theme.fg_active),
-                                ]),
-                            );
-                            if let Some(summary) = dossier.summary.as_deref() {
-                                push_detail_wrapped(
-                                    &mut rows,
-                                    &mut visual_row,
-                                    summary,
-                                    theme.fg_active,
-                                    width,
-                                );
-                            }
-                            if let Some(error) = dossier.projection_error.as_deref() {
-                                push_detail_wrapped(
-                                    &mut rows,
-                                    &mut visual_row,
-                                    error,
-                                    theme.accent_danger,
-                                    width,
-                                );
-                            }
-                        }
-                    }
-                    ProgressItem::ResumeDecision => {
-                        push_detail_header(&mut rows, &mut visual_row, "Resume Decision", theme);
-                        if let Some(decision) = run
-                            .and_then(|run| run.dossier.as_ref())
-                            .and_then(|dossier| dossier.latest_resume_decision.as_ref())
-                        {
-                            push_detail_line(
-                                &mut rows,
-                                &mut visual_row,
-                                None,
-                                Line::from(Span::styled(
-                                    format!(
-                                        "{} via {} ({})",
-                                        decision.action,
-                                        decision.reason_code,
-                                        decision.projection_state
-                                    ),
-                                    theme.fg_active,
-                                )),
-                            );
-                            if let Some(reason) = decision.reason.as_deref() {
-                                push_detail_wrapped(
-                                    &mut rows,
-                                    &mut visual_row,
-                                    reason,
-                                    theme.fg_dim,
-                                    width,
-                                );
-                            }
-                            for detail in &decision.details {
-                                push_detail_wrapped(
-                                    &mut rows,
-                                    &mut visual_row,
-                                    detail,
-                                    theme.fg_dim,
-                                    width,
-                                );
-                            }
-                        }
-                    }
-                    ProgressItem::DeliveryUnit(unit_index) => {
-                        push_detail_header(&mut rows, &mut visual_row, "Delivery Unit", theme);
-                        if let Some(unit) = run
-                            .and_then(|run| run.dossier.as_ref())
-                            .and_then(|dossier| dossier.units.get(*unit_index))
-                        {
-                            push_detail_line(
-                                &mut rows,
-                                &mut visual_row,
-                                None,
-                                Line::from(Span::styled(unit.title.clone(), theme.fg_active)),
-                            );
-                            push_detail_wrapped(
-                                &mut rows,
-                                &mut visual_row,
-                                &format!(
-                                    "execute via {}  verify via {}",
-                                    unit.execution_binding, unit.verification_binding
-                                ),
-                                theme.fg_dim,
-                                width,
-                            );
-                            if let Some(summary) = unit.summary.as_deref() {
-                                push_detail_wrapped(
-                                    &mut rows,
-                                    &mut visual_row,
-                                    summary,
-                                    theme.fg_active,
-                                    width,
-                                );
-                            }
-                            for proof in &unit.proof_checks {
-                                push_detail_line(
-                                    &mut rows,
-                                    &mut visual_row,
-                                    None,
-                                    Line::from(vec![
-                                        Span::styled("[proof] ", theme.fg_dim),
-                                        Span::styled(proof.title.clone(), theme.fg_active),
-                                        Span::raw(" "),
-                                        Span::styled(proof.state.clone(), theme.fg_dim),
-                                    ]),
-                                );
-                            }
-                            if let Some(report) = unit.report.as_ref() {
-                                push_detail_wrapped(
-                                    &mut rows,
-                                    &mut visual_row,
-                                    &format!("report [{}] {}", report.state, report.summary),
-                                    theme.fg_active,
-                                    width,
-                                );
-                            }
-                        }
-                    }
-                    ProgressItem::Checkpoint(checkpoint_id) => {
-                        push_detail_header(&mut rows, &mut visual_row, "Checkpoints", theme);
-                        if let Some(checkpoint) = tasks
-                            .checkpoints_for_goal_run(goal_run_id)
-                            .iter()
-                            .find(|checkpoint| checkpoint.id == *checkpoint_id)
-                        {
-                            push_detail_line(
-                                &mut rows,
-                                &mut visual_row,
-                                Some(GoalWorkspaceHitTarget::DetailCheckpoint(
-                                    checkpoint.id.clone(),
-                                )),
-                                Line::from(vec![
-                                    Span::styled(
-                                        checkpoint.checkpoint_type.clone(),
-                                        theme.fg_active,
-                                    ),
-                                    Span::raw("  "),
-                                    Span::styled(short_checkpoint_id(&checkpoint.id), theme.fg_dim),
-                                ]),
-                            );
-                            if let Some(preview) = checkpoint.context_summary_preview.as_deref() {
-                                push_detail_wrapped(
-                                    &mut rows,
-                                    &mut visual_row,
-                                    preview,
-                                    theme.fg_dim,
-                                    width,
-                                );
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        GoalWorkspaceMode::Usage => {
-            if let Some(run) = run {
-                let items = usage_items(tasks, goal_run_id);
-                if let Some(item) = items.get(state.selected_timeline_row()) {
-                    match item {
-                        UsageItem::Aggregate => {
-                            push_detail_header(&mut rows, &mut visual_row, "Goal Usage", theme);
-                            push_detail_line(
-                                &mut rows,
-                                &mut visual_row,
-                                None,
-                                Line::from(vec![
-                                    Span::styled("Prompt ", theme.fg_dim),
-                                    Span::styled(
-                                        format_count(run.total_prompt_tokens),
-                                        theme.fg_active,
-                                    ),
-                                    Span::styled("  Completion ", theme.fg_dim),
-                                    Span::styled(
-                                        format_count(run.total_completion_tokens),
-                                        theme.fg_active,
-                                    ),
-                                ]),
-                            );
-                            if let Some(cost) = run.estimated_cost_usd {
-                                push_detail_line(
-                                    &mut rows,
-                                    &mut visual_row,
-                                    None,
-                                    Line::from(vec![
-                                        Span::styled("Estimated cost ", theme.fg_dim),
-                                        Span::styled(format_cost(cost), theme.fg_active),
-                                    ]),
-                                );
-                            }
-                        }
-                        UsageItem::Model(model_index) => {
-                            push_detail_header(&mut rows, &mut visual_row, "Model Usage", theme);
-                            if let Some(usage) = run.model_usage.get(*model_index) {
-                                push_detail_line(
-                                    &mut rows,
-                                    &mut visual_row,
-                                    None,
-                                    Line::from(Span::styled(
-                                        format!("{}/{}", usage.provider, usage.model),
-                                        theme.fg_active,
-                                    )),
-                                );
-                                push_detail_line(
-                                    &mut rows,
-                                    &mut visual_row,
-                                    None,
-                                    Line::from(vec![
-                                        Span::styled("Requests ", theme.fg_dim),
-                                        Span::styled(
-                                            usage.request_count.to_string(),
-                                            theme.fg_active,
-                                        ),
-                                        Span::styled("  Prompt ", theme.fg_dim),
-                                        Span::styled(
-                                            format_count(usage.prompt_tokens),
-                                            theme.fg_active,
-                                        ),
-                                    ]),
-                                );
-                                let mut spans = vec![
-                                    Span::styled("Completion ", theme.fg_dim),
-                                    Span::styled(
-                                        format_count(usage.completion_tokens),
-                                        theme.fg_active,
-                                    ),
-                                ];
-                                if let Some(cost) = usage.estimated_cost_usd {
-                                    spans.push(Span::styled("  Cost ", theme.fg_dim));
-                                    spans.push(Span::styled(format_cost(cost), theme.fg_active));
-                                }
-                                if let Some(duration_ms) = usage.duration_ms {
-                                    spans.push(Span::styled("  Duration ", theme.fg_dim));
-                                    spans.push(Span::styled(
-                                        format_duration_ms(duration_ms),
-                                        theme.fg_active,
-                                    ));
-                                }
-                                push_detail_line(
-                                    &mut rows,
-                                    &mut visual_row,
-                                    None,
-                                    Line::from(spans),
-                                );
-                            }
-                        }
-                        UsageItem::CurrentOwner => {
-                            push_detail_header(&mut rows, &mut visual_row, "Current Agent", theme);
-                            if let Some(owner) = run.current_step_owner_profile.as_ref() {
-                                push_owner_profile(&mut rows, &mut visual_row, owner, theme, width);
-                            }
-                        }
-                        UsageItem::PlannerOwner => {
-                            push_detail_header(&mut rows, &mut visual_row, "Planner Agent", theme);
-                            if let Some(owner) = run.planner_owner_profile.as_ref() {
-                                push_owner_profile(&mut rows, &mut visual_row, owner, theme, width);
-                            }
-                        }
-                        UsageItem::Assignment(index) => {
-                            push_detail_header(&mut rows, &mut visual_row, "Assigned Role", theme);
-                            if let Some(assignment) = runtime_assignments(run).get(*index) {
-                                push_assignment(
-                                    &mut rows,
-                                    &mut visual_row,
-                                    assignment,
-                                    theme,
-                                    width,
-                                );
-                            }
-                        }
-                        UsageItem::Task(task_id) => {
-                            push_detail_header(&mut rows, &mut visual_row, "Task Usage", theme);
-                            if let Some(task) = tasks.task_by_id(task_id) {
-                                push_detail_line(
-                                    &mut rows,
-                                    &mut visual_row,
-                                    Some(GoalWorkspaceHitTarget::DetailTask(task.id.clone())),
-                                    Line::from(vec![
-                                        Span::styled(
-                                            if is_goal_subagent_task(task) {
-                                                "Subagent "
-                                            } else {
-                                                "Task "
-                                            },
-                                            theme.fg_dim,
-                                        ),
-                                        Span::styled(task.title.clone(), theme.fg_active),
-                                    ]),
-                                );
-                                push_detail_line(
-                                    &mut rows,
-                                    &mut visual_row,
-                                    None,
-                                    Line::from(vec![
-                                        Span::styled("Status ", theme.fg_dim),
-                                        Span::styled(
-                                            task_status_label(task.status),
-                                            theme.fg_active,
-                                        ),
-                                    ]),
-                                );
-                                if let Some(step_title) = task.goal_step_title.as_deref() {
-                                    push_detail_wrapped(
-                                        &mut rows,
-                                        &mut visual_row,
-                                        &format!("Step {step_title}"),
-                                        theme.fg_dim,
-                                        width,
-                                    );
-                                }
-                                if let Some(thread_id) = task.thread_id.as_deref() {
-                                    push_detail_line(
-                                        &mut rows,
-                                        &mut visual_row,
-                                        Some(GoalWorkspaceHitTarget::DetailThread(
-                                            thread_id.to_string(),
-                                        )),
-                                        Line::from(vec![
-                                            Span::styled("[thread] ", theme.accent_primary),
-                                            Span::styled(thread_id.to_string(), theme.fg_active),
-                                        ]),
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        GoalWorkspaceMode::ActiveAgent => {
-            if let Some(run) = run {
-                let items = active_agent_items(tasks, goal_run_id);
-                if let Some(item) = items.get(state.selected_timeline_row()) {
-                    match item {
-                        ActiveAgentItem::CurrentOwner => {
-                            push_detail_header(&mut rows, &mut visual_row, "Current Owner", theme);
-                            if let Some(owner) = run.current_step_owner_profile.as_ref() {
-                                push_owner_profile(&mut rows, &mut visual_row, owner, theme, width);
-                            }
-                        }
-                        ActiveAgentItem::PlannerOwner => {
-                            push_detail_header(&mut rows, &mut visual_row, "Planner Owner", theme);
-                            if let Some(owner) = run.planner_owner_profile.as_ref() {
-                                push_owner_profile(&mut rows, &mut visual_row, owner, theme, width);
-                            }
-                        }
-                        ActiveAgentItem::Assignment(index) => {
-                            push_detail_header(
-                                &mut rows,
-                                &mut visual_row,
-                                "Runtime Assignment",
-                                theme,
-                            );
-                            if let Some(assignment) = runtime_assignments(run).get(*index) {
-                                push_assignment(
-                                    &mut rows,
-                                    &mut visual_row,
-                                    assignment,
-                                    theme,
-                                    width,
-                                );
-                            }
-                        }
-                        ActiveAgentItem::Thread(thread_id) => {
-                            push_detail_header(&mut rows, &mut visual_row, "Thread", theme);
-                            push_detail_line(
-                                &mut rows,
-                                &mut visual_row,
-                                Some(GoalWorkspaceHitTarget::DetailThread(thread_id.clone())),
-                                Line::from(vec![
-                                    Span::styled("[open] ", theme.accent_primary),
-                                    Span::styled(thread_id.clone(), theme.fg_active),
-                                ]),
-                            );
-                            push_detail_wrapped(
-                                &mut rows,
-                                &mut visual_row,
-                                "Opens the linked thread and keeps a return-to-goal path.",
-                                theme.fg_dim,
-                                width,
-                            );
-                        }
-                    }
-                }
-            }
-        }
         GoalWorkspaceMode::Threads => {
             if let Some(run) = run {
                 let items = thread_items(tasks, run);
@@ -2220,81 +1824,6 @@ fn detail_lines(
                                 Span::styled(entry.thread_id, theme.fg_active),
                             ]),
                         );
-                    }
-                }
-            }
-        }
-        GoalWorkspaceMode::NeedsAttention => {
-            if let Some(run) = run {
-                let items = attention_items(run);
-                if let Some(item) = items.get(state.selected_timeline_row()) {
-                    match item {
-                        AttentionItem::Approvals => {
-                            push_detail_header(&mut rows, &mut visual_row, "Approvals", theme);
-                            push_detail_line(
-                                &mut rows,
-                                &mut visual_row,
-                                None,
-                                Line::from(Span::styled(
-                                    run.approval_count.to_string(),
-                                    theme.fg_active,
-                                )),
-                            );
-                        }
-                        AttentionItem::Status => {
-                            push_detail_header(&mut rows, &mut visual_row, "Status", theme);
-                            push_detail_line(
-                                &mut rows,
-                                &mut visual_row,
-                                None,
-                                Line::from(Span::styled(
-                                    goal_status_label(run.status),
-                                    theme.fg_active,
-                                )),
-                            );
-                            if let Some(awaiting_id) = run.awaiting_approval_id.as_deref() {
-                                push_detail_wrapped(
-                                    &mut rows,
-                                    &mut visual_row,
-                                    &format!("Awaiting approval {awaiting_id}"),
-                                    theme.fg_dim,
-                                    width,
-                                );
-                            }
-                        }
-                        AttentionItem::LastError => {
-                            push_detail_header(&mut rows, &mut visual_row, "Last Error", theme);
-                            if let Some(last_error) = run.last_error.as_deref() {
-                                push_detail_wrapped(
-                                    &mut rows,
-                                    &mut visual_row,
-                                    last_error,
-                                    theme.accent_danger,
-                                    width,
-                                );
-                            }
-                        }
-                        AttentionItem::ProjectionError => {
-                            push_detail_header(
-                                &mut rows,
-                                &mut visual_row,
-                                "Projection Error",
-                                theme,
-                            );
-                            if let Some(error) = run
-                                .dossier
-                                .as_ref()
-                                .and_then(|dossier| dossier.projection_error.as_deref())
-                            {
-                                push_detail_wrapped(
-                                    &mut rows,
-                                    &mut visual_row,
-                                    error,
-                                    theme.accent_danger,
-                                    width,
-                                );
-                            }
-                        }
                     }
                 }
             }
@@ -2471,13 +2000,13 @@ fn goal_thread_targets(tasks: &TaskState, run: &crate::state::task::GoalRun) -> 
 }
 
 #[derive(Clone)]
-struct GoalThreadEntry {
+pub(crate) struct GoalThreadEntry {
     label: String,
     thread_id: String,
     summary: String,
 }
 
-fn goal_thread_entries(
+pub(crate) fn goal_thread_entries(
     tasks: &TaskState,
     run: &crate::state::task::GoalRun,
 ) -> Vec<GoalThreadEntry> {
@@ -2503,7 +2032,13 @@ fn goal_thread_entries(
         }
     };
 
-    if let Some(thread_id) = run.thread_id.clone() {
+    let worker_thread_id = run
+        .thread_id
+        .clone()
+        .or_else(|| run.active_thread_id.clone())
+        .or_else(|| run.execution_thread_ids.first().cloned())
+        .or_else(|| fallback_worker_thread_id(tasks, run));
+    if let Some(thread_id) = worker_thread_id.clone() {
         push_entry(
             &mut entries,
             &mut known,
@@ -2513,7 +2048,7 @@ fn goal_thread_entries(
         );
     }
 
-    let worker_thread = run.thread_id.as_deref();
+    let worker_thread = worker_thread_id.as_deref();
     if let Some(thread_id) = tasks
         .tasks()
         .iter()
@@ -2573,6 +2108,37 @@ fn goal_thread_entries(
         }
     }
     entries
+}
+
+fn fallback_worker_thread_id(
+    tasks: &TaskState,
+    run: &crate::state::task::GoalRun,
+) -> Option<String> {
+    let mut goal_tasks = tasks
+        .tasks()
+        .iter()
+        .filter(|task| task.goal_run_id.as_deref() == Some(run.id.as_str()))
+        .filter_map(|task| {
+            task.thread_id.as_ref().map(|thread_id| {
+                let priority = match task.status {
+                    Some(crate::state::task::TaskStatus::InProgress) => 0,
+                    Some(crate::state::task::TaskStatus::AwaitingApproval) => 1,
+                    Some(crate::state::task::TaskStatus::Queued) => 2,
+                    _ => 3,
+                };
+                (
+                    priority,
+                    std::cmp::Reverse(task.created_at),
+                    thread_id.clone(),
+                )
+            })
+        })
+        .collect::<Vec<_>>();
+    goal_tasks.sort();
+    goal_tasks
+        .into_iter()
+        .next()
+        .map(|(_, _, thread_id)| thread_id)
 }
 
 fn push_detail_header(

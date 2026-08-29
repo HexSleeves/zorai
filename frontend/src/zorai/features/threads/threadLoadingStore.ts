@@ -28,8 +28,8 @@ export function shouldShowConversationSkeleton(input: {
   loadedMessageCount: number;
   knownHistory: boolean;
 }): boolean {
-  if (input.pending > 0) return true;
   if (input.loadedMessageCount > 0) return false;
+  if (input.pending > 0) return true;
   if (!input.hasActiveThread) return false;
   return input.knownHistory;
 }

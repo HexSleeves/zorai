@@ -129,21 +129,13 @@ impl TuiModel {
             && !modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT)
         {
             let target_mode = match code {
-                KeyCode::Char('1') => Some(crate::state::goal_workspace::GoalWorkspaceMode::Goal),
-                KeyCode::Char('2') => Some(crate::state::goal_workspace::GoalWorkspaceMode::Files),
+                KeyCode::Char('1') => Some(crate::state::goal_workspace::GoalWorkspaceMode::Work),
+                KeyCode::Char('2') => Some(crate::state::goal_workspace::GoalWorkspaceMode::Review),
                 KeyCode::Char('3') => {
-                    Some(crate::state::goal_workspace::GoalWorkspaceMode::Progress)
+                    Some(crate::state::goal_workspace::GoalWorkspaceMode::Activity)
                 }
-                KeyCode::Char('4') => Some(crate::state::goal_workspace::GoalWorkspaceMode::Usage),
-                KeyCode::Char('5') => {
-                    Some(crate::state::goal_workspace::GoalWorkspaceMode::ActiveAgent)
-                }
-                KeyCode::Char('6') => {
-                    Some(crate::state::goal_workspace::GoalWorkspaceMode::Threads)
-                }
-                KeyCode::Char('7') => {
-                    Some(crate::state::goal_workspace::GoalWorkspaceMode::NeedsAttention)
-                }
+                KeyCode::Char('4') => Some(crate::state::goal_workspace::GoalWorkspaceMode::Threads),
+                KeyCode::Char('5') => Some(crate::state::goal_workspace::GoalWorkspaceMode::Files),
                 _ => None,
             };
             if let Some(mode) = target_mode {

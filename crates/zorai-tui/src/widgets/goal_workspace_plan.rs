@@ -1,5 +1,5 @@
 use crate::state::goal_workspace::GoalWorkspaceState;
-use crate::state::task::{GoalRunStatus, TaskState, TaskStatus, TodoStatus};
+use crate::state::task::TaskState;
 use crate::theme::ThemeTokens;
 use ratatui::style::Modifier;
 use ratatui::text::{Line, Span};
@@ -112,206 +112,35 @@ fn build_rows_inner(
         }
     }
 
-    if let Some((thread_label, thread_id)) = run.and_then(|run| main_agent_thread(tasks, run)) {
-        rows.push(GoalWorkspacePlanRow {
-            line: Line::from(vec![
-                Span::styled("[thread] ", theme.fg_dim),
-                Span::styled(format!("{thread_label}  "), theme.fg_active),
-                Span::styled(thread_id.clone(), theme.fg_active),
-            ]),
-            selection: Some(
-                crate::state::goal_workspace::GoalPlanSelection::MainThread {
-                    thread_id: thread_id.clone(),
-                },
-            ),
-            target: Some(GoalWorkspaceHitTarget::PlanMainThread(thread_id)),
-            marker_state: None,
-            marker_span_index: None,
-            confidence: None,
-            confidence_span_index: None,
-        });
-    } else {
-        rows.push(GoalWorkspacePlanRow {
-            line: Line::from(Span::styled("No main agent thread yet.", theme.fg_dim)),
-            selection: None,
-            target: None,
-            marker_state: None,
-            marker_span_index: None,
-            confidence: None,
-            confidence_span_index: None,
-        });
-    }
-
-    let steps = tasks.goal_steps_in_display_order(goal_run_id);
-    if !steps.is_empty() {
-        rows.push(GoalWorkspacePlanRow {
-            line: Line::from(Span::styled("Steps:", section_style)),
-            selection: None,
-            target: None,
-            marker_state: None,
-            marker_span_index: None,
-            confidence: None,
-            confidence_span_index: None,
-        });
-    }
-    // Pre-compute the per-step todos in a SINGLE pass over `run.events`
-    // so the per-step lookup below is O(1). The previous code called
-    // `goal_step_todos(goal_run_id, step_index)` per expanded step, each
-    // of which walked `run.events.iter().rev()` end-to-end. With long-
-    // running goals (hundreds of events) and several expanded steps,
-    // that was the dominant per-frame cost — the user-visible "expanding
-    // todos took 7s" lag.
-    let todos_by_step = tasks.goal_step_todos_index(goal_run_id);
-
-    for step in steps {
-        let expanded = state.is_step_expanded(&step.id);
-        let (confidence, cleaned_title) = super::split_goal_step_title(&step.title);
-        let active = run.is_some_and(|run| {
-            run.current_step_index == step.order as usize
-                || super::goal_step_title_matches(&step.title, run.current_step_title.as_deref())
-        });
-        let marker_state = step_marker_state(&step, active);
-        let mut line_spans = vec![
-            Span::raw(if expanded { "▾ " } else { "▸ " }),
-            Span::raw("○ "),
-            Span::raw(format!("{}. {}", step.order + 1, cleaned_title)),
-        ];
-        let confidence_span_index = confidence.map(|confidence| {
-            line_spans.push(Span::raw(" "));
-            let icon_index = line_spans.len();
-            line_spans.push(Span::raw(confidence.symbol()));
-            icon_index
-        });
-        rows.push(GoalWorkspacePlanRow {
-            line: Line::from(line_spans),
-            selection: Some(crate::state::goal_workspace::GoalPlanSelection::Step {
-                step_id: step.id.clone(),
-            }),
-            target: Some(GoalWorkspaceHitTarget::PlanStep(step.id.clone())),
-            marker_state: Some(marker_state),
-            marker_span_index: Some(1),
-            confidence,
-            confidence_span_index,
-        });
-
-        if active {
-            if let Some(task) = tasks
-                .tasks()
-                .iter()
-                .filter(|task| task.goal_run_id.as_deref() == Some(goal_run_id))
-                .filter(|task| {
-                    task.goal_step_title.as_deref().is_some_and(|title| {
-                        super::goal_step_title_matches(&step.title, Some(title))
-                    }) || step.task_id.as_deref() == Some(task.id.as_str())
-                })
-                .min_by_key(|task| match task.status {
-                    Some(TaskStatus::InProgress) => 0,
-                    Some(TaskStatus::AwaitingApproval | TaskStatus::Blocked) => 1,
-                    Some(TaskStatus::Queued) => 2,
-                    _ => 3,
-                })
-            {
-                let activity = match task.status {
-                    Some(TaskStatus::InProgress) => format!("working {}%", task.progress),
-                    Some(TaskStatus::AwaitingApproval) => "awaiting approval".to_string(),
-                    Some(TaskStatus::Blocked) => "blocked".to_string(),
-                    Some(TaskStatus::Queued) => "queued".to_string(),
-                    Some(TaskStatus::Completed) => "done".to_string(),
-                    Some(TaskStatus::Failed | TaskStatus::BudgetExceeded) => "failed".to_string(),
-                    Some(TaskStatus::FailedAnalyzing) => "analyzing failure".to_string(),
-                    Some(TaskStatus::Cancelled) => "cancelled".to_string(),
-                    None => "working".to_string(),
-                };
-                rows.push(GoalWorkspacePlanRow {
-                    line: Line::from(vec![
-                        Span::raw("    "),
-                        Span::styled("● ", theme.accent_primary),
-                        Span::styled(activity, theme.fg_active),
-                        Span::styled("  ", theme.fg_dim),
-                        Span::styled(task.title.clone(), theme.fg_dim),
-                    ]),
-                    selection: task.thread_id.clone().map(|thread_id| {
-                        crate::state::goal_workspace::GoalPlanSelection::MainThread { thread_id }
-                    }),
-                    target: task
-                        .thread_id
-                        .clone()
-                        .map(GoalWorkspaceHitTarget::PlanMainThread),
-                    marker_state: None,
-                    marker_span_index: None,
-                    confidence: None,
-                    confidence_span_index: None,
-                });
+    let mut listed_thread = false;
+    if let Some(run) = run {
+        for entry in super::goal_thread_entries(tasks, run) {
+            if entry.label != "Worker" && entry.label != "Owner" {
+                continue;
             }
-        }
-
-        if expanded {
-            let empty: Vec<_> = Vec::new();
-            let todos = todos_by_step
-                .get(&(step.order as usize))
-                .cloned()
-                .unwrap_or(empty);
-            for todo in todos {
-                rows.push(GoalWorkspacePlanRow {
-                    line: Line::from(vec![
-                        Span::raw("    "),
-                        Span::raw(todo_status_chip(todo.status)),
-                        Span::raw(" "),
-                        Span::raw(todo.content),
-                    ]),
-                    selection: Some(crate::state::goal_workspace::GoalPlanSelection::Todo {
-                        step_id: step.id.clone(),
-                        todo_id: todo.id.clone(),
-                    }),
-                    target: Some(GoalWorkspaceHitTarget::PlanTodo {
-                        step_id: step.id.clone(),
-                        todo_id: todo.id,
-                    }),
-                    marker_state: None,
-                    marker_span_index: None,
-                    confidence: None,
-                    confidence_span_index: None,
-                });
-            }
-            if !step.instructions.trim().is_empty() {
-                for line in wrap_plain_text(&step.instructions, 48) {
-                    rows.push(GoalWorkspacePlanRow {
-                        line: Line::from(vec![Span::raw("    "), Span::styled(line, theme.fg_dim)]),
-                        selection: None,
-                        target: None,
-                        marker_state: None,
-                        marker_span_index: None,
-                        confidence: None,
-                        confidence_span_index: None,
-                    });
-                }
-            }
-            if let Some(summary) = step
-                .summary
-                .as_deref()
-                .filter(|value| !value.trim().is_empty())
-            {
-                for line in wrap_plain_text(summary, 48) {
-                    rows.push(GoalWorkspacePlanRow {
-                        line: Line::from(vec![
-                            Span::raw("    "),
-                            Span::styled(line, theme.fg_active),
-                        ]),
-                        selection: None,
-                        target: None,
-                        marker_state: None,
-                        marker_span_index: None,
-                        confidence: None,
-                        confidence_span_index: None,
-                    });
-                }
-            }
+            listed_thread = true;
+            rows.push(GoalWorkspacePlanRow {
+                line: Line::from(vec![
+                    Span::styled("[thread] ", theme.fg_dim),
+                    Span::styled(format!("{}  ", entry.label), theme.fg_active),
+                    Span::styled(entry.thread_id.clone(), theme.fg_active),
+                ]),
+                selection: Some(
+                    crate::state::goal_workspace::GoalPlanSelection::MainThread {
+                        thread_id: entry.thread_id.clone(),
+                    },
+                ),
+                target: Some(GoalWorkspaceHitTarget::PlanMainThread(entry.thread_id)),
+                marker_state: None,
+                marker_span_index: None,
+                confidence: None,
+                confidence_span_index: None,
+            });
         }
     }
-
-    if rows.is_empty() {
+    if !listed_thread {
         rows.push(GoalWorkspacePlanRow {
-            line: Line::from(Span::styled("No plan yet", theme.fg_dim)),
+            line: Line::from(Span::styled("No worker thread yet.", theme.fg_dim)),
             selection: None,
             target: None,
             marker_state: None,
@@ -322,106 +151,6 @@ fn build_rows_inner(
     }
 
     rows
-}
-
-fn main_agent_thread(
-    tasks: &TaskState,
-    run: &crate::state::task::GoalRun,
-) -> Option<(String, String)> {
-    run.thread_id
-        .clone()
-        .map(|thread_id| ("Worker".to_string(), thread_id))
-        .or_else(|| {
-            run.root_thread_id.clone().map(|thread_id| {
-                (
-                    run.planner_owner_profile
-                        .as_ref()
-                        .map(|owner| format!("Worker ({})", owner.agent_label))
-                        .unwrap_or_else(|| "Worker".to_string()),
-                    thread_id,
-                )
-            })
-        })
-        .or_else(|| {
-            run.active_thread_id.clone().map(|thread_id| {
-                (
-                    run.current_step_owner_profile
-                        .as_ref()
-                        .map(|owner| format!("Worker ({})", owner.agent_label))
-                        .unwrap_or_else(|| "Worker".to_string()),
-                    thread_id,
-                )
-            })
-        })
-        .or_else(|| {
-            run.execution_thread_ids
-                .first()
-                .cloned()
-                .map(|thread_id| ("Worker".to_string(), thread_id))
-        })
-        .or_else(|| {
-            let mut goal_tasks = tasks
-                .tasks()
-                .iter()
-                .filter(|task| task.goal_run_id.as_deref() == Some(run.id.as_str()))
-                .filter_map(|task| {
-                    task.thread_id.as_ref().map(|thread_id| {
-                        let priority = match task.status {
-                            Some(TaskStatus::InProgress) => 0,
-                            Some(TaskStatus::AwaitingApproval) => 1,
-                            Some(TaskStatus::Queued) => 2,
-                            _ => 3,
-                        };
-                        (
-                            priority,
-                            std::cmp::Reverse(task.created_at),
-                            thread_id.clone(),
-                        )
-                    })
-                })
-                .collect::<Vec<_>>();
-            goal_tasks.sort();
-            goal_tasks
-                .into_iter()
-                .next()
-                .map(|(_, _, thread_id)| ("Worker".to_string(), thread_id))
-        })
-}
-
-fn todo_status_chip(status: Option<TodoStatus>) -> &'static str {
-    match status {
-        Some(TodoStatus::InProgress) => "[~]",
-        Some(TodoStatus::Completed) => "[x]",
-        Some(TodoStatus::Blocked) => "[!]",
-        _ => "[ ]",
-    }
-}
-
-fn step_marker_state(
-    step: &crate::state::task::GoalRunStep,
-    active: bool,
-) -> GoalWorkspacePlanMarkerState {
-    if matches!(step.status, Some(GoalRunStatus::Completed)) {
-        GoalWorkspacePlanMarkerState::Completed
-    } else if step
-        .error
-        .as_deref()
-        .is_some_and(|error| !error.trim().is_empty())
-        || matches!(step.status, Some(GoalRunStatus::Failed))
-    {
-        GoalWorkspacePlanMarkerState::Error
-    } else if active
-        || matches!(
-            step.status,
-            Some(
-                GoalRunStatus::Running | GoalRunStatus::Planning | GoalRunStatus::AwaitingApproval
-            )
-        )
-    {
-        GoalWorkspacePlanMarkerState::Running
-    } else {
-        GoalWorkspacePlanMarkerState::Pending
-    }
 }
 
 fn wrap_plain_text(text: &str, width: usize) -> Vec<String> {

@@ -52,6 +52,15 @@ impl TuiModel {
                 self.schedule_goal_hydration_refresh(goal_run_id.clone());
             }
             self.goal_workspace.set_plan_scroll(0);
+            self.goal_workspace.set_mode(
+                if self.tasks.goal_run_by_id(goal_run_id).is_some_and(|run| {
+                    matches!(run.status, Some(task::GoalRunStatus::AwaitingReview))
+                }) {
+                    crate::state::goal_workspace::GoalWorkspaceMode::Review
+                } else {
+                    crate::state::goal_workspace::GoalWorkspaceMode::Work
+                },
+            );
         }
         self.request_task_view_context(&target);
         self.main_pane_view = MainPaneView::Task(target);

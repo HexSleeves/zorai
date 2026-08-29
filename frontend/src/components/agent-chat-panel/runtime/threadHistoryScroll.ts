@@ -49,11 +49,18 @@ export function resetThreadHistoryScrollStateForTest(): void {
   resetThreadHistoryPagination();
 }
 
+export function threadHasOlderHistory(
+  thread: { loadedMessageStart?: number | null } | null | undefined,
+): boolean {
+  return (thread?.loadedMessageStart ?? 0) > 0;
+}
+
 export function resolveThreadHistoryScrollAction(params: {
   scrollTop: number;
   scrollHeight: number;
   clientHeight: number;
   thresholdPx?: number;
+  hasOlderHistory?: boolean;
 }): ThreadHistoryScrollAction {
   const threshold = params.thresholdPx ?? THREAD_HISTORY_SCROLL_THRESHOLD_PX;
   const atTop = params.scrollTop <= threshold;
@@ -62,7 +69,7 @@ export function resolveThreadHistoryScrollAction(params: {
 
   if (atTop && atBottom) {
     followBottom = true;
-    return "none";
+    return params.hasOlderHistory ? "load-older" : "none";
   }
   if (atTop) {
     followBottom = false;
@@ -80,6 +87,7 @@ export function resolveThreadHistoryScrollAction(params: {
 export function consumeThreadHistoryScroll(options: {
   scroller: HTMLElement;
   loadOlder?: () => Promise<boolean>;
+  hasOlderHistory?: boolean;
   onFollowBottomChange?: (follow: boolean) => void;
   now?: number;
 }): void {
@@ -88,6 +96,7 @@ export function consumeThreadHistoryScroll(options: {
     scrollTop: options.scroller.scrollTop,
     scrollHeight: options.scroller.scrollHeight,
     clientHeight: options.scroller.clientHeight,
+    hasOlderHistory: options.hasOlderHistory,
   });
   options.onFollowBottomChange?.(shouldFollowThreadHistoryBottom());
   if (action !== "load-older") {
@@ -140,12 +149,31 @@ async function runOlderThreadHistoryLoad(
   }
   olderLoadCooldownUntil = Date.now() + THREAD_HISTORY_OLDER_LOAD_COOLDOWN_MS;
   afterLayout(() => {
-    scroller.scrollTop = scroller.scrollHeight - previousHeight + previousTop;
+    if (shouldFollowThreadHistoryBottom()) {
+      scroller.scrollTop = scroller.scrollHeight;
+    } else {
+      scroller.scrollTop = scroller.scrollHeight - previousHeight + previousTop;
+    }
     endProgrammaticThreadHistoryScroll();
-    if (scroller.scrollTop <= THREAD_HISTORY_SCROLL_THRESHOLD_PX) {
+    const stillUnscrollable = scroller.scrollHeight <= scroller.clientHeight + THREAD_HISTORY_SCROLL_THRESHOLD_PX;
+    if (stillUnscrollable || scroller.scrollTop <= THREAD_HISTORY_SCROLL_THRESHOLD_PX) {
       scheduleOlderThreadHistoryLoad(scroller, loadOlder, olderLoadCooldownUntil);
     }
   });
+}
+
+export function fillThreadHistoryIfUnscrollable(options: {
+  scroller: HTMLElement | null | undefined;
+  loadOlder?: () => Promise<boolean>;
+  hasOlderHistory: boolean;
+}): void {
+  const scroller = options.scroller;
+  if (!scroller || !options.hasOlderHistory || !options.loadOlder) return;
+  if (olderLoadInFlight || olderHistoryExhausted) return;
+  if (scroller.clientHeight <= 0) return;
+  const unscrollable = scroller.scrollHeight <= scroller.clientHeight + THREAD_HISTORY_SCROLL_THRESHOLD_PX;
+  if (!unscrollable) return;
+  scheduleOlderThreadHistoryLoad(scroller, options.loadOlder);
 }
 
 function cancelScheduledOlderThreadHistoryLoad(): void {

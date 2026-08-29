@@ -95,13 +95,11 @@ impl TuiModel {
 
     pub(crate) fn cycle_goal_workspace_mode(&mut self, delta: i32) -> bool {
         let modes = [
-            crate::state::goal_workspace::GoalWorkspaceMode::Goal,
-            crate::state::goal_workspace::GoalWorkspaceMode::Files,
-            crate::state::goal_workspace::GoalWorkspaceMode::Progress,
-            crate::state::goal_workspace::GoalWorkspaceMode::Usage,
-            crate::state::goal_workspace::GoalWorkspaceMode::ActiveAgent,
+            crate::state::goal_workspace::GoalWorkspaceMode::Work,
+            crate::state::goal_workspace::GoalWorkspaceMode::Review,
+            crate::state::goal_workspace::GoalWorkspaceMode::Activity,
             crate::state::goal_workspace::GoalWorkspaceMode::Threads,
-            crate::state::goal_workspace::GoalWorkspaceMode::NeedsAttention,
+            crate::state::goal_workspace::GoalWorkspaceMode::Files,
         ];
         let current = modes
             .iter()

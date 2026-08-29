@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type UIEvent } from "react";
-import { consumeThreadHistoryScroll } from "./runtime/threadHistoryScroll";
+import { consumeThreadHistoryScroll, fillThreadHistoryIfUnscrollable, threadHasOlderHistory } from "./runtime/threadHistoryScroll";
 import { buildWelesHealthPresentation } from "./welesHealthPresentation";
 import { ChatComposer } from "./chat-view/Composer";
 import {
@@ -60,6 +60,18 @@ export function ChatView({
   const ttsAudioCacheRef = useRef<Map<string, string>>(new Map());
   const lastAutoSpokenMessageIdRef = useRef<string | null>(null);
   const lastPlayedToolTtsCallIdRef = useRef<string | null>(null);
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      fillThreadHistoryIfUnscrollable({
+        scroller: scrollerRef.current,
+        loadOlder: onLoadOlderMessages,
+        hasOlderHistory: threadHasOlderHistory(activeThread),
+      });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeThread, messages.length, onLoadOlderMessages]);
 
   const handleSendClick = () => {
     const text = readComposerDraftInput().trim();
@@ -82,6 +94,7 @@ export function ChatView({
     consumeThreadHistoryScroll({
       scroller: event.currentTarget,
       loadOlder: onLoadOlderMessages,
+      hasOlderHistory: threadHasOlderHistory(activeThread),
     });
   };
 
@@ -272,7 +285,7 @@ export function ChatView({
   return (
     <>
       <div className="acp-root" style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
-      <div className="acp-chat" onScroll={(event) => void handleMessageScroll(event)}>
+      <div ref={scrollerRef} className="acp-chat" onScroll={(event) => void handleMessageScroll(event)}>
         <div className="acp-chat__toolbar">
           <input
             type="text"
