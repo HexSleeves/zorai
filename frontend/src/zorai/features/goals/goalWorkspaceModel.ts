@@ -1,23 +1,14 @@
 import type { AgentQueueTask } from "@/lib/agentTaskQueue";
 import {
-  formatGoalRunDuration,
   formatGoalRunStatus,
   isGoalRunActive,
-  type GoalAgentAssignment,
+  latestGoalRunTodoSnapshot,
   type GoalRun,
   type GoalRunEvent,
-  type GoalRunStep,
   type TodoStatus,
 } from "@/lib/goalRuns";
 
-export type GoalWorkspaceMode =
-  | "dossier"
-  | "files"
-  | "progress"
-  | "usage"
-  | "active-agent"
-  | "threads"
-  | "needs-attention";
+export type GoalWorkspaceMode = "work" | "review" | "activity" | "threads" | "files";
 
 export type GoalWorkspaceTone = "normal" | "muted" | "active" | "success" | "warning" | "danger" | "accent";
 
@@ -27,7 +18,6 @@ export interface GoalWorkspaceRow {
   tone?: GoalWorkspaceTone;
   depth?: number;
   selected?: boolean;
-  /** Owning event for flattened dossier timeline rows. */
   eventId?: string;
   targetThreadId?: string;
   targetFilePath?: string;
@@ -51,27 +41,21 @@ export interface GoalWorkspaceSection {
 export interface GoalWorkspaceModel {
   summaryTitle: string;
   tabs: Array<{ id: GoalWorkspaceMode; label: string; active: boolean }>;
-  planTitle: string;
-  planRows: GoalWorkspaceRow[];
+  summaryRows: GoalWorkspaceRow[];
   centerTitle: string;
   centerRows: GoalWorkspaceRow[];
-  detailTitle: string;
   detailSections: GoalWorkspaceSection[];
   footerTitle: string;
-  selectedStepLabel: string;
-  selectedStepIndex: number | null;
+  statusLabel: string;
   footerActions: GoalWorkspaceAction[];
 }
 
 export interface GoalWorkspaceOptions {
   mode?: GoalWorkspaceMode;
-  expandedStepIds?: Set<string>;
   promptExpanded?: boolean;
-  selectedStepId?: string | null;
   selectedCenterIndex?: number;
   projectionFiles?: GoalProjectionFile[];
   tasks?: AgentQueueTask[];
-  detailsExpanded?: boolean;
 }
 
 export interface GoalProjectionFile {
@@ -80,54 +64,36 @@ export interface GoalProjectionFile {
   sizeBytes?: number | null;
 }
 
-const modeTabs: Array<{ id: GoalWorkspaceMode; label: string; center: string; detail: string }> = [
-  { id: "dossier", label: "Dossier", center: "Run timeline", detail: "Dossier" },
-  { id: "files", label: "Files", center: "Files", detail: "File details" },
-  { id: "progress", label: "Progress", center: "Progress", detail: "Progress details" },
-  { id: "usage", label: "Usage", center: "Usage", detail: "Usage details" },
-  { id: "active-agent", label: "Active agent", center: "Active agent", detail: "Runtime details" },
-  { id: "threads", label: "Threads", center: "Threads", detail: "Thread details" },
-  { id: "needs-attention", label: "Needs attention", center: "Needs attention", detail: "Attention details" },
+const modeTabs: Array<{ id: GoalWorkspaceMode; label: string; center: string }> = [
+  { id: "work", label: "Work", center: "Worker progress" },
+  { id: "review", label: "Review", center: "Supervisor review" },
+  { id: "activity", label: "Activity", center: "Run activity" },
+  { id: "threads", label: "Threads", center: "Threads" },
+  { id: "files", label: "Files", center: "Files" },
 ];
 
-export function splitGoalStepTitle(title: string): { confidence: "low" | "medium" | "high" | null; title: string } {
-  if (title.startsWith("[LOW]")) return { confidence: "low", title: title.slice(5).trimStart() };
-  if (title.startsWith("[MEDIUM]")) return { confidence: "medium", title: title.slice(8).trimStart() };
-  if (title.startsWith("[HIGH]")) return { confidence: "high", title: title.slice(6).trimStart() };
-  return { confidence: null, title };
-}
-
 export function buildGoalWorkspaceModel(run: GoalRun, options: GoalWorkspaceOptions = {}): GoalWorkspaceModel {
-  const mode = options.mode ?? "dossier";
-  const selectedStep = selectedStepForRun(run, options.selectedStepId);
+  const mode = options.mode ?? "work";
   const modeMeta = modeTabs.find((tab) => tab.id === mode) ?? modeTabs[0];
   const tasks = options.tasks ?? [];
-  const detailsExpanded = Boolean(options.detailsExpanded);
-  const centerRows = detailsExpanded
-    ? buildCenterRows(run, mode, options.selectedCenterIndex ?? 0, options.projectionFiles ?? [], tasks)
-    : [];
+  const selectedIndex = options.selectedCenterIndex ?? 0;
+  const projectionFiles = options.projectionFiles ?? [];
+  const centerRows = buildCenterRows(run, mode, selectedIndex, projectionFiles, tasks);
 
   return {
     summaryTitle: "Goal Mission Control",
     tabs: modeTabs.map((tab) => ({ id: tab.id, label: tab.label, active: tab.id === mode })),
-    planTitle: "Plan",
-    planRows: buildPlanRows(run, options.expandedStepIds ?? new Set(), Boolean(options.promptExpanded), selectedStep?.id ?? null, tasks),
+    summaryRows: buildSummaryRows(run, Boolean(options.promptExpanded)),
     centerTitle: modeMeta.center,
     centerRows,
-    detailTitle: modeMeta.detail,
-    detailSections: detailsExpanded
-      ? buildDetailSections(run, mode, selectedStep, options.selectedCenterIndex ?? 0, options.projectionFiles ?? [], tasks)
-      : [],
+    detailSections: buildDetailSections(run, mode, selectedIndex, projectionFiles, centerRows),
     footerTitle: "Goal actions",
-    selectedStepLabel: selectedStep
-      ? `${stepPosition(run, selectedStep) + 1}. ${splitGoalStepTitle(selectedStep.title).title}`
-      : "Goal prompt",
-    selectedStepIndex: selectedStep ? stepPosition(run, selectedStep) : null,
+    statusLabel: statusLabel(run),
     footerActions: buildFooterActions(run),
   };
 }
 
-function buildPlanRows(run: GoalRun, expandedStepIds: Set<string>, promptExpanded: boolean, selectedStepId: string | null, tasks: AgentQueueTask[]): GoalWorkspaceRow[] {
+function buildSummaryRows(run: GoalRun, promptExpanded: boolean): GoalWorkspaceRow[] {
   const rows: GoalWorkspaceRow[] = [
     {
       id: "goal-prompt",
@@ -136,181 +102,143 @@ function buildPlanRows(run: GoalRun, expandedStepIds: Set<string>, promptExpande
       tone: "accent",
     },
   ];
-
   if (promptExpanded) {
     rows.push({ id: "goal-prompt-body", text: run.goal || "No goal prompt available.", tone: "muted", depth: 1 });
   }
-
-  const mainThread = mainAgentThread(run);
-  rows.push(mainThread
-    ? { id: "main-thread", text: mainThread.label, meta: "Open thread", tone: "active", targetThreadId: mainThread.threadId }
-    : { id: "main-thread-empty", text: "No main agent thread yet.", tone: "muted" });
-
-  const steps = sortedSteps(run);
-  const tasksByStep = indexTasksByStep(steps, tasks);
-  const todosByStep = indexTodosByStep(run);
-  if (steps.length > 0) {
-    rows.push({ id: "steps-label", text: "Steps:", tone: "accent" });
-  }
-
-  for (const [index, step] of steps.entries()) {
-    const expanded = expandedStepIds.has(step.id);
-    const parsed = splitGoalStepTitle(step.title);
-    const status = stepMarkerState(run, step, index);
-    const stepTasks = tasksByStep.get(step.id) ?? [];
+  const worker = workerThread(run);
+  rows.push(worker
+    ? { id: "worker-thread", text: "Worker", meta: "Open thread", tone: "active", targetThreadId: worker }
+    : { id: "worker-thread-empty", text: "No worker thread yet.", tone: "muted" });
+  if (run.supervision_thread_id && run.supervision_thread_id !== run.thread_id) {
     rows.push({
-      id: `step-${step.id}`,
-      text: `${index + 1}. ${parsed.title}`,
-      meta: [stepStatusLabel(status), confidenceLabel(parsed.confidence)].filter(Boolean).join(" · ") || undefined,
-      tone: markerTone(status),
-      selected: step.id === selectedStepId,
-      working: status === "running",
-      indicatorLabel: status === "running" ? "Working" : stepStatusLabel(status),
-      progress: stepProgress(stepTasks, status),
+      id: "owner-thread",
+      text: "Owner",
+      meta: "Open thread",
+      tone: "accent",
+      targetThreadId: run.supervision_thread_id,
     });
-
-    if (expanded) {
-      for (const task of stepTasks) {
-        rows.push({
-          id: `task-${task.id}`,
-          text: task.title,
-          meta: taskActivityLabel(task),
-          tone: taskTone(task),
-          depth: 1,
-          targetThreadId: task.thread_id ?? undefined,
-          working: task.status === "in_progress",
-          indicatorLabel: task.status === "in_progress" ? "Working" : task.status.replace(/_/g, " "),
-          progress: task.progress,
-        });
-      }
-      for (const todo of todosByStep.get(index) ?? []) {
-        rows.push({
-          id: `todo-${todo.id}`,
-          text: todo.content,
-          meta: todoStatusLabel(todo.status),
-          tone: todo.status === "completed" ? "success" : todo.status === "blocked" ? "danger" : "muted",
-          depth: 1,
-          indicatorLabel: todoStatusLabel(todo.status),
-          progress: todo.status === "completed" ? 100 : todo.status === "in_progress" ? 50 : 0,
-        });
-      }
-      if (step.instructions?.trim()) {
-        rows.push({ id: `detail-${step.id}-instructions`, text: step.instructions, meta: "Instructions", tone: "muted", depth: 1 });
-      }
-      if (step.summary?.trim()) {
-        rows.push({ id: `detail-${step.id}-summary`, text: step.summary, meta: "Latest outcome", tone: "active", depth: 1 });
-      }
-      if (step.error?.trim()) {
-        rows.push({ id: `detail-${step.id}-error`, text: step.error, meta: "Error", tone: "danger", depth: 1 });
-      }
-    }
   }
-
   return rows;
 }
 
-function buildCenterRows(run: GoalRun, mode: GoalWorkspaceMode, selectedIndex: number, projectionFiles: GoalProjectionFile[], tasks: AgentQueueTask[]): GoalWorkspaceRow[] {
+function buildCenterRows(
+  run: GoalRun,
+  mode: GoalWorkspaceMode,
+  selectedIndex: number,
+  projectionFiles: GoalProjectionFile[],
+  tasks: AgentQueueTask[],
+): GoalWorkspaceRow[] {
   switch (mode) {
-    case "dossier":
+    case "work":
+      return workRows(run, selectedIndex, tasks);
+    case "review":
+      return reviewRows(run, selectedIndex);
+    case "activity":
       return timelineRows(run, selectedIndex);
-    case "files":
-      return fileRows(run, selectedIndex, projectionFiles);
-    case "progress":
-      return progressRows(run, selectedIndex, tasks);
-    case "usage":
-      return usageRows(run, selectedIndex);
-    case "active-agent":
-      return activeAgentRows(run, selectedIndex, tasks);
     case "threads":
       return threadRows(run, selectedIndex, tasks);
-    case "needs-attention":
-      return attentionRows(run, selectedIndex);
+    case "files":
+      return fileRows(run, selectedIndex, projectionFiles);
   }
 }
 
-function buildDetailSections(run: GoalRun, mode: GoalWorkspaceMode, selectedStep: GoalRunStep | null, selectedCenterIndex: number, projectionFiles: GoalProjectionFile[], tasks: AgentQueueTask[]): GoalWorkspaceSection[] {
-  if (mode === "dossier") return dossierDetails(run, selectedStep, selectedCenterIndex, tasks);
-  if (mode === "files") return fileDetails(run, selectedCenterIndex, projectionFiles);
-  if (mode === "progress") return progressDetails(run, selectedCenterIndex, tasks);
-  if (mode === "usage") return usageDetails(run, selectedCenterIndex);
-  if (mode === "active-agent") return activeAgentDetails(run, selectedCenterIndex, tasks);
-  if (mode === "threads") return threadDetails(run, selectedCenterIndex, tasks);
-  return attentionDetails(run, selectedCenterIndex);
+function buildDetailSections(
+  run: GoalRun,
+  mode: GoalWorkspaceMode,
+  selectedIndex: number,
+  projectionFiles: GoalProjectionFile[],
+  centerRows: GoalWorkspaceRow[],
+): GoalWorkspaceSection[] {
+  if (mode === "files") return fileDetails(run, selectedIndex, projectionFiles);
+  if (mode === "activity") return activityDetails(run, selectedIndex, centerRows);
+  return [];
 }
 
-function dossierDetails(run: GoalRun, selectedStep: GoalRunStep | null, selectedCenterIndex: number, tasks: AgentQueueTask[]): GoalWorkspaceSection[] {
-  const sections: GoalWorkspaceSection[] = [];
-  if (selectedStep) {
-    const parsed = splitGoalStepTitle(selectedStep.title);
-    const rows: GoalWorkspaceRow[] = [
-      { id: "selected-title", text: `${stepPosition(run, selectedStep) + 1}. ${parsed.title}`, meta: confidenceLabel(parsed.confidence) || undefined, tone: "active" },
-    ];
-    if (selectedStep.instructions) rows.push({ id: "instructions", text: selectedStep.instructions, tone: "muted" });
-    if (selectedStep.summary) rows.push({ id: "summary", text: selectedStep.summary, tone: "active" });
-    if (selectedStep.error) rows.push({ id: "error", text: selectedStep.error, tone: "danger" });
-    sections.push({ title: "Selected Step", rows });
+function workRows(run: GoalRun, selectedIndex: number, tasks: AgentQueueTask[]): GoalWorkspaceRow[] {
+  const rows: GoalWorkspaceRow[] = [];
+  const workerId = workerThread(run);
+  const workerTasks = tasks.filter((task) => (
+    task.source === "goal_run" || (workerId != null && task.thread_id === workerId)
+  ));
+  for (const task of workerTasks) {
+    rows.push({
+      id: `task-${task.id}`,
+      text: task.title || "Goal worker",
+      meta: taskActivityLabel(task),
+      tone: taskTone(task),
+      targetThreadId: task.thread_id ?? undefined,
+      working: task.status === "in_progress",
+      indicatorLabel: task.status === "in_progress" ? "Working" : task.status.replace(/_/g, " "),
+      progress: task.progress,
+    });
   }
-
-  if (run.dossier) {
-    const matchingUnit = selectedStep ? run.dossier.units.find((unit) => unit.id === selectedStep.id) : null;
-    const rows: GoalWorkspaceRow[] = [
-      { id: "projection", text: `Projection ${matchingUnit?.status || run.dossier.projection_state}`, tone: "active" },
-    ];
-    const summary = matchingUnit?.summary || run.dossier.summary;
-    if (summary) rows.push({ id: "dossier-summary", text: summary, tone: "active" });
-    if (run.dossier.projection_error) rows.push({ id: "projection-error", text: run.dossier.projection_error, tone: "danger" });
-    sections.push({ title: "Execution Dossier", rows });
+  const todos = latestGoalRunTodoSnapshot(run);
+  if (todos.length > 0 && workerTasks.length > 0) {
+    rows.push({ id: "todos-label", text: "Worker todos", tone: "accent" });
   }
+  for (const todo of todos) {
+    rows.push({
+      id: `todo-${todo.id}`,
+      text: todo.content,
+      meta: todoStatusLabel(todo.status),
+      tone: todo.status === "completed" ? "success" : todo.status === "blocked" ? "danger" : todo.status === "in_progress" ? "active" : "muted",
+      depth: workerTasks.length > 0 ? 1 : 0,
+      indicatorLabel: todoStatusLabel(todo.status),
+      progress: todo.status === "completed" ? 100 : todo.status === "in_progress" ? 50 : 0,
+    });
+  }
+  if (run.last_error || run.error) {
+    rows.push({ id: "work-error", text: run.last_error || run.error || "Error", tone: "danger" });
+  }
+  return markSelected(rows.length ? rows : [{ id: "empty", text: "Worker has not recorded progress yet.", tone: "muted" }], selectedIndex);
+}
 
-  const taskRows = relatedTaskRows(run, selectedStep, tasks);
-  sections.push({ title: "Related Tasks", rows: taskRows.length ? taskRows : [{ id: "no-tasks", text: "No related tasks.", tone: "muted" }] });
-
-  const selectedRow = timelineRows(run, selectedCenterIndex)[selectedCenterIndex];
-  const selectedEvent = selectedRow?.eventId
-    ? (run.events ?? []).find((event) => event.id === selectedRow.eventId)
-    : undefined;
-  if (selectedEvent) {
-    const rows: GoalWorkspaceRow[] = [{ id: selectedEvent.id, text: selectedEvent.message, tone: "active" }];
-    if (selectedEvent.details) rows.push({ id: `${selectedEvent.id}-details`, text: selectedEvent.details, tone: "muted" });
-    for (const todo of selectedEvent.todo_snapshot ?? []) {
-      rows.push({ id: `${selectedEvent.id}-${todo.id}`, text: todo.content, meta: todoStatusLabel(todo.status), tone: "muted" });
+function reviewRows(run: GoalRun, selectedIndex: number): GoalWorkspaceRow[] {
+  const rows: GoalWorkspaceRow[] = [];
+  if (run.status === "awaiting_review") {
+    rows.push({
+      id: "pending-report",
+      text: run.pending_review_report || "The worker asked for supervisor review.",
+      meta: "Pending report",
+      tone: "warning",
+    });
+  } else {
+    rows.push({
+      id: "review-idle",
+      text: "No supervisor review is pending. Completeness is decided only by Accept.",
+      tone: "muted",
+    });
+  }
+  for (const event of (run.events ?? []).filter(isReviewEvent).slice(-12).reverse()) {
+    rows.push({
+      id: event.id,
+      eventId: event.id,
+      text: event.message || "review event",
+      meta: event.phase,
+      tone: eventTone(event),
+    });
+    if (event.details) {
+      rows.push({ id: `${event.id}-details`, eventId: event.id, text: event.details, tone: "muted", depth: 1 });
     }
-    sections.push({ title: "Selected Timeline Item", rows });
   }
-
-  return sections;
-}
-
-function progressDetails(run: GoalRun, selectedIndex: number, tasks: AgentQueueTask[]): GoalWorkspaceSection[] {
-  const rows = progressRows(run, selectedIndex, tasks);
-  const selected = rows[selectedIndex] ?? rows[0];
-  const details: GoalWorkspaceRow[] = selected ? [selected] : [{ id: "empty", text: "No progress data available.", tone: "muted" }];
-  if (run.dossier?.latest_resume_decision) {
-    details.push({ id: "resume", text: `${run.dossier.latest_resume_decision.action} via ${run.dossier.latest_resume_decision.reason_code}`, tone: "active" });
-    if (run.dossier.latest_resume_decision.reason) details.push({ id: "resume-reason", text: run.dossier.latest_resume_decision.reason, tone: "muted" });
+  if (run.last_error) {
+    rows.push({ id: "last-error", text: run.last_error, meta: "Last error", tone: "danger" });
   }
-  return [{ title: selected?.text.includes("Resume") ? "Resume Decision" : "Execution Dossier", rows: details }];
+  return markSelected(rows, selectedIndex);
 }
 
-function usageDetails(run: GoalRun, selectedIndex: number): GoalWorkspaceSection[] {
-  const rows = usageRows(run, selectedIndex);
-  return [{ title: selectedIndex <= 0 ? "Goal Usage" : "Model Usage", rows: rows.length ? rows : [{ id: "empty", text: "No usage data available.", tone: "muted" }] }];
-}
-
-function activeAgentDetails(run: GoalRun, selectedIndex: number, tasks: AgentQueueTask[]): GoalWorkspaceSection[] {
-  const rows = activeAgentRows(run, selectedIndex, tasks);
-  return [{ title: selectedIndex === 0 ? "Current Owner" : "Runtime Assignment", rows: rows.length ? rows : [{ id: "empty", text: "No runtime owner metadata.", tone: "muted" }] }];
-}
-
-function threadDetails(run: GoalRun, selectedIndex: number, tasks: AgentQueueTask[]): GoalWorkspaceSection[] {
-  const rows = threadRows(run, selectedIndex, tasks);
-  const selected = rows[selectedIndex] ?? rows[0];
-  return [{ title: "Thread", rows: selected ? [selected, { id: `${selected.id}-open`, text: "Open linked thread", tone: "accent", targetThreadId: selected.targetThreadId }] : [{ id: "empty", text: "No linked threads available.", tone: "muted" }] }];
-}
-
-function attentionDetails(run: GoalRun, selectedIndex: number): GoalWorkspaceSection[] {
-  const rows = attentionRows(run, selectedIndex);
-  return [{ title: "Status", rows: rows.length ? rows : [{ id: "empty", text: "No blockers or review items.", tone: "muted" }] }];
+function activityDetails(run: GoalRun, selectedIndex: number, centerRows: GoalWorkspaceRow[]): GoalWorkspaceSection[] {
+  const selected = centerRows[selectedIndex];
+  const selectedEvent = selected?.eventId
+    ? (run.events ?? []).find((event) => event.id === selected.eventId)
+    : undefined;
+  if (!selectedEvent) return [];
+  const rows: GoalWorkspaceRow[] = [{ id: selectedEvent.id, text: selectedEvent.message, tone: "active" }];
+  if (selectedEvent.details) rows.push({ id: `${selectedEvent.id}-details`, text: selectedEvent.details, tone: "muted" });
+  for (const todo of selectedEvent.todo_snapshot ?? []) {
+    rows.push({ id: `${selectedEvent.id}-${todo.id}`, text: todo.content, meta: todoStatusLabel(todo.status), tone: "muted" });
+  }
+  return [{ title: "Selected activity", rows }];
 }
 
 const MAX_TIMELINE_EVENTS = 40;
@@ -358,50 +286,13 @@ function fileRows(run: GoalRun, selectedIndex: number, projectionFiles: GoalProj
 function fileDetails(run: GoalRun, selectedIndex: number, projectionFiles: GoalProjectionFile[]): GoalWorkspaceSection[] {
   const rows = fileRows(run, selectedIndex, projectionFiles);
   const selected = rows[selectedIndex] ?? rows[0];
-  if (!selected || selected.id === "empty") return [{ title: "Selected File", rows }];
+  if (!selected || selected.id === "empty") return [{ title: "Selected file", rows }];
   const metadata: GoalWorkspaceRow[] = [selected];
   if (selected.targetFilePath) metadata.push({ id: `${selected.id}-path`, text: `Path ${selected.targetFilePath}`, tone: "muted" });
   const projection = projectionFiles.find((file) => file.absolutePath === selected.targetFilePath);
   if (typeof projection?.sizeBytes === "number") metadata.push({ id: `${selected.id}-size`, text: `Size ${projection.sizeBytes} bytes`, tone: "muted" });
   if (selected.targetFilePath) metadata.push({ id: `${selected.id}-open`, text: "Open preview", tone: "accent", targetFilePath: selected.targetFilePath });
-  return [{ title: "Selected File", rows: metadata }];
-}
-
-function progressRows(run: GoalRun, selectedIndex: number, tasks: AgentQueueTask[]): GoalWorkspaceRow[] {
-  const rows: GoalWorkspaceRow[] = [];
-  for (const task of tasks.filter((entry) => isTaskWorking(entry))) {
-    rows.push({
-      id: `live-${task.id}`,
-      text: task.title,
-      meta: taskActivityLabel(task),
-      tone: taskTone(task),
-      targetThreadId: task.thread_id ?? undefined,
-    });
-  }
-  if (run.dossier) rows.push({ id: "dossier", text: "Execution dossier", tone: "active" });
-  if (run.dossier?.latest_resume_decision) rows.push({ id: "resume", text: "Resume decision", tone: "active" });
-  for (const unit of run.dossier?.units ?? []) rows.push({ id: unit.id, text: unit.title, meta: unit.status, tone: unit.status === "completed" ? "success" : "active" });
-  return markSelected(rows.length ? rows : [{ id: "empty", text: "No progress data available.", tone: "muted" }], selectedIndex);
-}
-
-function usageRows(run: GoalRun, selectedIndex: number): GoalWorkspaceRow[] {
-  const rows: GoalWorkspaceRow[] = [];
-  if ((run.total_prompt_tokens ?? 0) > 0 || (run.total_completion_tokens ?? 0) > 0 || run.estimated_cost_usd != null) {
-    rows.push({ id: "total", text: `Goal total · prompt ${formatCount(run.total_prompt_tokens ?? 0)} · completion ${formatCount(run.total_completion_tokens ?? 0)}${run.estimated_cost_usd != null ? ` · cost ${formatCost(run.estimated_cost_usd)}` : ""}`, tone: "active" });
-  }
-  for (const usage of run.model_usage ?? []) rows.push({ id: `${usage.provider}-${usage.model}`, text: `${usage.provider}/${usage.model}`, meta: `${usage.request_count} req · in ${formatCount(usage.prompt_tokens)} · out ${formatCount(usage.completion_tokens)}${usage.duration_ms ? ` · ${formatGoalRunDuration(usage.duration_ms)}` : ""}` });
-  for (const assignment of runtimeAssignments(run)) rows.push({ id: `role-${assignment.role_id}`, text: `Role ${assignment.role_id}`, meta: assignment.inherit_from_main ? "inherits main" : `${assignment.provider}/${assignment.model}` });
-  return markSelected(rows.length ? rows : [{ id: "empty", text: "No usage data available.", tone: "muted" }], selectedIndex);
-}
-
-function activeAgentRows(run: GoalRun, selectedIndex: number, tasks: AgentQueueTask[]): GoalWorkspaceRow[] {
-  const rows: GoalWorkspaceRow[] = [];
-  if (run.current_step_owner_profile) rows.push({ id: "current", text: run.current_step_owner_profile.agent_label, meta: "Current owner", tone: "active" });
-  if (run.planner_owner_profile) rows.push({ id: "planner", text: run.planner_owner_profile.agent_label, meta: "Planner", tone: "active" });
-  for (const assignment of runtimeAssignments(run)) rows.push({ id: `assignment-${assignment.role_id}`, text: assignment.model, meta: assignment.role_id, tone: assignment.enabled ? "active" : "muted" });
-  for (const task of tasks.filter((entry) => isTaskWorking(entry))) rows.push({ id: `active-${task.id}`, text: task.title, meta: taskActivityLabel(task), tone: taskTone(task), targetThreadId: task.thread_id ?? undefined });
-  for (const threadId of goalThreadTargets(run)) rows.push({ id: `thread-${threadId}`, text: threadId, meta: "Open thread", tone: "accent", targetThreadId: threadId });
-  return markSelected(rows.length ? rows : [{ id: "empty", text: "No runtime owner metadata.", tone: "muted" }], selectedIndex);
+  return [{ title: "Selected file", rows: metadata }];
 }
 
 function threadRows(run: GoalRun, selectedIndex: number, tasks: AgentQueueTask[]): GoalWorkspaceRow[] {
@@ -409,15 +300,6 @@ function threadRows(run: GoalRun, selectedIndex: number, tasks: AgentQueueTask[]
   return markSelected(entries.length
     ? entries.map((entry) => ({ id: entry.threadId, text: entry.label, meta: "Open thread", tone: "accent" as const, targetThreadId: entry.threadId }))
     : [{ id: "empty", text: "No linked threads available.", tone: "muted" }], selectedIndex);
-}
-
-function attentionRows(run: GoalRun, selectedIndex: number): GoalWorkspaceRow[] {
-  const rows: GoalWorkspaceRow[] = [];
-  if (run.last_error) rows.push({ id: "last-error", text: "Last error available", tone: "danger" });
-  if (run.dossier?.projection_error) rows.push({ id: "projection-error", text: "Projection error available", tone: "danger" });
-  rows.push({ id: "approvals", text: `${run.approval_count ?? 0} approvals`, tone: "active" });
-  rows.push({ id: "status", text: formatGoalRunStatus(run.status), meta: "Status", tone: "active" });
-  return markSelected(rows, selectedIndex);
 }
 
 function buildFooterActions(run: GoalRun): GoalWorkspaceAction[] {
@@ -441,81 +323,16 @@ function buildFooterActions(run: GoalRun): GoalWorkspaceAction[] {
   return actions;
 }
 
-function selectedStepForRun(run: GoalRun, selectedStepId?: string | null): GoalRunStep | null {
-  const steps = sortedSteps(run);
-  return steps.find((step) => step.id === selectedStepId)
-    ?? (typeof run.current_step_index === "number" ? steps[run.current_step_index] : null)
-    ?? steps[0]
-    ?? null;
+function workerThread(run: GoalRun): string | null {
+  return run.thread_id || run.active_thread_id || run.execution_thread_ids?.[0] || null;
 }
 
-function sortedSteps(run: GoalRun): GoalRunStep[] {
-  return [...(run.steps ?? [])].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
-}
-
-function stepPosition(run: GoalRun, step: GoalRunStep): number {
-  const index = sortedSteps(run).findIndex((entry) => entry.id === step.id);
-  return index >= 0 ? index : 0;
-}
-
-function indexTasksByStep(steps: GoalRunStep[], tasks: AgentQueueTask[]): Map<string, AgentQueueTask[]> {
-  const result = new Map<string, AgentQueueTask[]>();
-  const stepIdByTaskId = new Map(steps.filter((step) => step.task_id).map((step) => [step.task_id as string, step.id]));
-  const stepIdByTitle = new Map(steps.map((step) => [step.title, step.id]));
-  const validStepIds = new Set(steps.map((step) => step.id));
-  for (const task of tasks) {
-    const stepId = task.goal_step_id && validStepIds.has(task.goal_step_id)
-      ? task.goal_step_id
-      : stepIdByTaskId.get(task.id) ?? (task.goal_step_title ? stepIdByTitle.get(task.goal_step_title) : undefined);
-    if (!stepId) continue;
-    const bucket = result.get(stepId) ?? [];
-    bucket.push(task);
-    result.set(stepId, bucket);
-  }
-  return result;
-}
-
-function indexTodosByStep(run: GoalRun): Map<number, NonNullable<GoalRunEvent["todo_snapshot"]>> {
-  const result = new Map<number, NonNullable<GoalRunEvent["todo_snapshot"]>>();
-  const claimed = new Set<number>();
-  for (let index = (run.events ?? []).length - 1; index >= 0; index -= 1) {
-    const event = run.events?.[index];
-    if (!event) continue;
-    const byStep = new Map<number, NonNullable<GoalRunEvent["todo_snapshot"]>>();
-    for (const todo of event.todo_snapshot ?? []) {
-      const stepIndex = todo.step_index ?? event.step_index;
-      if (stepIndex == null || claimed.has(stepIndex)) continue;
-      const bucket = byStep.get(stepIndex) ?? [];
-      bucket.push(todo);
-      byStep.set(stepIndex, bucket);
-    }
-    for (const [stepIndex, todos] of byStep) {
-      result.set(stepIndex, todos);
-      claimed.add(stepIndex);
-    }
-  }
-  return result;
-}
-
-function mainAgentThread(run: GoalRun): { label: string; threadId: string } | null {
-  if (run.thread_id) return { label: "Worker", threadId: run.thread_id };
-  if (run.active_thread_id) return { label: "Worker", threadId: run.active_thread_id };
-  const firstExecution = run.execution_thread_ids?.[0];
-  return firstExecution ? { label: "Worker", threadId: firstExecution } : null;
-}
-
-function goalThreadTargets(run: GoalRun): string[] {
-  return [run.thread_id, run.supervision_thread_id, run.active_thread_id]
-    .filter((entry): entry is string => Boolean(entry && entry.trim()))
-    .filter((entry, index, list) => list.indexOf(entry) === index);
-}
-
-function goalThreadEntries(run: GoalRun, tasks: AgentQueueTask[] = []): Array<{ label: string; threadId: string }> {
+function goalThreadEntries(run: GoalRun, tasks: AgentQueueTask[]): Array<{ label: string; threadId: string }> {
   const entries: Array<{ label: string; threadId: string }> = [];
   const push = (label: string, threadId?: string | null) => {
     if (threadId && !entries.some((entry) => entry.threadId === threadId)) entries.push({ label, threadId });
   };
-  push("Worker", run.thread_id);
+  push("Worker", workerThread(run));
   if (run.supervision_thread_id && run.supervision_thread_id !== run.thread_id) {
     push("Owner", run.supervision_thread_id);
   }
@@ -526,33 +343,16 @@ function goalThreadEntries(run: GoalRun, tasks: AgentQueueTask[] = []): Array<{ 
   return entries;
 }
 
-function runtimeAssignments(run: GoalRun): GoalAgentAssignment[] {
-  return (run.runtime_assignment_list?.length ? run.runtime_assignment_list : run.launch_assignment_snapshot) ?? [];
+function statusLabel(run: GoalRun): string {
+  if (run.status === "awaiting_review") return "Supervisor review";
+  const worker = tasksWorkingLabel(run);
+  return worker || formatGoalRunStatus(run.status);
 }
 
-function relatedTaskRows(run: GoalRun, selectedStep: GoalRunStep | null, tasks: AgentQueueTask[]): GoalWorkspaceRow[] {
-  const matching = selectedStep
-    ? tasksForStep(tasks, selectedStep)
-    : tasks;
-  if (matching.length > 0) {
-    return matching.map((task) => ({
-      id: task.id,
-      text: task.title,
-      meta: taskActivityLabel(task),
-      tone: taskTone(task),
-      targetThreadId: task.thread_id ?? undefined,
-    }));
-  }
-  const ids = selectedStep?.task_id ? [selectedStep.task_id] : run.child_task_ids ?? [];
-  return ids.map((id) => ({ id, text: id, meta: "Task", tone: "accent" }));
-}
-
-function tasksForStep(tasks: AgentQueueTask[], step: GoalRunStep): AgentQueueTask[] {
-  return tasks.filter((task) => task.goal_step_id === step.id || task.id === step.task_id || task.goal_step_title === step.title);
-}
-
-function isTaskWorking(task: AgentQueueTask): boolean {
-  return task.status === "queued" || task.status === "in_progress" || task.status === "blocked" || task.status === "failed_analyzing" || task.status === "awaiting_approval";
+function tasksWorkingLabel(run: GoalRun): string {
+  const todos = latestGoalRunTodoSnapshot(run);
+  const working = todos.find((todo) => todo.status === "in_progress");
+  return working?.content ?? "";
 }
 
 function taskActivityLabel(task: AgentQueueTask): string {
@@ -569,35 +369,6 @@ function taskTone(task: AgentQueueTask): GoalWorkspaceTone {
   return "muted";
 }
 
-function stepProgress(tasks: AgentQueueTask[], status: ReturnType<typeof stepMarkerState>): number {
-  if (status === "completed") return 100;
-  if (status === "pending") return 0;
-  const active = tasks.filter((task) => task.status === "in_progress" || task.status === "completed");
-  if (active.length === 0) return status === "running" ? 8 : 0;
-  return Math.round(active.reduce((sum, task) => sum + Math.max(0, Math.min(100, task.progress)), 0) / active.length);
-}
-
-function stepMarkerState(run: GoalRun, step: GoalRunStep, index: number): "pending" | "completed" | "running" | "error" {
-  if (step.status === "completed") return "completed";
-  if (step.status === "failed" || Boolean(step.error?.trim())) return "error";
-  if (run.current_step_index === index || step.status === "running" || step.status === "planning" || step.status === "awaiting_approval") return "running";
-  return "pending";
-}
-
-function markerTone(state: ReturnType<typeof stepMarkerState>): GoalWorkspaceTone {
-  if (state === "completed") return "success";
-  if (state === "running") return "accent";
-  if (state === "error") return "danger";
-  return "normal";
-}
-
-function confidenceLabel(confidence: ReturnType<typeof splitGoalStepTitle>["confidence"]): string {
-  if (confidence === "low") return "Low confidence";
-  if (confidence === "medium") return "Medium confidence";
-  if (confidence === "high") return "High confidence";
-  return "";
-}
-
 function todoStatusLabel(status: TodoStatus): string {
   if (status === "in_progress") return "In progress";
   if (status === "completed") return "Done";
@@ -605,27 +376,18 @@ function todoStatusLabel(status: TodoStatus): string {
   return "Todo";
 }
 
-function stepStatusLabel(state: ReturnType<typeof stepMarkerState>): string {
-  if (state === "completed") return "Completed";
-  if (state === "running") return "Running";
-  if (state === "error") return "Failed";
-  return "Pending";
+function isReviewEvent(event: GoalRunEvent): boolean {
+  const haystack = `${event.phase} ${event.message}`.toLowerCase();
+  return haystack.includes("review") || haystack.includes("accept") || haystack.includes("reject") || haystack.includes("supervisor");
 }
 
 function eventTone(event: GoalRunEvent): GoalWorkspaceTone {
   if (event.phase.includes("error") || event.message.toLowerCase().includes("failed")) return "danger";
   if (event.phase.includes("todo")) return "warning";
+  if (isReviewEvent(event)) return "warning";
   return "normal";
 }
 
 function markSelected(rows: GoalWorkspaceRow[], selectedIndex: number): GoalWorkspaceRow[] {
   return rows.map((row, index) => ({ ...row, selected: index === selectedIndex }));
-}
-
-function formatCount(value: number): string {
-  return Math.round(value).toLocaleString();
-}
-
-function formatCost(value: number): string {
-  return Math.abs(value) >= 1 ? `$${value.toFixed(2)}` : `$${value.toFixed(4)}`;
 }

@@ -907,24 +907,16 @@ impl AgentEngine {
                 .cloned()
         };
         let task_goal_step_id = task.goal_step_id.clone();
-        let (step_index, goal_step_id, step_status) = match memory_goal_run {
-            Some(goal_run) => {
-                let step_index = task_goal_step_id
-                    .as_deref()
-                    .and_then(|goal_step_id| {
-                        goal_run
-                            .steps
-                            .iter()
-                            .position(|step| step.id == goal_step_id)
-                    })
-                    .unwrap_or(goal_run.current_step_index);
-                (
-                    step_index,
-                    task_goal_step_id
-                        .or_else(|| goal_run.steps.get(step_index).map(|step| step.id.clone())),
-                    goal_run.steps.get(step_index).map(|step| step.status),
-                )
-            }
+        let current_step_index = match memory_goal_run {
+            Some(goal_run) => task_goal_step_id
+                .as_deref()
+                .and_then(|goal_step_id| {
+                    goal_run
+                        .steps
+                        .iter()
+                        .position(|step| step.id == goal_step_id)
+                })
+                .unwrap_or(goal_run.current_step_index),
             None => {
                 let context = match self
                     .history
@@ -941,19 +933,13 @@ impl AgentEngine {
                         None
                     }
                 }?;
-                (
-                    context.step_index,
-                    task_goal_step_id.or(context.step_id),
-                    context.step_status,
-                )
+                context.step_index
             }
         };
 
         Some(GoalTodoContext {
             goal_run_id,
-            goal_step_id,
-            current_step_index: step_index,
-            step_status,
+            current_step_index,
             authoritative: task.source == "goal_run" && task.parent_task_id.is_none(),
         })
     }
@@ -1437,9 +1423,7 @@ impl AgentEngine {
 #[derive(Debug, Clone)]
 pub(crate) struct GoalTodoContext {
     pub(crate) goal_run_id: String,
-    pub(crate) goal_step_id: Option<String>,
     pub(crate) current_step_index: usize,
-    pub(crate) step_status: Option<GoalRunStepStatus>,
     pub(crate) authoritative: bool,
 }
 

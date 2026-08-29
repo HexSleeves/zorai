@@ -244,13 +244,14 @@ describe("Zorai feature surfaces", () => {
     const source = readFeature("./goals/goalWorkspaceModel.ts");
     const panelSource = readFeature("./goals/GoalWorkspacePanel.tsx");
 
-    expect(source).toContain("Dossier");
-    expect(source).toContain("Files");
-    expect(source).toContain("Progress");
-    expect(source).toContain("Usage");
-    expect(source).toContain("Active agent");
+    expect(source).toContain("Work");
+    expect(source).toContain("Review");
+    expect(source).toContain("Activity");
     expect(source).toContain("Threads");
-    expect(source).toContain("Needs attention");
+    expect(source).toContain("Files");
+    expect(source).not.toContain("Dossier");
+    expect(source).not.toContain("Active agent");
+    expect(source).not.toContain("Needs attention");
     expect(source).toContain("targetThreadId");
     expect(source).toContain("targetFilePath");
     expect(panelSource).toContain("loadGoalProjectionFiles");
@@ -259,9 +260,13 @@ describe("Zorai feature surfaces", () => {
     expect(panelSource).toContain("zorai-ghost-button");
     expect(panelSource).toContain("footerActions");
     expect(panelSource).toContain("{action.label}");
-    expect(source).toContain('label: "Retry step"');
-    expect(source).toContain('label: "Rerun from here"');
+    expect(panelSource).not.toContain("More details");
+    expect(source).toContain('label: "Accept"');
+    expect(source).toContain('label: "Soft reject"');
+    expect(source).toContain('label: "Hard reject"');
     expect(source).toContain('label: "Stop"');
+    expect(source).not.toContain('label: "Retry step"');
+    expect(source).not.toContain('label: "Rerun from here"');
     expect(panelSource).not.toContain("[Actions]");
   });
 

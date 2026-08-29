@@ -50,19 +50,22 @@ export function GoalWorkspacePanel({
   onMessage: (message: string) => void;
   onOpenThread?: (threadId: string) => void | Promise<void>;
 }) {
-  const [mode, setMode] = useState<GoalWorkspaceMode>("dossier");
-  const [selectedStepId, setSelectedStepId] = useState<string | null>(null);
+  const [mode, setMode] = useState<GoalWorkspaceMode>("work");
   const [selectedCenterIndex, setSelectedCenterIndex] = useState(0);
   const [promptExpanded, setPromptExpanded] = useState(false);
-  const [moreOpen, setMoreOpen] = useState(false);
-  const [expandedStepIds, setExpandedStepIds] = useState<Set<string>>(() => new Set());
   const [projectionFiles, setProjectionFiles] = useState<GoalProjectionFile[]>([]);
   const [goalTasks, setGoalTasks] = useState<AgentQueueTask[]>([]);
   const { openThreadFilePreview } = useThreadFilePreview();
 
   useEffect(() => {
+    setMode(run?.status === "awaiting_review" ? "review" : "work");
+    setSelectedCenterIndex(0);
+    setPromptExpanded(false);
+  }, [run?.id]);
+
+  useEffect(() => {
     let cancelled = false;
-    if (!run?.id || !moreOpen || mode !== "files") {
+    if (!run?.id || mode !== "files") {
       setProjectionFiles((current) => (current.length === 0 ? current : []));
       return () => {
         cancelled = true;
@@ -75,7 +78,7 @@ export function GoalWorkspacePanel({
     return () => {
       cancelled = true;
     };
-  }, [mode, moreOpen, run?.id]);
+  }, [mode, run?.id]);
 
   useEffect(() => {
     let cancelled = false;
@@ -105,14 +108,11 @@ export function GoalWorkspacePanel({
 
   const model = useMemo(() => run ? buildGoalWorkspaceModel(run, {
     mode,
-    selectedStepId,
     selectedCenterIndex,
     promptExpanded,
-    expandedStepIds,
     projectionFiles,
     tasks: goalTasks,
-    detailsExpanded: moreOpen,
-  }) : null, [expandedStepIds, goalTasks, mode, moreOpen, projectionFiles, promptExpanded, run, selectedCenterIndex, selectedStepId]);
+  }) : null, [goalTasks, mode, projectionFiles, promptExpanded, run, selectedCenterIndex]);
 
   const control = async (action: GoalRunControlAction, explanation?: string) => {
     if (!run || !model) return;
@@ -153,21 +153,10 @@ export function GoalWorkspacePanel({
     );
   }
 
-  const handlePlanRowClick = (row: GoalWorkspaceRow) => {
+  const handleSummaryRowClick = (row: GoalWorkspaceRow) => {
     if (handleTargetRow(row)) return;
     if (row.id === "goal-prompt") {
       setPromptExpanded((current) => !current);
-      return;
-    }
-    if (row.id.startsWith("step-")) {
-      const stepId = row.id.slice("step-".length);
-      setSelectedStepId(stepId);
-      setExpandedStepIds((current) => {
-        const next = new Set(current);
-        if (next.has(stepId)) next.delete(stepId);
-        else next.add(stepId);
-        return next;
-      });
     }
   };
 
@@ -192,11 +181,10 @@ export function GoalWorkspacePanel({
 
   return (
     <div className="zorai-goal-workspace-shell" aria-label="Goal workspace">
-
       <section className="zorai-panel zorai-goal-toolbar">
         <div>
           <div className="zorai-section-label">{model.footerTitle}</div>
-          <strong>{model.selectedStepLabel}</strong>
+          <strong>{model.statusLabel}</strong>
         </div>
         <div className="zorai-card-actions">
           {model.footerActions.map((action) => (
@@ -214,61 +202,47 @@ export function GoalWorkspacePanel({
       </section>
 
       {run.status === "awaiting_review" ? (
-        <section className="zorai-panel" aria-label="Supervisor review">
+        <section className="zorai-panel zorai-goal-review-banner" aria-label="Supervisor review">
           <div className="zorai-section-label">Worker report</div>
           <p className="zorai-goal-review-report">{run.pending_review_report || "The worker asked for supervisor review."}</p>
         </section>
       ) : null}
 
-      <div className="zorai-goal-workspace-grid zorai-goal-workspace-grid--single">
-        <section className="zorai-panel zorai-goal-pane zorai-goal-plan-pane">
-          <div className="zorai-section-label">Worker thread</div>
+      <section className="zorai-panel zorai-goal-summary-pane">
+        <div className="zorai-section-label">Goal</div>
+        <RowList rows={model.summaryRows} onRowClick={handleSummaryRowClick} />
+      </section>
+
+      <div className="zorai-goal-workspace-main">
+        <nav className="zorai-goal-tabs" aria-label="Goal views">
+          {model.tabs.map((tab) => (
+            <button
+              type="button"
+              key={tab.id}
+              className={["zorai-goal-tab", tab.active ? "zorai-goal-tab--active" : ""].filter(Boolean).join(" ")}
+              onClick={() => {
+                setMode(tab.id);
+                setSelectedCenterIndex(0);
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+        <section className="zorai-panel zorai-goal-pane zorai-goal-workspace-pane">
+          <div className="zorai-section-label">{model.centerTitle}</div>
           <div className="zorai-goal-pane__body">
-            <RowList rows={model.planRows} onRowClick={handlePlanRowClick} />
+            <RowList
+              rows={model.centerRows}
+              onRowClick={(row, index) => {
+                setSelectedCenterIndex(index);
+                handleTargetRow(row);
+              }}
+            />
+            <SectionList sections={model.detailSections} onRowClick={handleTargetRow} />
           </div>
         </section>
       </div>
-
-      <section className="zorai-goal-more">
-        <button
-          type="button"
-          className="zorai-ghost-button zorai-goal-more__toggle"
-          aria-expanded={moreOpen}
-          onClick={() => setMoreOpen((current) => !current)}
-        >
-          {moreOpen ? "Hide run details" : "More details"}
-        </button>
-        {moreOpen ? (
-          <div className="zorai-goal-more__content">
-            <nav className="zorai-goal-tabs" aria-label="Goal detail modes">
-              {model.tabs.map((tab) => (
-                <button
-                  type="button"
-                  key={tab.id}
-                  className={["zorai-goal-tab", tab.active ? "zorai-goal-tab--active" : ""].filter(Boolean).join(" ")}
-                  onClick={() => {
-                    setMode(tab.id);
-                    setSelectedCenterIndex(0);
-                  }}
-                >
-                  {tab.label}
-                </button>
-              ))}
-            </nav>
-            <section className="zorai-panel zorai-goal-detail-drawer">
-              <div className="zorai-section-label">{model.centerTitle}</div>
-              <RowList
-                rows={model.centerRows.slice(0, 40)}
-                onRowClick={(row, index) => {
-                  setSelectedCenterIndex(index);
-                  handleTargetRow(row);
-                }}
-              />
-              <SectionList sections={model.detailSections} onRowClick={handleTargetRow} />
-            </section>
-          </div>
-        ) : null}
-      </section>
 
       <div className="zorai-goal-workspace-status">
         <span className="zorai-status-pill">{formatGoalRunStatus(run.status)}</span>
@@ -364,6 +338,7 @@ function SectionList({
   sections: GoalWorkspaceSection[];
   onRowClick?: (row: GoalWorkspaceRow, index: number) => void;
 }) {
+  if (sections.length === 0) return null;
   return (
     <div className="zorai-goal-detail-sections">
       {sections.map((section) => (

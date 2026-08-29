@@ -874,16 +874,34 @@ export function goalRunStatusColor(status: GoalRunStatus): string {
 }
 
 export function summarizeGoalRunStep(goalRun: GoalRun): string {
-    if (goalRun.current_step_title) {
-        return goalRun.current_step_title;
+    if (goalRun.status === "awaiting_review") {
+        return "Awaiting supervisor review";
     }
-    if (typeof goalRun.current_step_index === "number" && goalRun.steps?.length) {
-        const step = goalRun.steps[goalRun.current_step_index];
-        if (step?.title) {
-            return step.title;
-        }
+    if (goalRun.status === "queued") {
+        return "Waiting for worker";
     }
-    return goalRun.status === "planning" ? "Building plan" : "Idle";
+    if (goalRun.status === "paused") {
+        return "Paused";
+    }
+    if (goalRun.status === "completed") {
+        return "Accepted";
+    }
+    if (goalRun.status === "failed") {
+        return goalRun.last_error || goalRun.error || "Failed";
+    }
+    if (goalRun.status === "cancelled") {
+        return "Cancelled";
+    }
+    const todos = latestGoalRunTodoSnapshot(goalRun);
+    const working = todos.find((todo) => todo.status === "in_progress")
+        ?? todos.find((todo) => todo.status === "pending");
+    if (working?.content) {
+        return working.content;
+    }
+    if (goalRun.status === "running") {
+        return "Worker in progress";
+    }
+    return formatGoalRunStatus(goalRun.status);
 }
 
 export function goalRunChildTaskCount(goalRun: GoalRun): number {

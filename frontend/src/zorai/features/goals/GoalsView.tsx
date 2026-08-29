@@ -5,7 +5,6 @@ import {
   fetchGoalRuns,
   formatGoalRunDuration,
   formatGoalRunStatus,
-  goalRunChildTaskCount,
   goalRunsNeedAutoRefresh,
   goalRunSupportAvailable,
   isGoalRunActive,
@@ -214,7 +213,7 @@ export function GoalsView({
           <div>
             <div className="zorai-kicker">Goal View</div>
             <h1>{selectedRun ? selectedRun.title || selectedRun.goal : "Goal workspace"}</h1>
-            <p>{selectedRun ? `${formatGoalRunStatus(selectedRun.status)} / ${summarizeGoalRunStep(selectedRun)}` : "Select a goal run."}</p>
+            <p>{selectedRun ? `${formatGoalRunStatus(selectedRun.status)} · ${summarizeGoalRunStep(selectedRun)}` : "Select a goal run."}</p>
           </div>
           <div className="zorai-card-actions">
             {returnTarget && onReturnTarget ? (
@@ -239,8 +238,8 @@ export function GoalsView({
       <div className="zorai-view-header">
         <div>
           <div className="zorai-kicker">Goals</div>
-          <h1>Plan, run, and supervise durable agent goals.</h1>
-          <p>Goals turn a thread intent into a monitored run with steps, approvals, child tasks, and result memory.</p>
+          <h1>Run and supervise durable agent goals.</h1>
+          <p>One worker pursues the outcome. Completeness is decided only by Accept, Soft reject, or Hard reject.</p>
         </div>
         <div className="zorai-card-actions">
           {returnTarget && onReturnTarget ? (
@@ -253,7 +252,7 @@ export function GoalsView({
 
       <div className="zorai-metric-grid">
         <Metric label="Active" value={metrics.active} />
-        <Metric label="Awaiting Approval" value={metrics.waiting} />
+        <Metric label="Awaiting Review" value={metrics.waiting} />
         <Metric label="Completed" value={metrics.completed} />
         <Metric label="Total Runs" value={metrics.total} />
       </div>
@@ -319,8 +318,7 @@ function GoalRunCard({
       </div>
       <p>{run.result || run.error || run.plan_summary || run.goal}</p>
       <div className="zorai-run-card__meta">
-        <span>{goalRunChildTaskCount(run)} child tasks</span>
-        <span>{run.replan_count} replans</span>
+        <span>{run.thread_id ? "Worker attached" : "No worker thread"}</span>
         <span>{formatGoalRunDuration(run.duration_ms)}</span>
       </div>
       {todos.length > 0 ? (

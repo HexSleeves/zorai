@@ -486,26 +486,35 @@ select.zorai-input:disabled option {
   max-width: 100%;
 }
 
-.zorai-goal-more {
+.zorai-goal-workspace-main {
+  min-height: 0;
   display: grid;
+  grid-template-rows: auto minmax(280px, 1fr);
   gap: 10px;
 }
 
-.zorai-goal-more__toggle {
-  justify-self: start;
+.zorai-goal-workspace-pane {
+  min-height: 280px;
+  max-width: 100%;
 }
 
-.zorai-goal-more__content {
+.zorai-goal-summary-pane {
   display: grid;
-  gap: 10px;
+  gap: 8px;
+  padding: 12px;
 }
 
-.zorai-goal-detail-drawer {
-  max-width: 920px;
-  max-height: 56vh;
-  overflow: auto;
+.zorai-goal-review-banner {
   display: grid;
-  gap: 12px;
+  gap: 8px;
+}
+
+.zorai-goal-review-report {
+  margin: 0;
+  white-space: pre-wrap;
+  color: var(--zorai-text);
+  font-size: var(--text-sm);
+  line-height: 1.5;
 }
 
 .zorai-goal-indicator {
