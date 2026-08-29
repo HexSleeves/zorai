@@ -160,6 +160,9 @@ function isToolPlaceholderAssistantMessage(
 
 export function filterDisplayItems(items: ChatDisplayItem[], searchQuery: string): ChatDisplayItem[] {
   const normalizedQuery = searchQuery.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return items;
+  }
 
   return items.filter((item) => {
     if (!normalizedQuery) {

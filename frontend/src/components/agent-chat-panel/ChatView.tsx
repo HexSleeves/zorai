@@ -8,15 +8,15 @@ import {
   filterDisplayItems,
   summarizeSessionUsage,
 } from "./chat-view/helpers";
+import { ToolEventList } from "./chat-view/ToolEventList";
+import { ToolEventRow } from "./chat-view/ToolEventRow";
 import {
   buildTtsCacheKey,
   findLatestAgentToolTextToSpeechPlayback,
   resolveAudioPlaybackSource,
 } from "./chat-view/audioPlayback";
-import { compactionArtifactDisplayText, MessageBubble } from "./chat-view/MessageBubble";
+import { compactionArtifactDisplayText, MemoizedMessageBubble } from "./chat-view/MessageBubble";
 import { TodoPanel } from "./chat-view/TodoPanel";
-import { ToolEventList } from "./chat-view/ToolEventList";
-import { ToolEventRow } from "./chat-view/ToolEventRow";
 import type { AgentMessage } from "@/lib/agentStore";
 import type { ChatViewProps, ComposerAttachment } from "./chat-view/types";
 import { buildAttachmentSendPayload } from "./chat-view/composerMedia";
@@ -352,7 +352,7 @@ export function ChatView({
 
           const message = item.message;
           return (
-            <MessageBubble
+            <MemoizedMessageBubble
               key={message.id}
               message={message}
               onCopy={() => {

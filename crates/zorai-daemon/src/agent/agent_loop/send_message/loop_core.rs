@@ -423,6 +423,9 @@ impl<'a> SendMessageRunner<'a> {
                             failure_class,
                             message,
                         } => {
+                            if self.execution_profile_supersedes_runner().await {
+                                return Err(self.fresh_runner_retry_err());
+                            }
                             tracing::info!(
                                 thread_id = %self.tid,
                                 provider = %self.config.provider,

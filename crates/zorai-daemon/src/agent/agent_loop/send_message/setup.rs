@@ -116,6 +116,65 @@ async fn load_current_task_for_send_message(
     }
 }
 
+type TaskProviderOverride = (
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<crate::agent::types::ApiTransport>,
+    Option<u32>,
+    Option<String>,
+    Option<String>,
+);
+
+fn apply_thread_profile_to_task_provider_override(
+    task_provider_override: Option<TaskProviderOverride>,
+    profile: Option<&ThreadExecutionProfile>,
+    has_task: bool,
+) -> Option<TaskProviderOverride> {
+    let nonempty = |value: Option<&str>| {
+        value
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+    };
+    let profile_provider = nonempty(profile.and_then(|profile| profile.provider.as_deref()));
+    let profile_model = nonempty(profile.and_then(|profile| profile.model.as_deref()));
+    if profile_provider.is_none() && profile_model.is_none() {
+        return task_provider_override;
+    }
+    match task_provider_override {
+        Some((provider, model, system_prompt, def_id, transport, context_window, huggingface, base_url)) => {
+            let provider_changed = profile_provider
+                .as_ref()
+                .is_some_and(|value| value != &provider);
+            Some((
+                profile_provider.unwrap_or(provider),
+                profile_model.or(model),
+                system_prompt,
+                def_id,
+                if provider_changed { None } else { transport },
+                context_window,
+                if provider_changed { None } else { huggingface },
+                if provider_changed { None } else { base_url },
+            ))
+        }
+        None if has_task => profile_provider.map(|provider| {
+            (
+                provider,
+                profile_model,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+        }),
+        other => other,
+    }
+}
+
 fn thread_artifact_prompt_block(data_root: &Path, thread_id: &str) -> String {
     let specs_dir = zorai_protocol::thread_specs_dir(data_root, thread_id);
     let media_dir = zorai_protocol::thread_media_dir(data_root, thread_id);
@@ -655,6 +714,11 @@ impl<'a> SendMessageRunner<'a> {
             .await
             .get(&tid)
             .cloned();
+        let task_provider_override = apply_thread_profile_to_task_provider_override(
+            task_provider_override,
+            thread_execution_profile.as_ref(),
+            task_id.is_some(),
+        );
         let task_execution_profile_reasoning = thread_execution_profile
             .as_ref()
             .and_then(|profile| profile.reasoning_effort.as_deref())

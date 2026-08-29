@@ -77,12 +77,22 @@ function daemonEffortValue(effort: string): string {
   return effort === "none" ? "" : effort;
 }
 
+function resolveDaemonThreadIdForRuntime(thread: AgentThread): string | null {
+  const state = useAgentStore.getState();
+  const fromStore = state.threads.find((entry) => entry.id === thread.id)?.daemonThreadId?.trim();
+  if (fromStore) return fromStore;
+  const fromThread = thread.daemonThreadId?.trim();
+  return fromThread || null;
+}
+
 async function patchDaemonThreadExecutionProfile(
   thread: AgentThread,
   patch: Record<string, unknown>,
 ): Promise<void> {
-  const daemonThreadId = thread.daemonThreadId?.trim();
-  if (!daemonThreadId) return;
+  const daemonThreadId = resolveDaemonThreadIdForRuntime(thread);
+  if (!daemonThreadId) {
+    throw new Error("Thread is not linked to the daemon yet; provider change was not applied.");
+  }
   const bridge = getBridge();
   const existing = await bridge?.agentGetThreadExecutionProfile?.(daemonThreadId).catch(() => null) as
     | { profile?: Record<string, unknown> | null }

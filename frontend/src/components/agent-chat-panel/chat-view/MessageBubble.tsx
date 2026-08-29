@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import type { AgentMessage } from "../../../lib/agentStore";
 import { parseHandoffSystemEvent } from "./helpers";
 import { MarkdownContent } from "./markdown";
@@ -45,6 +45,21 @@ function ActionBtn({ label, onClick }: { label: string; onClick: () => void }) {
     </button>
   );
 }
+
+/**
+ * Memoized chat bubble. Custom comparator: `message` object identity plus the
+ * small set of props that actually affect rendering. Callback props are
+ * ignored on purpose — they are recreated per render in ChatView but only
+ * close over stable store actions / the message itself, so skipping them
+ * keeps every historical bubble from re-rendering (and re-parsing markdown /
+ * tool JSON) on each streaming frame.
+ */
+export const MemoizedMessageBubble = memo(MessageBubble, (prev, next) => {
+  if (prev.message !== next.message) return false;
+  if (prev.isSpeaking !== next.isSpeaking) return false;
+  if (prev.isSpeechPaused !== next.isSpeechPaused) return false;
+  return true;
+});
 
 export function MessageBubble({
   message,

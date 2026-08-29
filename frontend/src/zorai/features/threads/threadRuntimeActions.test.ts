@@ -97,4 +97,25 @@ describe("thread runtime actions", () => {
     await pending;
     expect(agentSetThreadExecutionProfile).toHaveBeenCalled();
   });
+
+  it("restores the overlay when the daemon rejects a provider change", async () => {
+    agentSetThreadExecutionProfile.mockResolvedValue({ error: "daemon rejected profile" });
+    const selected = useAgentStore.getState().threads[0];
+    await expect(applyThreadProviderModel(selected, "openrouter", "model-thread-a")).rejects.toThrow(
+      "daemon rejected profile",
+    );
+    expect(useAgentStore.getState().threads[0].profileProvider).toBeNull();
+  });
+
+  it("fails loudly when the thread is not linked to the daemon", async () => {
+    useAgentStore.setState({
+      threads: [thread("thread-a", "")],
+      activeThreadId: "thread-a",
+    } as any);
+    const selected = useAgentStore.getState().threads[0];
+    await expect(applyThreadProviderModel(selected, "openrouter", "model-thread-a")).rejects.toThrow(
+      /not linked to the daemon/i,
+    );
+    expect(agentSetThreadExecutionProfile).not.toHaveBeenCalled();
+  });
 });

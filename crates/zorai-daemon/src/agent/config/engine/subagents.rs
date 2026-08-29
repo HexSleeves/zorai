@@ -18,6 +18,7 @@ impl AgentEngine {
             return Err(builtin_collision_error("name", &def.name));
         }
 
+        let agent_id = def.id.clone();
         let mut config = self.config.write().await;
         if let Some(existing) = config.sub_agents.iter_mut().find(|s| s.id == def.id) {
             *existing = def;
@@ -26,6 +27,7 @@ impl AgentEngine {
         }
         drop(config);
         self.persist_config().await;
+        self.sync_thread_execution_profiles_for_agent(&agent_id).await;
         Ok(())
     }
 
