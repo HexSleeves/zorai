@@ -55,6 +55,7 @@ pub fn should_emit_event(level: AutonomyLevel, event_kind: &str) -> bool {
 
 /// Returns `true` if the given autonomy level requires operator acknowledgment at step
 /// boundaries.
+#[cfg(test)]
 pub fn requires_acknowledgment(level: AutonomyLevel) -> bool {
     matches!(level, AutonomyLevel::Supervised)
 }

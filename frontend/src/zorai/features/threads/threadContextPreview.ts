@@ -46,3 +46,8 @@ export function previewRequestsForWorkContextEntry(entry: WorkContextEntry): Thr
 export function previewRequestForWorkContextEntry(entry: WorkContextEntry): ThreadContextPreviewRequest {
   return previewRequestsForWorkContextEntry(entry)[0];
 }
+
+export function isMarkdownPath(path: string): boolean {
+  const lower = path.toLowerCase();
+  return lower.endsWith(".md") || lower.endsWith(".markdown") || lower.endsWith(".mdx");
+}

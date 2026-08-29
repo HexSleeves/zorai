@@ -1,8 +1,10 @@
 import { LoadingPanel } from "@/components/LoadingState";
 import { useEffect, useMemo, useState } from "react";
+import { MarkdownContent } from "@/components/agent-chat-panel/chat-view/markdown";
 import { fetchFilePreview, fetchGitDiff } from "@/lib/agentWorkContext";
 import { shortenHomePath } from "@/lib/workspaceStore";
 import {
+  isMarkdownPath,
   previewRequestsForWorkContextEntry,
   threadContextEntryDisplayPath,
   threadContextEntryKey,
@@ -13,6 +15,7 @@ type PreviewSection = {
   title: string;
   kind: "git-diff" | "file-preview";
   text: string;
+  path?: string;
 };
 
 export function ThreadFilePreviewOverlay() {
@@ -53,7 +56,7 @@ export function ThreadFilePreviewOverlay() {
           ? `${preview.content}\n\n[Preview truncated]`
           : preview.content;
       return text.trim()
-        ? { title: "File preview", kind: "file-preview", text }
+        ? { title: "File preview", kind: "file-preview", text, path: request.path }
         : null;
     }))
       .then((nextSections) => {
@@ -112,7 +115,7 @@ export function ThreadFilePreviewOverlay() {
         {!loading && sections.map((section) => (
           <article key={`${section.title}:${section.kind}`} className="zorai-file-preview-overlay__section">
             <div className="zorai-section-label">{section.title}</div>
-            <PreviewText text={section.text} kind={section.kind} />
+            <PreviewText text={section.text} kind={section.kind} path={section.path} />
           </article>
         ))}
       </div>
@@ -120,7 +123,15 @@ export function ThreadFilePreviewOverlay() {
   );
 }
 
-function PreviewText({ text, kind }: { text: string; kind: "git-diff" | "file-preview" }) {
+function PreviewText({ text, kind, path }: { text: string; kind: "git-diff" | "file-preview"; path?: string }) {
+  if (kind === "file-preview" && path && isMarkdownPath(path)) {
+    return (
+      <div className="zorai-file-preview-overlay__markdown">
+        <MarkdownContent content={text} />
+      </div>
+    );
+  }
+
   if (kind !== "git-diff") {
     return <pre className="zorai-file-preview-overlay__pre">{text}</pre>;
   }

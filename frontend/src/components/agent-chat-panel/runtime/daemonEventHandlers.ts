@@ -3,7 +3,7 @@ import { useAgentStore } from "@/lib/agentStore";
 import { fetchGoalRuns, normalizeGoalRun } from "@/lib/goalRuns";
 import { useAgentMissionStore } from "@/lib/agentMissionStore";
 import { useSnippetStore } from "@/lib/snippetStore";
-import { provisionTerminalPaneInWorkspace } from "@/lib/agentWorkspace";
+import { closePanesForSession, provisionTerminalPaneInWorkspace } from "@/lib/agentWorkspace";
 import { useWorkspaceStore } from "@/lib/workspaceStore";
 import { fetchThreadTodos } from "@/lib/agentTodos";
 import type { AgentTodoItem } from "@/lib/agentStore";
@@ -391,6 +391,11 @@ export function handleWorkspaceCommand(event: any) {
             cwd: typeof args.cwd === "string" && args.cwd ? args.cwd : null,
             sessionId: typeof args.session_id === "string" && args.session_id ? args.session_id : null,
           });
+        }
+        break;
+      case "close_agent_terminal":
+        if (typeof args.session_id === "string" && args.session_id) {
+          closePanesForSession(args.session_id);
         }
         break;
       case TOOL_NAMES.createSnippet:

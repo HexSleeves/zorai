@@ -107,7 +107,9 @@ pub(super) fn collect_session_start_prewarm_threads(
     candidates.extend(goal_runs.iter().filter_map(|goal_run| {
         goal_run.thread_id.clone().map(|thread_id| {
             let priority = match goal_run.status {
-                GoalRunStatus::Running | GoalRunStatus::AwaitingApproval => 2,
+                GoalRunStatus::Running
+                | GoalRunStatus::AwaitingApproval
+                | GoalRunStatus::AwaitingReview => 2,
                 GoalRunStatus::Planning | GoalRunStatus::Paused => 1,
                 _ => 0,
             };

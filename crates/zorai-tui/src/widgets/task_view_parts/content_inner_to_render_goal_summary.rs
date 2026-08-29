@@ -41,6 +41,7 @@ pub(crate) fn is_goal_run_live(status: Option<GoalRunStatus>) -> bool {
         Some(GoalRunStatus::Planning)
             | Some(GoalRunStatus::Running)
             | Some(GoalRunStatus::AwaitingApproval)
+            | Some(GoalRunStatus::AwaitingReview)
     )
 }
 
@@ -54,6 +55,7 @@ pub(crate) fn goal_status_badge(
         Some(GoalRunStatus::Planning) => ("◌ PLANNING", theme.accent_secondary),
         Some(GoalRunStatus::Running) => ("◌ RUNNING", theme.accent_success),
         Some(GoalRunStatus::AwaitingApproval) => ("⏸ HOLD", theme.accent_secondary),
+        Some(GoalRunStatus::AwaitingReview) => ("⏸ REVIEW", theme.accent_secondary),
         Some(GoalRunStatus::Paused) => ("⏸ PAUSED", theme.accent_secondary),
         Some(GoalRunStatus::Blocked) => ("⏸ BLOCKED", theme.accent_danger),
         Some(GoalRunStatus::Completed) => ("✓ DONE", theme.accent_success),

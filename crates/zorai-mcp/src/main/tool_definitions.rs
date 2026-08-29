@@ -413,13 +413,13 @@ pub(super) fn tool_definitions() -> Value {
         },
         {
             "name": zorai_protocol::tool_names::CONTROL_GOAL_RUN,
-            "description": "Control a goal run lifecycle or rerun a specific step. Supported actions: pause, resume, cancel, retry_step, rerun_from_step.",
+            "description": "Control a goal run lifecycle or submit a supervisor verdict. Supported actions: pause, resume, cancel, accept, soft_reject, hard_reject.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
                     "goal_run_id": { "type": "string", "description": "Goal run ID" },
-                    "action": { "type": "string", "enum": ["pause", "resume", "cancel", "retry_step", "rerun_from_step"], "description": "Control action" },
-                    "step_index": { "type": "integer", "description": "Optional zero-based step index for retry_step or rerun_from_step" }
+                    "action": { "type": "string", "enum": ["pause", "resume", "cancel", "accept", "soft_reject", "hard_reject"], "description": "Control action" },
+                    "payload": { "type": "object", "description": "For soft_reject and hard_reject, include explanation" }
                 },
                 "required": ["goal_run_id", "action"]
             }

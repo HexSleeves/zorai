@@ -234,6 +234,7 @@ pub(super) fn goal_run_fixture(thread_id: &str) -> GoalRun {
         compensation_status: None,
         compensation_summary: None,
         active_task_id: Some("task-1".to_string()),
+        pending_review_report: None,
         duration_ms: None,
         steps: vec![GoalRunStep {
             id: "step-1".to_string(),

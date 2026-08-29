@@ -275,10 +275,7 @@ impl AgentEngine {
 
     pub(in crate::agent) async fn persist_goal_runs(&self) {
         let goal_runs_snapshot = {
-            let mut goal_runs = self.goal_runs.lock().await;
-            for goal_run in goal_runs.iter_mut() {
-                crate::agent::goal_dossier::refresh_goal_run_dossier(goal_run);
-            }
+            let goal_runs = self.goal_runs.lock().await;
             goal_runs.iter().cloned().collect::<Vec<_>>()
         };
         if let Err(e) = self
@@ -293,27 +290,6 @@ impl AgentEngine {
             persist_json(&self.data_dir.join("goal-runs.json"), &goal_runs_snapshot).await
         {
             tracing::warn!("failed to persist goal runs: {e}");
-        }
-
-        for goal_run in goal_runs_snapshot {
-            match crate::agent::goal_dossier::write_goal_run_projection(self, &goal_run).await {
-                Ok(()) => {
-                    self.emit_goal_run_update(&goal_run, None);
-                }
-                Err(error) => {
-                    tracing::warn!(
-                        goal_run_id = %goal_run.id,
-                        error = %error,
-                        "failed to persist goal projection files"
-                    );
-                    crate::agent::goal_dossier::record_goal_projection_failure(
-                        self,
-                        &goal_run.id,
-                        error.to_string(),
-                    )
-                    .await;
-                }
-            }
         }
     }
 

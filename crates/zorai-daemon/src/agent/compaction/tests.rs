@@ -203,6 +203,7 @@ fn sample_goal_run_for_compaction(thread_id: &str) -> GoalRun {
         compensation_status: None,
         compensation_summary: None,
         active_task_id: Some("task-review-blocker".to_string()),
+        pending_review_report: None,
         duration_ms: None,
         steps: vec![GoalRunStep {
             id: "step-review".to_string(),

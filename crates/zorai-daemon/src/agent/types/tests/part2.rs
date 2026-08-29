@@ -1130,6 +1130,7 @@ fn goal_dossier_serializes_into_goal_run_state() {
         compensation_status: None,
         compensation_summary: None,
         active_task_id: None,
+        pending_review_report: None,
         duration_ms: None,
         steps: vec![],
         events: vec![],

@@ -172,25 +172,10 @@ pub(crate) enum PendingConfirmAction {
         goal_run_id: String,
         title: String,
     },
-    RetryGoalStep {
+    GoalReview {
         goal_run_id: String,
         goal_title: String,
-        step_index: usize,
-        step_title: String,
-    },
-    RetryGoalPrompt {
-        goal_run_id: String,
-        goal_title: String,
-    },
-    RerunGoalFromStep {
-        goal_run_id: String,
-        goal_title: String,
-        step_index: usize,
-        step_title: String,
-    },
-    RerunGoalPrompt {
-        goal_run_id: String,
-        goal_title: String,
+        verdict: String,
     },
     ReuseModelAsStt {
         model_id: String,
@@ -227,34 +212,18 @@ impl PendingConfirmAction {
             PendingConfirmAction::ResumeGoalRun { title, .. } => {
                 format!("Resume goal run \"{title}\"?")
             }
-            PendingConfirmAction::RetryGoalStep {
+            PendingConfirmAction::GoalReview {
                 goal_title,
-                step_index,
-                step_title,
+                verdict,
                 ..
-            } => format!(
-                "Retry step {} \"{}\" in goal \"{}\"?",
-                step_index + 1,
-                step_title,
-                goal_title
-            ),
-            PendingConfirmAction::RetryGoalPrompt { goal_title, .. } => {
-                format!("Retry goal \"{goal_title}\" from the current prompt?")
-            }
-            PendingConfirmAction::RerunGoalFromStep {
-                goal_title,
-                step_index,
-                step_title,
-                ..
-            } => format!(
-                "Rerun from step {} \"{}\" in goal \"{}\"?",
-                step_index + 1,
-                step_title,
-                goal_title
-            ),
-            PendingConfirmAction::RerunGoalPrompt { goal_title, .. } => {
-                format!("Rerun goal \"{goal_title}\" from the current prompt?")
-            }
+            } => match verdict.as_str() {
+                "accept" => format!("Accept goal \"{goal_title}\"?"),
+                "soft_reject" => {
+                    format!("Soft reject goal \"{goal_title}\" and keep the worker going?")
+                }
+                "hard_reject" => format!("Hard reject and fail goal \"{goal_title}\"?"),
+                _ => format!("Review goal \"{goal_title}\"?"),
+            },
             PendingConfirmAction::ReuseModelAsStt { model_id } => {
                 if model_id == "__mission_control__:next_turn" {
                     "Apply the pending Mission Control roster change on the next turn?".to_string()

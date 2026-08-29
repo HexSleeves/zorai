@@ -114,12 +114,18 @@ export function GoalWorkspacePanel({
     detailsExpanded: moreOpen,
   }) : null, [expandedStepIds, goalTasks, mode, moreOpen, projectionFiles, promptExpanded, run, selectedCenterIndex, selectedStepId]);
 
-  const control = async (action: GoalRunControlAction) => {
+  const control = async (action: GoalRunControlAction, explanation?: string) => {
     if (!run || !model) return;
     if (action === "cancel" && !window.confirm("Stop this goal run?")) return;
-    if (action === "retry_step" && !window.confirm("Retry the selected step?")) return;
-    if (action === "rerun_from_step" && !window.confirm("Rerun from the selected step?")) return;
-    const ok = await controlGoalRun(run.id, action, model.selectedStepIndex);
+    if (action === "hard_reject" && !window.confirm("Hard reject this goal?")) return;
+    let reason = explanation ?? "";
+    if (action === "soft_reject" || action === "hard_reject") {
+      if (!reason) {
+        reason = window.prompt(action === "soft_reject" ? "Why should the worker keep going?" : "Why is this goal rejected?") ?? "";
+      }
+      if (!reason.trim()) return;
+    }
+    const ok = await controlGoalRun(run.id, action, null, reason || null);
     onMessage(ok ? `Goal ${action.replace(/_/g, " ")} requested.` : "Goal action failed.");
     await onRefresh();
   };
@@ -134,14 +140,15 @@ export function GoalWorkspacePanel({
       return;
     }
     if (action.id === "cancel") await control("cancel");
-    if (action.id === "retry") await control("retry_step");
-    if (action.id === "rerun") await control("rerun_from_step");
+    if (action.id === "accept") await control("accept");
+    if (action.id === "soft_reject") await control("soft_reject");
+    if (action.id === "hard_reject") await control("hard_reject");
   };
 
   if (!run || !model) {
     return (
       <div className="zorai-goal-workspace-shell">
-        <div className="zorai-panel zorai-empty-state">Select a goal run to inspect its plan, timeline, and actions.</div>
+        <div className="zorai-panel zorai-empty-state">Select a goal run to inspect the worker and review dialogue.</div>
       </div>
     );
   }
@@ -206,9 +213,16 @@ export function GoalWorkspacePanel({
         </div>
       </section>
 
+      {run.status === "awaiting_review" ? (
+        <section className="zorai-panel" aria-label="Supervisor review">
+          <div className="zorai-section-label">Worker report</div>
+          <p className="zorai-goal-review-report">{run.pending_review_report || "The worker asked for supervisor review."}</p>
+        </section>
+      ) : null}
+
       <div className="zorai-goal-workspace-grid zorai-goal-workspace-grid--single">
         <section className="zorai-panel zorai-goal-pane zorai-goal-plan-pane">
-          <div className="zorai-section-label">Steps and live progress</div>
+          <div className="zorai-section-label">Worker thread</div>
           <div className="zorai-goal-pane__body">
             <RowList rows={model.planRows} onRowClick={handlePlanRowClick} />
           </div>

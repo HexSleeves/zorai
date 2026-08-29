@@ -133,6 +133,26 @@ export function resolveAbsoluteMessageIndex(
   return Math.max(0, loadedMessageStart ?? 0) + localIndex;
 }
 
+export function resolveDaemonOwnedThreadId({
+  threads,
+  threadId,
+  activeThreadId,
+  activeDaemonThreadId,
+}: {
+  threads: Array<{ id: string; daemonThreadId?: string | null }>;
+  threadId: string;
+  activeThreadId?: string | null;
+  activeDaemonThreadId?: string | null;
+}): string | null {
+  const mapped = threads.find((thread) => thread.id === threadId)?.daemonThreadId?.trim();
+  if (mapped) return mapped;
+  if (threadId === activeThreadId) {
+    const fallback = activeDaemonThreadId?.trim();
+    if (fallback) return fallback;
+  }
+  return null;
+}
+
 export async function refreshDaemonThreadMessagesIntoLocalState({
   daemonThreadId,
   setThreadTodos,

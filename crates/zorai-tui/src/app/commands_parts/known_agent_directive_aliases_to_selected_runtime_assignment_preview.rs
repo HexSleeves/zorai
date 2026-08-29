@@ -424,7 +424,8 @@ impl TuiModel {
             Some(task::GoalRunStatus::Queued)
             | Some(task::GoalRunStatus::Planning)
             | Some(task::GoalRunStatus::Running)
-            | Some(task::GoalRunStatus::AwaitingApproval) => {
+            | Some(task::GoalRunStatus::AwaitingApproval)
+            | Some(task::GoalRunStatus::AwaitingReview) => {
                 Some(PendingConfirmAction::PauseGoalRun {
                     goal_run_id: run.id.clone(),
                     title,

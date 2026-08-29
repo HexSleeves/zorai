@@ -2838,19 +2838,15 @@ async fn commit_thread_execution_profile_if_unchanged_skips_newer_user_selection
         .write()
         .await
         .insert(thread_id.to_string(), original.clone());
-    engine
-        .thread_execution_profiles
-        .write()
-        .await
-        .insert(
-            thread_id.to_string(),
-            crate::agent::types::ThreadExecutionProfile {
-                provider: Some("z.ai-coding-plan".to_string()),
-                model: Some("glm-5.3".to_string()),
-                reasoning_effort: Some("high".to_string()),
-                context_window_tokens: Some(1_000_000),
-            },
-        );
+    engine.thread_execution_profiles.write().await.insert(
+        thread_id.to_string(),
+        crate::agent::types::ThreadExecutionProfile {
+            provider: Some("z.ai-coding-plan".to_string()),
+            model: Some("glm-5.3".to_string()),
+            reasoning_effort: Some("high".to_string()),
+            context_window_tokens: Some(1_000_000),
+        },
+    );
 
     let wrote = engine
         .commit_thread_execution_profile_if_unchanged(
@@ -2865,7 +2861,10 @@ async fn commit_thread_execution_profile_if_unchanged_skips_newer_user_selection
         )
         .await;
 
-    assert!(!wrote, "a newer user-selected profile must not be overwritten");
+    assert!(
+        !wrote,
+        "a newer user-selected profile must not be overwritten"
+    );
     let stored = engine
         .thread_execution_profiles
         .read()

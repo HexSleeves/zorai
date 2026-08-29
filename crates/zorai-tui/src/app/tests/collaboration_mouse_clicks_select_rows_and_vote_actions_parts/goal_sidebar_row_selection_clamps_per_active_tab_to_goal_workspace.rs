@@ -426,7 +426,7 @@ fn goal_workspace_goal_mode_restores_old_goal_sections() {
     assert!(plain.contains("Related Tasks"), "{plain}");
     assert!(plain.contains("Execution Dossier"), "{plain}");
     assert!(plain.contains("Goal Prompt"), "{plain}");
-    assert!(plain.contains("Main agent"), "{plain}");
+    assert!(plain.contains("Worker"), "{plain}");
     assert!(plain.contains("Ground the user's background"), "{plain}");
     assert!(!plain.contains("/tmp/plan.md"), "{plain}");
 }

@@ -42,6 +42,7 @@ export const NativeThreadMessageBubble = memo(function NativeThreadMessageBubble
   onRetry,
   onFeedback,
   onRegenerate,
+  onFork,
   onDelete,
 }: {
   message: AgentMessage;
@@ -56,6 +57,7 @@ export const NativeThreadMessageBubble = memo(function NativeThreadMessageBubble
   onRetry?: () => void;
   onFeedback?: (reaction: "up" | "down" | null) => void | Promise<void>;
   onRegenerate?: () => void;
+  onFork?: () => void | Promise<void>;
   onDelete?: () => void;
 }) {
   const [retryDismissed, setRetryDismissed] = useState(false);
@@ -127,6 +129,17 @@ export const NativeThreadMessageBubble = memo(function NativeThreadMessageBubble
             }}
           >
             <MessageActionIcon kind={copied ? "copied" : "copy"} />
+          </button>
+        ) : null}
+        {onFork && !message.isStreaming ? (
+          <button
+            type="button"
+            className="zorai-ghost-button zorai-message-action"
+            title="Fork thread from this message"
+            aria-label="Fork thread from this message"
+            onClick={() => { void onFork(); }}
+          >
+            <MessageActionIcon kind="fork" />
           </button>
         ) : null}
         {isAssistant && onFeedback && !message.isStreaming ? (
@@ -207,6 +220,7 @@ export const NativeThreadMessageBubble = memo(function NativeThreadMessageBubble
   && previous.onRetry === next.onRetry
   && previous.onFeedback === next.onFeedback
   && previous.onRegenerate === next.onRegenerate
+  && previous.onFork === next.onFork
   && previous.onDelete === next.onDelete
 ));
 
@@ -277,7 +291,7 @@ function formatStaticThoughtDuration(content: string): string {
   return `${minutes}m ${seconds % 60}s`;
 }
 
-function MessageActionIcon({ kind, filled = false, animated = false }: { kind: "speak" | "pin" | "copy" | "copied" | "thumb-up" | "thumb-down" | "regenerate" | "delete"; filled?: boolean; animated?: boolean }) {
+function MessageActionIcon({ kind, filled = false, animated = false }: { kind: "speak" | "pin" | "copy" | "copied" | "thumb-up" | "thumb-down" | "regenerate" | "fork" | "delete"; filled?: boolean; animated?: boolean }) {
   if (kind === "speak") {
     return (
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -331,6 +345,17 @@ function MessageActionIcon({ kind, filled = false, animated = false }: { kind: "
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
         <path d="M21 12a9 9 0 1 1-2.64-6.36" />
         <path d="M21 3v6h-6" />
+      </svg>
+    );
+  }
+  if (kind === "fork") {
+    return (
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+        <circle cx="6" cy="6" r="3" />
+        <circle cx="18" cy="6" r="3" />
+        <circle cx="12" cy="18" r="3" />
+        <path d="M6 9c0 3 2.5 6 6 6" />
+        <path d="M18 9c0 3-2.5 6-6 6" />
       </svg>
     );
   }

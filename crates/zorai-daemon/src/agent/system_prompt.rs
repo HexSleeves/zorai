@@ -8,19 +8,17 @@ use super::types::*;
 /// Weles governance, Concierge). Keep this as the single source of truth — if
 /// you change wording here, every system-prompt variant gets the update.
 const SHARED_SKILL_DISCOVERY_RULES: &str = "\
-     - When you call `discover_skills`, send a brief intent description: one short sentence describing what you're trying to accomplish (e.g., 'modify python wheel builder for alternate compiler flag'), not the full task transcript and not a 2-3 word fragment. Descriptive sentences match better against semantic vectors and richer skill excerpts.\n\
-     - If the top match is strong, call `read_skill` for the recommended skill before other substantial tools.\n\
-     - Weak matches still point to the best-fit local workflow. Prefer `read_skill` for that candidate first, and use `justify_skill_skip` only if you intentionally bypass it or no local skill fits.\n\
+     - `discover_guidelines`, `discover_skills`, `read_guideline`, and `read_skill` are optional. Call them only when a local workflow would change how you do this turn; skip them for simple Q&A, status, and work you already know how to do.\n\
+     - When you do call `discover_guidelines` or `discover_skills`, send a brief intent sentence (e.g., 'modify python wheel builder for alternate compiler flag'), not the full task transcript and not a 2-3 word fragment.\n\
+     - Read a guideline or skill only for a match you will actually follow.\n\
      - When you need clarification or the operator must choose among options, call `ask_questions`. Do not ask clarifying questions in plain text when this tool fits.\n\
      - For `ask_questions`, put the full question and answer text in `content`; buttons must stay compact and ordered via tokens like `A`, `B`, `C`, `D` or `1`, `2`, `3`.\n";
 
 fn local_skill_workflow_prompt() -> String {
     let mut prompt = String::from(
         "## Local Guidelines and Skills Workflow\n\
-         - Zorai recommends local guidelines before skill discovery for non-trivial work; guidelines orchestrate which skills and checks fit the task type.\n\
-         - When guideline tools are available, call `discover_guidelines` with a brief intent description (one short sentence describing what you're trying to accomplish), then `read_guideline` for the best match before calling `discover_skills`.\n\
-         - Zorai runs local skill discovery before non-trivial work and surfaces the ranked result in the runtime prompt and workflow notices.\n\
-         - Treat daemon discovery results as the source of truth instead of relying on raw `list_skills` output.\n",
+         - Guidelines and skills are optional local workflows. Do not start a turn with discovery just because the tools exist.\n\
+         - If a workflow orchestrator would help, call `discover_guidelines` then `read_guideline`. If a playbook would help, call `discover_skills` then `read_skill`.\n",
     );
     prompt.push_str(SHARED_SKILL_DISCOVERY_RULES);
     prompt.push_str(
@@ -29,6 +27,29 @@ fn local_skill_workflow_prompt() -> String {
          - When a tool already performs the operator's requested side effect, avoid a redundant follow-up that only repeats a temp path or generic success. For `text_to_speech`, use it when asked to say something aloud or read text out loud, and only add extra text if playback failed, clarification is needed, or the operator asked for more detail.\n",
     );
     prompt
+}
+
+pub(super) fn render_subagent_supervision_section(config: &AgentConfig) -> String {
+    let mut section = String::from(
+        "- If you need subagents, call `list_agents` to see available spawnable specialists (`spawnable: true`), then `spawn_subagent` on demand with a matching title. Do not memorize a roster from this prompt.\n\
+         - If a child should use a specific provider or model, call `fetch_authenticated_providers` first and `fetch_provider_models` for the chosen provider before setting `spawn_subagent.provider` or `spawn_subagent.model`.\n\
+         - When spawning a child for directory or repository work, include the relevant path in the assignment and pass along any applicable `AGENTS.md` guidance when one exists; do not frame reading it as the child's first goal.\n\
+         - Keep each subagent narrow in scope and avoid creating duplicate child assignments.\n\
+         - Monitor spawned children with `list_subagents`. Do not use `list_agents` for child progress; it only lists runtime targets and spawnable definitions.\n\
+         - If a child reports that it exhausted its execution budget and still has useful remaining work, call `extend_subagent_budget` on that child thread instead of respawning from scratch.\n\
+         - Do not busy-wait on child agents. If there is no other useful work to do after delegating, send a normal progress update and stop so zorai can resume you when children finish.\n\
+         - Spawned agents carry their own Slavic persona. Treat those identities as real collaborators with bounded scope, not as disposable copies of yourself.\n",
+    );
+    if config.collaboration.enabled {
+        section.push_str(
+            "- When subagents need to coordinate, use `broadcast_contribution`, `read_peer_memory`, and `vote_on_disagreement` so disagreements are explicit instead of implicit.\n",
+        );
+    }
+    section.push_str(
+        "- zorai caps active subagents per parent, so queue additional children only when they materially advance the task.\n\
+         - For tasks requiring domain expertise, prefer `route_to_specialist` over `spawn_subagent`.\n",
+    );
+    section
 }
 
 fn build_time_context_prompt() -> String {
@@ -69,7 +90,7 @@ pub(super) fn build_system_prompt(
     memory: &AgentMemory,
     memory_paths: &super::task_prompt::MemoryPaths,
     agent_scope_id: &str,
-    sub_agents: &[SubAgentDefinition],
+    _sub_agents: &[SubAgentDefinition],
     is_subagent: bool,
     operator_model_summary: Option<&str>,
     operational_context: Option<&str>,
@@ -129,16 +150,14 @@ pub(super) fn build_system_prompt(
     prompt.push_str(&format!(
         "\n\n## Local Guidelines\n\
              - Guidelines root: {}\n\
-             - Guidelines are documentation-only workflow orchestrators. They should be discovered and read before skill discovery when a task is non-trivial.\n\
-             - Use `discover_guidelines` with a brief intent description (one short sentence describing what you're trying to accomplish), then `read_guideline` for the best match. Follow its recommended skills, checks, and step order.\n\
-             - Guidelines do not replace skills; they sit above skills and tell you which skills to consult and what failure modes to consider.\n\
+             - Guidelines are optional documentation-only workflow orchestrators above skills. Call `discover_guidelines` then `read_guideline` only when a guideline would change this turn; do not start every task with them.\n\
              - When the operator asks for work on a directory or repository path, check for `AGENTS.md` in that directory and its nearest relevant parent when repo-specific guidance is likely relevant. If present, apply the instructions that matter, but do not turn reading `AGENTS.md` into a standalone plan step unless the task specifically requires it.\n\
 \n\
              ## Local Skills\n\
              - Skills root: {}\n\
              - Generated skills: {}\n\
              - Curated local skills live directly under {} (zorai reference docs for terminals, browser, tasks, goals, memory, safety, etc.).\n\
-             - Before non-trivial work, use `read_memory`, `read_user`, and `read_soul` when you need memory recall, read the relevant guideline first, then follow the daemon-provided skill discovery result for this turn.\n",
+             - Call `discover_skills` then `read_skill` only when a local playbook would help. Use `read_memory`, `read_user`, and `read_soul` when you need memory recall.\n",
         guidelines_root.display(),
         skills_root.display(),
         generated_skills_root.display(),
@@ -146,7 +165,7 @@ pub(super) fn build_system_prompt(
     ));
     prompt.push_str(SHARED_SKILL_DISCOVERY_RULES);
     prompt.push_str(
-        "             - `list_skills` remains the raw catalog view, not the decision authority for the task.\n\
+        "             - `list_skills` is the raw catalog if you already know a name.\n\
              - The `cheatsheet` skill provides a quick reference for all available MCP tools.\n\
              - Prefer reusing an existing skill over inventing a brand-new workflow.\n",
     );
@@ -284,6 +303,7 @@ pub(super) fn build_system_prompt(
                 - For long-running terminal work, prefer non-blocking execution: set `wait_for_completion=false` or use `timeout_seconds > 600`, capture the returned `operation_id`, and continue other work. This thread auto-resumes when the command finishes. Do not poll `get_operation_status`. If you cannot continue without the result, call `get_operation_status` once with `wait=true`.\n\
              - If a command is still running, timed out while still active, or is waiting for interactive completion, treat that terminal as occupied and switch to another terminal/session before continuing other work.\n\
              - If you need another terminal in the same agent workspace, call `allocate_terminal`, then continue with the returned session ID.\n\
+             - Agent-allocated terminals are reclaimed when the owning task or subagent finishes, and unused idle lanes are closed automatically. Do not assume an allocated session stays forever.\n\
              - If the operator asks to use another terminal, call `list_terminals` again and switch explicitly.\n",
         );
     }
@@ -301,29 +321,8 @@ pub(super) fn build_system_prompt(
     }
 
     if !is_subagent {
-        prompt.push_str(
-            "\n\n## Subagent Supervision\n\
-             - For large tasks with clearly separable work, call `spawn_subagent` to create bounded child tasks instead of trying to do everything in one loop.\n\
-                - If a child should use a specific provider or model, call `fetch_authenticated_providers` first and `fetch_provider_models` for the chosen provider before setting `spawn_subagent.provider` or `spawn_subagent.model`.\n\
-                - When spawning a child for directory or repository work, include the relevant path in the assignment and pass along any applicable `AGENTS.md` guidance when one exists; do not frame reading it as the child's first goal.\n\
-             - Keep each subagent narrow in scope and avoid creating duplicate child assignments.\n\
-             - Monitor child progress with `list_subagents` and integrate their results before declaring the parent task complete.\n\
-             - If a child reports that it exhausted its execution budget and still has useful remaining work, call `extend_subagent_budget` on that child thread instead of respawning from scratch.\n\
-             - Do not use `list_agents` to check spawned child progress; it only lists runtime targets.\n\
-             - Do not busy-wait on child agents. If there is no other useful work to do after delegating, send a normal progress update and stop so zorai can resume you when children finish.\n\
-             - Spawned agents carry their own Slavic persona. Treat those identities as real collaborators with bounded scope, not as disposable copies of yourself.\n",
-        );
-        if config.collaboration.enabled {
-            prompt.push_str(
-                "         - When subagents need to coordinate, use `broadcast_contribution`, `read_peer_memory`, and `vote_on_disagreement` so disagreements are explicit instead of implicit.\n",
-            );
-        }
-        prompt.push_str(
-            "         - zorai caps active subagents per parent, so queue additional children only when they materially advance the task.\n\
-             - For tasks requiring domain expertise, prefer `route_to_specialist` over `spawn_subagent`. The handoff broker matches capability tags to specialist profiles, assembles context bundles with episodic memory and negative constraints, and records a WORM audit trail.\n",
-        );
-
-        super::task_prompt::append_sub_agent_registry(&mut prompt, sub_agents);
+        prompt.push_str("\n\n## Subagent Supervision\n");
+        prompt.push_str(&render_subagent_supervision_section(config));
     } else {
         prompt.push_str(
             "\n\n## Subagent Report-Back\n\
@@ -535,7 +534,7 @@ pub(super) fn build_external_agent_prompt(
     }
     context_parts.push(format!(
         "zorai local skills on this machine:\n- Skills root: {}\n- Generated skills: {}\n\
-         Before non-trivial work, review relevant skills in that directory and reuse them when possible.\n",
+         Review a skill in that directory only when a local playbook would help; skip discovery for simple work.\n",
         skills_root.display(),
         generated_skills_root.display(),
     ));
@@ -634,8 +633,10 @@ mod tests {
         assert!(prompt.contains(zorai_protocol::tool_names::READ_SKILL));
         assert!(prompt.contains(zorai_protocol::tool_names::READ_GUIDELINE));
         assert!(prompt.contains(zorai_protocol::tool_names::DISCOVER_GUIDELINES));
-        assert!(prompt.contains(zorai_protocol::tool_names::JUSTIFY_SKILL_SKIP));
-        assert!(prompt.contains("source of truth"));
+        assert!(prompt.contains("optional"));
+        assert!(prompt.contains("only when a local workflow would change"));
+        assert!(!prompt.contains(zorai_protocol::tool_names::JUSTIFY_SKILL_SKIP));
+        assert!(!prompt.contains("source of truth"));
         assert!(prompt.contains(zorai_protocol::tool_names::ONECONTEXT_SEARCH));
     }
 
@@ -658,8 +659,10 @@ mod tests {
         assert!(prompt.contains(zorai_protocol::tool_names::READ_SKILL));
         assert!(prompt.contains(zorai_protocol::tool_names::READ_GUIDELINE));
         assert!(prompt.contains(zorai_protocol::tool_names::DISCOVER_GUIDELINES));
-        assert!(prompt.contains(zorai_protocol::tool_names::JUSTIFY_SKILL_SKIP));
-        assert!(prompt.contains("source of truth"));
+        assert!(prompt.contains("optional"));
+        assert!(prompt.contains("only when a local workflow would change"));
+        assert!(!prompt.contains(zorai_protocol::tool_names::JUSTIFY_SKILL_SKIP));
+        assert!(!prompt.contains("source of truth"));
         assert!(prompt.contains(zorai_protocol::tool_names::ONECONTEXT_SEARCH));
     }
 
@@ -906,6 +909,11 @@ mod tests {
         assert!(prompt.contains(
             "continue following up on spawned/background tasks until each one is resolved"
         ));
+        assert!(prompt.contains("only when a local workflow would change"));
+        assert!(prompt.contains("`list_agents`"));
+        assert!(!prompt.contains("## Available Sub-Agents"));
+        assert!(!prompt.contains("Strong matches require"));
+        assert!(!prompt.contains("before non-trivial work"));
     }
 
     #[tokio::test]
@@ -1047,8 +1055,12 @@ mod tests {
             "the top-level agent should still be told how to delegate"
         );
         assert!(
-            root_prompt.contains("## Available Sub-Agents") && root_prompt.contains("Researcher"),
-            "the top-level agent should see the spawnable roster"
+            root_prompt.contains("`list_agents`") && root_prompt.contains("`spawn_subagent`"),
+            "the top-level agent should be told to fetch spawnable specialists on demand"
+        );
+        assert!(
+            !root_prompt.contains("## Available Sub-Agents") && !root_prompt.contains("Researcher"),
+            "the top-level agent must not receive an inlined spawnable roster"
         );
 
         let subagent_prompt = build(true);
@@ -1059,7 +1071,7 @@ mod tests {
         assert!(
             !subagent_prompt.contains("## Available Sub-Agents")
                 && !subagent_prompt.contains("spawn_subagent"),
-            "a spawned subagent must not receive the spawnable roster or spawn tooling guidance"
+            "a spawned subagent must not receive spawn tooling guidance"
         );
     }
 

@@ -693,9 +693,8 @@ fn goal_run_thread_context_message(goal_run: &GoalRun, source_thread_id: Option<
          - Title: {}\n\
          - Big picture: {}\n\
          {}\n\
-         - Current progress: planning pending; no goal steps have completed yet.\n\n\
-         This thread owns the full lifecycle of the goal. First plan the work into concrete steps. \
-         Then execute the current step completely, review it, persist the required artifacts, and continue until the final review passes.",
+         This is the sole worker thread for the goal. Do the work here. Spawned helpers keep their \
+         own threads. Completeness is decided only by the owner supervisor via `request_goal_review`.",
         goal_run.id, goal_run.title, goal_run.goal, source_line
     )
 }
@@ -1102,6 +1101,7 @@ impl AgentEngine {
             compensation_status: None,
             compensation_summary: None,
             active_task_id: None,
+            pending_review_report: None,
             duration_ms: None,
             child_task_ids: Vec::new(),
             child_task_count: 0,
@@ -1122,10 +1122,6 @@ impl AgentEngine {
         let mut goal_run = goal_run;
         let goal_thread_id = goal_run.thread_id.clone();
         super::goal_run_apply_thread_routing(&mut goal_run, goal_thread_id);
-        if goal_run.supervision_thread_id.is_none() {
-            goal_run.supervision_thread_id = goal_run.thread_id.clone();
-        }
-        crate::agent::goal_dossier::refresh_goal_run_dossier(&mut goal_run);
         if let Some(goal_thread_id) = goal_run.thread_id.as_deref() {
             self.set_thread_identity_metadata(
                 goal_thread_id,
@@ -1135,6 +1131,7 @@ impl AgentEngine {
         }
         self.initialize_goal_run_thread(&goal_run, source_thread_id.as_deref())
             .await;
+        self.pin_goal_owner_thread(&goal_run).await;
 
         self.goal_runs.lock().await.push_back(goal_run.clone());
         if let Some(client_surface) = effective_client_surface {
@@ -1408,7 +1405,9 @@ impl AgentEngine {
                 related_tasks.push(task.clone());
             }
         }
-        project_goal_run_snapshot(goal_run, &related_tasks, now_millis())
+        let mut projected = project_goal_run_snapshot(goal_run, &related_tasks, now_millis());
+        self.attach_pending_review_report(&mut projected).await;
+        projected
     }
 
     /// Projects a batch of goal_runs in O(1) SQL round-trips instead of
@@ -1461,32 +1460,11 @@ impl AgentEngine {
                     }
                 }
             }
-            projected.push(project_goal_run_snapshot(goal_run, &related, now));
+            let mut projected_run = project_goal_run_snapshot(goal_run, &related, now);
+            self.attach_pending_review_report(&mut projected_run).await;
+            projected.push(projected_run);
         }
         projected
-    }
-
-    pub(super) async fn goal_run_has_active_tasks(&self, goal_run_id: &str) -> bool {
-        let active_count = self
-            .count_tasks_filtered(&crate::history::AgentTaskListQuery {
-                id: None,
-                status: None,
-                statuses: Vec::new(),
-                source: None,
-                thread_id: None,
-                thread_ids: Vec::new(),
-                goal_run_id: Some(goal_run_id.to_string()),
-                parent_task_id: None,
-                awaiting_approval_id: None,
-                supervisor_config_present: false,
-                exclude_terminal_statuses: true,
-                order_by_recent_activity_desc: false,
-                limit: Some(1),
-                ids: Vec::new(),
-                parent_task_ids: Vec::new(),
-            })
-            .await;
-        active_count > 0
     }
 
     async fn list_task_refs_for_goal_relation(
@@ -1779,16 +1757,7 @@ impl AgentEngine {
                 .await;
             self.cancel_wakeups_for_threads(&thread_ids).await;
         }
-        self.quiet_goal_recovery.lock().await.remove(&goal_run.id);
         self.inflight_goal_runs.lock().await.remove(&goal_run.id);
-        let _ = self
-            .history
-            .set_consolidation_state(
-                &crate::agent::goal_planner::stagnation::goal_stagnation_pending_key(&goal_run.id),
-                "false",
-                now_millis(),
-            )
-            .await;
     }
 
     pub async fn control_goal_run(
@@ -1798,6 +1767,29 @@ impl AgentEngine {
         step_index: Option<usize>,
         payload_json: Option<&str>,
     ) -> bool {
+        if let Ok(verdict) = parse_goal_supervisor_verdict(action) {
+            let explanation = payload_json
+                .and_then(|value| {
+                    serde_json::from_str::<serde_json::Value>(value)
+                        .ok()
+                        .and_then(|json| {
+                            json.get("explanation")
+                                .and_then(|value| value.as_str())
+                                .map(ToOwned::to_owned)
+                        })
+                        .or_else(|| {
+                            let trimmed = value.trim();
+                            (!trimmed.is_empty() && !trimmed.starts_with('{'))
+                                .then(|| trimmed.to_string())
+                        })
+                })
+                .unwrap_or_default();
+            return self
+                .submit_goal_review(goal_run_id, verdict, &explanation, None)
+                .await
+                .is_ok();
+        }
+
         let persisted_goal_run = self.get_goal_run(goal_run_id).await;
         let mut changed_goal: Option<GoalRun> = None;
         let mut tasks_to_cancel: Vec<String> = Vec::new();
@@ -1823,6 +1815,7 @@ impl AgentEngine {
                             | GoalRunStatus::Planning
                             | GoalRunStatus::Running
                             | GoalRunStatus::AwaitingApproval
+                            | GoalRunStatus::AwaitingReview
                     ) {
                         goal_run.status = GoalRunStatus::Paused;
                         goal_run.updated_at = now_millis();
@@ -1840,10 +1833,10 @@ impl AgentEngine {
                         GoalRunStatus::Paused | GoalRunStatus::Blocked
                     ) {
                         let prior = goal_run.status;
-                        goal_run.status = if goal_run.steps.is_empty() {
-                            GoalRunStatus::Queued
-                        } else {
+                        goal_run.status = if goal_run.active_task_id.is_some() {
                             GoalRunStatus::Running
+                        } else {
+                            GoalRunStatus::Queued
                         };
                         goal_run.updated_at = now_millis();
                         let message = if prior == GoalRunStatus::Blocked {
@@ -1904,46 +1897,6 @@ impl AgentEngine {
                         task_to_release = current_task_id.map(|task_id| (task_id, current_ack));
                     }
                 }
-                "retry_step" | "retry-step" => {
-                    let target_index = resolve_goal_run_control_step(goal_run, step_index);
-                    tasks_to_cancel = goal_run
-                        .steps
-                        .get(target_index)
-                        .and_then(|step| step.task_id.clone())
-                        .into_iter()
-                        .collect();
-                    if retry_goal_run_step(goal_run, step_index).is_ok() {
-                        goal_run.updated_at = now_millis();
-                        goal_run.awaiting_approval_id = None;
-                        goal_run.active_task_id = None;
-                        goal_run.events.push(make_goal_run_event(
-                            "control",
-                            "goal run step retry requested",
-                            step_index.map(|value| format!("step {value}")),
-                        ));
-                        changed_goal = Some(goal_run.clone());
-                    }
-                }
-                "rerun_from_step" | "rerun-from-step" => {
-                    let target_index = resolve_goal_run_control_step(goal_run, step_index);
-                    tasks_to_cancel = goal_run
-                        .steps
-                        .get(target_index)
-                        .and_then(|step| step.task_id.clone())
-                        .into_iter()
-                        .collect();
-                    if rerun_goal_run_from_step(goal_run, step_index).is_ok() {
-                        goal_run.updated_at = now_millis();
-                        goal_run.awaiting_approval_id = None;
-                        goal_run.active_task_id = None;
-                        goal_run.events.push(make_goal_run_event(
-                            "control",
-                            "goal run rerun requested",
-                            step_index.map(|value| format!("step {value}")),
-                        ));
-                        changed_goal = Some(goal_run.clone());
-                    }
-                }
                 "cancel" => {
                     if !matches!(
                         goal_run.status,
@@ -1973,19 +1926,6 @@ impl AgentEngine {
                         goal_run.completed_at = Some(stopped_at);
                         goal_run.updated_at = stopped_at;
                         goal_run.stopped_reason = Some("operator_stop".to_string());
-                        super::goal_dossier::set_goal_resume_decision(
-                            goal_run,
-                            GoalResumeAction::Stop,
-                            "operator_stop",
-                            Some("goal run explicitly stopped by operator".to_string()),
-                            vec!["stop requested through built-in goal control".to_string()],
-                        );
-                        super::goal_dossier::set_goal_report(
-                            goal_run,
-                            GoalProjectionState::Failed,
-                            "goal run explicitly stopped by operator",
-                            vec!["reason_code: operator_stop".to_string()],
-                        );
                         goal_run.events.push(make_goal_run_event(
                             "control",
                             "goal run stopped",
@@ -2221,6 +2161,7 @@ impl AgentEngine {
             self.persist_goal_runs().await;
             if goal_run.status.is_terminal() {
                 self.cancel_goal_wakeups(&goal_run.id).await;
+                self.unpin_goal_owner_thread(&goal_run).await;
             }
             // Settle skill consultations and causal traces for any operator
             // -initiated terminal transition that didn't run through the
@@ -2366,11 +2307,6 @@ impl AgentEngine {
             .await
         {
             tracing::warn!(goal_run_id = %goal_run_id, %error, "failed to delete goal checkpoints");
-        }
-        if let Err(error) =
-            crate::agent::goal_dossier::remove_goal_run_projection(self, goal_run_id).await
-        {
-            tracing::warn!(goal_run_id = %goal_run_id, %error, "failed to remove goal projection directory");
         }
         for task_id in related_task_ids {
             if let Err(error) = self.history.delete_agent_task(&task_id).await {

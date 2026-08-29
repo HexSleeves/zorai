@@ -20,7 +20,7 @@ import { GoalLaunchPanel } from "./GoalLaunchPanel";
 import { openThreadTarget } from "../threads/openThreadTarget";
 import { navigateZorai, type ZoraiReturnTarget } from "../../shell/zoraiNavigationEvents";
 
-const activeStatuses = new Set(["queued", "planning", "running", "awaiting_approval", "paused"]);
+const activeStatuses = new Set(["queued", "planning", "running", "awaiting_approval", "awaiting_review", "paused"]);
 const GOAL_LAUNCH_EVENT = "zorai-goal-launch";
 
 export function GoalsRail() {
@@ -53,7 +53,7 @@ export function GoalsRail() {
 
 export function GoalsContext() {
   const { goalRunsForTrace } = useAgentChatPanelRuntime();
-  const waiting = goalRunsForTrace.filter((goal) => goal.status === "awaiting_approval").length;
+  const waiting = goalRunsForTrace.filter((goal) => goal.status === "awaiting_approval" || goal.status === "awaiting_review").length;
   const active = goalRunsForTrace.filter(isGoalRunActive).length;
   const failed = goalRunsForTrace.filter((goal) => goal.status === "failed").length;
 
@@ -67,7 +67,7 @@ export function GoalsContext() {
       </div>
       <div className="zorai-context-block">
         <strong>Workspace modes</strong>
-        <span>Dossier / Files / Progress / Usage / Active agent / Threads / Needs attention</span>
+        <span>Worker thread plus Accept / Soft reject / Hard reject</span>
       </div>
     </div>
   );
@@ -102,7 +102,7 @@ export function GoalsView({
 
   const metrics = useMemo(() => {
     const active = visibleGoalRuns.filter(isGoalRunActive).length;
-    const waiting = visibleGoalRuns.filter((run) => run.status === "awaiting_approval").length;
+    const waiting = visibleGoalRuns.filter((run) => run.status === "awaiting_approval" || run.status === "awaiting_review").length;
     const completed = visibleGoalRuns.filter((run) => run.status === "completed").length;
     return { active, waiting, completed, total: visibleGoalRuns.length };
   }, [visibleGoalRuns]);

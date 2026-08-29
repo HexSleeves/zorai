@@ -361,6 +361,9 @@ export function ThreadsView({
                 ? (reaction) => runtime.submitMessageFeedback(runtime.activeThread?.id ?? message.threadId, message.id, reaction)
                 : undefined}
               onRegenerate={message.role === "assistant" ? () => regenerateAssistantMessage(message.id) : undefined}
+              onFork={!message.isStreaming
+                ? () => void runtime.forkThread(message.id)
+                : undefined}
               onDelete={runtime.activeThread?.id || message.threadId
                 ? () => runtime.deleteMessage(runtime.activeThread?.id ?? message.threadId, message.id)
                 : undefined}

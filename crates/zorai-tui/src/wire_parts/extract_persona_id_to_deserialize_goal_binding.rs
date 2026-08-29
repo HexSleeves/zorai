@@ -352,6 +352,7 @@ pub enum GoalRunStatus {
     Planning,
     Running,
     AwaitingApproval,
+    AwaitingReview,
     Paused,
     Blocked,
     Completed,
@@ -470,6 +471,8 @@ pub struct GoalRun {
     pub awaiting_approval_id: Option<String>,
     #[serde(default)]
     pub last_error: Option<String>,
+    #[serde(default)]
+    pub pending_review_report: Option<String>,
     #[serde(default)]
     pub goal: String,
     #[serde(default)]

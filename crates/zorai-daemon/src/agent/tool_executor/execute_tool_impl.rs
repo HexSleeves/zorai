@@ -1,67 +1,4 @@
 use super::*;
-async fn maybe_bootstrap_todo_plan_for_background_tool(
-    agent: &AgentEngine,
-    thread_id: &str,
-    task_id: Option<&str>,
-    tool_name: &str,
-    args: &serde_json::Value,
-) -> bool {
-    let (content, status, notice_message) = match tool_name {
-        tool_names::SPAWN_SUBAGENT => {
-            let title = args
-                .get("title")
-                .and_then(|value| value.as_str())
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .unwrap_or("Track delegated child work");
-            (
-                title.to_string(),
-                TodoStatus::InProgress,
-                format!("Bootstrapped plan tracking for delegated work: {title}"),
-            )
-        }
-        tool_names::ENQUEUE_TASK => {
-            let summary = args
-                .get("title")
-                .and_then(|value| value.as_str())
-                .map(str::trim)
-                .filter(|value| !value.is_empty())
-                .or_else(|| {
-                    args.get("description")
-                        .and_then(|value| value.as_str())
-                        .map(str::trim)
-                        .filter(|value| !value.is_empty())
-                })
-                .unwrap_or("Track queued background work");
-            (
-                summary.to_string(),
-                TodoStatus::Pending,
-                format!("Bootstrapped plan tracking for queued work: {summary}"),
-            )
-        }
-        _ => return false,
-    };
-
-    let now = super::now_millis();
-    agent
-        .replace_thread_todos(
-            thread_id,
-            vec![TodoItem {
-                id: format!("todo_{}", uuid::Uuid::new_v4()),
-                content,
-                status,
-                position: 0,
-                step_index: None,
-                created_at: now,
-                updated_at: now,
-            }],
-            task_id,
-        )
-        .await;
-    agent.emit_workflow_notice(thread_id, "plan_bootstrap", notice_message, None);
-    true
-}
-
 async fn maybe_emit_cli_wrapper_synthesis_proposal_notice(
     agent: &AgentEngine,
     event_tx: &broadcast::Sender<AgentEvent>,
@@ -1603,38 +1540,6 @@ async fn prepare_tool_execution(
         adjustments
     };
 
-    if !thread_id.trim().is_empty()
-        && matches!(
-            tool_call.function.name.as_str(),
-            tool_names::BASH_COMMAND
-                | tool_names::EXECUTE_MANAGED_COMMAND
-                | tool_names::ENQUEUE_TASK
-                | tool_names::SPAWN_SUBAGENT
-        )
-        && !trusted_weles_internal_task
-        && agent.get_todos(thread_id).await.is_empty()
-        && task_id.is_some()
-    {
-        let bootstrapped = maybe_bootstrap_todo_plan_for_background_tool(
-            agent,
-            thread_id,
-            task_id,
-            tool_call.function.name.as_str(),
-            &dispatch_args,
-        )
-        .await;
-        if !bootstrapped {
-            return Err(ToolResult {
-                tool_call_id: tool_call.id.clone(),
-                name: tool_call.function.name.clone(),
-                content: "Plan required: call update_todo first so zorai can track the live execution plan before running commands or spawning tasks.".to_string(),
-                is_error: true,
-                weles_review: Some(governance_decision.review.clone()),
-                pending_approval: None,
-            });
-        }
-    }
-
     Ok(PreparedToolExecution {
         tool_name: effective_tool_name,
         args: effective_args.clone(),
@@ -1725,7 +1630,16 @@ async fn dispatch_tool_execution(
             .await
         }
         tool_names::ALLOCATE_TERMINAL => {
-            execute_allocate_terminal(args, session_manager, session_id, event_tx).await
+            execute_allocate_terminal(
+                args,
+                agent,
+                thread_id,
+                task_id,
+                session_manager,
+                session_id,
+                event_tx,
+            )
+            .await
         }
         tool_names::FETCH_AUTHENTICATED_PROVIDERS => {
             execute_fetch_authenticated_providers(agent).await
@@ -1828,11 +1742,11 @@ async fn dispatch_tool_execution(
             execute_start_goal_run(args, agent, thread_id, session_id).await
         }
         tool_names::LIST_GOAL_RUNS => execute_list_goal_runs(&prepared.args, agent).await,
-        tool_names::SUBMIT_GOAL_FINAL_REVIEW => {
-            execute_submit_goal_final_review(args, agent, task_id).await
+        tool_names::REQUEST_GOAL_REVIEW => {
+            execute_request_goal_review(args, agent, thread_id, task_id).await
         }
-        tool_names::SUBMIT_GOAL_STEP_VERDICT => {
-            execute_submit_goal_step_verdict(args, agent, task_id).await
+        tool_names::SUBMIT_GOAL_REVIEW => {
+            execute_submit_goal_review(args, agent, thread_id, task_id).await
         }
         tool_names::CREATE_ROUTINE => execute_create_routine(args, agent).await,
         tool_names::LIST_ROUTINES => execute_list_routines(args, agent).await,

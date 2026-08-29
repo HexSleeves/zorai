@@ -37,8 +37,9 @@ pub enum GoalWorkspaceHitTarget {
 pub enum GoalWorkspaceAction {
     ToggleGoalRun,
     OpenActions,
-    RetryStep,
-    RerunFromStep,
+    AcceptReview,
+    SoftReject,
+    HardReject,
     RefreshGoal,
 }
 
@@ -911,38 +912,50 @@ fn footer_segments(
                 target: None,
             });
         }
-    }
 
-    for (action, label, hotkey, style) in [
-        (
+        let mut actions = vec![(
             GoalWorkspaceAction::OpenActions,
             "[Actions]",
             "A",
             theme.accent_primary,
-        ),
-        (
-            GoalWorkspaceAction::RetryStep,
-            "[Retry step]",
-            "R",
-            theme.accent_secondary,
-        ),
-        (
-            GoalWorkspaceAction::RerunFromStep,
-            "[Rerun from here]",
-            "Ctrl+R",
-            theme.accent_danger,
-        ),
-    ] {
-        segments.push(FooterSegment {
-            text: format!("{label} {hotkey}"),
-            style,
-            target: Some(GoalWorkspaceHitTarget::FooterAction(action)),
-        });
-        segments.push(FooterSegment {
-            text: "  ".to_string(),
-            style: theme.fg_dim,
-            target: None,
-        });
+        )];
+        if matches!(
+            run.status,
+            Some(crate::state::task::GoalRunStatus::AwaitingReview)
+        ) {
+            actions.extend([
+                (
+                    GoalWorkspaceAction::AcceptReview,
+                    "[Accept]",
+                    "Y",
+                    theme.accent_success,
+                ),
+                (
+                    GoalWorkspaceAction::SoftReject,
+                    "[Soft reject]",
+                    "S",
+                    theme.accent_secondary,
+                ),
+                (
+                    GoalWorkspaceAction::HardReject,
+                    "[Hard reject]",
+                    "H",
+                    theme.accent_danger,
+                ),
+            ]);
+        }
+        for (action, label, hotkey, style) in actions {
+            segments.push(FooterSegment {
+                text: format!("{label} {hotkey}"),
+                style,
+                target: Some(GoalWorkspaceHitTarget::FooterAction(action)),
+            });
+            segments.push(FooterSegment {
+                text: "  ".to_string(),
+                style: theme.fg_dim,
+                target: None,
+            });
+        }
     }
 
     while segments
@@ -2469,7 +2482,15 @@ fn goal_thread_entries(
     run: &crate::state::task::GoalRun,
 ) -> Vec<GoalThreadEntry> {
     let mut entries = Vec::new();
-    let mut push_entry = |label: String, thread_id: String, summary: String| {
+    let mut known = std::collections::BTreeSet::new();
+    let push_entry = |entries: &mut Vec<GoalThreadEntry>,
+                       known: &mut std::collections::BTreeSet<String>,
+                       label: String,
+                       thread_id: String,
+                       summary: String| {
+        if thread_id.is_empty() || !known.insert(thread_id.clone()) {
+            return;
+        }
         if !entries
             .iter()
             .any(|entry: &GoalThreadEntry| entry.thread_id == thread_id)
@@ -2482,66 +2503,74 @@ fn goal_thread_entries(
         }
     };
 
-    if let Some(thread_id) = run.active_thread_id.clone() {
-        let label = run
-            .current_step_owner_profile
-            .as_ref()
-            .map(|owner| owner.agent_label.clone())
-            .unwrap_or_else(|| "Main agent".to_string());
-        push_entry(
-            label,
-            thread_id,
-            "Active thread for the current goal step.".to_string(),
-        );
-    }
-    if let Some(thread_id) = run.root_thread_id.clone() {
-        let label = run
-            .planner_owner_profile
-            .as_ref()
-            .map(|owner| owner.agent_label.clone())
-            .unwrap_or_else(|| "Planner".to_string());
-        push_entry(label, thread_id, "Root goal-planning thread.".to_string());
-    }
     if let Some(thread_id) = run.thread_id.clone() {
         push_entry(
-            "Goal thread".to_string(),
+            &mut entries,
+            &mut known,
+            "Worker".to_string(),
             thread_id,
-            "Primary thread attached to the goal run.".to_string(),
+            "Sole goal worker thread.".to_string(),
         );
     }
-    for (index, thread_id) in run.execution_thread_ids.iter().cloned().enumerate() {
-        let label = run
-            .current_step_owner_profile
-            .as_ref()
-            .filter(|_| index == 0)
-            .map(|owner| owner.agent_label.clone())
-            .unwrap_or_else(|| format!("Execution {}", index + 1));
-        push_entry(
-            label,
-            thread_id,
-            "Execution thread spawned by the goal run.".to_string(),
-        );
-    }
-    for task in tasks
+
+    let worker_thread = run.thread_id.as_deref();
+    if let Some(thread_id) = tasks
         .tasks()
         .iter()
-        .filter(|task| task.goal_run_id.as_deref() == Some(run.id.as_str()))
-        .take(256)
+        .find(|task| {
+            task.goal_run_id.as_deref() == Some(run.id.as_str())
+                && task.thread_id.as_deref() == worker_thread
+        })
+        .and_then(|task| task.parent_thread_id.clone())
+        .filter(|thread_id| worker_thread != Some(thread_id.as_str()))
     {
-        if let Some(thread_id) = task.thread_id.clone() {
-            push_entry(
-                task.title.clone(),
-                thread_id,
-                "Task-linked thread related to this goal.".to_string(),
-            );
-        }
-    }
-    for thread_id in tasks.goal_thread_ids(&run.id).into_iter().take(512) {
         push_entry(
-            "Live goal thread".to_string(),
+            &mut entries,
+            &mut known,
+            "Owner".to_string(),
             thread_id,
-            "Goal-scoped live thread reported by the daemon.".to_string(),
+            "Owner supervisor thread.".to_string(),
         );
+    }
+
+    for thread_id in [
+        run.active_thread_id.clone(),
+        run.root_thread_id.clone(),
+    ]
+    .into_iter()
+    .flatten()
+    .chain(run.execution_thread_ids.iter().cloned())
+    {
+        known.insert(thread_id);
+    }
+
+    let mut grew = true;
+    while grew {
+        grew = false;
+        for task in tasks.tasks() {
+            let Some(thread_id) = task.thread_id.as_deref() else {
+                continue;
+            };
+            if known.contains(thread_id) {
+                continue;
+            }
+            let belongs = task.goal_run_id.as_deref() == Some(run.id.as_str())
+                || task
+                    .parent_thread_id
+                    .as_deref()
+                    .is_some_and(|parent| known.contains(parent));
+            if !belongs {
+                continue;
+            }
+            push_entry(
+                &mut entries,
+                &mut known,
+                task.title.clone(),
+                thread_id.to_string(),
+                "Spawned helper thread.".to_string(),
+            );
+            grew = true;
+        }
     }
     entries
 }
@@ -2676,7 +2705,8 @@ fn goal_toggle_action_label(
         Some(crate::state::task::GoalRunStatus::Queued)
         | Some(crate::state::task::GoalRunStatus::Planning)
         | Some(crate::state::task::GoalRunStatus::Running)
-        | Some(crate::state::task::GoalRunStatus::AwaitingApproval) => {
+        | Some(crate::state::task::GoalRunStatus::AwaitingApproval)
+        | Some(crate::state::task::GoalRunStatus::AwaitingReview) => {
             Some(("[Pause]".to_string(), theme.accent_secondary))
         }
         _ => None,
@@ -2689,6 +2719,7 @@ fn goal_status_label(status: Option<crate::state::task::GoalRunStatus>) -> &'sta
         Some(crate::state::task::GoalRunStatus::Planning) => "planning",
         Some(crate::state::task::GoalRunStatus::Running) => "running",
         Some(crate::state::task::GoalRunStatus::AwaitingApproval) => "awaiting approval",
+        Some(crate::state::task::GoalRunStatus::AwaitingReview) => "awaiting review",
         Some(crate::state::task::GoalRunStatus::Paused) => "paused",
         Some(crate::state::task::GoalRunStatus::Blocked) => "blocked",
         Some(crate::state::task::GoalRunStatus::Contained) => "contained",
@@ -3019,6 +3050,7 @@ fn timeline_event_visuals(
 
     match run.status {
         Some(crate::state::task::GoalRunStatus::AwaitingApproval)
+        | Some(crate::state::task::GoalRunStatus::AwaitingReview)
         | Some(crate::state::task::GoalRunStatus::Paused)
             if is_latest_event =>
         {

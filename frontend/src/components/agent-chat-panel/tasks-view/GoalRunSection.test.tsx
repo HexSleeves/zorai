@@ -128,8 +128,7 @@ describe("GoalRunDetail", () => {
         goalRun={makeGoalRun()}
         agentRuns={[makeAgentRun()]}
         busy={false}
-        onRetryStep={vi.fn()}
-        onRerunFromStep={vi.fn()}
+        onReview={vi.fn()}
       />,
     );
 
@@ -165,8 +164,7 @@ describe("GoalRunDetail", () => {
           model_usage: [],
         })}
         busy={false}
-        onRetryStep={vi.fn()}
-        onRerunFromStep={vi.fn()}
+        onReview={vi.fn()}
       />,
     );
 

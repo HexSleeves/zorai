@@ -98,8 +98,8 @@ impl TuiModel {
                             MainPaneView::Task(sidebar::SidebarItemTarget::GoalRun { .. })
                         )
                     {
-                        if self.request_selected_goal_step_rerun_confirmation() {
-                            self.status_line = "Rerun goal from selected step?".to_string();
+                        if self.request_goal_review_verdict_confirmation("hard_reject") {
+                            self.status_line = "Hard reject this goal?".to_string();
                         }
                     } else if self
                         .input_notice

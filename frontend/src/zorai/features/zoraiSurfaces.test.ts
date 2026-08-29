@@ -694,6 +694,15 @@ describe("Zorai feature surfaces", () => {
     expect(source).toContain("Pin Limit Reached");
   });
 
+  it("keeps TUI-style thread forking on native message actions", () => {
+    const source = readFeature("./threads/ThreadsView.tsx");
+    const messageSource = readFeature("./threads/NativeThreadMessageBubble.tsx");
+
+    expect(source).toContain("runtime.forkThread(message.id)");
+    expect(messageSource).toContain("Fork thread from this message");
+    expect(messageSource).toContain("onFork");
+  });
+
   it("renders thread tool calls through collapsed tool rows instead of plain message bubbles", () => {
     const source = readFeature("./threads/ThreadsView.tsx");
     const toolSource = readFeature("../../components/agent-chat-panel/chat-view/ToolEventRow.tsx");
@@ -758,6 +767,8 @@ describe("Zorai feature surfaces", () => {
     expect(contextSource).not.toContain("zorai-file-preview");
     expect(overlaySource).toContain("zorai-file-preview-overlay");
     expect(overlaySource).toContain("Close preview");
+    expect(overlaySource).toContain("MarkdownContent");
+    expect(overlaySource).toContain("isMarkdownPath");
     expect(css).toMatch(/\.zorai-file-preview-overlay\s*{[^}]*position:\s*absolute/s);
   });
 

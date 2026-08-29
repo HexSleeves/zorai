@@ -410,49 +410,27 @@ impl TuiModel {
                 });
                 self.status_line = "Resuming goal run...".to_string();
             }
-            PendingConfirmAction::RetryGoalStep {
+            PendingConfirmAction::GoalReview {
                 goal_run_id,
-                step_index,
+                verdict,
                 ..
             } => {
+                let payload_json = match verdict.as_str() {
+                    "soft_reject" => Some(
+                        "{\"explanation\":\"Supervisor requested more work.\"}".to_string(),
+                    ),
+                    "hard_reject" => Some(
+                        "{\"explanation\":\"Supervisor rejected the goal.\"}".to_string(),
+                    ),
+                    _ => None,
+                };
                 self.send_daemon_command(DaemonCommand::ControlGoalRun {
                     goal_run_id,
-                    action: "retry_step".to_string(),
-                    step_index: Some(step_index),
-                    payload_json: None,
-                });
-                self.status_line = "Retrying goal step...".to_string();
-            }
-            PendingConfirmAction::RetryGoalPrompt { goal_run_id, .. } => {
-                self.send_daemon_command(DaemonCommand::ControlGoalRun {
-                    goal_run_id,
-                    action: "retry_step".to_string(),
+                    action: verdict,
                     step_index: None,
-                    payload_json: None,
+                    payload_json,
                 });
-                self.status_line = "Retrying goal prompt...".to_string();
-            }
-            PendingConfirmAction::RerunGoalFromStep {
-                goal_run_id,
-                step_index,
-                ..
-            } => {
-                self.send_daemon_command(DaemonCommand::ControlGoalRun {
-                    goal_run_id,
-                    action: "rerun_from_step".to_string(),
-                    step_index: Some(step_index),
-                    payload_json: None,
-                });
-                self.status_line = "Rerunning goal from step...".to_string();
-            }
-            PendingConfirmAction::RerunGoalPrompt { goal_run_id, .. } => {
-                self.send_daemon_command(DaemonCommand::ControlGoalRun {
-                    goal_run_id,
-                    action: "rerun_from_step".to_string(),
-                    step_index: None,
-                    payload_json: None,
-                });
-                self.status_line = "Rerunning goal from prompt...".to_string();
+                self.status_line = "Submitting goal review...".to_string();
             }
             PendingConfirmAction::ReuseModelAsStt { model_id } => {
                 self.set_audio_config_string("stt", "model", model_id.clone());

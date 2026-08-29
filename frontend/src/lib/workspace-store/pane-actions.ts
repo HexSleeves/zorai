@@ -82,6 +82,9 @@ export function createPaneActions(
     closePane: (paneId, opts) => {
       let shouldStopSession = opts?.stopSession !== false;
       const shouldCaptureTranscript = opts?.captureTranscript !== false;
+      const pair = ctx.findWsSurfaceAndPane(paneId);
+      if (!pair) return;
+      const sf = pair.sf;
       if (shouldStopSession) {
         const { workspaces } = ctx.get();
         const sessionId = resolvePaneSessionId(workspaces, paneId);
@@ -89,12 +92,7 @@ export function createPaneActions(
           shouldStopSession = false;
         }
       }
-
-      const sf = ctx.getActiveSurface();
-      if (!sf) return;
-
-      const pair = ctx.findWsSurfaceAndPane(paneId);
-      if (pair && shouldCaptureTranscript) {
+      if (shouldCaptureTranscript) {
         captureTranscriptForPane({
           paneId,
           workspaceId: pair.ws.id,

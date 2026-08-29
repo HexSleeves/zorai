@@ -141,7 +141,7 @@ describe("goalWorkspaceModel", () => {
     expect(model.planTitle).toBe("Plan");
     expect(model.planRows.map((row) => row.text)).toContain("Goal prompt");
     expect(model.planRows.find((row) => row.id === "goal-prompt")?.meta).toBe("Show");
-    expect(model.planRows.map((row) => row.text)).toContain("Main agent");
+    expect(model.planRows.map((row) => row.text)).toContain("Worker");
     expect(model.planRows.map((row) => row.text)).toContain("1. Pin the contract and cut the landing ledger");
     expect(model.planRows.map((row) => row.text)).toContain("Read harness/types.rs");
     expect(model.centerTitle).toBe("Run timeline");
@@ -241,7 +241,7 @@ describe("goalWorkspaceModel", () => {
 
   it("marks linked threads and projection files as actionable targets", () => {
     const threads = buildGoalWorkspaceModel(baseRun, { mode: "threads", detailsExpanded: true });
-    expect(threads.centerRows.find((row) => row.targetThreadId === "thread-active")?.text).toContain("Main agent");
+    expect(threads.centerRows.find((row) => row.targetThreadId === "thread-main")?.text).toContain("Worker");
 
     const files = buildGoalWorkspaceModel(baseRun, {
       mode: "files",

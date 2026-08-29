@@ -60,7 +60,7 @@ async fn execute_tool_routes_weles_runtime_review_over_internal_dm_thread() {
             None,
             Vec::new(),
             None,
-            crate::agent::GOAL_VERIFICATION_SOURCE,
+            "goal_run",
             Some("goal-weles-runtime-review".to_string()),
             None,
             Some(thread_id.to_string()),

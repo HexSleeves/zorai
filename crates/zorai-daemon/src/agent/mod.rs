@@ -51,14 +51,14 @@ mod forge;
 mod gateway_health;
 mod gateway_loop;
 pub(crate) mod gene_pool;
-pub(crate) mod goal_dossier;
 mod goal_llm;
 mod goal_parsing;
-mod goal_planner;
-mod goal_quiet_recovery;
+mod goal_review;
+#[cfg(test)]
 mod goal_routing;
 mod goal_run_health;
 mod goal_supervision_routing;
+mod goal_support;
 pub(crate) mod harness;
 mod heartbeat;
 mod heartbeat_checks;
@@ -109,6 +109,7 @@ mod task_prompt;
 mod task_scheduler;
 mod task_worktree;
 mod temporal_foresight_runtime;
+pub(crate) mod terminal_leases;
 pub(crate) mod thread_crud;
 mod thread_handoffs;
 mod thread_participant_runner;
@@ -166,11 +167,9 @@ pub(crate) use config::ConfigRuntimeProjection;
 pub(crate) use explanation::*;
 pub(crate) use gateway_health::GatewayConnectionStatus as RuntimeGatewayConnectionStatus;
 use goal_parsing::*;
-pub(in crate::agent) use goal_planner::{
-    parse_goal_verdict_evidence, validate_pass_verdict_evidence, GOAL_FINAL_REVIEW_SOURCE,
-    GOAL_VERIFICATION_SOURCE,
+pub(in crate::agent) use goal_review::{
+    parse_goal_supervisor_verdict, AWAITING_SUPERVISOR_BLOCKED_PREFIX,
 };
-use goal_routing::*;
 use honcho::*;
 use memory::*;
 use metadata::*;
@@ -215,13 +214,7 @@ fn goal_run_apply_thread_routing(goal_run: &mut GoalRun, thread_id: Option<Strin
     if goal_run.root_thread_id.is_none() {
         goal_run.root_thread_id = Some(thread_id.clone());
     }
-    if !goal_run
-        .execution_thread_ids
-        .iter()
-        .any(|id| id == &thread_id)
-    {
-        goal_run.execution_thread_ids.push(thread_id.clone());
-    }
+    goal_run.execution_thread_ids = vec![thread_id.clone()];
     goal_run.active_thread_id = Some(thread_id.clone());
     goal_run.thread_id = Some(thread_id);
 }

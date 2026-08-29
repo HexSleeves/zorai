@@ -312,7 +312,6 @@ export function createThreadActions(
               : thread),
         };
       });
-      void getAgentDbApi()?.dbDeleteMessage?.(threadId, messageId);
     },
     setThreadTodos: (threadId, todos) => {
       set((state) => ({

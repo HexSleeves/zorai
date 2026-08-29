@@ -373,6 +373,7 @@ fn sample_supervised_goal_run(goal_run_id: &str, task_id: &str, approval_id: &st
         compensation_status: None,
         compensation_summary: None,
         active_task_id: Some(task_id.to_string()),
+        pending_review_report: None,
         duration_ms: None,
         steps: vec![GoalRunStep {
             id: "step-1".to_string(),
@@ -1498,17 +1499,6 @@ async fn stopping_goal_run_records_operator_stop_resume_decision() {
     assert_eq!(goal.stopped_reason.as_deref(), Some("operator_stop"));
     assert!(goal.awaiting_approval_id.is_none());
     assert!(goal.active_task_id.is_none());
-
-    let dossier = goal.dossier.expect("stop should create dossier state");
-    let resume_decision = dossier
-        .latest_resume_decision
-        .expect("stop should record a resume decision");
-    assert_eq!(resume_decision.action, GoalResumeAction::Stop);
-    assert_eq!(resume_decision.reason_code, "operator_stop");
-    assert_eq!(
-        resume_decision.projection_state,
-        GoalProjectionState::Failed
-    );
     assert!(!engine.timer_wakeups.lock().await.contains_key(&wakeup.id));
     assert!(!engine
         .history
@@ -2796,32 +2786,6 @@ async fn start_goal_run_records_goal_start_episode_with_archived_fields() {
         episode_json.get("confidence_after").is_some(),
         "goal-start episodes should carry explicit confidence_after field"
     );
-}
-
-#[tokio::test]
-async fn goal_projection_delete_goal_run_removes_projection_directory() {
-    let root = tempdir().expect("temp dir");
-    let manager = SessionManager::new_test(root.path()).await;
-    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
-
-    let goal = engine
-        .start_goal_run(
-            "build titan shell".to_string(),
-            Some("Build Titan".to_string()),
-            Some("thread-goal-delete".to_string()),
-            Some("session-goal-delete".to_string()),
-            None,
-            None,
-            None,
-            None,
-        )
-        .await;
-
-    let projection_dir = root.path().join(".zorai/goals").join(&goal.id);
-    assert!(projection_dir.exists());
-
-    assert!(engine.delete_goal_run(&goal.id).await);
-    assert!(!projection_dir.exists());
 }
 
 #[tokio::test]

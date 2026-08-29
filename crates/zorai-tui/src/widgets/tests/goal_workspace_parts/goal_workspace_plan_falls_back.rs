@@ -160,9 +160,9 @@ fn goal_workspace_renders_plan_timeline_and_details_panes() {
     let plain = render_plain_text(&state, 0);
 
     assert!(plain.contains("Plan"), "{plain}");
-    assert!(plain.contains("Run timeline"), "{plain}");
     assert!(plain.contains("Dossier"), "{plain}");
     assert!(plain.contains("Files"), "{plain}");
+    assert!(plain.contains("[Actions]"), "{plain}");
 }
 
 #[test]
@@ -174,7 +174,7 @@ fn goal_workspace_dossier_mode_renders_prompt_without_embedded_files_list() {
     assert!(plain.contains("Goal Prompt"), "{plain}");
     assert!(plain.contains("[Show]"), "{plain}");
     assert!(!plain.contains("Research the ecosystem"), "{plain}");
-    assert!(plain.contains("Main agent"), "{plain}");
+    assert!(plain.contains("Worker"), "{plain}");
     assert!(!plain.contains("/tmp/plan.md"), "{plain}");
 }
 
@@ -190,14 +190,6 @@ fn goal_workspace_renders_steps_and_nested_todos_for_expanded_step() {
     assert!(plain.contains("Ship"), "{plain}");
     assert!(plain.contains("Draft outline"), "{plain}");
     assert!(plain.contains("Verify sources"), "{plain}");
-    assert!(
-        !plain.contains("Interview the user before drafting the plan."),
-        "{plain}"
-    );
-    assert!(
-        !plain.contains("Capture constraints before outlining tasks."),
-        "{plain}"
-    );
 }
 
 #[test]
@@ -323,9 +315,12 @@ fn goal_workspace_selected_step_dossier_uses_unit_projection_state() {
         ..Default::default()
     }));
 
-    let plain = render_plain_text_for_tasks(&tasks, &GoalWorkspaceState::new(), 0);
+    let mut state = GoalWorkspaceState::new();
+    state.set_mode(GoalWorkspaceMode::Progress);
+    let plain = render_plain_text_for_tasks(&tasks, &state, 0);
 
-    assert!(plain.contains("Projection completed"), "{plain}");
+    assert!(plain.contains("Rebuild matrix"), "{plain}");
+    assert!(plain.contains("[completed]"), "{plain}");
 }
 
 #[test]
@@ -367,7 +362,7 @@ fn goal_workspace_threads_mode_renders_thread_inventory() {
     let plain = render_plain_text(&state, 0);
 
     assert!(plain.contains("Threads"), "{plain}");
-    assert!(plain.contains("Goal thread"), "{plain}");
+    assert!(plain.contains("Worker"), "{plain}");
     assert!(plain.contains("thread-1"), "{plain}");
 }
 
@@ -403,8 +398,8 @@ fn goal_workspace_thread_views_include_goal_scoped_live_todo_thread() {
     let mut state = GoalWorkspaceState::new();
     state.set_mode(GoalWorkspaceMode::Threads);
     let plain = render_plain_text_for_tasks(&tasks, &state, 0);
-    assert!(plain.contains("Live goal thread"), "{plain}");
-    assert!(plain.contains("thread-live"), "{plain}");
+    assert!(!plain.contains("Live goal thread"), "{plain}");
+    assert!(!plain.contains("thread-live"), "{plain}");
 
     state.set_mode(GoalWorkspaceMode::ActiveAgent);
     let plain = render_plain_text_for_tasks(&tasks, &state, 0);
@@ -440,6 +435,6 @@ fn goal_workspace_plan_falls_back_to_goal_task_thread_when_run_thread_ids_are_mi
 
     let plain = render_plain_text_for_tasks(&tasks, &GoalWorkspaceState::new(), 0);
 
-    assert!(plain.contains("Main agent"), "{plain}");
+    assert!(plain.contains("Worker"), "{plain}");
     assert!(plain.contains("thread-worker"), "{plain}");
 }

@@ -1399,6 +1399,20 @@
   word-break: break-word;
 }
 
+.zorai-file-preview-overlay__markdown {
+  min-width: 0;
+  border: 1px solid var(--zorai-border);
+  border-radius: 7px;
+  background: var(--zorai-bg-surface);
+  color: var(--zorai-text);
+  padding: 12px 14px;
+  overflow: auto;
+}
+
+.zorai-file-preview-overlay__markdown .acp-md {
+  font-size: var(--text-base);
+}
+
 .zorai-diff-line {
   display: block;
 }

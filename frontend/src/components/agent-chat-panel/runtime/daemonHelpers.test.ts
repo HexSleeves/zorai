@@ -6,6 +6,7 @@ import {
   refreshDaemonThreadMessagesIntoLocalState,
   refreshDaemonThreadMetadataIntoLocalState,
   resolveAbsoluteMessageIndex,
+  resolveDaemonOwnedThreadId,
   trimDaemonThreadMessagesToLatestWindow,
 } from "./daemonHelpers";
 
@@ -71,6 +72,34 @@ describe("resolveAbsoluteMessageIndex", () => {
 
   it("returns undefined when the message is not in the loaded page", () => {
     expect(resolveAbsoluteMessageIndex(70, messages, "missing-row")).toBeUndefined();
+  });
+});
+
+describe("resolveDaemonOwnedThreadId", () => {
+  it("uses the mapped daemon thread id instead of the local GUI id", () => {
+    expect(resolveDaemonOwnedThreadId({
+      threads: [
+        { id: "thread_1", daemonThreadId: "daemon-abc" },
+        { id: "thread_2", daemonThreadId: "daemon-other" },
+      ],
+      threadId: "thread_1",
+    })).toBe("daemon-abc");
+  });
+
+  it("falls back to the active daemon thread id while the mapping is still on the ref", () => {
+    expect(resolveDaemonOwnedThreadId({
+      threads: [{ id: "thread_1", daemonThreadId: null }],
+      threadId: "thread_1",
+      activeThreadId: "thread_1",
+      activeDaemonThreadId: "daemon-from-ref",
+    })).toBe("daemon-from-ref");
+  });
+
+  it("does not send a local-only thread id to the daemon", () => {
+    expect(resolveDaemonOwnedThreadId({
+      threads: [{ id: "thread_1", daemonThreadId: null }],
+      threadId: "thread_1",
+    })).toBeNull();
   });
 });
 

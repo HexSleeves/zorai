@@ -46,6 +46,7 @@ impl TuiModel {
                         | Some(task::GoalRunStatus::Planning)
                         | Some(task::GoalRunStatus::Running)
                         | Some(task::GoalRunStatus::AwaitingApproval)
+                        | Some(task::GoalRunStatus::AwaitingReview)
                 )
             }) {
                 self.schedule_goal_hydration_refresh(goal_run_id.clone());
@@ -174,46 +175,17 @@ impl TuiModel {
         true
     }
 
-    pub(crate) fn request_selected_goal_step_retry_confirmation(&mut self) -> bool {
-        if let Some((goal_run_id, goal_title, step_index, step)) = self.selected_goal_step_context()
-        {
-            self.open_pending_action_confirm(PendingConfirmAction::RetryGoalStep {
-                goal_run_id,
-                goal_title,
-                step_index,
-                step_title: step.title,
-            });
-            return true;
-        }
-
-        let Some((goal_run_id, goal_title)) = self.selected_goal_prompt_context() else {
+    pub(crate) fn request_goal_review_verdict_confirmation(&mut self, verdict: &str) -> bool {
+        let Some(run) = self.selected_goal_run() else {
             return false;
         };
-        self.open_pending_action_confirm(PendingConfirmAction::RetryGoalPrompt {
-            goal_run_id,
-            goal_title,
-        });
-        true
-    }
-
-    pub(crate) fn request_selected_goal_step_rerun_confirmation(&mut self) -> bool {
-        if let Some((goal_run_id, goal_title, step_index, step)) = self.selected_goal_step_context()
-        {
-            self.open_pending_action_confirm(PendingConfirmAction::RerunGoalFromStep {
-                goal_run_id,
-                goal_title,
-                step_index,
-                step_title: step.title,
-            });
-            return true;
-        }
-
-        let Some((goal_run_id, goal_title)) = self.selected_goal_prompt_context() else {
+        if !matches!(run.status, Some(task::GoalRunStatus::AwaitingReview)) {
             return false;
-        };
-        self.open_pending_action_confirm(PendingConfirmAction::RerunGoalPrompt {
-            goal_run_id,
-            goal_title,
+        }
+        self.open_pending_action_confirm(PendingConfirmAction::GoalReview {
+            goal_run_id: run.id.clone(),
+            goal_title: run.title.clone(),
+            verdict: verdict.to_string(),
         });
         true
     }
@@ -231,7 +203,8 @@ impl TuiModel {
                 Some(task::GoalRunStatus::Queued)
                 | Some(task::GoalRunStatus::Planning)
                 | Some(task::GoalRunStatus::Running)
-                | Some(task::GoalRunStatus::AwaitingApproval) => {
+                | Some(task::GoalRunStatus::AwaitingApproval)
+                | Some(task::GoalRunStatus::AwaitingReview) => {
                     items.push(GoalActionPickerItem::PauseGoal);
                     items.push(GoalActionPickerItem::StopGoal);
                 }
@@ -249,11 +222,13 @@ impl TuiModel {
             }
         }
 
-        if self.selected_goal_step_context().is_some()
-            || self.selected_goal_prompt_context().is_some()
-        {
-            items.push(GoalActionPickerItem::RetryStep);
-            items.push(GoalActionPickerItem::RerunFromStep);
+        if matches!(
+            self.selected_goal_run().and_then(|run| run.status),
+            Some(task::GoalRunStatus::AwaitingReview)
+        ) {
+            items.push(GoalActionPickerItem::AcceptReview);
+            items.push(GoalActionPickerItem::SoftReject);
+            items.push(GoalActionPickerItem::HardReject);
         }
 
         if self.selected_goal_run().is_some() {
@@ -261,18 +236,6 @@ impl TuiModel {
         }
 
         items
-    }
-
-    fn selected_goal_prompt_context(&self) -> Option<(String, String)> {
-        let MainPaneView::Task(sidebar::SidebarItemTarget::GoalRun { goal_run_id, .. }) =
-            &self.main_pane_view
-        else {
-            return None;
-        };
-        let run = self.tasks.goal_run_by_id(goal_run_id)?;
-        run.steps
-            .is_empty()
-            .then(|| (run.id.clone(), run.title.clone()))
     }
 
     pub(crate) fn open_goal_step_action_picker(&mut self) -> bool {

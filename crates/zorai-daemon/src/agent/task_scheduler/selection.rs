@@ -449,6 +449,7 @@ fn goal_run_status_blocks_dispatch(status: GoalRunStatus) -> bool {
         || matches!(
             status,
             GoalRunStatus::AwaitingApproval
+                | GoalRunStatus::AwaitingReview
                 | GoalRunStatus::Paused
                 | GoalRunStatus::Blocked
                 | GoalRunStatus::Planning

@@ -391,14 +391,19 @@ pub(super) fn handle_modal_enter(model: &mut TuiModel, kind: modal::ModalKind) {
                         model.status_line = "Goal action is unavailable".to_string();
                     }
                 }
-                Some(GoalActionPickerItem::RetryStep) => {
-                    if !model.request_selected_goal_step_retry_confirmation() {
-                        model.status_line = "Selected goal step is unavailable".to_string();
+                Some(GoalActionPickerItem::AcceptReview) => {
+                    if !model.request_goal_review_verdict_confirmation("accept") {
+                        model.status_line = "Goal is not awaiting review".to_string();
                     }
                 }
-                Some(GoalActionPickerItem::RerunFromStep) => {
-                    if !model.request_selected_goal_step_rerun_confirmation() {
-                        model.status_line = "Selected goal step is unavailable".to_string();
+                Some(GoalActionPickerItem::SoftReject) => {
+                    if !model.request_goal_review_verdict_confirmation("soft_reject") {
+                        model.status_line = "Goal is not awaiting review".to_string();
+                    }
+                }
+                Some(GoalActionPickerItem::HardReject) => {
+                    if !model.request_goal_review_verdict_confirmation("hard_reject") {
+                        model.status_line = "Goal is not awaiting review".to_string();
                     }
                 }
                 Some(GoalActionPickerItem::CycleRuntimeAssignment) => {

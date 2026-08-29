@@ -56,6 +56,7 @@ fn make_goal_run(id: &str, title: &str, status: GoalRunStatus, updated_at: u64) 
         compensation_status: None,
         compensation_summary: None,
         active_task_id: None,
+        pending_review_report: None,
         duration_ms: None,
         steps: Vec::new(),
         events: Vec::new(),
@@ -191,6 +192,7 @@ async fn make_test_engine(
         whatsapp_link: Arc::new(super::whatsapp_link::WhatsAppLinkRuntime::new()),
         external_runners: RwLock::new(HashMap::new()),
         subagent_runtime: RwLock::new(HashMap::new()),
+        agent_terminal_leases: Mutex::new(HashMap::new()),
         trusted_weles_tasks: RwLock::new(HashSet::new()),
         weles_health: RwLock::new(WelesHealthStatus {
             state: WelesHealthState::Healthy,
@@ -205,7 +207,6 @@ async fn make_test_engine(
         active_operator_sessions: RwLock::new(HashMap::new()),
         pending_operator_approvals: RwLock::new(HashMap::new()),
         pending_approval_commands: RwLock::new(HashMap::new()),
-        quiet_goal_recovery: Mutex::new(HashMap::new()),
         critique_approval_continuations: Mutex::new(HashMap::new()),
         policy_escalation_session_grants: RwLock::new(HashSet::new()),
         task_approval_rules: RwLock::new(Vec::new()),

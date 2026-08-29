@@ -92,6 +92,7 @@ fn goal_run_status_to_event_kind(status: GoalRunStatus) -> &'static str {
         GoalRunStatus::Planning | GoalRunStatus::Queued => "planning",
         GoalRunStatus::Running => "step_started",
         GoalRunStatus::AwaitingApproval => "step_started",
+        GoalRunStatus::AwaitingReview => "step_started",
         GoalRunStatus::Paused => "paused",
         GoalRunStatus::Blocked => "paused",
         // Break-glass and compensated outcomes are terminal-ish "completed"
@@ -478,38 +479,6 @@ impl AgentEngine {
             }
             _ => {}
         }
-    }
-
-    pub(super) async fn record_generated_skill_work_context(&self, goal_run: &GoalRun) {
-        let Some(path) = goal_run.generated_skill_path.as_deref() else {
-            return;
-        };
-
-        let context = ThreadWorkContext {
-            thread_id: goal_run.thread_id.clone().unwrap_or_default(),
-            entries: vec![WorkContextEntry {
-                path: path.to_string(),
-                previous_path: None,
-                kind: WorkContextEntryKind::GeneratedSkill,
-                source: "generated_skill".to_string(),
-                change_kind: None,
-                repo_root: crate::git::find_git_root(path),
-                goal_run_id: Some(goal_run.id.clone()),
-                step_index: Some(goal_run.current_step_index),
-                session_id: goal_run.session_id.clone(),
-                operation_id: None,
-                task_id: None,
-                before_hash: None,
-                after_hash: None,
-                is_text: true,
-                updated_at: now_millis(),
-            }],
-        };
-        if context.thread_id.is_empty() {
-            return;
-        }
-        self.merge_work_context_entries(&context.thread_id, context.entries)
-            .await;
     }
 
     async fn persist_operation_snapshot(

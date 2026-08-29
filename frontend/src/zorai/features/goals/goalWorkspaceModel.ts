@@ -38,7 +38,7 @@ export interface GoalWorkspaceRow {
 }
 
 export interface GoalWorkspaceAction {
-  id: "toggle" | "cancel" | "retry" | "rerun" | "refresh";
+  id: "toggle" | "cancel" | "accept" | "soft_reject" | "hard_reject" | "refresh";
   label: string;
   enabled: boolean;
 }
@@ -118,12 +118,12 @@ export function buildGoalWorkspaceModel(run: GoalRun, options: GoalWorkspaceOpti
     detailSections: detailsExpanded
       ? buildDetailSections(run, mode, selectedStep, options.selectedCenterIndex ?? 0, options.projectionFiles ?? [], tasks)
       : [],
-    footerTitle: "Step actions",
+    footerTitle: "Goal actions",
     selectedStepLabel: selectedStep
       ? `${stepPosition(run, selectedStep) + 1}. ${splitGoalStepTitle(selectedStep.title).title}`
       : "Goal prompt",
     selectedStepIndex: selectedStep ? stepPosition(run, selectedStep) : null,
-    footerActions: buildFooterActions(run, selectedStep),
+    footerActions: buildFooterActions(run),
   };
 }
 
@@ -405,12 +405,7 @@ function activeAgentRows(run: GoalRun, selectedIndex: number, tasks: AgentQueueT
 }
 
 function threadRows(run: GoalRun, selectedIndex: number, tasks: AgentQueueTask[]): GoalWorkspaceRow[] {
-  const entries = goalThreadEntries(run);
-  for (const task of tasks) {
-    if (task.thread_id && !entries.some((entry) => entry.threadId === task.thread_id)) {
-      entries.push({ label: task.goal_step_title ? `${task.goal_step_title} · ${task.title}` : task.title, threadId: task.thread_id });
-    }
-  }
+  const entries = goalThreadEntries(run, tasks);
   return markSelected(entries.length
     ? entries.map((entry) => ({ id: entry.threadId, text: entry.label, meta: "Open thread", tone: "accent" as const, targetThreadId: entry.threadId }))
     : [{ id: "empty", text: "No linked threads available.", tone: "muted" }], selectedIndex);
@@ -425,8 +420,7 @@ function attentionRows(run: GoalRun, selectedIndex: number): GoalWorkspaceRow[] 
   return markSelected(rows, selectedIndex);
 }
 
-function buildFooterActions(run: GoalRun, selectedStep: GoalRunStep | null): GoalWorkspaceAction[] {
-  const hasStep = Boolean(selectedStep);
+function buildFooterActions(run: GoalRun): GoalWorkspaceAction[] {
   const actions: GoalWorkspaceAction[] = [];
   if (isGoalRunActive(run)) {
     actions.push({
@@ -438,8 +432,11 @@ function buildFooterActions(run: GoalRun, selectedStep: GoalRunStep | null): Goa
       actions.push({ id: "cancel", label: "Stop", enabled: true });
     }
   }
-  actions.push({ id: "retry", label: "Retry step", enabled: hasStep });
-  actions.push({ id: "rerun", label: "Rerun from here", enabled: hasStep });
+  if (run.status === "awaiting_review") {
+    actions.push({ id: "accept", label: "Accept", enabled: true });
+    actions.push({ id: "soft_reject", label: "Soft reject", enabled: true });
+    actions.push({ id: "hard_reject", label: "Hard reject", enabled: true });
+  }
   actions.push({ id: "refresh", label: "Refresh", enabled: true });
   return actions;
 }
@@ -501,28 +498,31 @@ function indexTodosByStep(run: GoalRun): Map<number, NonNullable<GoalRunEvent["t
 }
 
 function mainAgentThread(run: GoalRun): { label: string; threadId: string } | null {
-  if (run.thread_id) return { label: "Main agent", threadId: run.thread_id };
-  if (run.root_thread_id) return { label: run.planner_owner_profile ? `Main agent (${run.planner_owner_profile.agent_label})` : "Main agent", threadId: run.root_thread_id };
-  if (run.active_thread_id) return { label: run.current_step_owner_profile ? `Main agent (${run.current_step_owner_profile.agent_label})` : "Main agent", threadId: run.active_thread_id };
+  if (run.thread_id) return { label: "Worker", threadId: run.thread_id };
+  if (run.active_thread_id) return { label: "Worker", threadId: run.active_thread_id };
   const firstExecution = run.execution_thread_ids?.[0];
-  return firstExecution ? { label: "Main agent", threadId: firstExecution } : null;
+  return firstExecution ? { label: "Worker", threadId: firstExecution } : null;
 }
 
 function goalThreadTargets(run: GoalRun): string[] {
-  return [run.active_thread_id, run.root_thread_id, run.thread_id, ...(run.execution_thread_ids ?? [])]
+  return [run.thread_id, run.supervision_thread_id, run.active_thread_id]
     .filter((entry): entry is string => Boolean(entry && entry.trim()))
     .filter((entry, index, list) => list.indexOf(entry) === index);
 }
 
-function goalThreadEntries(run: GoalRun): Array<{ label: string; threadId: string }> {
+function goalThreadEntries(run: GoalRun, tasks: AgentQueueTask[] = []): Array<{ label: string; threadId: string }> {
   const entries: Array<{ label: string; threadId: string }> = [];
   const push = (label: string, threadId?: string | null) => {
     if (threadId && !entries.some((entry) => entry.threadId === threadId)) entries.push({ label, threadId });
   };
-  push(run.current_step_owner_profile?.agent_label ?? "Main agent", run.active_thread_id);
-  push(run.planner_owner_profile?.agent_label ?? "Planner", run.root_thread_id);
-  push("Goal thread", run.thread_id);
-  for (const [index, threadId] of (run.execution_thread_ids ?? []).entries()) push(index === 0 ? run.current_step_owner_profile?.agent_label ?? "Execution 1" : `Execution ${index + 1}`, threadId);
+  push("Worker", run.thread_id);
+  if (run.supervision_thread_id && run.supervision_thread_id !== run.thread_id) {
+    push("Owner", run.supervision_thread_id);
+  }
+  for (const task of tasks) {
+    if (!task.thread_id || task.thread_id === run.thread_id || task.thread_id === run.supervision_thread_id) continue;
+    push(task.title || "Spawned helper", task.thread_id);
+  }
   return entries;
 }
 

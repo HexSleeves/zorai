@@ -1,6 +1,7 @@
 import { allLeafIds, findLeaf } from "./bspTree";
 import { getBridge } from "./bridge";
 import type { Workspace } from "./types";
+import { findPaneIdsForSession } from "./workspace-store/helpers";
 import { useWorkspaceStore } from "./workspaceStore";
 
 export type AgentWorkspaceProvision = {
@@ -164,6 +165,16 @@ export async function provisionTerminalPaneInWorkspace(opts: {
         sessionId,
         cwd: opts.cwd ?? workspace.cwd ?? null,
     };
+}
+
+export function closePanesForSession(sessionId: string): void {
+    if (!sessionId) {
+        return;
+    }
+    const store = useWorkspaceStore.getState();
+    for (const paneId of findPaneIdsForSession(store.workspaces, sessionId)) {
+        store.closePane(paneId, { captureTranscript: false });
+    }
 }
 
 /**

@@ -93,18 +93,10 @@ pub(crate) fn add_available_tools_part_b(
 
     tools.push(tool_def(
         tool_names::UPDATE_TODO,
-        "Replace the current todo list for this conversation. For goal-owned main tasks, set the list once per goal step; later calls may only change statuses.",
+        "Replace the current todo list for this conversation.",
         serde_json::json!({
             "type": "object",
             "properties": {
-                "goal_run_id": {
-                    "type": "string",
-                    "description": "Required for goal-run main tasks; must match active goal run ID"
-                },
-                "goal_step_id": {
-                    "type": "string",
-                    "description": "Required for goal-run main tasks; binds list to active goal step"
-                },
                 "todos": {
                     "type": "array",
                     "description": "Ordered todo items for the current plan",
@@ -344,7 +336,7 @@ pub(crate) fn add_available_tools_part_b(
 
     tools.push(tool_def(
         tool_names::DISCOVER_GUIDELINES,
-        "Find matching local guidelines before choosing skills.",
+        "Find matching local guidelines when a workflow orchestrator would help. Optional; skip unless this turn needs one.",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -358,7 +350,7 @@ pub(crate) fn add_available_tools_part_b(
 
     tools.push(tool_def(
         tool_names::READ_GUIDELINE,
-        "Read a local guideline document before skill discovery. Accepts a guideline name, relative path, or filename.",
+        "Read a local guideline when you will follow it. Optional. Accepts a guideline name, relative path, or filename.",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -383,7 +375,7 @@ pub(crate) fn add_available_tools_part_b(
 
     tools.push(tool_def(
         tool_names::DISCOVER_SKILLS,
-        "Find matching local skills fast.",
+        "Find matching local skills when a playbook would help. Optional; skip unless this turn needs one.",
         serde_json::json!({
             "type": "object",
             "properties": {
@@ -397,7 +389,7 @@ pub(crate) fn add_available_tools_part_b(
 
     tools.push(tool_def(
         tool_names::READ_SKILL,
-        "Read one or more local skill documents before acting. Accepts skill names, relative paths, or generated skill filenames.",
+        "Read one or more local skill documents when you will follow them. Accepts skill names, relative paths, or generated skill filenames.",
         serde_json::json!({
             "type": "object",
             "properties": {

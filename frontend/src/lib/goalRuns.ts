@@ -3,12 +3,19 @@ export type GoalRunStatus =
     | "planning"
     | "running"
     | "awaiting_approval"
+    | "awaiting_review"
     | "paused"
     | "completed"
     | "failed"
     | "cancelled";
 
-export type GoalRunControlAction = "pause" | "resume" | "cancel" | "retry_step" | "rerun_from_step";
+export type GoalRunControlAction =
+    | "pause"
+    | "resume"
+    | "cancel"
+    | "accept"
+    | "soft_reject"
+    | "hard_reject";
 
 export type GoalRunStepKind = "reason" | "command" | "research" | "memory" | "skill" | "unknown";
 
@@ -165,6 +172,7 @@ export interface GoalRun {
     session_id?: string | null;
     awaiting_approval_id?: string | null;
     active_task_id?: string | null;
+    pending_review_report?: string | null;
     total_prompt_tokens?: number | null;
     total_completion_tokens?: number | null;
     estimated_cost_usd?: number | null;
@@ -219,13 +227,14 @@ function toStatus(value: unknown): GoalRunStatus {
         case "planning":
         case "running":
         case "awaiting_approval":
+        case "awaiting_review":
         case "paused":
         case "completed":
         case "failed":
         case "cancelled":
             return value;
         default:
-            return "queued";
+            return value as GoalRunStatus;
     }
 }
 
@@ -690,6 +699,11 @@ export function normalizeGoalRun(raw: unknown): GoalRun | null {
             : typeof goalRun.activeTaskId === "string"
                 ? goalRun.activeTaskId
                 : null,
+        pending_review_report: typeof goalRun.pending_review_report === "string"
+            ? goalRun.pending_review_report
+            : typeof goalRun.pendingReviewReport === "string"
+                ? goalRun.pendingReviewReport
+                : null,
         steps: normalizedSteps,
         events: normalizedEvents,
         dossier: normalizeDossier(parseJsonValue(goalRun.dossier ?? goalRun.dossier_json)),
@@ -778,14 +792,22 @@ export async function startGoalRun(payload: StartGoalRunPayload): Promise<GoalRu
     }
 }
 
-export async function controlGoalRun(goalRunId: string, action: GoalRunControlAction, stepIndex?: number | null): Promise<boolean> {
+export async function controlGoalRun(
+    goalRunId: string,
+    action: GoalRunControlAction,
+    stepIndex?: number | null,
+    explanation?: string | null,
+): Promise<boolean> {
     const bridge = getBridge();
     if (!bridge?.agentControlGoalRun) {
         return false;
     }
 
     try {
-        const result = await bridge.agentControlGoalRun(goalRunId, action, stepIndex ?? null);
+        const payloadJson = explanation && explanation.trim()
+            ? JSON.stringify({ explanation: explanation.trim() })
+            : undefined;
+        const result = await bridge.agentControlGoalRun(goalRunId, action, stepIndex ?? null, payloadJson);
         if (typeof result === "boolean") {
             return result;
         }
@@ -821,6 +843,8 @@ export function formatGoalRunStatus(status: GoalRunStatus): string {
     switch (status) {
         case "awaiting_approval":
             return "Awaiting approval";
+        case "awaiting_review":
+            return "Awaiting review";
         default:
             return status.replace(/_/g, " ");
     }
@@ -833,6 +857,8 @@ export function goalRunStatusColor(status: GoalRunStatus): string {
         case "running":
             return "var(--accent)";
         case "awaiting_approval":
+            return "var(--approval)";
+        case "awaiting_review":
             return "var(--approval)";
         case "paused":
             return "var(--warning)";

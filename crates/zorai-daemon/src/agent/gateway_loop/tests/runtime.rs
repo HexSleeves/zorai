@@ -44,7 +44,6 @@ fn background_runtime_splits_maintenance_work_into_separate_loops() {
         "engine.run_watcher_refresh_loop(rx).await",
         "engine.run_gateway_supervision_loop(rx).await",
         "engine.run_stalled_turn_supervision_loop(rx).await",
-        "engine.run_quiet_goal_supervision_loop(rx).await",
         "engine.run_subagent_supervision_loop(rx).await",
     ] {
         assert!(
@@ -7253,6 +7252,7 @@ async fn gateway_status_command_reports_goal_run_state_for_thread() {
         compensation_status: None,
         compensation_summary: None,
         active_task_id: None,
+        pending_review_report: None,
         duration_ms: None,
         dossier: None,
         total_prompt_tokens: 0,

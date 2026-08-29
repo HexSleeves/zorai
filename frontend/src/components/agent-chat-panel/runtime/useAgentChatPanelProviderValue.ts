@@ -35,6 +35,7 @@ import {
   loadDaemonThreadPageIntoLocalState,
   reloadDaemonThreadIntoLocalState,
   resolveAbsoluteMessageIndex,
+  resolveDaemonOwnedThreadId,
   trimDaemonThreadMessagesToLatestWindow,
 } from "./daemonHelpers";
 import {
@@ -352,7 +353,7 @@ export function useAgentChatPanelProviderValue(): {
   const openSpawnedThreadInStore = useAgentStore((state) => state.openSpawnedThread);
   const goBackThread = useAgentStore((state) => state.goBackThread);
   const addMessage = useAgentStore((state) => state.addMessage);
-  const deleteMessage = useAgentStore((state) => state.deleteMessage);
+  const deleteMessageFromStore = useAgentStore((state) => state.deleteMessage);
   const updateLastAssistantMessage = useAgentStore((state) => state.updateLastAssistantMessage);
   const setThreadTodos = useAgentStore((state) => state.setThreadTodos);
   const setThreadDaemonId = useAgentStore((state) => state.setThreadDaemonId);
@@ -844,33 +845,6 @@ export function useAgentChatPanelProviderValue(): {
     }
   }, [activeThread]);
 
-  const forkThread = useCallback(async (messageId: string) => {
-    const notify = useNotificationStore.getState().addNotification;
-    const daemonThreadId = activeThread?.daemonThreadId ?? null;
-    if (!daemonThreadId) {
-      notify({ source: "system", title: "Fork unavailable", body: "This thread is not saved yet." });
-      return;
-    }
-    const api = getAgentDbApi();
-    if (!api?.dbForkThread) {
-      notify({ source: "system", title: "Fork unavailable", body: "Fork is not supported by this build." });
-      return;
-    }
-    const result = await api
-      .dbForkThread(daemonThreadId, messageId)
-      .catch((error) => ({ ok: false, thread_id: null, title: null, error: String(error) }));
-    if (result?.ok && result.thread_id) {
-      await refreshThreadList();
-      const local = findLocalThreadByDaemonThreadId(useAgentStore.getState().threads, result.thread_id);
-      if (local) {
-        setActiveThread(local.id);
-      }
-      notify({ source: "system", title: "Thread forked", body: result.title || "Forked thread created." });
-    } else {
-      notify({ source: "system", title: "Fork failed", body: result?.error || "Unknown error." });
-    }
-  }, [activeThread, refreshThreadList, setActiveThread]);
-
   const fetchThreadList = useCallback(async (options?: { agentFilter?: string | null; includeInternal?: boolean }) => {
     const zorai = getAgentBridge();
     if (!zorai?.agentListThreads) {
@@ -957,6 +931,43 @@ export function useAgentChatPanelProviderValue(): {
     void loadThreadPage(localId, "latest");
   }, [loadThreadPage, setActiveThread]);
 
+  const forkThread = useCallback(async (messageId: string) => {
+    const notify = useNotificationStore.getState().addNotification;
+    const daemonThreadId = resolveDaemonOwnedThreadId({
+      threads: useAgentStore.getState().threads,
+      threadId: activeThreadId ?? "",
+      activeThreadId,
+      activeDaemonThreadId: daemonThreadIdRef.current,
+    });
+    if (!daemonThreadId) {
+      notify({ source: "system", title: "Fork unavailable", body: "This thread is not saved yet." });
+      return;
+    }
+    const api = getAgentDbApi();
+    if (!api?.dbForkThread) {
+      notify({ source: "system", title: "Fork unavailable", body: "Fork is not supported by this build." });
+      return;
+    }
+    const result = await api
+      .dbForkThread(daemonThreadId, messageId)
+      .catch((error) => ({ ok: false, thread_id: null, title: null, error: String(error) }));
+    if (result?.ok && result.thread_id) {
+      await refreshThreadList();
+      let local = findLocalThreadByDaemonThreadId(useAgentStore.getState().threads, result.thread_id);
+      if (!local) {
+        const localId = storeCreateThread({ title: result.title || "Forked thread" });
+        setThreadDaemonId(localId, result.thread_id);
+        local = useAgentStore.getState().threads.find((thread) => thread.id === localId);
+      }
+      if (local) {
+        openThread(local.id);
+      }
+      notify({ source: "system", title: "Thread forked", body: result.title || "Forked thread created." });
+    } else {
+      notify({ source: "system", title: "Fork failed", body: result?.error || "Unknown error." });
+    }
+  }, [activeThreadId, openThread, refreshThreadList, setThreadDaemonId, storeCreateThread]);
+
   useEffect(() => {
     if (!activeThreadId || latestLoadedThreadIdRef.current === activeThreadId) {
       return;
@@ -1039,6 +1050,20 @@ export function useAgentChatPanelProviderValue(): {
     sendParticipantSuggestion,
     dismissParticipantSuggestion,
   } = collaborationActions;
+
+  const deleteMessage = useCallback((threadId: string, messageId: string) => {
+    const daemonThreadId = resolveDaemonOwnedThreadId({
+      threads: useAgentStore.getState().threads,
+      threadId,
+      activeThreadId,
+      activeDaemonThreadId: daemonThreadIdRef.current,
+    });
+    deleteMessageFromStore(threadId, messageId);
+    if (!shouldUseDaemonRuntime(agentSettings.agent_backend) || !daemonThreadId) {
+      return;
+    }
+    void getAgentDbApi()?.dbDeleteMessage?.(daemonThreadId, messageId);
+  }, [activeThreadId, agentSettings.agent_backend, deleteMessageFromStore]);
 
   const pinMessageForCompaction = useCallback(async (threadId: string, messageId: string) => {
     const thread = useAgentStore.getState().threads.find((entry) => entry.id === threadId);

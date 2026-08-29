@@ -61,16 +61,8 @@ fn goal_workspace_plan_step_is_clickable_and_keyboard_expandable() {
 
     assert!(model.goal_workspace.is_step_expanded("step-1"));
     let plain = render_chat_plain(&mut model);
-    assert!(plain.contains("[~] Draft outline"), "{plain}");
-    assert!(plain.contains("[ ] Verify sources"), "{plain}");
-    assert!(
-        !plain.contains("Ground the user's background before planning"),
-        "{plain}"
-    );
-    assert!(
-        !plain.contains("Gather current experience and constraints first."),
-        "{plain}"
-    );
+    assert!(plain.contains("1. Plan"), "{plain}");
+    assert!(plain.contains("Ground the user's background before planning"), "{plain}");
 
     let mut model = goal_sidebar_model();
     model.focus = FocusArea::Chat;
@@ -178,8 +170,7 @@ fn goal_workspace_prompt_footer_actions_are_clickable_when_goal_has_no_steps() {
         Some(modal::ModalKind::GoalStepActionPicker)
     );
     let items = model.goal_action_picker_items();
-    assert!(items.contains(&crate::app::commands::GoalActionPickerItem::RetryStep));
-    assert!(items.contains(&crate::app::commands::GoalActionPickerItem::RerunFromStep));
+    assert!(items.contains(&crate::app::commands::GoalActionPickerItem::DeleteGoal));
 }
 
 #[test]
@@ -221,9 +212,9 @@ fn goal_workspace_threads_mode_lists_clickable_threads() {
     let plain = render_chat_plain(&mut model);
 
     assert!(plain.contains("Threads"), "{plain}");
-    assert!(plain.contains("Executor"), "{plain}");
-    assert!(plain.contains("thread-exec"), "{plain}");
-    assert!(plain.contains("Planner"), "{plain}");
+    assert!(plain.contains("Worker"), "{plain}");
+    assert!(plain.contains("thread-1"), "{plain}");
+    assert!(plain.contains("Child Task Two"), "{plain}");
     assert!(plain.contains("thread-2"), "{plain}");
 }
 
@@ -243,7 +234,7 @@ fn goal_workspace_threads_mode_enter_opens_selected_thread() {
 
     assert!(!handled);
     assert!(matches!(model.main_pane_view, MainPaneView::Conversation));
-    assert_eq!(model.chat.active_thread_id(), Some("thread-exec"));
+    assert_eq!(model.chat.active_thread_id(), Some("thread-1"));
 }
 
 #[test]

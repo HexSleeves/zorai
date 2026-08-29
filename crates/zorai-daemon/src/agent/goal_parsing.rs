@@ -1,24 +1,25 @@
 //! Goal plan/reflection response parsing, JSON repair, and goal utility helpers.
 
-use anyhow::Result;
 use std::collections::HashSet;
 use uuid::Uuid;
 
 use super::now_millis;
 use super::types::*;
-use super::SatisfactionAdaptationMode;
 
 #[path = "goal_parsing/parsing.rs"]
 mod parsing;
-pub(super) use parsing::{
-    build_json_retry_prompt, goal_plan_json_schema, parse_json_block, parse_markdown_steps,
-    parse_yaml_block,
-};
+pub(super) use parsing::parse_json_block;
+#[cfg(test)]
+pub(super) use parsing::goal_plan_json_schema;
 
 #[cfg(test)]
 #[path = "goal_parsing/tests.rs"]
 mod tests;
 
+#[cfg(test)]
+use super::SatisfactionAdaptationMode;
+
+#[cfg(test)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub(super) struct GoalPlanResponse {
     #[serde(default)]
@@ -32,6 +33,7 @@ pub(super) struct GoalPlanResponse {
     pub rejected_alternatives: Vec<String>,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub(super) struct GoalPlanStepResponse {
     #[serde(default)]
@@ -56,20 +58,8 @@ pub(super) struct GoalPlanStepResponse {
     pub llm_confidence_rationale: Option<String>,
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
-pub(super) struct GoalReflectionResponse {
-    pub summary: String,
-    #[serde(default)]
-    pub stable_memory_update: Option<String>,
-    #[serde(default)]
-    pub generate_skill: bool,
-    #[serde(default)]
-    pub skill_title: Option<String>,
-    #[serde(default)]
-    pub activate_skill: Option<String>,
-}
-
 /// Check a plan for issues that the model should fix. Returns a list of human-readable problems.
+#[cfg(test)]
 pub(super) fn collect_plan_issues(plan: &GoalPlanResponse) -> Vec<String> {
     let mut issues = Vec::new();
 
@@ -107,6 +97,7 @@ pub(super) fn collect_plan_issues(plan: &GoalPlanResponse) -> Vec<String> {
 }
 
 /// Apply safe defaults to a plan after all fix attempts are exhausted.
+#[cfg(test)]
 pub(super) fn apply_plan_defaults(plan: &mut GoalPlanResponse) {
     plan.summary = plan.summary.trim().to_string();
     if plan.summary.is_empty() {
@@ -248,110 +239,6 @@ pub(in crate::agent) fn summarize_text(value: &str, max_chars: usize) -> String 
     format!("{truncated}…")
 }
 
-pub(super) fn resolve_goal_run_control_step(
-    goal_run: &GoalRun,
-    step_index: Option<usize>,
-) -> usize {
-    if goal_run.steps.is_empty() {
-        return 0;
-    }
-    step_index
-        .unwrap_or(
-            goal_run
-                .current_step_index
-                .min(goal_run.steps.len().saturating_sub(1)),
-        )
-        .min(goal_run.steps.len().saturating_sub(1))
-}
-
-pub(super) fn reset_goal_run_step(step: &mut GoalRunStep) {
-    step.status = GoalRunStepStatus::Pending;
-    step.task_id = None;
-    step.summary = None;
-    step.error = None;
-    step.started_at = None;
-    step.completed_at = None;
-}
-
-fn reset_goal_run_for_replanning(goal_run: &mut GoalRun) {
-    goal_run.current_step_index = 0;
-    goal_run.completed_at = None;
-    goal_run.status = GoalRunStatus::Queued;
-    goal_run.last_error = None;
-    goal_run.failure_cause = None;
-    goal_run.current_step_title = None;
-    goal_run.current_step_kind = None;
-    goal_run.current_step_owner_profile = None;
-    goal_run.step_owner_overrides.clear();
-    goal_run.awaiting_approval_id = None;
-    goal_run.active_task_id = None;
-}
-
-pub(super) fn retry_goal_run_step(goal_run: &mut GoalRun, step_index: Option<usize>) -> Result<()> {
-    if goal_run.steps.is_empty() {
-        reset_goal_run_for_replanning(goal_run);
-        return Ok(());
-    }
-
-    let target_index = resolve_goal_run_control_step(goal_run, step_index);
-    let Some(step) = goal_run.steps.get_mut(target_index) else {
-        anyhow::bail!("goal run step index out of range");
-    };
-
-    reset_goal_run_step(step);
-    goal_run.current_step_index = target_index;
-    goal_run.completed_at = None;
-    goal_run.status = GoalRunStatus::Running;
-    goal_run.last_error = None;
-    goal_run.failure_cause = None;
-    goal_run.current_step_title = goal_run
-        .steps
-        .get(target_index)
-        .map(|step| step.title.clone());
-    goal_run.current_step_kind = goal_run
-        .steps
-        .get(target_index)
-        .map(|step| step.kind.clone());
-    goal_run.awaiting_approval_id = None;
-    goal_run.active_task_id = None;
-    Ok(())
-}
-
-pub(super) fn rerun_goal_run_from_step(
-    goal_run: &mut GoalRun,
-    step_index: Option<usize>,
-) -> Result<()> {
-    if goal_run.steps.is_empty() {
-        reset_goal_run_for_replanning(goal_run);
-        goal_run.reflection_summary = None;
-        goal_run.generated_skill_path = None;
-        return Ok(());
-    }
-
-    let target_index = resolve_goal_run_control_step(goal_run, step_index);
-    for step in goal_run.steps.iter_mut().skip(target_index) {
-        reset_goal_run_step(step);
-    }
-    goal_run.current_step_index = target_index;
-    goal_run.completed_at = None;
-    goal_run.status = GoalRunStatus::Running;
-    goal_run.last_error = None;
-    goal_run.failure_cause = None;
-    goal_run.current_step_title = goal_run
-        .steps
-        .get(target_index)
-        .map(|step| step.title.clone());
-    goal_run.current_step_kind = goal_run
-        .steps
-        .get(target_index)
-        .map(|step| step.kind.clone());
-    goal_run.awaiting_approval_id = None;
-    goal_run.active_task_id = None;
-    goal_run.reflection_summary = None;
-    goal_run.generated_skill_path = None;
-    Ok(())
-}
-
 pub(super) fn latest_goal_run_failure(goal_run: &GoalRun, tasks: &[AgentTask]) -> Option<String> {
     goal_run
         .last_error
@@ -393,7 +280,6 @@ pub(super) fn project_goal_run_snapshot(
     related_tasks: &[AgentTask],
     now: u64,
 ) -> GoalRun {
-    let persisted_active_task_id = goal_run.active_task_id.clone();
     goal_run.current_step_title = goal_run
         .steps
         .get(goal_run.current_step_index)
@@ -402,40 +288,6 @@ pub(super) fn project_goal_run_snapshot(
         .steps
         .get(goal_run.current_step_index)
         .map(|step| step.kind.clone());
-    goal_run.active_task_id = goal_run
-        .steps
-        .get(goal_run.current_step_index)
-        .and_then(|step| {
-            let task_id = step.task_id.as_deref()?;
-            related_tasks.iter().find_map(|task| {
-                (task.id == task_id
-                    && matches!(
-                        task.status,
-                        TaskStatus::Queued
-                            | TaskStatus::InProgress
-                            | TaskStatus::Blocked
-                            | TaskStatus::FailedAnalyzing
-                            | TaskStatus::AwaitingApproval
-                    ))
-                .then(|| task.id.clone())
-            })
-        })
-        .or_else(|| {
-            persisted_active_task_id.as_deref().and_then(|task_id| {
-                related_tasks.iter().find_map(|task| {
-                    (task.id == task_id
-                        && matches!(
-                            task.status,
-                            TaskStatus::Queued
-                                | TaskStatus::InProgress
-                                | TaskStatus::Blocked
-                                | TaskStatus::FailedAnalyzing
-                                | TaskStatus::AwaitingApproval
-                        ))
-                    .then(|| task.id.clone())
-                })
-            })
-        });
     goal_run.awaiting_approval_id = related_tasks
         .iter()
         .find_map(|task| task.awaiting_approval_id.clone());
@@ -495,6 +347,7 @@ pub(super) fn goal_run_status_message(goal_run: &GoalRun) -> &'static str {
         GoalRunStatus::Planning => "Goal planning",
         GoalRunStatus::Running => "Goal running",
         GoalRunStatus::AwaitingApproval => "Goal awaiting approval",
+        GoalRunStatus::AwaitingReview => "Goal awaiting supervisor review",
         GoalRunStatus::Paused => "Goal paused",
         GoalRunStatus::Blocked => "Goal blocked by governance gate",
         GoalRunStatus::Completed => "Goal completed",
@@ -504,16 +357,6 @@ pub(super) fn goal_run_status_message(goal_run: &GoalRun) -> &'static str {
         GoalRunStatus::Compensated => "Goal compensated",
         GoalRunStatus::PartiallyCompensated => "Goal partially compensated",
         GoalRunStatus::BreakGlass => "Goal completed under break-glass override",
-    }
-}
-
-pub(super) fn goal_run_step_status_label(value: GoalRunStepStatus) -> &'static str {
-    match value {
-        GoalRunStepStatus::Pending => "pending",
-        GoalRunStepStatus::InProgress => "in_progress",
-        GoalRunStepStatus::Completed => "completed",
-        GoalRunStepStatus::Failed => "failed",
-        GoalRunStepStatus::Skipped => "skipped",
     }
 }
 

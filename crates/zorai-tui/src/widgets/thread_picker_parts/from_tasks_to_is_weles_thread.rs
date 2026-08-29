@@ -147,7 +147,8 @@ pub(super) fn status_from_goal_run(status: Option<GoalRunStatus>) -> ThreadPicke
             GoalRunStatus::Queued
             | GoalRunStatus::Planning
             | GoalRunStatus::Running
-            | GoalRunStatus::AwaitingApproval,
+            | GoalRunStatus::AwaitingApproval
+            | GoalRunStatus::AwaitingReview,
         ) => ThreadPickerStatus::Running,
         Some(GoalRunStatus::Paused | GoalRunStatus::Blocked) => ThreadPickerStatus::Paused,
         Some(

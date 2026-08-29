@@ -71,8 +71,44 @@ impl TuiModel {
                     && matches!(self.main_pane_view, MainPaneView::Task(_)) =>
             {
                 {
-                    if self.request_selected_goal_step_retry_confirmation() {
-                        self.status_line = "Retry selected goal step?".to_string();
+                    if self.request_goal_review_verdict_confirmation("accept") {
+                        self.status_line = "Accept this goal?".to_string();
+                    }
+                };
+                Some(false)
+            }
+            KeyCode::Char('y')
+                if self.focus == FocusArea::Chat
+                    && modifiers.is_empty()
+                    && matches!(self.main_pane_view, MainPaneView::Task(_)) =>
+            {
+                {
+                    if self.request_goal_review_verdict_confirmation("accept") {
+                        self.status_line = "Accept this goal?".to_string();
+                    }
+                };
+                Some(false)
+            }
+            KeyCode::Char('s')
+                if self.focus == FocusArea::Chat
+                    && modifiers.is_empty()
+                    && matches!(self.main_pane_view, MainPaneView::Task(_)) =>
+            {
+                {
+                    if self.request_goal_review_verdict_confirmation("soft_reject") {
+                        self.status_line = "Soft reject this goal?".to_string();
+                    }
+                };
+                Some(false)
+            }
+            KeyCode::Char('h')
+                if self.focus == FocusArea::Chat
+                    && modifiers.is_empty()
+                    && matches!(self.main_pane_view, MainPaneView::Task(_)) =>
+            {
+                {
+                    if self.request_goal_review_verdict_confirmation("hard_reject") {
+                        self.status_line = "Hard reject this goal?".to_string();
                     }
                 };
                 Some(false)

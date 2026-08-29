@@ -1282,7 +1282,7 @@ fn discover_skills_tool_is_exposed_with_expected_schema() {
         .expect("discover_skills tool should be available");
     assert_eq!(
         discover_skills.function.description,
-        "Find matching local skills fast."
+        "Find matching local skills when a playbook would help. Optional; skip unless this turn needs one."
     );
 
     let properties = discover_skills

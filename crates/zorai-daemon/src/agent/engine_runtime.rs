@@ -282,6 +282,7 @@ impl AgentEngine {
             GoalRunStatus::Planning,
             GoalRunStatus::Running,
             GoalRunStatus::AwaitingApproval,
+            GoalRunStatus::AwaitingReview,
             GoalRunStatus::Paused,
         ];
         let mut active_goal_run_ids = match self

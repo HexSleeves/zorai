@@ -330,14 +330,14 @@ fn main_agent_thread(
 ) -> Option<(String, String)> {
     run.thread_id
         .clone()
-        .map(|thread_id| ("Main agent".to_string(), thread_id))
+        .map(|thread_id| ("Worker".to_string(), thread_id))
         .or_else(|| {
             run.root_thread_id.clone().map(|thread_id| {
                 (
                     run.planner_owner_profile
                         .as_ref()
-                        .map(|owner| format!("Main agent ({})", owner.agent_label))
-                        .unwrap_or_else(|| "Main agent".to_string()),
+                        .map(|owner| format!("Worker ({})", owner.agent_label))
+                        .unwrap_or_else(|| "Worker".to_string()),
                     thread_id,
                 )
             })
@@ -347,8 +347,8 @@ fn main_agent_thread(
                 (
                     run.current_step_owner_profile
                         .as_ref()
-                        .map(|owner| format!("Main agent ({})", owner.agent_label))
-                        .unwrap_or_else(|| "Main agent".to_string()),
+                        .map(|owner| format!("Worker ({})", owner.agent_label))
+                        .unwrap_or_else(|| "Worker".to_string()),
                     thread_id,
                 )
             })
@@ -357,7 +357,7 @@ fn main_agent_thread(
             run.execution_thread_ids
                 .first()
                 .cloned()
-                .map(|thread_id| ("Main agent".to_string(), thread_id))
+                .map(|thread_id| ("Worker".to_string(), thread_id))
         })
         .or_else(|| {
             let mut goal_tasks = tasks
@@ -384,7 +384,7 @@ fn main_agent_thread(
             goal_tasks
                 .into_iter()
                 .next()
-                .map(|(_, _, thread_id)| ("Main agent".to_string(), thread_id))
+                .map(|(_, _, thread_id)| ("Worker".to_string(), thread_id))
         })
 }
 

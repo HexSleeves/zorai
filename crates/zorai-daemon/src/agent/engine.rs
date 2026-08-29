@@ -202,6 +202,8 @@ pub struct AgentEngine {
     /// External agent runners for openclaw/hermes backends.
     pub external_runners: RwLock<HashMap<String, external_runner::ExternalAgentRunner>>,
     pub(super) subagent_runtime: RwLock<HashMap<String, SubagentRuntimeStats>>,
+    pub(super) agent_terminal_leases:
+        Mutex<HashMap<uuid::Uuid, super::terminal_leases::AgentTerminalLease>>,
     pub(super) trusted_weles_tasks: RwLock<HashSet<String>>,
     pub(super) weles_health: RwLock<WelesHealthStatus>,
     /// Active cancellation tokens per thread for stop-stream behavior.
@@ -215,8 +217,6 @@ pub struct AgentEngine {
     pub(super) active_operator_sessions: RwLock<HashMap<String, u64>>,
     pub(super) pending_operator_approvals: RwLock<HashMap<String, PendingApprovalObservation>>,
     pub(super) pending_approval_commands: RwLock<HashMap<String, String>>,
-    pub(super) quiet_goal_recovery:
-        Mutex<HashMap<String, super::goal_quiet_recovery::QuietGoalRecoveryState>>,
     pub(super) critique_approval_continuations:
         Mutex<HashMap<String, CritiqueApprovalContinuation>>,
     pub(super) policy_escalation_session_grants: RwLock<HashSet<String>>,
@@ -464,6 +464,7 @@ impl AgentEngine {
             webhook_listener_addr: RwLock::new(None),
             external_runners: RwLock::new(runners),
             subagent_runtime: RwLock::new(HashMap::new()),
+            agent_terminal_leases: Mutex::new(HashMap::new()),
             trusted_weles_tasks: RwLock::new(HashSet::new()),
             weles_health: RwLock::new(WelesHealthStatus {
                 state: WelesHealthState::Healthy,
@@ -478,7 +479,6 @@ impl AgentEngine {
             active_operator_sessions: RwLock::new(HashMap::new()),
             pending_operator_approvals: RwLock::new(HashMap::new()),
             pending_approval_commands: RwLock::new(HashMap::new()),
-            quiet_goal_recovery: Mutex::new(HashMap::new()),
             critique_approval_continuations: Mutex::new(HashMap::new()),
             policy_escalation_session_grants: RwLock::new(HashSet::new()),
             task_approval_rules: RwLock::new(Vec::new()),
@@ -543,6 +543,7 @@ impl AgentEngine {
             initial_mlflow_config,
         );
         Self::spawn_svarog_workspace_reconciliation(engine.clone());
+        Self::spawn_agent_terminal_lease_worker(engine.clone());
 
         engine
     }

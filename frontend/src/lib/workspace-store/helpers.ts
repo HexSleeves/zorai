@@ -145,6 +145,23 @@ export function resolvePaneSessionId(workspaces: Workspace[], paneId: PaneId): s
   return null;
 }
 
+export function findPaneIdsForSession(workspaces: Workspace[], sessionId: string): PaneId[] {
+  const paneIds: PaneId[] = [];
+  for (const workspace of workspaces) {
+    for (const surface of workspace.surfaces) {
+      for (const paneId of allLeafIds(surface.layout)) {
+        const leaf = findLeaf(surface.layout, paneId);
+        if (!leaf) continue;
+        const panelSessionId = surface.canvasPanels.find((panel) => panel.paneId === paneId)?.sessionId ?? null;
+        if ((panelSessionId ?? leaf.sessionId ?? null) === sessionId) {
+          paneIds.push(paneId);
+        }
+      }
+    }
+  }
+  return paneIds;
+}
+
 export function hasAnotherPaneForSession(
   workspaces: Workspace[],
   sessionId: string,

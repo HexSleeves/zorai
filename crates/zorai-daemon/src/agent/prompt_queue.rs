@@ -189,7 +189,6 @@ impl AgentEngine {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::history::prompt_queue::MAX_QUEUED_PROMPTS;
 
     #[test]

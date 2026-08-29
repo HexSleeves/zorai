@@ -97,12 +97,13 @@ declare global {
         | "planning"
         | "running"
         | "awaiting_approval"
+        | "awaiting_review"
         | "paused"
         | "completed"
         | "failed"
         | "cancelled";
 
-    type ZoraiGoalRunControlAction = "pause" | "resume" | "cancel" | "retry_step" | "rerun_from_step";
+    type ZoraiGoalRunControlAction = "pause" | "resume" | "cancel" | "accept" | "soft_reject" | "hard_reject";
 
     type ZoraiTodoItem = {
         id: string;
@@ -643,6 +644,8 @@ declare global {
         dbListThreads?: () => Promise<unknown[]>;
         dbGetThread?: (id: string) => Promise<{ thread: unknown; messages: unknown[] }>;
         dbAddMessage?: (message: unknown) => Promise<boolean>;
+        dbExportThread?: (threadId: string, messageId: string) => Promise<{ ok: boolean; file_path?: string | null; error?: string }>;
+        dbForkThread?: (threadId: string, messageId: string) => Promise<{ ok: boolean; thread_id?: string | null; title?: string | null; error?: string }>;
         dbDeleteMessage?: (threadId: string, messageId: string) => Promise<boolean>;
         dbListMessages?: (threadId: string, limit?: number | null) => Promise<unknown[]>;
         agentAddTask?: (payload: { title: string; description: string; priority?: string; command?: string | null; sessionId?: string | null; scheduledAt?: number | null; dependencies?: string[] }) => Promise<unknown>;
@@ -661,7 +664,7 @@ declare global {
         agentStartGoalRun?: (payload: { goal: string; title?: string | null; sessionId?: string | null; priority?: string | null; threadId?: string | null; targetAgentId?: string | null; clientRequestId?: string | null; requiresApproval?: boolean; launchAssignments?: Array<{ role_id: string; enabled: boolean; provider: string; model: string; reasoning_effort?: string | null; inherit_from_main: boolean }> }) => Promise<ZoraiGoalRun | unknown>;
         agentListGoalRuns?: () => Promise<ZoraiGoalRun[] | unknown>;
         agentGetGoalRun?: (goalRunId: string) => Promise<ZoraiGoalRun | unknown>;
-        agentControlGoalRun?: (goalRunId: string, action: ZoraiGoalRunControlAction, stepIndex?: number | null) => Promise<boolean | { ok?: boolean; success?: boolean } | unknown>;
+        agentControlGoalRun?: (goalRunId: string, action: ZoraiGoalRunControlAction, stepIndex?: number | null, payloadJson?: string | null) => Promise<boolean | { ok?: boolean; success?: boolean } | unknown>;
         agentListWorkspaceSettings?: () => Promise<ZoraiWorkspaceSettings[] | unknown>;
         agentGetWorkspaceSettings?: (workspaceId: string) => Promise<ZoraiWorkspaceSettings | unknown>;
         agentSetWorkspaceOperator?: (workspaceId: string, operator: ZoraiWorkspaceOperator) => Promise<ZoraiWorkspaceSettings | unknown>;

@@ -321,14 +321,12 @@ export function GoalRunDetail({
   goalRun,
   agentRuns = [],
   busy,
-  onRetryStep,
-  onRerunFromStep,
+  onReview,
 }: {
   goalRun: GoalRun;
   agentRuns?: AgentRun[];
   busy: boolean;
-  onRetryStep: (stepIndex: number) => void;
-  onRerunFromStep: (stepIndex: number) => void;
+  onReview: (action: "accept" | "soft_reject" | "hard_reject", explanation?: string) => void;
 }) {
   const currentStep = typeof goalRun.current_step_index === "number" && goalRun.steps?.length
     ? goalRun.steps[goalRun.current_step_index] ?? null
@@ -435,6 +433,40 @@ export function GoalRunDetail({
         </div>
       )}
 
+      {goalRun.status === "awaiting_review" && (
+        <div>
+          <div style={detailLabelStyle}>Worker report</div>
+          <div style={detailBodyStyle}>{goalRun.pending_review_report || "The worker asked for supervisor review."}</div>
+          <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-2)", flexWrap: "wrap" }}>
+            <button type="button" onClick={() => onReview("accept")} style={{ ...iconButtonStyle, fontSize: 11 }} disabled={busy}>
+              Accept
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const reason = window.prompt("Why should the worker keep going?");
+                if (reason?.trim()) onReview("soft_reject", reason.trim());
+              }}
+              style={{ ...iconButtonStyle, fontSize: 11 }}
+              disabled={busy}
+            >
+              Soft reject
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const reason = window.prompt("Why is this goal rejected?");
+                if (reason?.trim()) onReview("hard_reject", reason.trim());
+              }}
+              style={{ ...iconButtonStyle, fontSize: 11 }}
+              disabled={busy}
+            >
+              Hard reject
+            </button>
+          </div>
+        </div>
+      )}
+
       {goalRun.steps && goalRun.steps.length > 0 && (
         <div>
           <div style={detailLabelStyle}>Plan Steps</div>
@@ -460,26 +492,6 @@ export function GoalRunDetail({
                       Success: {step.success_condition}
                     </div>
                   )}
-                  <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-2)", flexWrap: "wrap" }}>
-                    {(step.status === "failed" || (active && goalRun.status === "failed")) && (
-                      <button
-                        type="button"
-                        onClick={() => onRetryStep(index)}
-                        style={{ ...iconButtonStyle, fontSize: 11 }}
-                        disabled={busy}
-                      >
-                        Retry Step
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => onRerunFromStep(index)}
-                      style={{ ...iconButtonStyle, fontSize: 11 }}
-                      disabled={busy}
-                    >
-                      Rerun From Here
-                    </button>
-                  </div>
                 </div>
               );
             })}

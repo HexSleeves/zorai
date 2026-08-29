@@ -589,19 +589,23 @@ pub async fn send_goal_get_query(goal_run_id: String) -> Result<Option<AgentGoal
 }
 
 pub async fn send_goal_control(goal_run_id: String, action: &str) -> Result<GoalControlResponse> {
-    send_goal_control_with_step(goal_run_id, action, None).await
+    send_goal_control_with_step(goal_run_id, action, None, None).await
 }
 
 pub async fn send_goal_control_with_step(
     goal_run_id: String,
     action: &str,
     step_index: Option<usize>,
+    payload_json: Option<String>,
 ) -> Result<GoalControlResponse> {
     let daemon_action = match action {
         "stop" => "stop",
         "resume" => "resume",
-        "retry_step" => "retry_step",
-        "rerun_from_step" => "rerun_from_step",
+        "pause" => "pause",
+        "cancel" => "cancel",
+        "accept" => "accept",
+        "soft_reject" => "soft_reject",
+        "hard_reject" => "hard_reject",
         other => anyhow::bail!("unsupported goal action: {other}"),
     };
 
@@ -609,7 +613,7 @@ pub async fn send_goal_control_with_step(
         goal_run_id: goal_run_id.clone(),
         action: daemon_action.to_string(),
         step_index,
-        payload_json: None,
+        payload_json,
     })
     .await?
     {

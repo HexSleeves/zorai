@@ -441,11 +441,14 @@ impl TuiModel {
             crate::widgets::goal_workspace::GoalWorkspaceAction::OpenActions => {
                 self.open_goal_step_action_picker()
             }
-            crate::widgets::goal_workspace::GoalWorkspaceAction::RetryStep => {
-                self.request_selected_goal_step_retry_confirmation()
+            crate::widgets::goal_workspace::GoalWorkspaceAction::AcceptReview => {
+                self.request_goal_review_verdict_confirmation("accept")
             }
-            crate::widgets::goal_workspace::GoalWorkspaceAction::RerunFromStep => {
-                self.request_selected_goal_step_rerun_confirmation()
+            crate::widgets::goal_workspace::GoalWorkspaceAction::SoftReject => {
+                self.request_goal_review_verdict_confirmation("soft_reject")
+            }
+            crate::widgets::goal_workspace::GoalWorkspaceAction::HardReject => {
+                self.request_goal_review_verdict_confirmation("hard_reject")
             }
             crate::widgets::goal_workspace::GoalWorkspaceAction::RefreshGoal => {
                 let MainPaneView::Task(sidebar::SidebarItemTarget::GoalRun { goal_run_id, .. }) =

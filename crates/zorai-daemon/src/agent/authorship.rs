@@ -29,6 +29,7 @@ impl Default for AuthorshipTag {
 /// - Only operator goal text (rare: agent did nothing) -> `Operator`
 /// - Only agent synthesis (rare: self-initiated goal) -> `Agent`
 /// - Neither (fallback) -> `Joint`
+#[cfg(test)]
 pub fn classify_authorship(
     has_operator_goal_text: bool,
     has_agent_synthesis: bool,

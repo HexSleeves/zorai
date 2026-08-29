@@ -8,7 +8,7 @@ fn selected_goal_step_r_opens_retry_confirmation() {
         make_goal_run_with_steps(
             "goal-1",
             "Goal One",
-            task::GoalRunStatus::Failed,
+            task::GoalRunStatus::AwaitingReview,
             vec![
                 task::GoalRunStep {
                     id: "step-1".to_string(),
@@ -42,7 +42,7 @@ fn selected_goal_step_r_opens_retry_confirmation() {
             .as_ref()
             .map(PendingConfirmAction::modal_body)
             .as_deref(),
-        Some("Retry step 2 \"Deploy\" in goal \"Goal One\"?")
+        Some("Accept goal \"Goal One\"?")
     );
 }
 
@@ -54,7 +54,7 @@ fn selected_goal_step_ctrl_r_opens_rerun_confirmation() {
         make_goal_run_with_steps(
             "goal-1",
             "Goal One",
-            task::GoalRunStatus::Failed,
+            task::GoalRunStatus::AwaitingReview,
             vec![
                 task::GoalRunStep {
                     id: "step-1".to_string(),
@@ -88,7 +88,7 @@ fn selected_goal_step_ctrl_r_opens_rerun_confirmation() {
             .as_ref()
             .map(PendingConfirmAction::modal_body)
             .as_deref(),
-        Some("Rerun from step 2 \"Deploy\" in goal \"Goal One\"?")
+        Some("Hard reject and fail goal \"Goal One\"?")
     );
 }
 
@@ -151,7 +151,7 @@ fn selected_goal_step_action_menu_can_send_retry_step() {
         make_goal_run_with_steps(
             "goal-1",
             "Goal One",
-            task::GoalRunStatus::Failed,
+            task::GoalRunStatus::AwaitingReview,
             vec![
                 task::GoalRunStep {
                     id: "step-1".to_string(),
@@ -175,18 +175,7 @@ fn selected_goal_step_action_menu_can_send_retry_step() {
         step_id: Some("step-2".to_string()),
     });
 
-    let handled = model.handle_key(KeyCode::Char('a'), KeyModifiers::NONE);
-    assert!(!handled);
-    assert_eq!(
-        model.modal.top(),
-        Some(modal::ModalKind::GoalStepActionPicker)
-    );
-
-    let handled = model.handle_key_modal(
-        KeyCode::Enter,
-        KeyModifiers::NONE,
-        modal::ModalKind::GoalStepActionPicker,
-    );
+    let handled = model.handle_key(KeyCode::Char('r'), KeyModifiers::NONE);
     assert!(!handled);
     assert_eq!(model.modal.top(), Some(modal::ModalKind::ChatActionConfirm));
 
@@ -201,9 +190,9 @@ fn selected_goal_step_action_menu_can_send_retry_step() {
         DaemonCommand::ControlGoalRun {
             goal_run_id,
             action,
-            step_index: Some(1),
+            step_index: None,
             payload_json: None,
-        } if goal_run_id == "goal-1" && action == "retry_step"
+        } if goal_run_id == "goal-1" && action == "accept"
     ));
 }
 

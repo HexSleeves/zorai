@@ -336,7 +336,7 @@ fn tool_execution_hot_path_boxes_large_futures() {
         "tool-call chunk handling should box gateway auto-send futures"
     );
     assert!(
-        subagents_production.contains("agent.enqueue_internal_agent_message("),
+        subagents_production.contains(".enqueue_internal_agent_message("),
         "message_agent should enqueue the internal DM instead of waiting for a nested reply"
     );
     assert!(

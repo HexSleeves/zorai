@@ -350,6 +350,8 @@ export function MessageBubble({
               </>
             )}
             {onDelete && <ActionBtn label="Delete" onClick={onDelete} />}
+            {onFork && <ActionBtn label="Fork" onClick={() => { void onFork(); }} />}
+            {onExport && <ActionBtn label="Export" onClick={() => { void onExport(); }} />}
           </div>
         )}
       </div>

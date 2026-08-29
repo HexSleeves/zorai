@@ -68,6 +68,39 @@ test("db-upsert-transcript-index serializes renderer transcript entries for the 
   });
 });
 
+test("db-fork-thread forwards fork-agent-thread with the given thread and message id", async () => {
+  const { handlers, queryCommands, setQueryResult } = createHarness();
+  setQueryResult({ thread_id: "fork-daemon-1-1", title: "Fork: hello" });
+  const handler = handlers.get("db-fork-thread");
+
+  const result = await handler({}, "daemon-thread-1", "message-9");
+
+  assert.deepEqual(queryCommands, [{
+    type: "fork-agent-thread",
+    thread_id: "daemon-thread-1",
+    message_id: "message-9",
+  }]);
+  assert.deepEqual(result, {
+    ok: true,
+    thread_id: "fork-daemon-1-1",
+    title: "Fork: hello",
+  });
+});
+
+test("db-delete-message forwards delete-agent-messages with the given thread id", async () => {
+  const { ackCommands, handlers } = createHarness();
+  const handler = handlers.get("db-delete-message");
+
+  const ok = await handler({}, "daemon-thread-1", "message-9");
+
+  assert.equal(ok, true);
+  assert.deepEqual(ackCommands, [{
+    type: "delete-agent-messages",
+    thread_id: "daemon-thread-1",
+    message_ids: ["message-9"],
+  }]);
+});
+
 test("db-list-transcript-index converts daemon transcript entries for renderer stores", async () => {
   const { handlers, queryCommands, setQueryResult } = createHarness();
   setQueryResult([{
