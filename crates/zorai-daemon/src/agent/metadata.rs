@@ -596,6 +596,25 @@ impl AgentEngine {
             }
         }
     }
+
+    pub(crate) async fn commit_thread_execution_profile_if_unchanged(
+        &self,
+        thread_id: &str,
+        expected: Option<&ThreadExecutionProfile>,
+        next: ThreadExecutionProfile,
+    ) -> bool {
+        let mut profiles = self.thread_execution_profiles.write().await;
+        let unchanged = match (profiles.get(thread_id), expected) {
+            (None, None) => true,
+            (Some(current), Some(expected_profile)) => current == expected_profile,
+            _ => false,
+        };
+        if !unchanged {
+            return false;
+        }
+        profiles.insert(thread_id.to_string(), next);
+        true
+    }
 }
 
 #[cfg(test)]

@@ -1,4 +1,5 @@
 import { buildHydratedRemoteThread, type AgentThread } from "@/lib/agentStore";
+import { mergeRemoteThreadProfile } from "@/lib/agentStore/threadProfileMerge";
 
 type AgentListThreads = (options?: {
     agentFilter?: string | null;
@@ -61,6 +62,10 @@ export async function fetchHydratedRemoteThreads(params: {
                 workspaceId: existing.workspaceId,
                 surfaceId: existing.surfaceId,
                 paneId: existing.paneId,
+                ...mergeRemoteThreadProfile(existing, {
+                    ...hydrated.thread,
+                    id: existing.id,
+                }),
             }
             : hydrated.thread);
     }

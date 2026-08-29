@@ -52,6 +52,7 @@ import type {
 } from "./types";
 import { createThreadCollaborationActions } from "./threadCollaborationActions";
 import { fetchHydratedRemoteThreads, findThreadByAuthoritativeIdentity } from "./threadListQueries";
+import { mergeRemoteThreadProfile } from "@/lib/agentStore/threadProfileMerge";
 import {
   pinnedMessageBudgetChars,
   sumMessageContentChars,
@@ -749,13 +750,17 @@ export function useAgentChatPanelProviderValue(): {
 
         const existing = existingByDaemonThreadId.get(daemonThreadId);
         if (existing) {
-          nextThreads.push({
+          const merged = {
             ...existing,
             ...hydrated.thread,
             id: existing.id,
             workspaceId: existing.workspaceId,
             surfaceId: existing.surfaceId,
             paneId: existing.paneId,
+          };
+          nextThreads.push({
+            ...merged,
+            ...mergeRemoteThreadProfile(existing, merged),
           });
           if (!(existing.id in nextMessages)) {
             nextMessages[existing.id] = hydrated.messages.map((message) => ({

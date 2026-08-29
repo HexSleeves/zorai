@@ -1989,19 +1989,25 @@ async fn execute_message_agent_internal_dm(
     resolved_target_name: &str,
     message: &str,
     preferred_session_hint: Option<&str>,
+    originator_thread_id: &str,
+    originator_task_id: Option<&str>,
 ) -> Result<serde_json::Value> {
-    let result = Box::pin(agent.send_internal_agent_message(
-        sender,
-        resolved_target_id,
-        message,
-        preferred_session_hint,
-    ))
-    .await?;
+    let thread_id = agent
+        .enqueue_internal_agent_message(
+            sender,
+            resolved_target_id,
+            message,
+            preferred_session_hint,
+            originator_thread_id,
+            originator_task_id,
+        )
+        .await?;
     Ok(serde_json::json!({
         "target": resolved_target_name,
-        "thread_id": result.thread_id,
-        "response": result.response,
-        "upstream_message": result.upstream_message,
+        "thread_id": thread_id,
+        "delivered": true,
+        "response": "Internal DM delivered asynchronously. Continue other work; this thread resumes when the recipient replies.",
+        "upstream_message": serde_json::Value::Null,
         "visible_thread_continuation_requested": false,
     }))
 }
@@ -2085,6 +2091,8 @@ pub(crate) async fn execute_message_agent(
             &resolved_target_name,
             message,
             preferred_session_hint.as_deref(),
+            thread_id,
+            task_id,
         ))
         .await?
     };

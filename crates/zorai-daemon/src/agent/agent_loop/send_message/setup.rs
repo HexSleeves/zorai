@@ -1469,16 +1469,17 @@ impl<'a> SendMessageRunner<'a> {
             config.max_tool_loops
         };
         engine
-            .set_thread_execution_profile(
+            .commit_thread_execution_profile_if_unchanged(
                 &tid,
-                Some(ThreadExecutionProfile {
+                thread_execution_profile.as_ref(),
+                ThreadExecutionProfile {
                     provider: Some(active_provider_id.clone()),
                     model: (!provider_config.model.trim().is_empty())
                         .then(|| provider_config.model.clone()),
                     reasoning_effort: (!provider_config.reasoning_effort.trim().is_empty())
                         .then(|| provider_config.reasoning_effort.clone()),
                     context_window_tokens: Some(provider_config.context_window_tokens),
-                }),
+                },
             )
             .await;
         let _ = engine.event_tx.send(AgentEvent::ThreadReloadRequired {

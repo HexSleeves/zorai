@@ -97,6 +97,31 @@ impl<'a> SendMessageRunner<'a> {
         nonempty(self.config.claude_permission_mode.as_deref())
     }
 
+    async fn execution_profile_supersedes_runner(&self) -> bool {
+        let Some(profile) = self.engine.get_thread_execution_profile(&self.tid).await else {
+            return false;
+        };
+        let provider = profile
+            .provider
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        let model = profile
+            .model
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty());
+        provider.is_some_and(|value| value != self.active_provider_id)
+            || model.is_some_and(|value| value != self.provider_config.model.trim())
+    }
+
+    fn fresh_runner_retry_err(&self) -> anyhow::Error {
+        FreshRunnerRetrySignal {
+            scheduled_retry_cycles: self.scheduled_retry_cycles,
+        }
+        .into()
+    }
+
     async fn prepare_request(&mut self) -> Result<PreparedLlmRequest> {
         let compaction_inserted = self
             .engine
@@ -179,6 +204,9 @@ impl<'a> SendMessageRunner<'a> {
     }
 
     pub(super) async fn stream_once(&mut self) -> Result<StreamIteration> {
+        if self.execution_profile_supersedes_runner().await {
+            return Err(self.fresh_runner_retry_err());
+        }
         let prepared_request = self.prepare_request().await?;
         if let Some(delay) = inter_request_delay(self.loop_count, self.config.message_loop_delay_ms)
         {
@@ -292,6 +320,11 @@ impl<'a> SendMessageRunner<'a> {
                 _ = self.stream_cancel_token.cancelled() => {
                     self.was_cancelled = true;
                     break;
+                }
+                _ = self.stream_retry_now.notified() => {
+                    if self.execution_profile_supersedes_runner().await {
+                        return Err(self.fresh_runner_retry_err());
+                    }
                 }
                 _ = tokio::time::sleep(llm_stream_chunk_timeout) => {
                     tracing::warn!("LLM stream timeout -- no data for {}s", llm_stream_chunk_timeout.as_secs());
@@ -702,7 +735,9 @@ impl<'a> SendMessageRunner<'a> {
                                             failure_class: retry_failure_class_from_message(&message).to_string(),
                                             message: visible_message.clone(),
                                         });
-                                        if provider_is_anthropic {
+                                        if self.execution_profile_supersedes_runner().await
+                                            || provider_is_anthropic
+                                        {
                                             return Err(
                                                 FreshRunnerRetrySignal {
                                                     scheduled_retry_cycles: attempt,
@@ -748,7 +783,9 @@ impl<'a> SendMessageRunner<'a> {
                                             delay_ms,
                                             "outer auto-retry resumed after wait timer"
                                         );
-                                        if provider_is_anthropic {
+                                        if self.execution_profile_supersedes_runner().await
+                                            || provider_is_anthropic
+                                        {
                                             return Err(
                                                 FreshRunnerRetrySignal {
                                                     scheduled_retry_cycles: attempt,

@@ -432,6 +432,16 @@ impl AgentEngine {
         }
     }
 
+    pub async fn notify_stream_retry_waiters(&self, thread_id: &str) {
+        let retry_now = {
+            let streams = self.stream_cancellations.lock().await;
+            streams.get(thread_id).map(|entry| entry.retry_now.clone())
+        };
+        if let Some(retry_now) = retry_now {
+            retry_now.notify_waiters();
+        }
+    }
+
     pub async fn retry_stream_now(self: &Arc<Self>, thread_id: &str) -> bool {
         let retry_now = {
             let streams = self.stream_cancellations.lock().await;

@@ -426,7 +426,7 @@ pub(crate) fn add_available_tools_part_c(
         },
         "required": ["additional_tokens", "reason"]
     })));
-    tools.push(tool_def(tool_names::MESSAGE_AGENT, "Send a private internal DM to another zorai agent and get the reply; it does not switch the visible thread responder. Use `handoff_thread_agent` when the operator should talk to another agent directly.", serde_json::json!({
+    tools.push(tool_def(tool_names::MESSAGE_AGENT, "Send a private internal DM to another zorai agent. Returns immediately; the reply arrives later as a continuation on this thread. It does not switch the visible thread responder. Use `handoff_thread_agent` when the operator should talk to another agent directly.", serde_json::json!({
         "type": "object",
         "properties": {
             "target": { "type": "string", "description": "Receiving agent id or persona name, e.g. `svarog`, `rarog`, `weles`" },

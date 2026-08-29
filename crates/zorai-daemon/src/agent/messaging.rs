@@ -5,6 +5,8 @@ use super::*;
 mod concierge;
 mod direct_messages;
 
+pub(in crate::agent) use direct_messages::{spawn_internal_dm_worker, InternalDmJob};
+
 fn clear_message_pin_state(message: &mut AgentMessage) {
     message.pinned_for_compaction = false;
 }

@@ -18,6 +18,7 @@ import type { WelesHealthState } from "@/lib/agentStore/types";
 import { findTaskWorkspaceLocation } from "../tasks-view/helpers";
 import { formatSkillWorkflowNotice } from "./skillWorkflowNotice";
 import { reconcileThreadMessages } from "./threadMessageReducer";
+import { mergeRemoteThreadProfile } from "@/lib/agentStore/threadProfileMerge";
 
 type RemoteAgentThread = {
   id: string;
@@ -237,6 +238,7 @@ export async function loadDaemonThreadPageIntoLocalState({
     threads: state.threads.map((thread) => thread.id === localThreadId ? {
       ...thread,
       ...reloadedThread,
+      ...mergeRemoteThreadProfile(thread, reloadedThread),
       lastMessagePreview: reloadedThread.lastMessagePreview || thread.lastMessagePreview,
       loadedMessageStart: mergeMode === "prepend" || mergeMode === "append"
         ? Math.min(thread.loadedMessageStart ?? reloadedThread.loadedMessageStart ?? 0, reloadedThread.loadedMessageStart ?? 0)

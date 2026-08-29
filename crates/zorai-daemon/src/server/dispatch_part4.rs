@@ -1345,11 +1345,8 @@ pub(crate) async fn dispatch_part4(
                     }
                 }
             };
-            // Execution setup snapshots the active profile before opening a stream. Updating
-            // this map during a turn therefore leaves that in-flight job untouched while making
-            // the new assignment authoritative for the next job as soon as the stream finishes
-            // (including user cancellation). Persist + broadcast immediately so every client
-            // observes the pending/next profile instead of retaining stale owner settings.
+            // Persist immediately, then wake any in-flight retry so the next LLM
+            // attempt can rebuild against this profile instead of the snapshotted provider.
             if let Some(profile) = parsed.clone() {
                 let mut map = agent.thread_execution_profiles.write().await;
                 if profile.provider.is_none()
@@ -1362,6 +1359,7 @@ pub(crate) async fn dispatch_part4(
                     map.insert(thread_id.clone(), profile);
                 }
                 drop(map);
+                agent.notify_stream_retry_waiters(&thread_id).await;
             } else {
                 agent
                     .thread_execution_profiles

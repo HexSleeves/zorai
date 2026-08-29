@@ -238,8 +238,12 @@ impl AgentEngine {
         }
 
         let mut profiles = self.thread_execution_profiles.write().await;
+        for thread_id in &owned_ids {
+            patch(profiles.entry(thread_id.clone()).or_default());
+        }
+        drop(profiles);
         for thread_id in owned_ids {
-            patch(profiles.entry(thread_id).or_default());
+            self.notify_stream_retry_waiters(&thread_id).await;
         }
     }
 }

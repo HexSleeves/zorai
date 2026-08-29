@@ -771,6 +771,130 @@ async fn message_agent_rejects_self_target_for_active_responder() {
     );
 }
 
+async fn spawn_hanging_assistant_server_for_tool_executor() -> String {
+    use tokio::io::AsyncReadExt;
+    use tokio::net::TcpListener;
+
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("bind hanging assistant server");
+    let addr = listener
+        .local_addr()
+        .expect("hanging assistant local addr");
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut socket, _)) = listener.accept().await else {
+                break;
+            };
+            tokio::spawn(async move {
+                let mut buffer = vec![0u8; 1024];
+                let _ = socket.read(&mut buffer).await;
+                tokio::time::sleep(Duration::from_secs(60)).await;
+            });
+        }
+    });
+    format!("http://{addr}/v1")
+}
+
+#[tokio::test]
+async fn message_agent_internal_dm_returns_without_waiting_for_recipient_turn() {
+    let root = tempdir().expect("tempdir should succeed");
+    let manager = SessionManager::new_test(root.path()).await;
+    let mut config = AgentConfig::default();
+    config.provider = "openai".to_string();
+    config.base_url = spawn_hanging_assistant_server_for_tool_executor().await;
+    config.model = "gpt-4o-mini".to_string();
+    config.api_key = "test-key".to_string();
+    config.api_transport = crate::agent::types::ApiTransport::ChatCompletions;
+    config.auto_retry = false;
+    config.max_retries = 0;
+    let engine = AgentEngine::new_test(manager.clone(), config, root.path()).await;
+    let (event_tx, _) = broadcast::channel(8);
+    let thread_id = "thread-message-agent-async-dm";
+
+    {
+        let mut threads = engine.threads.write().await;
+        threads.insert(
+            thread_id.to_string(),
+            crate::agent::types::AgentThread {
+                id: thread_id.to_string(),
+                agent_name: Some(crate::agent::agent_identity::MAIN_AGENT_NAME.to_string()),
+                title: "Async internal DM".to_string(),
+                messages: vec![crate::agent::types::AgentMessage::user(
+                    "Ask Weles privately",
+                    1,
+                )],
+                pinned: false,
+                upstream_thread_id: None,
+                upstream_transport: None,
+                upstream_provider: None,
+                upstream_model: None,
+                upstream_assistant_id: None,
+                total_input_tokens: 0,
+                total_output_tokens: 0,
+                created_at: 1,
+                updated_at: 1,
+            },
+        );
+    }
+
+    let tool_call = ToolCall::with_default_weles_review(
+        "tool-message-agent-async-dm".to_string(),
+        ToolFunction {
+            name: "message_agent".to_string(),
+            arguments: serde_json::json!({
+                "target": "weles",
+                "message": "Need a private coordination check."
+            })
+            .to_string(),
+        },
+    );
+
+    let result = timeout(
+        Duration::from_secs(2),
+        execute_tool(
+            &tool_call,
+            &engine,
+            thread_id,
+            None,
+            &manager,
+            None,
+            &event_tx,
+            root.path(),
+            &engine.http_client,
+            None,
+        ),
+    )
+    .await
+    .expect("message_agent should return before the recipient turn finishes");
+
+    assert!(
+        !result.is_error,
+        "async internal DM delivery should succeed: {}",
+        result.content
+    );
+    assert!(
+        result.content.contains("\"delivered\": true"),
+        "tool result should report async delivery: {}",
+        result.content
+    );
+    assert!(
+        result
+            .content
+            .contains("\"visible_thread_continuation_requested\": false"),
+        "internal DM path should not request visible-thread continuation: {}",
+        result.content
+    );
+    let dm_thread_id = crate::agent::agent_identity::internal_dm_thread_id(
+        crate::agent::agent_identity::MAIN_AGENT_ID,
+        crate::agent::agent_identity::WELES_AGENT_ID,
+    );
+    assert!(
+        engine.threads.read().await.contains_key(&dm_thread_id),
+        "internal DM thread should exist as soon as the message is queued"
+    );
+}
+
 #[tokio::test]
 async fn message_agent_can_request_visible_thread_continuation() {
     let recorded_bodies = Arc::new(Mutex::new(std::collections::VecDeque::new()));

@@ -43,6 +43,10 @@ fn direct_message_entrypoints_box_large_send_message_futures() {
         send_message_production.contains("let outcome = Box::pin(runner.run()).await?;"),
         "run_internal_send_loop should box the oversized SendMessageRunner future"
     );
+    assert!(
+        messaging_production.contains("Box::pin(self.send_internal_agent_message("),
+        "async internal DM worker should box the oversized send future"
+    );
 
     assert!(
         messaging_production.contains(
@@ -332,8 +336,8 @@ fn tool_execution_hot_path_boxes_large_futures() {
         "tool-call chunk handling should box gateway auto-send futures"
     );
     assert!(
-        subagents_production.contains("Box::pin(agent.send_internal_agent_message("),
-        "message_agent should box the oversized internal-agent send future"
+        subagents_production.contains("agent.enqueue_internal_agent_message("),
+        "message_agent should enqueue the internal DM instead of waiting for a nested reply"
     );
     assert!(
         thread_participants_production.contains("Box::pin(self.send_internal_agent_message("),

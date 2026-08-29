@@ -136,4 +136,44 @@ describe("fetchHydratedRemoteThreads", () => {
         expect(threads[0].title).toBe("Main conversation");
         expect(threads[0].workspaceId).toBe("workspace-1");
     });
+
+    it("keeps an existing thread execution profile when the list payload omits it", async () => {
+        const agentListThreads = vi.fn(async () => [
+            {
+                id: "daemon-svarog-thread",
+                title: "Main conversation",
+                created_at: 1,
+                updated_at: 20,
+                messages: [],
+                total_message_count: 0,
+            },
+        ]);
+
+        const threads = await fetchHydratedRemoteThreads({
+            agentListThreads,
+            fallbackAgentName: "Svarog",
+            existingThreads: [{
+                id: "local-already-loaded",
+                daemonThreadId: "daemon-svarog-thread",
+                workspaceId: "workspace-1",
+                surfaceId: "surface-1",
+                paneId: "pane-1",
+                agent_name: "Svarog",
+                title: "stale title",
+                createdAt: 1,
+                updatedAt: 1,
+                messageCount: 0,
+                totalInputTokens: 0,
+                totalOutputTokens: 0,
+                totalTokens: 0,
+                compactionCount: 0,
+                lastMessagePreview: "",
+                profileProvider: "z.ai-coding-plan",
+                profileModel: "glm-5.3",
+            }],
+        });
+
+        expect(threads[0].profileProvider).toBe("z.ai-coding-plan");
+        expect(threads[0].profileModel).toBe("glm-5.3");
+    });
 });

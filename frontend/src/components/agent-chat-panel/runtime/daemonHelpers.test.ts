@@ -843,6 +843,66 @@ describe("loadDaemonThreadPageIntoLocalState", () => {
     expect(useAgentStore.getState().messages["local-active"]).toHaveLength(50);
     expect(useAgentStore.getState().threads.find((thread) => thread.id === "local-active")?.loadedMessageStart).toBe(70);
   });
+
+  it("keeps a locally selected provider when a stale daemon reload still reports ollama", async () => {
+    useAgentStore.setState({
+      threads: [{
+        ...makeThread("local-active", "daemon-1"),
+        profileProvider: "z.ai-coding-plan",
+        profileModel: "glm-5.3",
+        profileReasoningEffort: "high",
+        profileContextWindowTokens: 1_000_000,
+        messageCount: 1,
+        loadedMessageStart: 0,
+        loadedMessageEnd: 1,
+      }],
+      messages: {
+        "local-active": [makeMessage(0)],
+      },
+      activeThreadId: "local-active",
+    } as any);
+    agentGetThread.mockResolvedValue({
+      id: "daemon-1",
+      title: "Loaded thread",
+      agent_name: "Rod",
+      profile_provider: "ollama",
+      profile_model: "glm-5.3:cloud",
+      profile_reasoning_effort: "high",
+      profile_context_window_tokens: 1_000_000,
+      messages: [{
+        id: "message-0",
+        role: "user",
+        content: "message 0",
+        timestamp: 0,
+      }],
+      total_message_count: 1,
+      loaded_message_start: 0,
+      loaded_message_end: 1,
+    });
+
+    const { pinThreadRuntimeOverlay, clearThreadRuntimeOverlay } = await import("@/lib/agentStore/threadProfileMerge");
+    pinThreadRuntimeOverlay("local-active", {
+      profileProvider: "z.ai-coding-plan",
+      profileModel: "glm-5.3",
+      profileReasoningEffort: "high",
+      profileContextWindowTokens: 1_000_000,
+    });
+    await loadDaemonThreadPageIntoLocalState({
+      daemonThreadId: "daemon-1",
+      localThreadId: "local-active",
+      messageLimit: 50,
+      messageOffset: 0,
+      mergeMode: "replace",
+      setThreadTodos: vi.fn(),
+      setDaemonTodosByThread: vi.fn(),
+    });
+    clearThreadRuntimeOverlay("local-active");
+
+    expect(useAgentStore.getState().threads.find((thread) => thread.id === "local-active")).toMatchObject({
+      profileProvider: "z.ai-coding-plan",
+      profileModel: "glm-5.3",
+    });
+  });
 });
 
 describe("trimDaemonThreadMessagesToLatestWindow", () => {
