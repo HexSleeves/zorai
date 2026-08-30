@@ -1,5 +1,46 @@
 use super::*;
 
+fn optional_non_empty(value: Option<&str>) -> Option<String> {
+    value
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+pub(super) fn apply_builtin_persona_overrides_from_sub_agent(
+    config: &mut AgentConfig,
+    def: &SubAgentDefinition,
+) -> Result<()> {
+    let alias = if is_explicit_builtin_persona_scope(&def.id) {
+        def.id.as_str()
+    } else if is_explicit_builtin_persona_scope(&def.name) {
+        def.name.as_str()
+    } else {
+        return Err(protected_mutation_error("unexpected built-in persona target"));
+    };
+    let Some(overrides) = builtin_persona_overrides_mut(config, alias) else {
+        return Err(protected_mutation_error(format!(
+            "unknown built-in persona '{alias}'"
+        )));
+    };
+    if def.provider.trim().is_empty() {
+        anyhow::bail!("provider cannot be empty");
+    }
+    if def.model.trim().is_empty() {
+        anyhow::bail!("model cannot be empty");
+    }
+
+    overrides.provider = Some(def.provider.trim().to_string());
+    overrides.model = Some(def.model.trim().to_string());
+    overrides.reasoning_effort = optional_non_empty(def.reasoning_effort.as_deref());
+    overrides.context_window_tokens = def.context_window_tokens;
+    overrides.openrouter_provider_order = def.openrouter_provider_order.clone();
+    overrides.openrouter_provider_ignore = def.openrouter_provider_ignore.clone();
+    overrides.openrouter_allow_fallbacks = def.openrouter_allow_fallbacks;
+    overrides.huggingface_provider = optional_non_empty(def.huggingface_provider.as_deref());
+    Ok(())
+}
+
 pub(super) fn apply_weles_allowed_overrides(
     config: &mut AgentConfig,
     def: &SubAgentDefinition,

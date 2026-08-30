@@ -140,38 +140,77 @@ impl<'a> SendMessageRunner<'a> {
         let thread = match threads.get(&self.tid) {
             Some(thread) => thread,
             None => {
+                drop(threads);
                 self.engine
                     .finish_stream_cancellation(&self.tid, self.stream_generation)
                     .await;
                 anyhow::bail!("thread not found");
             }
         };
-        let mut request_thread = thread.clone();
-        if self.llm_user_content != self.stored_user_content {
-            if let Some(last_user_message) = request_thread
-                .messages
-                .iter_mut()
-                .rev()
-                .find(|message| message.role == MessageRole::User)
-            {
-                last_user_message.content = self.llm_user_content.to_string();
-            }
+        // Avoid cloning the entire AgentThread (which duplicates the full Vec<AgentMessage>)
+        // on every LLM loop. Hold the read guard and only clone messages when we must patch
+        // the last user message content. This cuts per-turn heap churn from O(thread len)
+        // to O(1) in the common case (stored == llm content).
+        let needs_patch = self.llm_user_content != self.stored_user_content;
+        // Megathread warning — surfaces unbounded growth before it hits 13 GB again.
+        if thread.messages.len() > 2048 && self.loop_count <= 2 {
+            tracing::warn!(
+                thread_id = %self.tid,
+                thread_messages = thread.messages.len(),
+                "large in-memory thread (consider windowed hydration)"
+            );
         }
-        self.emit_context_window_update_for_messages(&request_thread.messages);
-        let mut prepared = prepare_llm_request_with_reused_user_message(
-            &request_thread,
-            &self.config,
-            &self.provider_config,
-            self.reuse_existing_user_message
-                .then_some(self.llm_user_content),
-        );
+        // Materialize patched messages only if needed.
+        let patched_messages: Option<Vec<AgentMessage>> = if needs_patch {
+            let idx = thread
+                .messages
+                .iter()
+                .rposition(|m| m.role == MessageRole::User);
+            if let Some(i) = idx {
+                let mut v = thread.messages.clone();
+                v[i].content = self.llm_user_content.to_string();
+                Some(v)
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+        let effective_messages: &[AgentMessage] = patched_messages
+            .as_deref()
+            .unwrap_or(thread.messages.as_slice());
+        self.emit_context_window_update_for_messages(effective_messages);
+        let mut prepared = if let Some(ref pm) = patched_messages {
+            crate::agent::compaction::prepare_llm_request_from_messages(
+                pm.as_slice(),
+                thread,
+                &self.config,
+                &self.provider_config,
+                self.reuse_existing_user_message
+                    .then_some(self.llm_user_content),
+            )
+        } else {
+            prepare_llm_request_with_reused_user_message(
+                thread,
+                &self.config,
+                &self.provider_config,
+                self.reuse_existing_user_message
+                    .then_some(self.llm_user_content),
+            )
+        };
         prepared.force_connection_close = compaction_inserted;
+        let effective_len = effective_messages.len();
+        let api_len = prepared.messages.len();
+        let api_transport = prepared.transport;
         if !self.recorded_compaction_provenance {
             if let Some(candidate) = compaction_candidate(
-                &request_thread.messages,
+                effective_messages,
                 &self.config,
                 &self.provider_config,
             ) {
+                let thread_len = thread.messages.len();
+                // Need to drop the read guard before awaiting (borrow checker + deadlock avoidance)
+                drop(threads);
                 self.engine
                     .record_provenance_event(
                         "context_compressed",
@@ -180,7 +219,7 @@ impl<'a> SendMessageRunner<'a> {
                             "thread_id": self.tid.as_str(),
                             "split_at": candidate.split_at,
                             "target_tokens": candidate.target_tokens,
-                            "message_count": thread.messages.len(),
+                            "message_count": thread_len,
                         }),
                         None,
                         self.task_id,
@@ -190,13 +229,17 @@ impl<'a> SendMessageRunner<'a> {
                     )
                     .await;
                 self.recorded_compaction_provenance = true;
+            } else {
+                drop(threads);
             }
+        } else {
+            drop(threads);
         }
         tracing::info!(
             thread_id = %self.tid,
-            thread_messages = thread.messages.len(),
-            api_messages = prepared.messages.len(),
-            transport = ?prepared.transport,
+            thread_messages = effective_len,
+            api_messages = api_len,
+            transport = ?api_transport,
             loop_count = self.loop_count,
             "building LLM request"
         );

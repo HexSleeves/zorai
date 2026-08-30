@@ -40,6 +40,14 @@ impl TuiModel {
         agent_alias.to_string()
     }
 
+    pub(crate) fn is_explicit_builtin_persona(&self, agent_alias: &str) -> bool {
+        matches!(
+            agent_alias.trim().to_ascii_lowercase().as_str(),
+            "swarozyc" | "radogost" | "domowoj" | "swietowit" | "perun" | "mokosh" | "dazhbog"
+                | "rod"
+        )
+    }
+
     pub(crate) fn builtin_persona_configured(&self, agent_alias: &str) -> bool {
         let Some(raw) = self.config.agent_config_raw.as_ref() else {
             return false;

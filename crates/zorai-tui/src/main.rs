@@ -1138,6 +1138,13 @@ fn start_daemon_bridge(
                                     context_window_tokens,
                                 );
                             }
+                            DaemonCommand::SetThreadExecutionProfile {
+                                thread_id,
+                                profile_json,
+                            } => {
+                                let _ =
+                                    client.set_thread_execution_profile(thread_id, profile_json);
+                            }
                             DaemonCommand::ControlGoalRun {
                                 goal_run_id,
                                 action,

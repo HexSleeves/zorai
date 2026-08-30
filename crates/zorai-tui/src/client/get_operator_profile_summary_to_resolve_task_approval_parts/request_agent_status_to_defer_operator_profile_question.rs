@@ -430,6 +430,17 @@ impl DaemonClient {
         })
     }
 
+    pub fn set_thread_execution_profile(
+        &self,
+        thread_id: String,
+        profile_json: String,
+    ) -> Result<()> {
+        self.send(ClientMessage::AgentSetThreadExecutionProfile {
+            thread_id,
+            profile_json,
+        })
+    }
+
     pub fn get_provider_auth_states(&self) -> Result<()> {
         self.send(ClientMessage::AgentGetProviderAuthStates)
     }

@@ -460,19 +460,18 @@ impl TuiModel {
                                         "No thread-owned agent target is active".to_string();
                                     return false;
                                 };
-                                self.send_daemon_command(
-                                    DaemonCommand::SetTargetAgentProviderModel {
-                                        target_agent_id: pending.target_agent_id,
-                                        provider_id: pending.provider_id.clone(),
-                                        model: model_id.to_string(),
-                                    },
-                                );
                                 if let Some(thread) = self.chat.active_thread_mut() {
                                     thread.profile_provider = Some(pending.provider_id.clone());
                                     thread.profile_model = Some(model_id.to_string());
-                                    thread.runtime_provider = Some(pending.provider_id);
+                                    thread.runtime_provider = Some(pending.provider_id.clone());
                                     thread.runtime_model = Some(model_id.to_string());
                                 }
+                                crate::app::commands::apply_active_thread_provider_model_to_daemon(
+                                    self,
+                                    &pending.provider_id,
+                                    model_id,
+                                    pending.reasoning_effort.as_deref(),
+                                );
                                 self.status_line =
                                     format!("{} model: {}", pending.target_agent_name, model_id);
                             }

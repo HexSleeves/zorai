@@ -18,6 +18,29 @@ impl AgentEngine {
             return Err(builtin_collision_error("name", &def.name));
         }
 
+        if is_explicit_builtin_persona_scope(&def.id)
+            || is_explicit_builtin_persona_scope(&def.name)
+        {
+            let agent_id = canonical_agent_id(
+                if is_explicit_builtin_persona_scope(&def.id) {
+                    def.id.as_str()
+                } else {
+                    def.name.as_str()
+                },
+            )
+            .to_string();
+            {
+                let mut config = self.config.write().await;
+                apply_builtin_persona_overrides_from_sub_agent(&mut config, &def)?;
+                config.sub_agents.retain(|entry| {
+                    canonical_agent_id(&entry.id) != canonical_agent_id(&agent_id)
+                });
+            }
+            self.persist_config().await;
+            self.sync_thread_execution_profiles_for_agent(&agent_id).await;
+            return Ok(());
+        }
+
         let agent_id = def.id.clone();
         let mut config = self.config.write().await;
         if let Some(existing) = config.sub_agents.iter_mut().find(|s| s.id == def.id) {

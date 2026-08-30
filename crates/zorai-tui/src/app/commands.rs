@@ -170,6 +170,9 @@ mod open_new_goal_view_to_delete_workspace_task_from_args;
 mod slash_context;
 #[path = "commands_parts/slash_model.rs"]
 mod slash_model;
+pub(crate) use slash_model::{
+    apply_active_thread_provider_model_to_daemon, apply_target_agent_custom_model_locally,
+};
 #[path = "commands_parts/stage_mission_control_assignment_modal_edit_to_open_selected_spawned.rs"]
 mod stage_mission_control_assignment_modal_edit_to_open_selected_spawned;
 #[path = "commands_parts/submit_prompt_to_copy_message.rs"]

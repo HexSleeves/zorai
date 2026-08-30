@@ -1,5 +1,8 @@
 use super::*;
-use crate::app::commands::GoalActionPickerItem;
+use crate::app::commands::{
+    apply_active_thread_provider_model_to_daemon, apply_target_agent_custom_model_locally,
+    GoalActionPickerItem,
+};
 use crate::state::config::embedding_dimensions_from_fetched_model;
 use zorai_shared::providers::PROVIDER_ID_CUSTOM;
 
@@ -877,6 +880,16 @@ pub(super) fn handle_modal_enter(model: &mut TuiModel, kind: modal::ModalKind) {
                             &model_id,
                             selected_context_window,
                         );
+                        let reasoning_effort = model
+                            .chat
+                            .active_thread_runtime_metadata()
+                            .and_then(|runtime| runtime.reasoning_effort.clone());
+                        apply_active_thread_provider_model_to_daemon(
+                            model,
+                            &selected_provider,
+                            &model_id,
+                            reasoning_effort.as_deref(),
+                        );
                         model.status_line = format!("Model: {}", model_id);
                         if let Ok(value_json) =
                             serde_json::to_string(&serde_json::Value::String(model_id.clone()))
@@ -1039,17 +1052,24 @@ pub(super) fn handle_modal_enter(model: &mut TuiModel, kind: modal::ModalKind) {
                             model.close_top_modal();
                             return;
                         };
-                        model.send_daemon_command(DaemonCommand::SetTargetAgentProviderModel {
-                            target_agent_id: pending.target_agent_id.clone(),
-                            provider_id: pending.provider_id.clone(),
-                            model: model_id.clone(),
-                        });
-                        apply_active_svarog_provider_model_locally(
+                        apply_target_agent_custom_model_locally(
+                            model,
+                            &pending.target_agent_id,
+                            &pending.target_agent_name,
+                            &pending.provider_id,
+                            &model_id,
+                        );
+                        apply_active_thread_provider_model_to_daemon(
                             model,
                             &pending.provider_id,
                             &model_id,
-                            model_context_window,
+                            pending.reasoning_effort.as_deref(),
                         );
+                        if let Some(context_window) = model_context_window {
+                            if let Some(thread) = model.chat.active_thread_mut() {
+                                thread.profile_context_window_tokens = Some(context_window);
+                            }
+                        }
                         model.status_line =
                             format!("{} model: {}", pending.target_agent_name, model_id);
                         model.pending_target_agent_config = None;

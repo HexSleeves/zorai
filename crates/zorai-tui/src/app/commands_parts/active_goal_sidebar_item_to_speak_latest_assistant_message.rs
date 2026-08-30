@@ -153,6 +153,18 @@ impl TuiModel {
             return Some(zorai_protocol::AGENT_ID_RAROG.to_string());
         }
 
+        if let Some(handoff) = thread.thread_handoff_state.as_ref() {
+            let active = handoff.active_agent_id.trim();
+            if !active.is_empty() {
+                if let Some(agent_id) = self.resolve_target_agent_id(active) {
+                    return Some(agent_id);
+                }
+                if !active.eq_ignore_ascii_case("svarog") && !active.eq_ignore_ascii_case("swarog") {
+                    return Some(active.to_ascii_lowercase());
+                }
+            }
+        }
+
         if let Some(agent_name) = thread
             .agent_name
             .as_deref()
