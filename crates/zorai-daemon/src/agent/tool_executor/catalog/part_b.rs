@@ -121,10 +121,9 @@ pub(crate) fn add_available_tools_part_b(
         serde_json::json!({
             "type": "object",
             "properties": {
-                "thread_id": { "type": "string", "description": "Agent thread ID whose todos to return" },
+                "thread_id": { "type": "string", "description": "Optional; defaults to the current thread" },
                 "task_id": { "type": "string", "description": "Optional task ID for goal-run context validation" }
-            },
-            "required": ["thread_id"]
+            }
         }),
     ));
 

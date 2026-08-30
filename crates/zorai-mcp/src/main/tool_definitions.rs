@@ -206,9 +206,9 @@ pub(super) fn tool_definitions() -> Value {
             "inputSchema": {
                 "type": "object",
                 "properties": {
-                    "thread_id": { "type": "string", "description": "Agent thread ID" }
-                },
-                "required": ["thread_id"]
+                    "thread_id": { "type": "string", "description": "Optional agent thread ID; required when task_id is omitted" },
+                    "task_id": { "type": "string", "description": "Optional task ID used to resolve thread_id when thread_id is omitted" }
+                }
             }
         },
         {

@@ -1552,14 +1552,9 @@ pub(crate) async fn execute_preview_shadow_run(
 pub(crate) async fn execute_get_todos(
     args: &serde_json::Value,
     agent: &AgentEngine,
+    current_thread_id: &str,
     current_task_id: Option<&str>,
 ) -> Result<String> {
-    let thread_id = args
-        .get("thread_id")
-        .and_then(|value| value.as_str())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("missing 'thread_id' argument"))?;
     let requested_task_id = args
         .get("task_id")
         .and_then(|value| value.as_str())
@@ -1574,7 +1569,30 @@ pub(crate) async fn execute_get_todos(
     } else {
         None
     };
-    let items = agent.get_todos(thread_id).await;
+    let thread_id = args
+        .get("thread_id")
+        .and_then(|value| value.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .or_else(|| {
+            resolved_task
+                .as_ref()
+                .and_then(|task| task.thread_id.as_deref())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned)
+        })
+        .or_else(|| {
+            let trimmed = current_thread_id.trim();
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        })
+        .ok_or_else(|| anyhow::anyhow!("missing 'thread_id' argument"))?;
+    let items = agent.get_todos(&thread_id).await;
 
     Ok(serde_json::json!({
         "thread_id": thread_id,

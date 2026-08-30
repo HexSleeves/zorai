@@ -7041,11 +7041,7 @@ async fn get_todos_returns_thread_scoped_items_with_optional_task_id() {
         "tool-get-todos-runtime".to_string(),
         ToolFunction {
             name: tool_names::GET_TODOS.to_string(),
-            arguments: serde_json::json!({
-                "thread_id": thread_id,
-                "task_id": task.id,
-            })
-            .to_string(),
+            arguments: serde_json::json!({}).to_string(),
         },
     );
 
@@ -7108,10 +7104,10 @@ async fn get_todos_resolves_persisted_task_context_by_id() {
 
     let payload = execute_get_todos(
         &serde_json::json!({
-            "thread_id": thread_id,
             "task_id": task.id,
         }),
         &engine,
+        thread_id,
         None,
     )
     .await
