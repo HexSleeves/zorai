@@ -691,6 +691,11 @@ fn spawn_lancedb_indexer_runtime(
                 let semantic_shutdown = shutdown.clone();
                 let sync_conn_db = engine.history.conn_db.clone();
                 let sync_shutdown = shutdown.clone();
+                // WAL truncate checkpoint loop: reclaims `-wal` space that
+                // autocheckpoint cannot free while long-lived readers hold
+                // snapshots. Runs on the primary writer connection.
+                let checkpoint_conn = engine.history.conn.clone();
+                let checkpoint_shutdown = shutdown.clone();
                 let sync_interval = zorai_protocol::ZoraiConfig::load()
                     .db_sync_interval_secs
                     .unwrap_or(60);
@@ -708,7 +713,15 @@ fn spawn_lancedb_indexer_runtime(
                     crate::history::run_db_sync_loop(sync_conn_db, sync_interval, sync_shutdown)
                         .await;
                 });
-                let _ = tokio::join!(embedding_handle, semantic_handle, sync_handle);
+                let checkpoint_handle = tokio::spawn(async move {
+                    crate::history::run_wal_checkpoint_loop(
+                        checkpoint_conn,
+                        std::time::Duration::from_secs(300),
+                        checkpoint_shutdown,
+                    )
+                    .await;
+                });
+                let _ = tokio::join!(embedding_handle, semantic_handle, sync_handle, checkpoint_handle);
             });
             tracing::info!("lancedb indexer runtime exiting");
         });

@@ -1746,7 +1746,7 @@ mod command_log;
 mod consolidation;
 mod context_archive;
 mod core;
-pub(crate) use core::run_db_sync_loop;
+pub(crate) use core::{run_db_sync_loop, run_wal_checkpoint_loop};
 mod critique;
 pub(crate) mod db;
 mod debate;
