@@ -46,11 +46,12 @@ fn goal_run_render_uses_full_workspace_without_legacy_goal_sidebar_tabs() {
         .join("\n");
 
     assert!(
-        chat_plain.contains("Plan")
-            && chat_plain.contains("Run timeline")
-            && chat_plain.contains("Dossier")
+        chat_plain.contains("Work")
+            && chat_plain.contains("Review")
+            && chat_plain.contains("Activity")
+            && chat_plain.contains("Threads")
             && chat_plain.contains("Files")
-            && chat_plain.contains("Prompt"),
+            && chat_plain.contains("Goal Prompt"),
         "expected full goal workspace content in main pane, got: {chat_plain}"
     );
     assert!(
@@ -68,29 +69,22 @@ fn goal_workspace_keyboard_navigation_uses_plan_state() {
     let mut model = goal_sidebar_model();
     model.focus = FocusArea::Chat;
 
-    let handled = model.handle_key(KeyCode::Right, KeyModifiers::NONE);
-    assert!(!handled);
-    assert!(model.goal_workspace.is_step_expanded("step-1"));
-
     let handled = model.handle_key(KeyCode::Down, KeyModifiers::NONE);
     assert!(!handled);
-    assert_eq!(model.goal_workspace.selected_plan_row(), 3);
+    assert_eq!(model.goal_workspace.selected_plan_row(), 1);
     assert_eq!(
         model.goal_workspace.selected_plan_item(),
-        Some(&goal_workspace::GoalPlanSelection::Todo {
-            step_id: "step-1".to_string(),
-            todo_id: "todo-1".to_string(),
+        Some(&goal_workspace::GoalPlanSelection::MainThread {
+            thread_id: "thread-1".to_string(),
         })
     );
 
-    let handled = model.handle_key(KeyCode::Left, KeyModifiers::NONE);
+    let handled = model.handle_key(KeyCode::Up, KeyModifiers::NONE);
     assert!(!handled);
-    assert_eq!(model.goal_workspace.selected_plan_row(), 2);
+    assert_eq!(model.goal_workspace.selected_plan_row(), 0);
     assert_eq!(
         model.goal_workspace.selected_plan_item(),
-        Some(&goal_workspace::GoalPlanSelection::Step {
-            step_id: "step-1".to_string(),
-        })
+        Some(&goal_workspace::GoalPlanSelection::PromptToggle)
     );
 }
 
@@ -146,7 +140,7 @@ fn selected_goal_step_workspace_click_syncs_main_goal_detail_selection() {
     let mut model = goal_sidebar_model();
     let click = find_goal_workspace_hit_position(
         &model,
-        widgets::goal_workspace::GoalWorkspaceHitTarget::PlanStep("step-2".to_string()),
+        widgets::goal_workspace::GoalWorkspaceHitTarget::PlanMainThread("thread-1".to_string()),
     );
     model.handle_mouse(MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
@@ -161,15 +155,9 @@ fn selected_goal_step_workspace_click_syncs_main_goal_detail_selection() {
         modifiers: KeyModifiers::NONE,
     });
 
-    assert_eq!(model.focus, FocusArea::Chat);
-    assert_eq!(model.goal_workspace.selected_plan_row(), 3);
-    assert!(matches!(
-        model.main_pane_view,
-        MainPaneView::Task(SidebarItemTarget::GoalRun {
-            goal_run_id,
-            step_id: Some(step_id),
-        }) if goal_run_id == "goal-1" && step_id == "step-2"
-    ));
+    assert!(matches!(model.main_pane_view, MainPaneView::Conversation));
+    assert_eq!(model.chat.active_thread_id(), Some("thread-1"));
+    assert!(model.mission_control_return_to_goal_target().is_some());
 }
 
 #[test]
@@ -192,6 +180,9 @@ fn goal_workspace_mouse_clicks_focus_timeline_and_details_panes() {
             },
         ];
     }
+    model
+        .goal_workspace
+        .set_mode(goal_workspace::GoalWorkspaceMode::Activity);
 
     let chat_area = rendered_chat_area(&model);
     let (_, timeline, details) = goal_workspace_click_targets(chat_area);
@@ -247,35 +238,35 @@ fn goal_workspace_mode_tabs_are_clickable_and_keyboard_focusable() {
     assert!(!handled);
     assert_eq!(
         model.goal_workspace.mode(),
-        goal_workspace::GoalWorkspaceMode::Files
+        goal_workspace::GoalWorkspaceMode::Review
+    );
+
+    let handled = model.handle_key(KeyCode::Char('3'), KeyModifiers::NONE);
+    assert!(!handled);
+    assert_eq!(
+        model.goal_workspace.mode(),
+        goal_workspace::GoalWorkspaceMode::Activity
     );
 
     let handled = model.handle_key(KeyCode::Char('4'), KeyModifiers::NONE);
     assert!(!handled);
     assert_eq!(
         model.goal_workspace.mode(),
-        goal_workspace::GoalWorkspaceMode::Usage
+        goal_workspace::GoalWorkspaceMode::Threads
     );
 
     let handled = model.handle_key(KeyCode::Char('5'), KeyModifiers::NONE);
     assert!(!handled);
     assert_eq!(
         model.goal_workspace.mode(),
-        goal_workspace::GoalWorkspaceMode::ActiveAgent
+        goal_workspace::GoalWorkspaceMode::Files
     );
 
-    let handled = model.handle_key(KeyCode::Char('6'), KeyModifiers::NONE);
+    let handled = model.handle_key(KeyCode::Char('1'), KeyModifiers::NONE);
     assert!(!handled);
     assert_eq!(
         model.goal_workspace.mode(),
-        goal_workspace::GoalWorkspaceMode::Threads
-    );
-
-    let handled = model.handle_key(KeyCode::Char('7'), KeyModifiers::NONE);
-    assert!(!handled);
-    assert_eq!(
-        model.goal_workspace.mode(),
-        goal_workspace::GoalWorkspaceMode::NeedsAttention
+        goal_workspace::GoalWorkspaceMode::Work
     );
 
     let handled = model.handle_key(KeyCode::Enter, KeyModifiers::NONE);
@@ -289,7 +280,7 @@ fn goal_workspace_mode_tabs_are_clickable_and_keyboard_focusable() {
     let click = find_goal_workspace_hit_position(
         &model,
         widgets::goal_workspace::GoalWorkspaceHitTarget::ModeTab(
-            goal_workspace::GoalWorkspaceMode::ActiveAgent,
+            goal_workspace::GoalWorkspaceMode::Review,
         ),
     );
     model.handle_mouse(MouseEvent {
@@ -312,7 +303,7 @@ fn goal_workspace_mode_tabs_are_clickable_and_keyboard_focusable() {
     );
     assert_eq!(
         model.goal_workspace.mode(),
-        goal_workspace::GoalWorkspaceMode::ActiveAgent
+        goal_workspace::GoalWorkspaceMode::Review
     );
 }
 
@@ -421,13 +412,13 @@ fn goal_workspace_goal_mode_restores_old_goal_sections() {
 
     let plain = render_chat_plain(&mut model);
 
-    assert!(plain.contains("Step Actions"), "{plain}");
+    assert!(plain.contains("Goal Actions"), "{plain}");
     assert!(!plain.contains("Controls"), "{plain}");
-    assert!(plain.contains("Related Tasks"), "{plain}");
-    assert!(plain.contains("Execution Dossier"), "{plain}");
+    assert!(plain.contains("Worker progress"), "{plain}");
+    assert!(!plain.contains("Execution Dossier"), "{plain}");
     assert!(plain.contains("Goal Prompt"), "{plain}");
-    assert!(plain.contains("Main agent"), "{plain}");
-    assert!(plain.contains("Ground the user's background"), "{plain}");
+    assert!(plain.contains("Worker"), "{plain}");
+    assert!(plain.contains("Draft outline"), "{plain}");
     assert!(!plain.contains("/tmp/plan.md"), "{plain}");
 }
 
@@ -437,7 +428,8 @@ fn goal_workspace_footer_omits_refresh_button_and_keeps_ctrl_r_rerun() {
 
     let plain = render_chat_plain(&mut model);
 
-    assert!(plain.contains("[Rerun from here] Ctrl+R"), "{plain}");
+    assert!(plain.contains("[Actions]"), "{plain}");
+    assert!(plain.contains("[Pause] Ctrl+S"), "{plain}");
     assert!(!plain.contains("[Refresh]"), "{plain}");
-    assert!(!plain.contains("[Rerun from here] Shift+R"), "{plain}");
+    assert!(!plain.contains("[Rerun from here]"), "{plain}");
 }

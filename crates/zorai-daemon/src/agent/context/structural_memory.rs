@@ -877,18 +877,6 @@ impl AgentEngine {
         }
     }
 
-    pub(crate) async fn forget_memory_graph_from_task(&self, task_id: &str) {
-        let node_id = node_id_for_task(task_id);
-        if let Err(error) = self.history.delete_memory_node(&node_id).await {
-            tracing::warn!(
-                task_id = %task_id,
-                node_id = %node_id,
-                %error,
-                "failed to delete orphaned task memory graph node"
-            );
-        }
-    }
-
     pub(crate) async fn record_memory_graph_from_task(&self, task: &AgentTask) {
         self.apply_memory_graph_updates(build_memory_graph_updates_for_task(task))
             .await;

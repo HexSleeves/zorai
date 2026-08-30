@@ -6,6 +6,7 @@ edition.workspace = true
 [features]
 default = ["lancedb-vector"]
 lancedb-vector = ["dep:lancedb", "dep:arrow-array", "dep:arrow-schema"]
+jemalloc = ["dep:tikv-jemallocator"]
 
 [[bin]]
 name = "zorai-daemon"
@@ -73,6 +74,7 @@ lancedb = { workspace = true, optional = true }
 arrow-array = { workspace = true, optional = true }
 arrow-schema = { workspace = true, optional = true }
 tempfile = "3"
+tikv-jemallocator = { version = "0.6", optional = true }
 
 [target.'cfg(windows)'.dependencies]
 interprocess = { version = "2", features = ["tokio"] }

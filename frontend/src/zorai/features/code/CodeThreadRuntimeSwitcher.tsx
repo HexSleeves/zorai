@@ -9,6 +9,7 @@ import {
   patchThreadProfile,
   threadProviderIds,
 } from "../threads/threadRuntimeActions";
+import { pinThreadRuntimeOverlay } from "@/lib/agentStore/threadProfileMerge";
 import { resolveThreadOwnerRuntimeProfile } from "../threads/threadOwnerRuntime";
 import { getProviderDefinition, getProviderModels } from "@/lib/agentStore/providers";
 import { BUILTIN_WORKSPACE_PERSONAS } from "../workspaces/workspaceActorPicker";
@@ -163,6 +164,11 @@ export function CodeThreadRuntimeSwitcher({ thread, variant = "toolbar" }: Props
         }
       }
       // 2) Set provider/model for this thread only via thread execution profile
+      pinThreadRuntimeOverlay(thread.id, {
+        profileProvider: nextProvider,
+        profileModel: nextModel,
+        profileContextWindowTokens: contextWindowTokens,
+      });
       patchThreadProfile(thread.id, {
         profileProvider: nextProvider,
         profileModel: nextModel,

@@ -328,6 +328,7 @@ fn goal_run_status_label(status: Option<GoalRunStatus>, theme: &ThemeTokens) -> 
         Some(GoalRunStatus::Cancelled) => Span::styled(" cancelled", theme.fg_dim),
         Some(GoalRunStatus::Planning) => Span::styled(" planning", theme.fg_dim),
         Some(GoalRunStatus::AwaitingApproval) => Span::styled(" awaiting approval", theme.fg_dim),
+        Some(GoalRunStatus::AwaitingReview) => Span::styled(" awaiting review", theme.fg_dim),
         _ => Span::styled(" queued", theme.fg_dim),
     }
 }
@@ -337,7 +338,8 @@ fn step_status_chip(status: Option<GoalRunStatus>, theme: &ThemeTokens) -> Span<
         None
         | Some(GoalRunStatus::Queued)
         | Some(GoalRunStatus::Planning)
-        | Some(GoalRunStatus::AwaitingApproval) => Span::styled("[ ]", theme.fg_dim),
+        | Some(GoalRunStatus::AwaitingApproval)
+        | Some(GoalRunStatus::AwaitingReview) => Span::styled("[ ]", theme.fg_dim),
         Some(GoalRunStatus::Running) => Span::styled("[~]", theme.accent_secondary),
         Some(GoalRunStatus::Paused) => Span::styled("[P]", theme.accent_primary),
         Some(GoalRunStatus::Blocked) => Span::styled("[B]", theme.accent_danger),

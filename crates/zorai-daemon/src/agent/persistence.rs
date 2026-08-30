@@ -543,6 +543,7 @@ impl AgentEngine {
                 GoalRunStatus::Planning,
                 GoalRunStatus::Running,
                 GoalRunStatus::AwaitingApproval,
+                GoalRunStatus::AwaitingReview,
                 GoalRunStatus::Paused,
             ])
             .await

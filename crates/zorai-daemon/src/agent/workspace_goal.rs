@@ -72,6 +72,7 @@ impl AgentEngine {
             compensation_status: None,
             compensation_summary: None,
             active_task_id: None,
+            pending_review_report: None,
             duration_ms: None,
             steps: Vec::new(),
             events: vec![make_goal_run_event(
@@ -88,7 +89,6 @@ impl AgentEngine {
             authorship_tag: Some(AuthorshipTag::Agent),
         };
         goal_run_apply_thread_routing(&mut goal_run, Some(created_thread_id.clone()));
-        crate::agent::goal_dossier::refresh_goal_run_dossier(&mut goal_run);
         self.set_thread_identity_metadata(
             &created_thread_id,
             ThreadIdentityMetadata::for_goal_thread(&created_thread_id, &goal_run.id),

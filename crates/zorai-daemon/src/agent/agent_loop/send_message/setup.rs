@@ -116,6 +116,65 @@ async fn load_current_task_for_send_message(
     }
 }
 
+type TaskProviderOverride = (
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+    Option<crate::agent::types::ApiTransport>,
+    Option<u32>,
+    Option<String>,
+    Option<String>,
+);
+
+fn apply_thread_profile_to_task_provider_override(
+    task_provider_override: Option<TaskProviderOverride>,
+    profile: Option<&ThreadExecutionProfile>,
+    has_task: bool,
+) -> Option<TaskProviderOverride> {
+    let nonempty = |value: Option<&str>| {
+        value
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned)
+    };
+    let profile_provider = nonempty(profile.and_then(|profile| profile.provider.as_deref()));
+    let profile_model = nonempty(profile.and_then(|profile| profile.model.as_deref()));
+    if profile_provider.is_none() && profile_model.is_none() {
+        return task_provider_override;
+    }
+    match task_provider_override {
+        Some((provider, model, system_prompt, def_id, transport, context_window, huggingface, base_url)) => {
+            let provider_changed = profile_provider
+                .as_ref()
+                .is_some_and(|value| value != &provider);
+            Some((
+                profile_provider.unwrap_or(provider),
+                profile_model.or(model),
+                system_prompt,
+                def_id,
+                if provider_changed { None } else { transport },
+                context_window,
+                if provider_changed { None } else { huggingface },
+                if provider_changed { None } else { base_url },
+            ))
+        }
+        None if has_task => profile_provider.map(|provider| {
+            (
+                provider,
+                profile_model,
+                None,
+                None,
+                None,
+                None,
+                None,
+                None,
+            )
+        }),
+        other => other,
+    }
+}
+
 fn thread_artifact_prompt_block(data_root: &Path, thread_id: &str) -> String {
     let specs_dir = zorai_protocol::thread_specs_dir(data_root, thread_id);
     let media_dir = zorai_protocol::thread_media_dir(data_root, thread_id);
@@ -353,6 +412,7 @@ async fn current_visible_thread_responder_is_active_participant(
 ) -> bool {
     if is_internal_dm_thread(thread_id)
         || is_participant_playground_thread(thread_id)
+        || crate::agent::agent_identity::is_goal_run_thread(thread_id)
         || is_internal_handoff_thread(thread_id)
     {
         return false;
@@ -373,6 +433,7 @@ async fn current_visible_thread_responder_is_active_participant(
 async fn visible_thread_has_participants(engine: &AgentEngine, thread_id: &str) -> bool {
     if is_internal_dm_thread(thread_id)
         || is_participant_playground_thread(thread_id)
+        || crate::agent::agent_identity::is_goal_run_thread(thread_id)
         || is_internal_handoff_thread(thread_id)
     {
         return false;
@@ -653,6 +714,11 @@ impl<'a> SendMessageRunner<'a> {
             .await
             .get(&tid)
             .cloned();
+        let task_provider_override = apply_thread_profile_to_task_provider_override(
+            task_provider_override,
+            thread_execution_profile.as_ref(),
+            task_id.is_some(),
+        );
         let task_execution_profile_reasoning = thread_execution_profile
             .as_ref()
             .and_then(|profile| profile.reasoning_effort.as_deref())
@@ -849,9 +915,23 @@ impl<'a> SendMessageRunner<'a> {
                                     let _ = engine
                                         .bind_task_isolated_session(task, isolated_session_id)
                                         .await;
+                                    engine
+                                        .register_agent_terminal_lease(
+                                            crate::agent::terminal_leases::AgentTerminalLease::new(
+                                                isolated_session_id,
+                                                source_session.workspace_id.clone(),
+                                                Some(task.id.clone()),
+                                                task.thread_id
+                                                    .clone()
+                                                    .or_else(|| Some(tid.clone())),
+                                                crate::agent::task_prompt::now_millis(),
+                                            ),
+                                        )
+                                        .await;
                                     let _ = engine.event_tx.send(AgentEvent::WorkspaceCommand {
                                         command: "attach_agent_terminal".to_string(),
                                         args: serde_json::json!({
+                                            "workspace_id": source_session.workspace_id,
                                             "session_id": isolated_session_id.to_string(),
                                             "pane_name": format!("Isolated {}", task.title),
                                             "cwd": isolated.root,
@@ -859,6 +939,7 @@ impl<'a> SendMessageRunner<'a> {
                                             "goal_run_id": task.goal_run_id,
                                             "branch": isolated.branch,
                                             "worktree_created": isolated.created,
+                                            "auto_owned": true,
                                         }),
                                     });
                                 }
@@ -1233,27 +1314,6 @@ impl<'a> SendMessageRunner<'a> {
                 system_prompt.push_str(&workspace_prompt);
             }
         }
-        if let Some(goal_run_id) = current_task_snapshot
-            .as_ref()
-            .and_then(|task| task.goal_run_id.as_deref())
-        {
-            system_prompt.push_str("\n\n");
-            system_prompt.push_str(&crate::agent::goal_dossier::goal_inventory_prompt_block(
-                &engine.data_dir,
-                goal_run_id,
-            ));
-            if let Some(goal_run) = engine.get_goal_run(goal_run_id).await {
-                if let Some(marker_block) =
-                    crate::agent::goal_dossier::goal_step_completion_marker_prompt_block_for_data_dir(
-                        &engine.data_dir,
-                        &goal_run,
-                    )
-                {
-                    system_prompt.push_str("\n\n");
-                    system_prompt.push_str(&marker_block);
-                }
-            }
-        }
         if let Some(injection_state) =
             crate::agent::memory_context::append_structured_memory_summary_if_needed(
                 &mut system_prompt,
@@ -1346,42 +1406,12 @@ impl<'a> SendMessageRunner<'a> {
         }
         let has_workspace_topology = engine.session_manager.read_workspace_topology().is_some();
         let mut tools = get_available_tools(&config, &engine.data_dir, has_workspace_topology);
-        if let Some(task) = current_task_snapshot.as_ref() {
-            if task.source == crate::agent::GOAL_FINAL_REVIEW_SOURCE
-                && !tools.iter().any(|tool| {
-                    tool.function.name == zorai_protocol::tool_names::SUBMIT_GOAL_FINAL_REVIEW
-                })
-            {
-                tracing::error!(
-                    task_id = %task.id,
-                    "final-review tool missing from available tool catalog"
-                );
-            }
-        }
         crate::agent::tool_executor::filter_tools_for_client_surface(
             &mut tools,
             engine.get_thread_client_surface(&tid).await,
         );
         if let Some(filter) = &task_tool_filter {
             tools = filter.filtered_tools(tools);
-        }
-        if current_task_snapshot
-            .as_ref()
-            .is_some_and(|task| task.source == crate::agent::GOAL_FINAL_REVIEW_SOURCE)
-        {
-            // The final-review transition is mandatory even when a task-level
-            // whitelist was inherited from a reviewer role.
-            let all_tools = get_available_tools(&config, &engine.data_dir, has_workspace_topology);
-            if let Some(tool) = all_tools.into_iter().find(|tool| {
-                tool.function.name == zorai_protocol::tool_names::SUBMIT_GOAL_FINAL_REVIEW
-            }) {
-                if !tools
-                    .iter()
-                    .any(|existing| existing.function.name == tool.function.name)
-                {
-                    tools.push(tool);
-                }
-            }
         }
         if let Some(filter) = direct_thread_responder
             .as_ref()
@@ -1426,18 +1456,7 @@ impl<'a> SendMessageRunner<'a> {
                 .and_then(|responder| responder.tool_filter.as_ref())
                 .is_some();
         let deferred_tool_pool = if config.tools.deferred_tool_loading && !tools_were_filtered {
-            let mut deferred = super::tool_executor::partition_deferred_tools(&mut tools);
-            if current_task_snapshot
-                .as_ref()
-                .is_some_and(|task| task.source == crate::agent::GOAL_FINAL_REVIEW_SOURCE)
-            {
-                if let Some(index) = deferred.iter().position(|tool| {
-                    tool.function.name == zorai_protocol::tool_names::SUBMIT_GOAL_FINAL_REVIEW
-                }) {
-                    tools.push(deferred.remove(index));
-                }
-            }
-            deferred
+            super::tool_executor::partition_deferred_tools(&mut tools)
         } else {
             Vec::new()
         };
@@ -1463,22 +1482,19 @@ impl<'a> SendMessageRunner<'a> {
                 retry_delay_ms: config.retry_delay_ms,
             }
         };
-        let max_loops = if is_durable_goal_task {
-            0
-        } else {
-            config.max_tool_loops
-        };
+        let max_loops = config.max_tool_loops;
         engine
-            .set_thread_execution_profile(
+            .commit_thread_execution_profile_if_unchanged(
                 &tid,
-                Some(ThreadExecutionProfile {
+                thread_execution_profile.as_ref(),
+                ThreadExecutionProfile {
                     provider: Some(active_provider_id.clone()),
                     model: (!provider_config.model.trim().is_empty())
                         .then(|| provider_config.model.clone()),
                     reasoning_effort: (!provider_config.reasoning_effort.trim().is_empty())
                         .then(|| provider_config.reasoning_effort.clone()),
                     context_window_tokens: Some(provider_config.context_window_tokens),
-                }),
+                },
             )
             .await;
         let _ = engine.event_tx.send(AgentEvent::ThreadReloadRequired {
@@ -2105,9 +2121,12 @@ mod tests {
         assert!(
             main_runner
                 .system_prompt
-                .contains("## Available Sub-Agents")
-                && main_runner.system_prompt.contains("Researcher"),
-            "normal threads should still see the spawnable roster"
+                .contains("## Subagent Supervision")
+                && main_runner.system_prompt.contains("`list_agents`")
+                && main_runner.system_prompt.contains("`spawn_subagent`")
+                && !main_runner.system_prompt.contains("## Available Sub-Agents")
+                && !main_runner.system_prompt.contains("Researcher"),
+            "normal threads should fetch spawnable specialists on demand instead of inlining the roster"
         );
 
         let child_thread_id = "thread_spawned_child";
@@ -2155,7 +2174,7 @@ mod tests {
                 && !child_runner
                     .system_prompt
                     .contains("## Subagent Supervision"),
-            "spawned subagents must not receive the spawnable roster in their initial prompt"
+            "spawned subagents must not receive subagent supervision or spawn tooling in their initial prompt"
         );
 
         let continued_runner = SendMessageRunner::initialize(
@@ -2178,7 +2197,7 @@ mod tests {
             !continued_runner
                 .system_prompt
                 .contains("## Available Sub-Agents"),
-            "continuing a spawned child thread must still omit the spawnable roster"
+            "continuing a spawned child thread must still omit spawnable specialist tooling"
         );
     }
 
@@ -2237,10 +2256,12 @@ mod tests {
             .expect("parent-turn runner should initialize");
             assert!(
                 runner.system_prompt.contains("## Subagent Supervision")
-                    && runner.system_prompt.contains("## Available Sub-Agents")
-                    && runner.system_prompt.contains("Researcher")
+                    && runner.system_prompt.contains("`list_agents`")
+                    && runner.system_prompt.contains("`spawn_subagent`")
+                    && !runner.system_prompt.contains("## Available Sub-Agents")
+                    && !runner.system_prompt.contains("Researcher")
                     && !runner.system_prompt.contains("## Subagent Report-Back"),
-                "{source} parent turns must keep supervision and the spawnable roster"
+                "{source} parent turns must keep on-demand subagent tooling and omit the inlined roster"
             );
 
             let continued = SendMessageRunner::initialize(
@@ -2261,8 +2282,9 @@ mod tests {
             .expect("identity-only parent continuation should initialize");
             assert!(
                 continued.system_prompt.contains("## Subagent Supervision")
-                    && continued.system_prompt.contains("## Available Sub-Agents"),
-                "{source} continuations that only read identity must not switch into child report-back"
+                    && continued.system_prompt.contains("`list_agents`")
+                    && !continued.system_prompt.contains("## Available Sub-Agents"),
+                "{source} continuations that only read identity must not switch into child report-back or inline a roster"
             );
         }
     }
@@ -3259,264 +3281,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn durable_goal_task_prompt_includes_inventory_directories() {
-        let root = tempdir().expect("tempdir");
-        let manager = SessionManager::new_test(root.path()).await;
-        let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
-        let task_id = "goal-task-1";
-        let inventory_root =
-            crate::agent::goal_dossier::goal_inventory_dir(&engine.data_dir, "goal-run-1");
-        let specs_dir =
-            crate::agent::goal_dossier::goal_inventory_specs_dir(&engine.data_dir, "goal-run-1");
-        let plans_dir =
-            crate::agent::goal_dossier::goal_inventory_plans_dir(&engine.data_dir, "goal-run-1");
-        let execution_dir = crate::agent::goal_dossier::goal_inventory_execution_dir(
-            &engine.data_dir,
-            "goal-run-1",
-        );
-        let marker_path = crate::agent::goal_dossier::goal_step_completion_marker_path(
-            &engine.data_dir,
-            "goal-run-1",
-            0,
-        );
-
-        engine.goal_runs.lock().await.push_back(GoalRun {
-            id: "goal-run-1".to_string(),
-            title: "Goal Inventory".to_string(),
-            goal: "Write durable goal artifacts".to_string(),
-            client_request_id: None,
-            status: GoalRunStatus::Running,
-            priority: TaskPriority::Normal,
-            created_at: 1,
-            updated_at: 1,
-            started_at: Some(1),
-            completed_at: None,
-            thread_id: Some("thread-goal-1".to_string()),
-            root_thread_id: None,
-            supervision_thread_id: None,
-            active_thread_id: None,
-            execution_thread_ids: Vec::new(),
-            session_id: Some("session-1".to_string()),
-            current_step_index: 0,
-            current_step_title: Some("Write plan".to_string()),
-            current_step_kind: Some(GoalRunStepKind::Command),
-            launch_assignment_snapshot: Vec::new(),
-            runtime_assignment_list: Vec::new(),
-            planner_owner_profile: None,
-            current_step_owner_profile: None,
-            step_owner_overrides: std::collections::BTreeMap::new(),
-            replan_count: 0,
-            max_replans: 2,
-            plan_summary: None,
-            reflection_summary: None,
-            memory_updates: Vec::new(),
-            generated_skill_path: None,
-            last_error: None,
-            failure_cause: None,
-            step_failure_history: Vec::new(),
-            stopped_reason: None,
-            child_task_ids: Vec::new(),
-            child_task_count: 0,
-            approval_count: 0,
-            awaiting_approval_id: None,
-            policy_fingerprint: None,
-            approval_expires_at: None,
-            containment_scope: None,
-            compensation_status: None,
-            compensation_summary: None,
-            active_task_id: None,
-            duration_ms: None,
-            steps: vec![GoalRunStep {
-                id: "goal-step-1".to_string(),
-                position: 0,
-                title: "Write plan".to_string(),
-                instructions: "Write durable goal artifacts".to_string(),
-                kind: GoalRunStepKind::Command,
-                success_criteria: "plan written".to_string(),
-                session_id: Some("session-1".to_string()),
-                status: GoalRunStepStatus::InProgress,
-                task_id: Some(task_id.to_string()),
-                summary: None,
-                error: None,
-                started_at: Some(1),
-                completed_at: None,
-            }],
-            events: Vec::new(),
-            dossier: None,
-            total_prompt_tokens: 0,
-            total_completion_tokens: 0,
-            estimated_cost_usd: None,
-            model_usage: Vec::new(),
-            autonomy_level: AutonomyLevel::Aware,
-            authorship_tag: None,
-        });
-
-        engine.tasks.lock().await.push_back(AgentTask {
-            id: task_id.to_string(),
-            title: "Execute goal step".to_string(),
-            description: "Write durable goal artifacts".to_string(),
-            status: TaskStatus::Queued,
-            priority: TaskPriority::Normal,
-            progress: 0,
-            created_at: 1,
-            started_at: None,
-            completed_at: None,
-            error: None,
-            result: None,
-            thread_id: None,
-            source: "goal_run".to_string(),
-            notify_on_complete: false,
-            notify_channels: Vec::new(),
-            dependencies: Vec::new(),
-            command: None,
-            session_id: Some("session-1".to_string()),
-            goal_run_id: Some("goal-run-1".to_string()),
-            goal_run_title: Some("Goal Inventory".to_string()),
-            goal_step_id: Some("goal-step-1".to_string()),
-            goal_step_title: Some("Write plan".to_string()),
-            parent_task_id: None,
-            parent_thread_id: None,
-            runtime: "daemon".to_string(),
-            retry_count: 0,
-            max_retries: 0,
-            next_retry_at: None,
-            scheduled_at: None,
-            blocked_reason: None,
-            awaiting_approval_id: None,
-            policy_fingerprint: None,
-            approval_expires_at: None,
-            containment_scope: None,
-            compensation_status: None,
-            compensation_summary: None,
-            lane_id: None,
-            last_error: None,
-            logs: Vec::new(),
-            completion_contract: None,
-            tool_whitelist: None,
-            tool_blacklist: None,
-            context_budget_tokens: None,
-            context_overflow_action: None,
-            termination_conditions: None,
-            success_criteria: None,
-            max_duration_secs: None,
-            supervisor_config: None,
-            override_provider: None,
-            override_model: None,
-            override_api_transport: None,
-            override_system_prompt: None,
-            sub_agent_def_id: None,
-        });
-
-        let runner = SendMessageRunner::initialize(
-            &engine,
-            None,
-            "continue goal work",
-            &[],
-            "continue goal work",
-            Some(task_id),
-            None,
-            None,
-            None,
-            true,
-            true,
-            0,
-        )
-        .await
-        .expect("runner should initialize");
-
-        assert!(
-            runner
-                .system_prompt
-                .contains(&format!("{}/", inventory_root.display())),
-            "expected inventory root in the goal task prompt"
-        );
-        assert!(
-            runner
-                .system_prompt
-                .contains(&format!("{}/", specs_dir.display())),
-            "expected specs dir in the goal task prompt"
-        );
-        assert!(
-            runner
-                .system_prompt
-                .contains(&format!("{}/", plans_dir.display())),
-            "expected plans dir in the goal task prompt"
-        );
-        assert!(
-            runner
-                .system_prompt
-                .contains(&format!("{}/", execution_dir.display())),
-            "expected execution dir in the goal task prompt"
-        );
-        assert!(
-            runner.system_prompt.contains("Step 1 of 1"),
-            "expected human-readable current step label in the goal task prompt"
-        );
-        assert!(
-            runner
-                .system_prompt
-                .contains(&marker_path.display().to_string()),
-            "expected completion marker file path in the goal task prompt"
-        );
-        assert!(
-            runner
-                .system_prompt
-                .contains("This step cannot be marked complete until that file exists"),
-            "expected hard completion marker requirement in the goal task prompt"
-        );
-
-        let task_thread_id = engine
-            .tasks
-            .lock()
-            .await
-            .iter()
-            .find(|task| task.id == task_id)
-            .and_then(|task| task.thread_id.clone())
-            .expect("goal task should bind to the initialized execution thread immediately");
-        assert_eq!(task_thread_id, runner.tid);
-
-        let goal_run = engine
-            .goal_runs
-            .lock()
-            .await
-            .iter()
-            .find(|goal_run| goal_run.id == "goal-run-1")
-            .cloned()
-            .expect("goal run should still exist");
-        assert_eq!(
-            goal_run.active_thread_id.as_deref(),
-            Some(runner.tid.as_str())
-        );
-        assert!(
-            goal_run
-                .execution_thread_ids
-                .iter()
-                .any(|thread_id| thread_id == &runner.tid),
-            "initialized task thread should be visible in goal execution threads"
-        );
-
-        let persisted_thread = engine
-            .history
-            .get_thread(&runner.tid)
-            .await
-            .expect("read persisted task thread")
-            .expect("task execution thread should be persisted");
-        let metadata: serde_json::Value = serde_json::from_str(
-            persisted_thread
-                .metadata_json
-                .as_deref()
-                .expect("task execution thread should persist metadata"),
-        )
-        .expect("task execution thread metadata should be valid JSON");
-        assert_eq!(metadata["thread_id"], serde_json::json!(runner.tid));
-        assert_eq!(metadata["task_id"], serde_json::json!(task_id));
-        assert_eq!(metadata["goal_run_id"], serde_json::json!("goal-run-1"));
-        assert_eq!(metadata["identity"]["thread_id"], metadata["thread_id"]);
-        assert_eq!(metadata["identity"]["task_id"], metadata["task_id"]);
-        assert_eq!(metadata["identity"]["goal_run_id"], metadata["goal_run_id"]);
-    }
-
-    #[tokio::test]
     async fn durable_goal_task_clarification_priority_does_not_reintroduce_ask_questions() {
         let root = tempdir().expect("tempdir");
         let manager = SessionManager::new_test(root.path()).await;
@@ -3568,6 +3332,7 @@ mod tests {
             compensation_status: None,
             compensation_summary: None,
             active_task_id: None,
+            pending_review_report: None,
             duration_ms: None,
             steps: vec![GoalRunStep {
                 id: "goal-step-1".to_string(),

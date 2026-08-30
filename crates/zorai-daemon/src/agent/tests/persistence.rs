@@ -179,6 +179,7 @@ async fn hydrate_loads_only_active_goal_runs_into_live_queue() {
         compensation_status: None,
         compensation_summary: None,
         active_task_id: None,
+        pending_review_report: None,
         duration_ms: None,
         steps: Vec::new(),
         events: Vec::new(),
@@ -590,6 +591,7 @@ async fn hydrate_does_not_wait_for_goal_run_projection_persistence() {
         compensation_status: None,
         compensation_summary: None,
         active_task_id: None,
+        pending_review_report: None,
         duration_ms: None,
         steps: vec![GoalRunStep {
             id: "step-1".to_string(),
@@ -629,9 +631,6 @@ async fn hydrate_does_not_wait_for_goal_run_projection_persistence() {
         root.path(),
     )
     .await;
-    let _delay_guard = crate::agent::goal_dossier::set_goal_projection_write_delay_for_tests(
-        std::time::Duration::from_millis(250),
-    );
 
     tokio::time::timeout(std::time::Duration::from_millis(100), rehydrated.hydrate())
         .await

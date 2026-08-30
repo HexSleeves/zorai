@@ -54,10 +54,10 @@ pub(super) fn build_task_prompt(task: &AgentTask) -> String {
     if let Some(goal_run_id) = task.goal_run_id.as_deref() {
         prompt.push_str(&format!("\nGoal run context: {goal_run_id}"));
         prompt.push_str(
-            "\nThis task is part of a fully autonomous goal run. Do not stop for operator clarification unless a daemon-owned approval or governance gate explicitly blocks execution.",
+            "\nYou are the sole worker for this goal. Work until the objective is met, then call request_goal_review with a concrete report. Do not claim the goal is complete in prose.",
         );
         prompt.push_str(
-            "\nIn autonomous goal work, ask_questions is intentionally unavailable. Do not create operator-facing question buttons from this task.",
+            "\nIn goal work, ask_questions is unavailable. The owner supervisor verdicts completeness; do not call submit_goal_review from this worker.",
         );
         if task.parent_task_id.is_some() {
             prompt.push_str(&format!(
@@ -68,19 +68,9 @@ pub(super) fn build_task_prompt(task: &AgentTask) -> String {
                 "\nIf you need a review, challenge, or second opinion before proceeding, use message_agent targeting {WELES_AGENT_NAME} so the review happens on its own internal thread instead of the operator thread."
             ));
         }
-    }
-
-    if let (Some(goal_run_id), Some(goal_step_id), None) = (
-        task.goal_run_id.as_deref(),
-        task.goal_step_id.as_deref(),
-        task.parent_task_id.as_deref(),
-    ) {
-        prompt.push_str(&format!(
-            "\nWhen calling update_todo for this main goal task, include \"goal_run_id\": \"{goal_run_id}\" and \"goal_step_id\": \"{goal_step_id}\" at the top level. These bind the full todo list to the current goal step; set the list once for this step, then only send the same items with status changes. Do not add, remove, rename, or reorder todos within the same step, and do not use item.step_index for goal-step routing."
-        ));
-        if task.source == "goal_run" {
+        if task.source == "goal_run" && task.parent_task_id.is_none() {
             prompt.push_str(
-                "\nDo not call submit_goal_step_verdict from this implementation task; that tool is only for goal verification tasks. To signal this step is ready for review, complete all todos, create the required step completion marker artifact (or the residual blocked marker if the step cannot honestly succeed), and then finish your normal task response. Do not cancel this task or a sibling goal-step task to force progress.",
+                "\nWhen you believe the work is done, call request_goal_review. Do not cancel this task to force progress.",
             );
         }
     }
@@ -235,43 +225,6 @@ fn goal_run_task_context(goal_run: &GoalRun, task: &AgentTask) -> String {
     }
 
     context
-}
-
-/// Append available sub-agent registry to a task prompt so the LLM
-/// knows what specialist sub-agents it can delegate work to.
-pub(super) fn append_sub_agent_registry(prompt: &mut String, sub_agents: &[SubAgentDefinition]) {
-    let enabled: Vec<&SubAgentDefinition> =
-        sub_agents.iter().filter(|sa| sa.is_spawnable()).collect();
-    if enabled.is_empty() {
-        return;
-    }
-
-    prompt.push_str("\n\n## Available Sub-Agents\n");
-    prompt
-        .push_str("You can delegate work to these specialist sub-agents via `spawn_subagent`:\n\n");
-    for sa in &enabled {
-        prompt.push_str(&format!("- **{}**", sa.name));
-        if let Some(ref role) = sa.role {
-            prompt.push_str(&format!(" (role: {role})"));
-        }
-        prompt.push_str(&format!(
-            " — provider: {}, model: {}",
-            sa.provider, sa.model
-        ));
-        if let Some(ref sp) = sa.system_prompt {
-            let snippet: String = sp.chars().take(80).collect();
-            prompt.push_str(&format!(" — \"{snippet}...\""));
-        }
-        prompt.push('\n');
-    }
-}
-
-pub(super) async fn append_effective_sub_agent_registry(
-    engine: &crate::agent::AgentEngine,
-    prompt: &mut String,
-) {
-    let sub_agents = engine.list_sub_agents().await;
-    append_sub_agent_registry(prompt, &sub_agents);
 }
 
 pub(super) async fn append_goal_run_context(
@@ -708,32 +661,16 @@ mod tests {
         let prompt = build_task_prompt(&task);
 
         assert!(
-            prompt.contains("fully autonomous"),
-            "goal-run prompts should explicitly state autonomous execution"
+            prompt.contains("sole worker"),
+            "goal-run prompts should tell the worker they own the whole goal"
         );
         assert!(
-            prompt.contains("ask_questions is intentionally unavailable"),
+            prompt.contains("ask_questions is unavailable"),
             "goal-run prompts should forbid direct operator questions"
         );
         assert!(
-            prompt.contains(zorai_protocol::tool_names::MESSAGE_AGENT),
-            "goal-run prompts should redirect blockers into agent-to-agent messaging"
-        );
-        assert!(
-            prompt.contains("Weles"),
-            "main goal tasks should be pointed at the review agent instead of the operator"
-        );
-        assert!(
-            prompt.contains("set the list once for this step")
-                && prompt.contains("only send the same items with status changes"),
-            "main goal tasks should be told that goal-step todos are immutable except status"
-        );
-        assert!(
-            prompt.contains("Do not call submit_goal_step_verdict")
-                && prompt.contains("residual blocked marker")
-                && prompt.contains("Do not cancel this task or a sibling goal-step task")
-                && prompt.contains("finish your normal task response"),
-            "main goal tasks should be told how to signal completion or residual blockage without cancelling sibling steps"
+            prompt.contains("request_goal_review"),
+            "goal-run prompts should require an explicit supervisor review call"
         );
     }
 
@@ -794,6 +731,7 @@ mod tests {
             compensation_status: None,
             compensation_summary: None,
             active_task_id: None,
+            pending_review_report: None,
             duration_ms: None,
             steps: vec![
                 GoalRunStep {
@@ -950,80 +888,6 @@ mod tests {
                 .join("SKILL.md")
                 .exists(),
             "expected built-in skills source dir to resolve to the repo skills tree"
-        );
-    }
-
-    #[test]
-    fn append_sub_agent_registry_excludes_protected_entries_from_spawnable_list() {
-        let mut prompt = String::new();
-        let visible = SubAgentDefinition {
-            base_url: None,
-            claude_permission_mode: None,
-            id: "researcher".to_string(),
-            name: "Researcher".to_string(),
-            provider: "openai".to_string(),
-            model: "gpt-5.4-mini".to_string(),
-            role: Some("investigator".to_string()),
-            system_prompt: Some("Investigate the assigned area.".to_string()),
-            tool_whitelist: None,
-            tool_blacklist: None,
-            context_budget_tokens: None,
-            context_window_tokens: None,
-            max_duration_secs: None,
-            supervisor_config: None,
-            enabled: true,
-            builtin: false,
-            immutable_identity: false,
-            disable_allowed: true,
-            delete_allowed: true,
-            protected_reason: None,
-            reasoning_effort: None,
-            api_transport: None,
-            openrouter_provider_order: Vec::new(),
-            openrouter_provider_ignore: Vec::new(),
-            openrouter_allow_fallbacks: None,
-            huggingface_provider: None,
-            created_at: 1,
-        };
-        let protected = SubAgentDefinition {
-            base_url: None,
-            claude_permission_mode: None,
-            id: "weles_builtin".to_string(),
-            name: "WELES".to_string(),
-            provider: "openai".to_string(),
-            model: "gpt-5.4-mini".to_string(),
-            role: Some("governance".to_string()),
-            system_prompt: Some("Protect tool execution.".to_string()),
-            tool_whitelist: None,
-            tool_blacklist: None,
-            context_budget_tokens: None,
-            context_window_tokens: None,
-            max_duration_secs: None,
-            supervisor_config: None,
-            enabled: true,
-            builtin: true,
-            immutable_identity: true,
-            disable_allowed: false,
-            delete_allowed: false,
-            protected_reason: Some("Daemon-owned WELES registry entry".to_string()),
-            reasoning_effort: None,
-            api_transport: None,
-            openrouter_provider_order: Vec::new(),
-            openrouter_provider_ignore: Vec::new(),
-            openrouter_allow_fallbacks: None,
-            huggingface_provider: None,
-            created_at: 1,
-        };
-
-        append_sub_agent_registry(&mut prompt, &[visible, protected]);
-
-        assert!(
-            prompt.contains("Researcher"),
-            "spawnable subagents should remain visible"
-        );
-        assert!(
-            !prompt.contains("WELES"),
-            "protected subagents should not be advertised as spawnable: {prompt}"
         );
     }
 }

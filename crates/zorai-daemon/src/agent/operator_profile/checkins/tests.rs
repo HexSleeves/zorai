@@ -69,6 +69,7 @@ fn make_goal(status: GoalRunStatus, priority: TaskPriority) -> GoalRun {
         compensation_status: None,
         compensation_summary: None,
         active_task_id: None,
+        pending_review_report: None,
         duration_ms: None,
         steps: Vec::new(),
         events: Vec::new(),

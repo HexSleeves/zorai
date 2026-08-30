@@ -155,6 +155,7 @@ async fn post_tool_policy_checkpoint_pivots_for_non_error_stuckness_with_runtime
             compensation_status: None,
             compensation_summary: None,
             active_task_id: Some("task-policy-non-error-loop-proof".to_string()),
+            pending_review_report: None,
             duration_ms: None,
             steps: vec![crate::agent::types::GoalRunStep {
                 id: "step-1".to_string(),

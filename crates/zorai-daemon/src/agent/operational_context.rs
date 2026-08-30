@@ -44,6 +44,7 @@ impl AgentEngine {
             GoalRunStatus::Planning,
             GoalRunStatus::Running,
             GoalRunStatus::AwaitingApproval,
+            GoalRunStatus::AwaitingReview,
             GoalRunStatus::Paused,
         ];
         let mut active_goals = match self
@@ -177,6 +178,7 @@ fn goal_run_status_label(status: GoalRunStatus) -> &'static str {
         GoalRunStatus::Planning => "planning",
         GoalRunStatus::Running => "running",
         GoalRunStatus::AwaitingApproval => "awaiting-approval",
+        GoalRunStatus::AwaitingReview => "awaiting-review",
         GoalRunStatus::Paused => "paused",
         GoalRunStatus::Blocked => "blocked",
         GoalRunStatus::Completed => "completed",

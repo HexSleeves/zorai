@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAgentStore, type AgentThread } from "@/lib/agentStore";
+import { clearThreadRuntimeOverlay } from "@/lib/agentStore/threadProfileMerge";
 import { applyThreadProviderModel } from "./threadRuntimeActions";
 
 const agentGetThreadExecutionProfile = vi.fn();
@@ -44,6 +45,8 @@ function thread(id: string, daemonThreadId: string): AgentThread {
 describe("thread runtime actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    clearThreadRuntimeOverlay("thread-a");
+    clearThreadRuntimeOverlay("thread-b");
     agentGetThreadExecutionProfile.mockResolvedValue({ profile: { reasoning_effort: "high" } });
     agentSetThreadExecutionProfile.mockResolvedValue({});
     useAgentStore.setState({
@@ -72,5 +75,47 @@ describe("thread runtime actions", () => {
     });
     expect(useAgentStore.getState().threads[1]).not.toHaveProperty("profileProvider");
     expect(useAgentStore.getState().threads[1]).not.toHaveProperty("profileModel");
+  });
+
+  it("updates the local thread profile before the daemon round-trip finishes", async () => {
+    let finishGet: (value: unknown) => void = () => {};
+    agentGetThreadExecutionProfile.mockImplementation(
+      () => new Promise((resolve) => {
+        finishGet = resolve;
+      }),
+    );
+    const selected = useAgentStore.getState().threads[0];
+    const pending = applyThreadProviderModel(selected, "z.ai-coding-plan", "glm-5.3");
+
+    expect(useAgentStore.getState().threads[0]).toMatchObject({
+      profileProvider: "z.ai-coding-plan",
+      profileModel: "glm-5.3",
+    });
+    expect(agentSetThreadExecutionProfile).not.toHaveBeenCalled();
+
+    finishGet({ profile: { reasoning_effort: "high" } });
+    await pending;
+    expect(agentSetThreadExecutionProfile).toHaveBeenCalled();
+  });
+
+  it("restores the overlay when the daemon rejects a provider change", async () => {
+    agentSetThreadExecutionProfile.mockResolvedValue({ error: "daemon rejected profile" });
+    const selected = useAgentStore.getState().threads[0];
+    await expect(applyThreadProviderModel(selected, "openrouter", "model-thread-a")).rejects.toThrow(
+      "daemon rejected profile",
+    );
+    expect(useAgentStore.getState().threads[0].profileProvider).toBeNull();
+  });
+
+  it("fails loudly when the thread is not linked to the daemon", async () => {
+    useAgentStore.setState({
+      threads: [thread("thread-a", "")],
+      activeThreadId: "thread-a",
+    } as any);
+    const selected = useAgentStore.getState().threads[0];
+    await expect(applyThreadProviderModel(selected, "openrouter", "model-thread-a")).rejects.toThrow(
+      /not linked to the daemon/i,
+    );
+    expect(agentSetThreadExecutionProfile).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { memo, useMemo, useState } from "react";
 import { buildToolReviewPresentation } from "../toolReviewPresentation";
 import type { ToolEventGroup } from "./types";
 import { getToolDiffPresentation, ToolDiffView } from "./toolDiffPresentation";
@@ -142,3 +142,19 @@ export function ToolEventRow({ group }: { group: ToolEventGroup }) {
     </div>
   );
 }
+
+/**
+ * Memoized tool row: `buildDisplayItems` returns fresh group objects on every
+ * rebuild, but groups for completed tool calls are content-stable, so compare
+ * by value instead of identity. Without this, every streaming frame re-runs
+ * JSON.parse on tool arguments/results for every historical tool row.
+ */
+export const MemoizedToolEventRow = memo(ToolEventRow, (prev, next) =>
+  prev.group.toolCallId === next.group.toolCallId
+  && prev.group.toolName === next.group.toolName
+  && prev.group.toolArguments === next.group.toolArguments
+  && prev.group.resultContent === next.group.resultContent
+  && prev.group.status === next.group.status
+  && prev.group.createdAt === next.group.createdAt
+  && prev.group.welesReview === next.group.welesReview,
+);

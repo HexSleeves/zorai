@@ -156,6 +156,158 @@ pub(crate) fn prepare_llm_request_with_reused_user_message(
     }
 }
 
+
+/// Build an LLM request from an explicit message slice instead of `thread.messages`.
+/// Used when the caller has already patched the user message content without cloning
+/// the whole AgentThread — avoids per-turn O(thread_len) heap churn on megathreads.
+pub(crate) fn prepare_llm_request_from_messages(
+    messages: &[AgentMessage],
+    thread: &AgentThread,
+    config: &AgentConfig,
+    provider_config: &ProviderConfig,
+    reused_user_message: Option<&str>,
+) -> PreparedLlmRequest {
+    let uses_chatgpt_subscription_responses = config.provider == PROVIDER_ID_OPENAI
+        && provider_config.auth_source == crate::agent::types::AuthSource::ChatgptSubscription;
+    let mut selected_transport =
+        if provider_supports_transport(&config.provider, provider_config.api_transport) {
+            provider_config.api_transport
+        } else {
+            default_api_transport_for_provider(&config.provider)
+        };
+    if uses_chatgpt_subscription_responses {
+        selected_transport = ApiTransport::Responses;
+    }
+    if let Some(fixed_transport) =
+        fixed_api_transport_for_model(&config.provider, &provider_config.model)
+    {
+        selected_transport = fixed_transport;
+    }
+    let compacted = compact_messages_for_request(messages, config, provider_config);
+    let compaction_active =
+        compacted.len() != messages.len() || compacted.iter().any(message_is_compaction_summary);
+    let request_messages = if compacted.iter().any(message_is_compaction_summary) {
+        append_owner_only_pins_after_artifact(
+            &compacted,
+            owner_only_pins_within_budget(thread, config, provider_config),
+        )
+    } else {
+        compacted.clone()
+    };
+
+    let is_claude_code_cli =
+        config.provider == zorai_shared::providers::PROVIDER_ID_CLAUDE_CODE_CLI;
+    if selected_transport == ApiTransport::NativeAssistant
+        && (is_claude_code_cli
+            || (!compaction_active && !provider_config.assistant_id.trim().is_empty()))
+    {
+        let latest_user_message = messages
+            .iter()
+            .rev()
+            .find(|message| message.role == MessageRole::User)
+            .cloned();
+        if let Some(user_message) = latest_user_message {
+            let assistant_id_matches = is_claude_code_cli
+                || thread.upstream_assistant_id.as_deref()
+                    == Some(provider_config.assistant_id.as_str());
+            return PreparedLlmRequest {
+                messages: messages_to_api_format(&[user_message]),
+                transport: ApiTransport::NativeAssistant,
+                previous_response_id: None,
+                upstream_thread_id: if thread.upstream_transport
+                    == Some(ApiTransport::NativeAssistant)
+                    && thread.upstream_provider.as_deref() == Some(config.provider.as_str())
+                    && thread.upstream_model.as_deref() == Some(provider_config.model.as_str())
+                    && assistant_id_matches
+                {
+                    thread.upstream_thread_id.clone()
+                } else {
+                    None
+                },
+                force_connection_close: false,
+            };
+        }
+    }
+
+    if selected_transport == ApiTransport::Responses {
+        let previous_response_id = if !uses_chatgpt_subscription_responses
+            && supports_response_continuity(&config.provider)
+        {
+            request_messages
+                .iter()
+                .enumerate()
+                .rev()
+                .find(|(_, message)| {
+                    message.role == MessageRole::Assistant
+                        && message.response_id.is_some()
+                        && message.provider.as_deref() == Some(config.provider.as_str())
+                        && message.model.as_deref() == Some(provider_config.model.as_str())
+                        && message.api_transport == Some(ApiTransport::Responses)
+                })
+                .and_then(|(anchor_index, anchor_message)| {
+                    let trailing = &request_messages[anchor_index + 1..];
+                    if config.provider == PROVIDER_ID_GITHUB_COPILOT
+                        && trailing.iter().any(|message| {
+                            message.role == MessageRole::Tool
+                                || message
+                                    .tool_calls
+                                    .as_ref()
+                                    .is_some_and(|tool_calls| !tool_calls.is_empty())
+                        })
+                    {
+                        return None;
+                    }
+                    let trailing_messages =
+                        continuation_api_messages(trailing, reused_user_message);
+                    if trailing_messages.is_empty() {
+                        None
+                    } else {
+                        Some((trailing_messages, anchor_message.response_id.clone()))
+                    }
+                })
+        } else {
+            None
+        };
+
+        if let Some((messages, previous_response_id)) = previous_response_id {
+            let mut messages = messages;
+            inject_reused_user_message_if_missing(&mut messages, reused_user_message);
+            return PreparedLlmRequest {
+                messages,
+                transport: ApiTransport::Responses,
+                previous_response_id,
+                upstream_thread_id: None,
+                force_connection_close: false,
+            };
+        }
+
+        let mut messages = messages_to_api_format(&request_messages);
+        inject_reused_user_message_if_missing(&mut messages, reused_user_message);
+        return PreparedLlmRequest {
+            messages,
+            transport: ApiTransport::Responses,
+            previous_response_id: None,
+            upstream_thread_id: uses_chatgpt_subscription_responses.then(|| {
+                thread
+                    .upstream_thread_id
+                    .clone()
+                    .unwrap_or_else(|| thread.id.clone())
+            }),
+            force_connection_close: false,
+        };
+    }
+
+    let mut messages = messages_to_api_format(&request_messages);
+    inject_reused_user_message_if_missing(&mut messages, reused_user_message);
+    PreparedLlmRequest {
+        messages,
+        transport: ApiTransport::ChatCompletions,
+        previous_response_id: None,
+        upstream_thread_id: None,
+        force_connection_close: false,
+    }
+}
+
 pub(crate) fn inject_reused_user_message_if_missing(
     messages: &mut Vec<ApiMessage>,
     reused_user_message: Option<&str>,

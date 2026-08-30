@@ -107,13 +107,12 @@ fn goal_view_renders_goal_run_dossier_sections() {
     let plain = render_task_view(&mut model);
 
     assert!(plain.contains("Goal Mission Control"), "{plain}");
-    assert!(plain.contains("Plan"), "{plain}");
-    assert!(plain.contains("Run timeline"), "{plain}");
-    assert!(plain.contains("Dossier"), "{plain}");
+    assert!(plain.contains("Work"), "{plain}");
+    assert!(plain.contains("Review"), "{plain}");
+    assert!(plain.contains("Activity"), "{plain}");
     assert!(plain.contains("Files"), "{plain}");
-    assert!(plain.contains("Prompt"), "{plain}");
-    assert!(plain.contains("Phone logging flow"), "{plain}");
-    assert!(plain.contains("Execution Dossier"), "{plain}");
+    assert!(plain.contains("Goal Prompt"), "{plain}");
+    assert!(!plain.contains("Execution Dossier"), "{plain}");
 }
 
 #[test]
@@ -176,10 +175,11 @@ fn goal_view_renders_goal_control_hints() {
     let plain = render_task_view(&mut model);
 
     assert!(plain.contains("Goal Mission Control"), "{plain}");
-    assert!(plain.contains("Goal"), "{plain}");
-    assert!(plain.contains("Progress"), "{plain}");
-    assert!(plain.contains("Active agent"), "{plain}");
-    assert!(plain.contains("Needs attention"), "{plain}");
+    assert!(plain.contains("Work"), "{plain}");
+    assert!(plain.contains("Review"), "{plain}");
+    assert!(plain.contains("Activity"), "{plain}");
+    assert!(!plain.contains("Active agent"), "{plain}");
+    assert!(!plain.contains("Needs attention"), "{plain}");
 }
 
 #[test]
@@ -243,8 +243,8 @@ fn goal_view_renders_visual_status_banner_and_control_chips() {
     let plain = render_task_view(&mut model);
 
     assert!(plain.contains("Goal Mission Control"), "{plain}");
-    assert!(plain.contains("Plan"), "{plain}");
-    assert!(plain.contains("Implement"), "{plain}");
+    assert!(plain.contains("Work"), "{plain}");
+    assert!(plain.contains("Review"), "{plain}");
     assert!(!plain.contains("Run Status"), "{plain}");
     assert!(!plain.contains("Controls"), "{plain}");
 }
@@ -350,15 +350,15 @@ fn goal_view_renders_live_activity_with_tools_files_and_todos() {
         goal_run_id: "goal-1".to_string(),
         step_id: None,
     });
-    model.goal_workspace.set_step_expanded("step-1", true);
+    model.goal_workspace.set_mode(crate::state::goal_workspace::GoalWorkspaceMode::Activity);
 
     let plain = render_task_view(&mut model);
 
-    assert!(plain.contains("Run timeline"), "{plain}");
+    assert!(plain.contains("Run activity"), "{plain}");
     assert!(plain.contains("apply_patch updated goal view"), "{plain}");
     assert!(plain.contains("goal todo updated"), "{plain}");
     assert!(plain.contains("Inspect failing test"), "{plain}");
-    assert!(plain.contains("Selected Timeline Item"), "{plain}");
+    assert!(plain.contains("Selected activity"), "{plain}");
     assert!(plain.contains("[details]"), "{plain}");
 }
 
@@ -507,10 +507,13 @@ fn goal_view_paused_restart_renders_review_guidance() {
         goal_run_id: "goal-1".to_string(),
         step_id: None,
     });
+    model
+        .goal_workspace
+        .set_mode(crate::state::goal_workspace::GoalWorkspaceMode::Activity);
 
     let plain = render_task_view(&mut model);
 
-    assert!(plain.contains("Run timeline"), "{plain}");
+    assert!(plain.contains("Run activity"), "{plain}");
     assert!(
         plain.contains("Daemon restarted; goal run paused"),
         "{plain}"

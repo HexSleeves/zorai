@@ -353,7 +353,7 @@ pub(crate) fn add_available_tools_part_c(
         },
         "required": ["provider"]
     })));
-    tools.push(tool_def(tool_names::LIST_AGENTS, "List agent runtime targets and the provider/model each one currently uses as its LLM access point. This does not report spawned child-task progress; use `list_subagents` for that.", serde_json::json!({
+    tools.push(tool_def(tool_names::LIST_AGENTS, "List runtime agent targets and spawnable specialist definitions. Call this when you need to pick a specialist before `spawn_subagent`. Filter on `spawnable: true` for spawnable specialists. This does not report spawned child-task progress; use `list_subagents` for that.", serde_json::json!({
         "type": "object",
         "properties": {}
     })));
@@ -372,7 +372,7 @@ pub(crate) fn add_available_tools_part_c(
             "required": ["agent", "provider", "model"]
         })));
     }
-    tools.push(tool_def(tool_names::SPAWN_SUBAGENT, "Spawn a bounded child task under the current task or thread for parallel, narrowly scoped work.", serde_json::json!({
+    tools.push(tool_def(tool_names::SPAWN_SUBAGENT, "Spawn a bounded child task under the current task or thread. If you need a specialist, call `list_agents` first and use a matching title.", serde_json::json!({
         "type": "object",
         "properties": {
             "title": { "type": "string", "description": "Short subagent title" },
@@ -426,7 +426,7 @@ pub(crate) fn add_available_tools_part_c(
         },
         "required": ["additional_tokens", "reason"]
     })));
-    tools.push(tool_def(tool_names::MESSAGE_AGENT, "Send a private internal DM to another zorai agent and get the reply; it does not switch the visible thread responder. Use `handoff_thread_agent` when the operator should talk to another agent directly.", serde_json::json!({
+    tools.push(tool_def(tool_names::MESSAGE_AGENT, "Send a private internal DM to another zorai agent. Returns immediately; the reply arrives later as a continuation on this thread. It does not switch the visible thread responder. Use `handoff_thread_agent` when the operator should talk to another agent directly.", serde_json::json!({
         "type": "object",
         "properties": {
             "target": { "type": "string", "description": "Receiving agent id or persona name, e.g. `svarog`, `rarog`, `weles`" },

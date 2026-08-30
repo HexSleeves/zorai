@@ -202,6 +202,8 @@ pub struct AgentEngine {
     /// External agent runners for openclaw/hermes backends.
     pub external_runners: RwLock<HashMap<String, external_runner::ExternalAgentRunner>>,
     pub(super) subagent_runtime: RwLock<HashMap<String, SubagentRuntimeStats>>,
+    pub(super) agent_terminal_leases:
+        Mutex<HashMap<uuid::Uuid, super::terminal_leases::AgentTerminalLease>>,
     pub(super) trusted_weles_tasks: RwLock<HashSet<String>>,
     pub(super) weles_health: RwLock<WelesHealthStatus>,
     /// Active cancellation tokens per thread for stop-stream behavior.
@@ -215,8 +217,6 @@ pub struct AgentEngine {
     pub(super) active_operator_sessions: RwLock<HashMap<String, u64>>,
     pub(super) pending_operator_approvals: RwLock<HashMap<String, PendingApprovalObservation>>,
     pub(super) pending_approval_commands: RwLock<HashMap<String, String>>,
-    pub(super) quiet_goal_recovery:
-        Mutex<HashMap<String, super::goal_quiet_recovery::QuietGoalRecoveryState>>,
     pub(super) critique_approval_continuations:
         Mutex<HashMap<String, CritiqueApprovalContinuation>>,
     pub(super) policy_escalation_session_grants: RwLock<HashSet<String>>,
@@ -232,6 +232,7 @@ pub struct AgentEngine {
     pub(super) auto_thread_title_jobs:
         mpsc::UnboundedSender<super::thread_title::AutoThreadTitleJob>,
     pub(super) prompt_queue_wake_tx: mpsc::UnboundedSender<String>,
+    pub(super) internal_dm_jobs_tx: mpsc::UnboundedSender<super::messaging::InternalDmJob>,
     #[cfg(test)]
     pub(super) skill_discovery_test_runner:
         std::sync::OnceLock<Arc<dyn super::skill_preflight::SkillDiscoveryTestRunner>>,
@@ -361,6 +362,7 @@ impl AgentEngine {
         let (skill_discovery_result_tx, skill_discovery_result_rx) = mpsc::unbounded_channel();
         let (auto_thread_title_jobs, auto_thread_title_rx) = mpsc::unbounded_channel();
         let (prompt_queue_wake_tx, prompt_queue_wake_rx) = mpsc::unbounded_channel();
+        let (internal_dm_jobs_tx, internal_dm_jobs_rx) = mpsc::unbounded_channel();
 
         let mut runners = HashMap::new();
         for agent_type in &["openclaw", "hermes"] {
@@ -462,6 +464,7 @@ impl AgentEngine {
             webhook_listener_addr: RwLock::new(None),
             external_runners: RwLock::new(runners),
             subagent_runtime: RwLock::new(HashMap::new()),
+            agent_terminal_leases: Mutex::new(HashMap::new()),
             trusted_weles_tasks: RwLock::new(HashSet::new()),
             weles_health: RwLock::new(WelesHealthStatus {
                 state: WelesHealthState::Healthy,
@@ -476,7 +479,6 @@ impl AgentEngine {
             active_operator_sessions: RwLock::new(HashMap::new()),
             pending_operator_approvals: RwLock::new(HashMap::new()),
             pending_approval_commands: RwLock::new(HashMap::new()),
-            quiet_goal_recovery: Mutex::new(HashMap::new()),
             critique_approval_continuations: Mutex::new(HashMap::new()),
             policy_escalation_session_grants: RwLock::new(HashSet::new()),
             task_approval_rules: RwLock::new(Vec::new()),
@@ -489,6 +491,7 @@ impl AgentEngine {
             skill_discovery_result_tx,
             auto_thread_title_jobs,
             prompt_queue_wake_tx,
+            internal_dm_jobs_tx,
             #[cfg(test)]
             skill_discovery_test_runner: std::sync::OnceLock::new(),
             #[cfg(test)]
@@ -533,12 +536,14 @@ impl AgentEngine {
         super::thread_title::spawn_auto_thread_title_worker(engine.clone(), auto_thread_title_rx);
         super::prompt_queue::spawn_prompt_queue_worker(engine.clone(), prompt_queue_wake_rx);
         super::prompt_queue::spawn_prompt_queue_startup_flush(engine.clone());
+        super::messaging::spawn_internal_dm_worker(engine.clone(), internal_dm_jobs_rx);
         mlflow_tracing.start(
             Arc::downgrade(&engine),
             event_tx.subscribe(),
             initial_mlflow_config,
         );
         Self::spawn_svarog_workspace_reconciliation(engine.clone());
+        Self::spawn_agent_terminal_lease_worker(engine.clone());
 
         engine
     }

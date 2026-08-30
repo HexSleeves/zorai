@@ -2822,6 +2822,229 @@ async fn sync_thread_execution_profiles_for_agent_updates_owned_threads() {
 }
 
 #[tokio::test]
+async fn set_sub_agent_syncs_owned_thread_execution_profiles() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let thread_id = "thread-subagent-owned";
+    let subagent_id = "reviewer";
+
+    engine.threads.write().await.insert(
+        thread_id.to_string(),
+        make_thread(
+            thread_id,
+            Some("Reviewer"),
+            "Reviewer thread",
+            false,
+            1,
+            2,
+            vec![AgentMessage::user("hi", 1)],
+        ),
+    );
+    engine.thread_execution_profiles.write().await.insert(
+        thread_id.to_string(),
+        crate::agent::types::ThreadExecutionProfile {
+            provider: Some("ollama".to_string()),
+            model: Some("glm-5.3:cloud".to_string()),
+            reasoning_effort: None,
+            context_window_tokens: None,
+        },
+    );
+
+    engine
+        .set_sub_agent(crate::agent::types::SubAgentDefinition {
+            id: subagent_id.to_string(),
+            name: "Reviewer".to_string(),
+            provider: "z.ai-coding-plan".to_string(),
+            model: "glm-5.3".to_string(),
+            role: None,
+            system_prompt: None,
+            tool_whitelist: None,
+            tool_blacklist: None,
+            context_budget_tokens: None,
+            context_window_tokens: None,
+            max_duration_secs: None,
+            supervisor_config: None,
+            enabled: true,
+            builtin: false,
+            immutable_identity: false,
+            disable_allowed: true,
+            delete_allowed: true,
+            protected_reason: None,
+            reasoning_effort: None,
+            api_transport: None,
+            openrouter_provider_order: Vec::new(),
+            openrouter_provider_ignore: Vec::new(),
+            openrouter_allow_fallbacks: None,
+            huggingface_provider: None,
+            base_url: None,
+            claude_permission_mode: None,
+            created_at: 1,
+        })
+        .await
+        .expect("set sub-agent");
+
+    let profile = engine
+        .thread_execution_profiles
+        .read()
+        .await
+        .get(thread_id)
+        .cloned()
+        .expect("execution profile should exist");
+    assert_eq!(profile.provider.as_deref(), Some("z.ai-coding-plan"));
+    assert_eq!(profile.model.as_deref(), Some("glm-5.3"));
+}
+
+#[tokio::test]
+async fn set_sub_agent_syncs_owned_thread_execution_profiles_for_rod_builtin_persona() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let thread_id = "thread-rod-owned";
+
+    {
+        let mut config = engine.get_config().await;
+        config.builtin_sub_agents.rod.provider = Some("ollama".to_string());
+        config.builtin_sub_agents.rod.model = Some("glm-5.3:cloud".to_string());
+        engine.set_config(config).await;
+    }
+
+    engine.threads.write().await.insert(
+        thread_id.to_string(),
+        make_thread(
+            thread_id,
+            Some("Rod"),
+            "Rod thread",
+            false,
+            1,
+            2,
+            vec![AgentMessage::user("hi", 1)],
+        ),
+    );
+    engine.thread_execution_profiles.write().await.insert(
+        thread_id.to_string(),
+        crate::agent::types::ThreadExecutionProfile {
+            provider: Some("ollama".to_string()),
+            model: Some("glm-5.3:cloud".to_string()),
+            reasoning_effort: None,
+            context_window_tokens: None,
+        },
+    );
+
+    engine
+        .set_sub_agent(crate::agent::types::SubAgentDefinition {
+            id: "rod".to_string(),
+            name: "Rod".to_string(),
+            provider: "z.ai-coding-plan".to_string(),
+            model: "glm-5.3".to_string(),
+            role: None,
+            system_prompt: None,
+            tool_whitelist: None,
+            tool_blacklist: None,
+            context_budget_tokens: None,
+            context_window_tokens: None,
+            max_duration_secs: None,
+            supervisor_config: None,
+            enabled: true,
+            builtin: true,
+            immutable_identity: true,
+            disable_allowed: false,
+            delete_allowed: false,
+            protected_reason: None,
+            reasoning_effort: None,
+            api_transport: None,
+            openrouter_provider_order: Vec::new(),
+            openrouter_provider_ignore: Vec::new(),
+            openrouter_allow_fallbacks: None,
+            huggingface_provider: None,
+            base_url: None,
+            claude_permission_mode: None,
+            created_at: 1,
+        })
+        .await
+        .expect("set rod builtin persona");
+
+    let config = engine.get_config().await;
+    assert_eq!(
+        config.builtin_sub_agents.rod.provider.as_deref(),
+        Some("z.ai-coding-plan")
+    );
+    assert_eq!(
+        config.builtin_sub_agents.rod.model.as_deref(),
+        Some("glm-5.3")
+    );
+    assert!(
+        !config.sub_agents.iter().any(|entry| entry.id == "rod"),
+        "rod should not be duplicated in sub_agents"
+    );
+
+    let profile = engine
+        .thread_execution_profiles
+        .read()
+        .await
+        .get(thread_id)
+        .cloned()
+        .expect("execution profile should exist");
+    assert_eq!(profile.provider.as_deref(), Some("z.ai-coding-plan"));
+    assert_eq!(profile.model.as_deref(), Some("glm-5.3"));
+}
+
+#[tokio::test]
+async fn commit_thread_execution_profile_if_unchanged_skips_newer_user_selection() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+    let thread_id = "thread-runtime-switch";
+    let original = crate::agent::types::ThreadExecutionProfile {
+        provider: Some("ollama".to_string()),
+        model: Some("glm-5.3:cloud".to_string()),
+        reasoning_effort: Some("high".to_string()),
+        context_window_tokens: Some(1_000_000),
+    };
+    engine
+        .thread_execution_profiles
+        .write()
+        .await
+        .insert(thread_id.to_string(), original.clone());
+    engine.thread_execution_profiles.write().await.insert(
+        thread_id.to_string(),
+        crate::agent::types::ThreadExecutionProfile {
+            provider: Some("z.ai-coding-plan".to_string()),
+            model: Some("glm-5.3".to_string()),
+            reasoning_effort: Some("high".to_string()),
+            context_window_tokens: Some(1_000_000),
+        },
+    );
+
+    let wrote = engine
+        .commit_thread_execution_profile_if_unchanged(
+            thread_id,
+            Some(&original),
+            crate::agent::types::ThreadExecutionProfile {
+                provider: Some("ollama".to_string()),
+                model: Some("glm-5.3:cloud".to_string()),
+                reasoning_effort: Some("high".to_string()),
+                context_window_tokens: Some(1_000_000),
+            },
+        )
+        .await;
+
+    assert!(
+        !wrote,
+        "a newer user-selected profile must not be overwritten"
+    );
+    let stored = engine
+        .thread_execution_profiles
+        .read()
+        .await
+        .get(thread_id)
+        .cloned()
+        .expect("profile should remain");
+    assert_eq!(stored.provider.as_deref(), Some("z.ai-coding-plan"));
+    assert_eq!(stored.model.as_deref(), Some("glm-5.3"));
+}
+
+#[tokio::test]
 async fn agent_thread_detail_json_backfills_agent_name_from_message_author_when_missing() {
     // Why this matters: older threads (or in-memory state that lost the field)
     // can be persisted without `agent_name`, making the TUI's sticky owner

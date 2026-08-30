@@ -8,6 +8,9 @@ pub enum GoalRunStatus {
     Planning,
     Running,
     AwaitingApproval,
+    /// Worker claimed the goal is done and is blocked until the owner
+    /// supervisor accepts, soft-rejects, or hard-rejects.
+    AwaitingReview,
     Paused,
     /// Non-terminal: governance closed a transition gate (e.g. policy
     /// denial, missing provenance, target-scope mismatch) and the run
@@ -53,6 +56,25 @@ impl GoalRunStatus {
                 | GoalRunStatus::PartiallyCompensated
                 | GoalRunStatus::BreakGlass
         )
+    }
+
+    pub(in crate::agent) fn as_label(self) -> &'static str {
+        match self {
+            Self::Queued => "queued",
+            Self::Planning => "planning",
+            Self::Running => "running",
+            Self::AwaitingApproval => "awaiting_approval",
+            Self::AwaitingReview => "awaiting_review",
+            Self::Paused => "paused",
+            Self::Blocked => "blocked",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::Cancelled => "cancelled",
+            Self::Contained => "contained",
+            Self::Compensated => "compensated",
+            Self::PartiallyCompensated => "partially_compensated",
+            Self::BreakGlass => "break_glass",
+        }
     }
 }
 
@@ -249,6 +271,8 @@ pub struct GoalRun {
     pub compensation_summary: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub active_task_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_review_report: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duration_ms: Option<u64>,
     #[serde(default)]

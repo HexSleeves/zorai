@@ -296,6 +296,7 @@ async fn policy_halt_aborts_before_guarded_tool_execution_and_persists_failure_t
             compensation_status: None,
             compensation_summary: None,
             active_task_id: Some("task-policy-loop-proof".to_string()),
+            pending_review_report: None,
             duration_ms: None,
             steps: vec![crate::agent::types::GoalRunStep {
                 id: "step-1".to_string(),

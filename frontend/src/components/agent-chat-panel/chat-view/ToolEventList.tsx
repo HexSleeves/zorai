@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ToolEventAttribution, ToolEventGroup } from "./types";
-import { ToolEventRow } from "./ToolEventRow";
+import { MemoizedToolEventRow } from "./ToolEventRow";
 
 export function ToolEventList({
   groups,
@@ -51,7 +51,7 @@ export function ToolEventList({
       {expanded && (
         <div className="acp-tool-list__body">
           {groups.map((group) => (
-            <ToolEventRow key={group.key} group={group} />
+            <MemoizedToolEventRow key={group.key} group={group} />
           ))}
         </div>
       )}

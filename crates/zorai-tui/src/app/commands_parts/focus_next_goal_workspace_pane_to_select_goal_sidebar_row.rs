@@ -95,13 +95,11 @@ impl TuiModel {
 
     pub(crate) fn cycle_goal_workspace_mode(&mut self, delta: i32) -> bool {
         let modes = [
-            crate::state::goal_workspace::GoalWorkspaceMode::Goal,
-            crate::state::goal_workspace::GoalWorkspaceMode::Files,
-            crate::state::goal_workspace::GoalWorkspaceMode::Progress,
-            crate::state::goal_workspace::GoalWorkspaceMode::Usage,
-            crate::state::goal_workspace::GoalWorkspaceMode::ActiveAgent,
+            crate::state::goal_workspace::GoalWorkspaceMode::Work,
+            crate::state::goal_workspace::GoalWorkspaceMode::Review,
+            crate::state::goal_workspace::GoalWorkspaceMode::Activity,
             crate::state::goal_workspace::GoalWorkspaceMode::Threads,
-            crate::state::goal_workspace::GoalWorkspaceMode::NeedsAttention,
+            crate::state::goal_workspace::GoalWorkspaceMode::Files,
         ];
         let current = modes
             .iter()
@@ -441,11 +439,14 @@ impl TuiModel {
             crate::widgets::goal_workspace::GoalWorkspaceAction::OpenActions => {
                 self.open_goal_step_action_picker()
             }
-            crate::widgets::goal_workspace::GoalWorkspaceAction::RetryStep => {
-                self.request_selected_goal_step_retry_confirmation()
+            crate::widgets::goal_workspace::GoalWorkspaceAction::AcceptReview => {
+                self.request_goal_review_verdict_confirmation("accept")
             }
-            crate::widgets::goal_workspace::GoalWorkspaceAction::RerunFromStep => {
-                self.request_selected_goal_step_rerun_confirmation()
+            crate::widgets::goal_workspace::GoalWorkspaceAction::SoftReject => {
+                self.request_goal_review_verdict_confirmation("soft_reject")
+            }
+            crate::widgets::goal_workspace::GoalWorkspaceAction::HardReject => {
+                self.request_goal_review_verdict_confirmation("hard_reject")
             }
             crate::widgets::goal_workspace::GoalWorkspaceAction::RefreshGoal => {
                 let MainPaneView::Task(sidebar::SidebarItemTarget::GoalRun { goal_run_id, .. }) =

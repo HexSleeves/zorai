@@ -1,5 +1,9 @@
 #![recursion_limit = "512"]
 
+#[cfg(feature = "jemalloc")]
+#[global_allocator]
+static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
+
 pub mod agent;
 mod criu;
 mod db_cli;

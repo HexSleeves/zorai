@@ -1,8 +1,7 @@
 use super::super::*;
 use crate::state::goal_workspace::{GoalWorkspaceMode, GoalWorkspaceState};
 use crate::state::task::{
-    AgentTask, GoalAgentAssignment, GoalRun, GoalRunEvent, GoalRunModelUsage, GoalRunStep,
-    GoalRuntimeOwnerProfile, TaskAction, TaskState, TaskStatus, ThreadWorkContext, TodoItem,
+    GoalRun, GoalRunEvent, GoalRunStep, TaskAction, TaskState, ThreadWorkContext, TodoItem,
     TodoStatus, WorkContextEntry,
 };
 use crate::test_support::{env_var_lock, EnvVarGuard, ZORAI_DATA_DIR_ENV};
@@ -159,10 +158,12 @@ fn goal_workspace_renders_plan_timeline_and_details_panes() {
 
     let plain = render_plain_text(&state, 0);
 
-    assert!(plain.contains("Plan"), "{plain}");
-    assert!(plain.contains("Run timeline"), "{plain}");
-    assert!(plain.contains("Dossier"), "{plain}");
+    assert!(plain.contains("Work"), "{plain}");
+    assert!(plain.contains("Review"), "{plain}");
+    assert!(plain.contains("Activity"), "{plain}");
+    assert!(plain.contains("Threads"), "{plain}");
     assert!(plain.contains("Files"), "{plain}");
+    assert!(plain.contains("[Actions]"), "{plain}");
 }
 
 #[test]
@@ -174,7 +175,7 @@ fn goal_workspace_dossier_mode_renders_prompt_without_embedded_files_list() {
     assert!(plain.contains("Goal Prompt"), "{plain}");
     assert!(plain.contains("[Show]"), "{plain}");
     assert!(!plain.contains("Research the ecosystem"), "{plain}");
-    assert!(plain.contains("Main agent"), "{plain}");
+    assert!(plain.contains("Worker"), "{plain}");
     assert!(!plain.contains("/tmp/plan.md"), "{plain}");
 }
 
@@ -182,104 +183,43 @@ fn goal_workspace_dossier_mode_renders_prompt_without_embedded_files_list() {
 fn goal_workspace_renders_steps_and_nested_todos_for_expanded_step() {
     let mut state = GoalWorkspaceState::new();
     state.set_prompt_expanded(true);
-    state.set_step_expanded("step-1", true);
 
     let plain = render_plain_text(&state, 0);
 
-    assert!(plain.contains("Plan"), "{plain}");
-    assert!(plain.contains("Ship"), "{plain}");
+    assert!(plain.contains("Research the ecosystem"), "{plain}");
     assert!(plain.contains("Draft outline"), "{plain}");
     assert!(plain.contains("Verify sources"), "{plain}");
-    assert!(
-        !plain.contains("Interview the user before drafting the plan."),
-        "{plain}"
-    );
-    assert!(
-        !plain.contains("Capture constraints before outlining tasks."),
-        "{plain}"
-    );
 }
 
 #[test]
 fn goal_workspace_progress_mode_renders_progress_panel_copy() {
     let mut state = GoalWorkspaceState::new();
-    state.set_mode(GoalWorkspaceMode::Progress);
+    state.set_mode(GoalWorkspaceMode::Work);
 
     let plain = render_plain_text(&state, 0);
 
-    assert!(plain.contains("Progress"), "{plain}");
-    assert!(plain.contains("Checkpoints"), "{plain}");
+    assert!(plain.contains("Worker progress"), "{plain}");
+    assert!(plain.contains("Draft outline"), "{plain}");
+    assert!(plain.contains("Verify sources"), "{plain}");
 }
 
 #[test]
 fn goal_workspace_usage_mode_renders_model_and_agent_usage() {
     let mut tasks = sample_tasks();
-    tasks.reduce(TaskAction::TaskListReceived(vec![
-        AgentTask {
-            id: "task-root".into(),
-            title: "Root implementation".into(),
-            goal_run_id: Some("goal-1".into()),
-            status: Some(TaskStatus::Completed),
-            thread_id: Some("thread-root".into()),
-            ..Default::default()
-        },
-        AgentTask {
-            id: "task-review".into(),
-            title: "Verifier subagent".into(),
-            goal_run_id: Some("goal-1".into()),
-            parent_task_id: Some("task-root".into()),
-            status: Some(TaskStatus::Completed),
-            thread_id: Some("thread-review".into()),
-            ..Default::default()
-        },
-    ]));
-    tasks.reduce(TaskAction::GoalRunUpdate(GoalRun {
-        id: "goal-1".into(),
-        total_prompt_tokens: 1234,
-        total_completion_tokens: 567,
-        estimated_cost_usd: Some(0.0425),
-        planner_owner_profile: Some(GoalRuntimeOwnerProfile {
-            agent_label: "Svarog".into(),
-            provider: "openai".into(),
-            model: "gpt-5.4".into(),
-            reasoning_effort: None,
-        }),
-        runtime_assignment_list: vec![GoalAgentAssignment {
-            role_id: "weles".into(),
-            enabled: true,
-            provider: "openrouter".into(),
-            model: "anthropic/claude-sonnet-4".into(),
-            reasoning_effort: Some("high".into()),
-            inherit_from_main: false,
-        }],
-        model_usage: vec![GoalRunModelUsage {
-            provider: "openrouter".into(),
-            model: "anthropic/claude-sonnet-4".into(),
-            request_count: 2,
-            prompt_tokens: 1000,
-            completion_tokens: 500,
-            estimated_cost_usd: Some(0.04),
-            duration_ms: Some(90_000),
-        }],
-        sparse_update: true,
-        ..Default::default()
-    }));
+    if let Some(run) = tasks.goal_run_by_id_mut("goal-1") {
+        run.status = Some(crate::state::task::GoalRunStatus::AwaitingReview);
+        run.pending_review_report = Some("Ship the learning plan after source checks.".into());
+    }
     let mut state = GoalWorkspaceState::new();
-    state.set_mode(GoalWorkspaceMode::Usage);
+    state.set_mode(GoalWorkspaceMode::Review);
 
     let plain = render_plain_text_for_tasks(&tasks, &state, 0);
 
-    assert!(plain.contains("Usage"), "{plain}");
-    assert!(plain.contains("Goal total"), "{plain}");
-    assert!(plain.contains("prompt 1,234"), "{plain}");
-    assert!(plain.contains("completion 567"), "{plain}");
-    assert!(plain.contains("$0.0425"), "{plain}");
-    assert!(plain.contains("openrouter/anthropic/claude-so"), "{plain}");
-    assert!(plain.contains("nnet-4"), "{plain}");
-    assert!(plain.contains("2 req"), "{plain}");
-    assert!(plain.contains("Planner Svarog"), "{plain}");
-    assert!(plain.contains("Role weles"), "{plain}");
-    assert!(plain.contains("Subagent Verifier subagent"), "{plain}");
+    assert!(plain.contains("Supervisor review"), "{plain}");
+    assert!(plain.contains("Ship the learning plan"), "{plain}");
+    assert!(plain.contains("[Accept]"), "{plain}");
+    assert!(plain.contains("[Soft reject]"), "{plain}");
+    assert!(plain.contains("[Hard reject]"), "{plain}");
 }
 
 #[test]
@@ -289,43 +229,17 @@ fn goal_workspace_selected_step_dossier_uses_unit_projection_state() {
         id: "goal-1".into(),
         title: "Goal".into(),
         goal: "Verify completed step status.".into(),
-        status: Some(crate::state::task::GoalRunStatus::Running),
-        current_step_index: 1,
-        steps: vec![
-            GoalRunStep {
-                id: "step-1".into(),
-                title: "Rebuild matrix".into(),
-                status: Some(crate::state::task::GoalRunStatus::Completed),
-                order: 0,
-                summary: Some("Step passed verification.".into()),
-                ..Default::default()
-            },
-            GoalRunStep {
-                id: "step-2".into(),
-                title: "Run daemon session".into(),
-                status: Some(crate::state::task::GoalRunStatus::Running),
-                order: 1,
-                ..Default::default()
-            },
-        ],
-        dossier: Some(crate::state::task::GoalRunDossier {
-            projection_state: "in_progress".into(),
-            summary: Some("Overall run is still executing.".into()),
-            units: vec![crate::state::task::GoalDeliveryUnitRecord {
-                id: "step-1".into(),
-                title: "Rebuild matrix".into(),
-                status: "completed".into(),
-                summary: Some("Selected unit completed.".into()),
-                ..Default::default()
-            }],
-            ..Default::default()
-        }),
+        status: Some(crate::state::task::GoalRunStatus::AwaitingReview),
+        pending_review_report: Some("Rebuild matrix finished and is ready for accept.".into()),
         ..Default::default()
     }));
 
-    let plain = render_plain_text_for_tasks(&tasks, &GoalWorkspaceState::new(), 0);
+    let mut state = GoalWorkspaceState::new();
+    state.set_mode(GoalWorkspaceMode::Review);
+    let plain = render_plain_text_for_tasks(&tasks, &state, 0);
 
-    assert!(plain.contains("Projection completed"), "{plain}");
+    assert!(plain.contains("Rebuild matrix finished"), "{plain}");
+    assert!(plain.contains("[report]"), "{plain}");
 }
 
 #[test]
@@ -367,7 +281,7 @@ fn goal_workspace_threads_mode_renders_thread_inventory() {
     let plain = render_plain_text(&state, 0);
 
     assert!(plain.contains("Threads"), "{plain}");
-    assert!(plain.contains("Goal thread"), "{plain}");
+    assert!(plain.contains("Worker"), "{plain}");
     assert!(plain.contains("thread-1"), "{plain}");
 }
 
@@ -403,12 +317,12 @@ fn goal_workspace_thread_views_include_goal_scoped_live_todo_thread() {
     let mut state = GoalWorkspaceState::new();
     state.set_mode(GoalWorkspaceMode::Threads);
     let plain = render_plain_text_for_tasks(&tasks, &state, 0);
-    assert!(plain.contains("Live goal thread"), "{plain}");
-    assert!(plain.contains("thread-live"), "{plain}");
+    assert!(!plain.contains("Live goal thread"), "{plain}");
+    assert!(!plain.contains("thread-live"), "{plain}");
 
-    state.set_mode(GoalWorkspaceMode::ActiveAgent);
+    state.set_mode(GoalWorkspaceMode::Work);
     let plain = render_plain_text_for_tasks(&tasks, &state, 0);
-    assert!(plain.contains("thread-live"), "{plain}");
+    assert!(plain.contains("live worker todo"), "{plain}");
 }
 
 #[test]
@@ -440,6 +354,6 @@ fn goal_workspace_plan_falls_back_to_goal_task_thread_when_run_thread_ids_are_mi
 
     let plain = render_plain_text_for_tasks(&tasks, &GoalWorkspaceState::new(), 0);
 
-    assert!(plain.contains("Main agent"), "{plain}");
+    assert!(plain.contains("Worker"), "{plain}");
     assert!(plain.contains("thread-worker"), "{plain}");
 }

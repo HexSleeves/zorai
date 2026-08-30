@@ -26,8 +26,9 @@ interface GoalRunPanelProps {
   onSelectGoalRun: (goalRunId: string) => void;
   onChangeGoalRunState: (
     goalRunId: string,
-    action: "pause" | "resume" | "cancel" | "retry_step" | "rerun_from_step",
+    action: "pause" | "resume" | "cancel" | "accept" | "soft_reject" | "hard_reject",
     stepIndex?: number,
+    explanation?: string,
   ) => void;
   historyFailureQuery: string;
   setHistoryFailureQuery: Dispatch<SetStateAction<string>>;
@@ -272,31 +273,25 @@ export function GoalRunPanel({
           )}
 
           {totalGoalRunCount === 0 && (
-            <EmptyPanel message="No goal runs yet. Start a durable goal to let the daemon plan, execute, and reflect over time." />
+            <EmptyPanel message="No goal runs yet. Start a goal to let one worker work until the owner supervisor accepts." />
           )}
 
           {selectedGoalRun && (
             <div style={{ marginBottom: "var(--space-5)" }}>
               <SectionTitle
                 title="Goal Run Detail"
-                subtitle="Current plan, state, and learning output for the selected goal run"
+                subtitle="Worker thread, review report, and supervisor verdicts"
               />
               <GoalRunDetail
                 goalRun={selectedGoalRun}
                 agentRuns={selectedGoalRunAgentRuns}
                 busy={goalActionId === selectedGoalRun.id}
-                onRetryStep={(stepIndex) =>
+                onReview={(action, explanation) =>
                   onChangeGoalRunState(
                     selectedGoalRun.id,
-                    "retry_step",
-                    stepIndex,
-                  )
-                }
-                onRerunFromStep={(stepIndex) =>
-                  onChangeGoalRunState(
-                    selectedGoalRun.id,
-                    "rerun_from_step",
-                    stepIndex,
+                    action,
+                    undefined,
+                    explanation,
                   )
                 }
               />

@@ -63,6 +63,7 @@ fn sample_goal_run_record(id: &str, updated_at: u64) -> GoalRun {
         compensation_status: None,
         compensation_summary: None,
         active_task_id: None,
+        pending_review_report: None,
         duration_ms: None,
         steps: vec![GoalRunStep {
             id: format!("step-{id}"),
@@ -1865,6 +1866,7 @@ async fn goal_run_event_todo_snapshot_round_trips() -> Result<()> {
         compensation_status: None,
         compensation_summary: None,
         active_task_id: None,
+        pending_review_report: None,
         duration_ms: None,
         steps: vec![GoalRunStep {
             id: "step-1".to_string(),
@@ -3236,6 +3238,7 @@ async fn goal_run_extended_metadata_round_trips() -> Result<()> {
         compensation_status: Some("required".to_string()),
         compensation_summary: Some("rollback pending".to_string()),
         active_task_id: Some("task-2".to_string()),
+        pending_review_report: None,
         duration_ms: Some(888),
         launch_assignment_snapshot: vec![
             sample_assignment("planner", "openai", "gpt-5.4", Some("high")),

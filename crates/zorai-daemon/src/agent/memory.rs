@@ -375,65 +375,6 @@ pub(crate) async fn apply_memory_update(
     ))
 }
 
-pub(crate) async fn append_goal_memory_note(
-    agent_data_dir: &std::path::Path,
-    history: &HistoryStore,
-    update: &str,
-    goal_run_id: Option<&str>,
-) -> Result<()> {
-    let scope_id = current_agent_scope_id();
-    ensure_memory_files_for_scope(agent_data_dir, &scope_id).await?;
-
-    let trimmed = update.trim();
-    if trimmed.is_empty() {
-        return Ok(());
-    }
-
-    let path = memory_paths_for_scope(agent_data_dir, &scope_id).memory_path;
-    let existing = tokio::fs::read_to_string(&path).await.unwrap_or_default();
-    if existing.contains(trimmed) {
-        return Ok(());
-    }
-    validate_no_memory_contradictions(MemoryTarget::Memory, &existing, trimmed)?;
-
-    let heading = "## Learned During Goal Runs";
-    let bullet = format!("- {trimmed}");
-    let mut next = existing.trim_end().to_string();
-    if next.is_empty() {
-        next.push_str(DEFAULT_MEMORY.trim_end());
-    }
-    if !next.contains(heading) {
-        if !next.ends_with('\n') {
-            next.push('\n');
-        }
-        next.push('\n');
-        next.push_str(heading);
-        next.push('\n');
-    }
-    if !next.ends_with('\n') {
-        next.push('\n');
-    }
-    next.push_str(&bullet);
-    next.push('\n');
-
-    validate_memory_size(MemoryTarget::Memory, &next)?;
-    tokio::fs::write(&path, next).await?;
-    record_memory_provenance(
-        history,
-        MemoryTarget::Memory,
-        MemoryUpdateMode::Append,
-        trimmed,
-        &MemoryWriteContext {
-            source_kind: "goal_reflection",
-            thread_id: None,
-            task_id: None,
-            goal_run_id,
-        },
-    )
-    .await?;
-    Ok(())
-}
-
 fn append_content(existing: &str, addition: &str) -> String {
     let existing = existing.trim_end();
     if existing.is_empty() {
@@ -526,6 +467,7 @@ fn contradiction_error_message(
     )
 }
 
+#[cfg(test)]
 fn validate_no_memory_contradictions(
     target: MemoryTarget,
     existing: &str,

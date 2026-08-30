@@ -2,10 +2,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { buildHydratedRemoteThread, useAgentStore } from "@/lib/agentStore";
 import type { AgentMessage, AgentThread } from "@/lib/agentStore";
 import {
+  beginThreadHistoryReplace,
   loadDaemonThreadPageIntoLocalState,
   refreshDaemonThreadMessagesIntoLocalState,
   refreshDaemonThreadMetadataIntoLocalState,
+  resetThreadHistoryReplaceEpochsForTests,
   resolveAbsoluteMessageIndex,
+  resolveDaemonOwnedThreadId,
   trimDaemonThreadMessagesToLatestWindow,
 } from "./daemonHelpers";
 
@@ -18,6 +21,8 @@ vi.mock("@/lib/agentDaemonConfig", () => ({
 vi.mock("@/lib/agentTodos", () => ({
   fetchThreadTodos: vi.fn(async () => []),
 }));
+
+import { fetchThreadTodos } from "@/lib/agentTodos";
 
 function makeThread(id: string, daemonThreadId: string): AgentThread {
   return {
@@ -74,9 +79,40 @@ describe("resolveAbsoluteMessageIndex", () => {
   });
 });
 
+describe("resolveDaemonOwnedThreadId", () => {
+  it("uses the mapped daemon thread id instead of the local GUI id", () => {
+    expect(resolveDaemonOwnedThreadId({
+      threads: [
+        { id: "thread_1", daemonThreadId: "daemon-abc" },
+        { id: "thread_2", daemonThreadId: "daemon-other" },
+      ],
+      threadId: "thread_1",
+    })).toBe("daemon-abc");
+  });
+
+  it("falls back to the active daemon thread id while the mapping is still on the ref", () => {
+    expect(resolveDaemonOwnedThreadId({
+      threads: [{ id: "thread_1", daemonThreadId: null }],
+      threadId: "thread_1",
+      activeThreadId: "thread_1",
+      activeDaemonThreadId: "daemon-from-ref",
+    })).toBe("daemon-from-ref");
+  });
+
+  it("does not send a local-only thread id to the daemon", () => {
+    expect(resolveDaemonOwnedThreadId({
+      threads: [{ id: "thread_1", daemonThreadId: null }],
+      threadId: "thread_1",
+    })).toBeNull();
+  });
+});
+
 describe("loadDaemonThreadPageIntoLocalState", () => {
   beforeEach(() => {
+    resetThreadHistoryReplaceEpochsForTests();
     agentGetThread.mockReset();
+    vi.mocked(fetchThreadTodos).mockReset();
+    vi.mocked(fetchThreadTodos).mockResolvedValue([]);
     useAgentStore.setState({
       threads: [
         makeThread("local-stale", "daemon-1"),
@@ -232,6 +268,132 @@ describe("loadDaemonThreadPageIntoLocalState", () => {
       "queued-prompt:prompt-image",
     ]);
     expect(useAgentStore.getState().messages["local-active"]?.[1]?.contentBlocks).toHaveLength(1);
+  });
+
+  it("clears leftover daemon rows on thread entry and keeps only the loaded page plus live locals", async () => {
+    useAgentStore.setState({
+      threads: [{
+        ...makeThread("local-active", "daemon-1"),
+        messageCount: 2,
+        loadedMessageStart: 0,
+        loadedMessageEnd: 2,
+      }],
+      messages: {
+        "local-active": [
+          { ...makeMessage(0), id: "foreign-from-other-thread", content: "other thread" },
+          {
+            ...makeMessage(1),
+            id: "queued-prompt:keep-me",
+            role: "user",
+            content: "queued",
+          },
+        ],
+      },
+      activeThreadId: "local-active",
+    } as any);
+    const replaceEpoch = beginThreadHistoryReplace("local-active");
+    expect(useAgentStore.getState().messages["local-active"]?.map((message) => message.id)).toEqual([
+      "queued-prompt:keep-me",
+    ]);
+    agentGetThread.mockResolvedValue({
+      id: "daemon-1",
+      title: "Target thread",
+      agent_name: "Svarog",
+      messages: [{ id: "message-0", role: "user", content: "message 0", timestamp: 0 }],
+      total_message_count: 1,
+      loaded_message_start: 0,
+      loaded_message_end: 1,
+    });
+
+    await loadDaemonThreadPageIntoLocalState({
+      daemonThreadId: "daemon-1",
+      localThreadId: "local-active",
+      messageLimit: 50,
+      messageOffset: 0,
+      mergeMode: "replace",
+      replaceEpoch,
+      setThreadTodos: vi.fn(),
+      setDaemonTodosByThread: vi.fn(),
+    });
+
+    expect(useAgentStore.getState().messages["local-active"]?.map((message) => message.id)).toEqual([
+      "message-0",
+      "queued-prompt:keep-me",
+    ]);
+  });
+
+  it("discards a stale latest-page response after a newer thread entry", async () => {
+    let resolveThread: (value: unknown) => void = () => undefined;
+    agentGetThread.mockImplementation(() => new Promise((resolve) => {
+      resolveThread = resolve;
+    }));
+    useAgentStore.setState({
+      threads: [makeThread("local-active", "daemon-1")],
+      messages: {
+        "local-active": [
+          { ...makeMessage(0), id: "foreign-from-other-thread", content: "other thread" },
+        ],
+      },
+      activeThreadId: "local-active",
+    } as any);
+    const staleEpoch = beginThreadHistoryReplace("local-active");
+    const loading = loadDaemonThreadPageIntoLocalState({
+      daemonThreadId: "daemon-1",
+      localThreadId: "local-active",
+      messageLimit: 50,
+      messageOffset: 0,
+      mergeMode: "replace",
+      replaceEpoch: staleEpoch,
+      setThreadTodos: vi.fn(),
+      setDaemonTodosByThread: vi.fn(),
+    });
+
+    beginThreadHistoryReplace("local-active");
+    resolveThread({
+      id: "daemon-1",
+      title: "Stale other thread",
+      agent_name: "Svarog",
+      messages: [{ id: "stale-page", role: "assistant", content: "should not land", timestamp: 9 }],
+      total_message_count: 1,
+      loaded_message_start: 0,
+      loaded_message_end: 1,
+    });
+    const loaded = await loading;
+
+    expect(loaded).toBe(false);
+    expect(useAgentStore.getState().messages["local-active"]?.map((message) => message.id)).toEqual([]);
+  });
+
+  it("applies the latest page without waiting for thread todos", async () => {
+    let resolveTodos: (value: unknown[]) => void = () => undefined;
+    vi.mocked(fetchThreadTodos).mockImplementationOnce(() => new Promise((resolve) => {
+      resolveTodos = resolve;
+    }));
+    agentGetThread.mockResolvedValue({
+      id: "daemon-1",
+      title: "Loaded thread",
+      agent_name: "Svarog",
+      messages: [{ id: "message-0", role: "user", content: "message 0", timestamp: 0 }],
+      total_message_count: 1,
+      loaded_message_start: 0,
+      loaded_message_end: 1,
+    });
+
+    const loaded = await loadDaemonThreadPageIntoLocalState({
+      daemonThreadId: "daemon-1",
+      localThreadId: "local-active",
+      messageLimit: 50,
+      messageOffset: 0,
+      mergeMode: "replace",
+      setThreadTodos: vi.fn(),
+      setDaemonTodosByThread: vi.fn(),
+    });
+
+    expect(loaded).toBe(true);
+    expect(useAgentStore.getState().messages["local-active"]?.map((message) => message.id)).toEqual([
+      "message-0",
+    ]);
+    resolveTodos([]);
   });
 
   it("removes hydrated assistant tool-call arrays represented by standalone tool rows", () => {
@@ -842,6 +1004,66 @@ describe("loadDaemonThreadPageIntoLocalState", () => {
     expect(loaded).toBe(false);
     expect(useAgentStore.getState().messages["local-active"]).toHaveLength(50);
     expect(useAgentStore.getState().threads.find((thread) => thread.id === "local-active")?.loadedMessageStart).toBe(70);
+  });
+
+  it("keeps a locally selected provider when a stale daemon reload still reports ollama", async () => {
+    useAgentStore.setState({
+      threads: [{
+        ...makeThread("local-active", "daemon-1"),
+        profileProvider: "z.ai-coding-plan",
+        profileModel: "glm-5.3",
+        profileReasoningEffort: "high",
+        profileContextWindowTokens: 1_000_000,
+        messageCount: 1,
+        loadedMessageStart: 0,
+        loadedMessageEnd: 1,
+      }],
+      messages: {
+        "local-active": [makeMessage(0)],
+      },
+      activeThreadId: "local-active",
+    } as any);
+    agentGetThread.mockResolvedValue({
+      id: "daemon-1",
+      title: "Loaded thread",
+      agent_name: "Rod",
+      profile_provider: "ollama",
+      profile_model: "glm-5.3:cloud",
+      profile_reasoning_effort: "high",
+      profile_context_window_tokens: 1_000_000,
+      messages: [{
+        id: "message-0",
+        role: "user",
+        content: "message 0",
+        timestamp: 0,
+      }],
+      total_message_count: 1,
+      loaded_message_start: 0,
+      loaded_message_end: 1,
+    });
+
+    const { pinThreadRuntimeOverlay, clearThreadRuntimeOverlay } = await import("@/lib/agentStore/threadProfileMerge");
+    pinThreadRuntimeOverlay("local-active", {
+      profileProvider: "z.ai-coding-plan",
+      profileModel: "glm-5.3",
+      profileReasoningEffort: "high",
+      profileContextWindowTokens: 1_000_000,
+    });
+    await loadDaemonThreadPageIntoLocalState({
+      daemonThreadId: "daemon-1",
+      localThreadId: "local-active",
+      messageLimit: 50,
+      messageOffset: 0,
+      mergeMode: "replace",
+      setThreadTodos: vi.fn(),
+      setDaemonTodosByThread: vi.fn(),
+    });
+    clearThreadRuntimeOverlay("local-active");
+
+    expect(useAgentStore.getState().threads.find((thread) => thread.id === "local-active")).toMatchObject({
+      profileProvider: "z.ai-coding-plan",
+      profileModel: "glm-5.3",
+    });
   });
 });
 

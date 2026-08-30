@@ -376,7 +376,7 @@ fn goal_view_retry_uses_current_step_without_explicit_step_selection() {
         make_goal_run_with_steps(
             "goal-1",
             "Goal One",
-            task::GoalRunStatus::Failed,
+            task::GoalRunStatus::AwaitingReview,
             vec![
                 task::GoalRunStep {
                     id: "step-1".to_string(),
@@ -395,10 +395,6 @@ fn goal_view_retry_uses_current_step_without_explicit_step_selection() {
             ],
         ),
     ));
-    if let Some(run) = model.tasks.goal_run_by_id_mut("goal-1") {
-        run.current_step_index = 1;
-        run.current_step_title = Some("Deploy".to_string());
-    }
     model.main_pane_view = MainPaneView::Task(SidebarItemTarget::GoalRun {
         goal_run_id: "goal-1".to_string(),
         step_id: None,
@@ -414,7 +410,7 @@ fn goal_view_retry_uses_current_step_without_explicit_step_selection() {
             .as_ref()
             .map(PendingConfirmAction::modal_body)
             .as_deref(),
-        Some("Retry step 2 \"Deploy\" in goal \"Goal One\"?")
+        Some("Accept goal \"Goal One\"?")
     );
 }
 
@@ -437,15 +433,7 @@ fn goal_view_retry_from_prompt_without_steps_opens_confirmation() {
     let handled = model.handle_key(KeyCode::Char('r'), KeyModifiers::NONE);
 
     assert!(!handled);
-    assert_eq!(model.modal.top(), Some(modal::ModalKind::ChatActionConfirm));
-    assert_eq!(
-        model
-            .pending_chat_action_confirm
-            .as_ref()
-            .map(PendingConfirmAction::modal_body)
-            .as_deref(),
-        Some("Retry goal \"Goal One\" from the current prompt?")
-    );
+    assert_eq!(model.modal.top(), None);
 }
 
 #[test]
@@ -457,7 +445,7 @@ fn goal_view_ctrl_r_reruns_from_prompt_without_steps() {
         .reduce(task::TaskAction::GoalRunDetailReceived(make_goal_run(
             "goal-1",
             "Goal One",
-            task::GoalRunStatus::Failed,
+            task::GoalRunStatus::AwaitingReview,
         )));
     model.main_pane_view = MainPaneView::Task(SidebarItemTarget::GoalRun {
         goal_run_id: "goal-1".to_string(),
@@ -474,7 +462,7 @@ fn goal_view_ctrl_r_reruns_from_prompt_without_steps() {
             .as_ref()
             .map(PendingConfirmAction::modal_body)
             .as_deref(),
-        Some("Rerun goal \"Goal One\" from the current prompt?")
+        Some("Hard reject and fail goal \"Goal One\"?")
     );
 }
 

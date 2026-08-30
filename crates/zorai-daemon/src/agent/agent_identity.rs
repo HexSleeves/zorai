@@ -406,6 +406,10 @@ pub(in crate::agent) fn is_internal_dm_thread(thread_id: &str) -> bool {
     thread_id.starts_with(INTERNAL_DM_THREAD_PREFIX)
 }
 
+pub(in crate::agent) fn is_goal_run_thread(thread_id: &str) -> bool {
+    thread_id.starts_with("goal:")
+}
+
 pub(in crate::agent) fn participant_playground_thread_id(
     visible_thread_id: &str,
     participant_agent_id: &str,

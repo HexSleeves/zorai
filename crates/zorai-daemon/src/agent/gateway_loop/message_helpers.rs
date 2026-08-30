@@ -26,6 +26,7 @@ impl AgentEngine {
             GoalRunStatus::Planning => "Goal planning",
             GoalRunStatus::Running => "Goal running",
             GoalRunStatus::AwaitingApproval => "Goal awaiting approval",
+            GoalRunStatus::AwaitingReview => "Goal awaiting supervisor review",
             GoalRunStatus::Paused => "Goal paused",
             GoalRunStatus::Blocked => "Goal blocked",
             GoalRunStatus::Completed => "Goal completed",

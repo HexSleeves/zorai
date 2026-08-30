@@ -339,6 +339,10 @@
   justify-content: flex-start;
   min-width: 0;
   max-width: 100%;
+  /* Skip layout/paint for offscreen history bubbles; keeps long chats
+     scroll-smooth without virtualizing the list. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 88px;
 }
 
 .acp-message-row--user {

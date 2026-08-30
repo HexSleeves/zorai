@@ -12,13 +12,11 @@ pub enum GoalWorkspacePane {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GoalWorkspaceMode {
-    Goal,
-    Files,
-    Progress,
-    Usage,
-    ActiveAgent,
+    Work,
+    Review,
+    Activity,
     Threads,
-    NeedsAttention,
+    Files,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -47,7 +45,7 @@ pub struct GoalWorkspaceState {
 impl GoalWorkspaceState {
     pub fn new() -> Self {
         Self {
-            mode: GoalWorkspaceMode::Goal,
+            mode: GoalWorkspaceMode::Work,
             focused_pane: GoalWorkspacePane::Plan,
             plan_scroll: 0,
             timeline_scroll: 0,
@@ -182,6 +180,6 @@ impl Default for GoalWorkspacePane {
 
 impl Default for GoalWorkspaceMode {
     fn default() -> Self {
-        Self::Goal
+        Self::Work
     }
 }

@@ -124,11 +124,11 @@ fn help_modal_lines(theme: &ThemeTokens) -> Vec<Line<'static>> {
         ]),
         Line::from(vec![
             Span::styled("  r                ", theme.fg_active),
-            Span::styled("Retry the current goal step", theme.fg_dim),
+            Span::styled("Accept the goal while awaiting review", theme.fg_dim),
         ]),
         Line::from(vec![
             Span::styled("  Ctrl+R           ", theme.fg_active),
-            Span::styled("Rerun from the current goal step", theme.fg_dim),
+            Span::styled("Hard reject the goal while awaiting review", theme.fg_dim),
         ]),
         Line::from(vec![
             Span::styled("  Shift+R          ", theme.fg_active),

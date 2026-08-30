@@ -9,6 +9,11 @@ import {
   serializeThread,
   shouldPersistHistory,
 } from "@/lib/agentStore/history";
+import {
+  clearThreadRuntimeOverlay,
+  pinThreadRuntimeOverlay,
+  snapshotThreadRuntimeOverlay,
+} from "@/lib/agentStore/threadProfileMerge";
 import { RAROG_AGENT_ID } from "./threadOwner";
 
 export const MIN_CONTEXT_WINDOW_TOKENS = 1_000;
@@ -31,6 +36,13 @@ export function threadProviderIds(): string[] {
       return value && typeof value === "object" && "model" in value && "base_url" in value;
     })
     .sort();
+}
+
+export function modelForThreadProviderChange(providerId: string, fallbackModel: string): string {
+  const settings = useAgentStore.getState().agentSettings;
+  const configured = (settings[providerId as AgentProviderId] as { model?: string } | undefined)?.model?.trim();
+  if (configured) return configured;
+  return getDefaultModelForProvider(providerId as AgentProviderId) || fallbackModel;
 }
 
 export function threadReasoningEfforts(): readonly ThreadReasoningEffort[] {
@@ -65,12 +77,22 @@ function daemonEffortValue(effort: string): string {
   return effort === "none" ? "" : effort;
 }
 
+function resolveDaemonThreadIdForRuntime(thread: AgentThread): string | null {
+  const state = useAgentStore.getState();
+  const fromStore = state.threads.find((entry) => entry.id === thread.id)?.daemonThreadId?.trim();
+  if (fromStore) return fromStore;
+  const fromThread = thread.daemonThreadId?.trim();
+  return fromThread || null;
+}
+
 async function patchDaemonThreadExecutionProfile(
   thread: AgentThread,
   patch: Record<string, unknown>,
 ): Promise<void> {
-  const daemonThreadId = thread.daemonThreadId?.trim();
-  if (!daemonThreadId) return;
+  const daemonThreadId = resolveDaemonThreadIdForRuntime(thread);
+  if (!daemonThreadId) {
+    throw new Error("Thread is not linked to the daemon yet; provider change was not applied.");
+  }
   const bridge = getBridge();
   const existing = await bridge?.agentGetThreadExecutionProfile?.(daemonThreadId).catch(() => null) as
     | { profile?: Record<string, unknown> | null }
@@ -90,27 +112,73 @@ export async function applyThreadProviderModel(
   model: string,
 ): Promise<void> {
   const nextModel = model.trim() || getDefaultModelForProvider(providerId as AgentProviderId);
-  await patchDaemonThreadExecutionProfile(thread, {
-    provider: providerId,
-    model: nextModel,
-  });
-  patchThreadProfile(thread.id, { profileProvider: providerId, profileModel: nextModel });
+  const previous = snapshotThreadRuntimeOverlay(thread);
+  const overlay = {
+    ...previous,
+    profileProvider: providerId,
+    profileModel: nextModel,
+  };
+  pinThreadRuntimeOverlay(thread.id, overlay);
+  patchThreadProfile(thread.id, overlay);
+  try {
+    await patchDaemonThreadExecutionProfile(thread, {
+      provider: providerId,
+      model: nextModel,
+    });
+  } catch (error) {
+    restoreThreadRuntimeOverlay(thread.id, previous);
+    throw error;
+  }
 }
 
 export async function applyThreadReasoningEffort(thread: AgentThread, effort: string): Promise<void> {
   const daemonEffort = daemonEffortValue(effort);
-  await patchDaemonThreadExecutionProfile(thread, {
-    reasoning_effort: daemonEffort || null,
-  });
-  patchThreadProfile(thread.id, { profileReasoningEffort: daemonEffort || null });
+  const previous = snapshotThreadRuntimeOverlay(thread);
+  const overlay = {
+    ...previous,
+    profileReasoningEffort: daemonEffort || null,
+  };
+  pinThreadRuntimeOverlay(thread.id, overlay);
+  patchThreadProfile(thread.id, overlay);
+  try {
+    await patchDaemonThreadExecutionProfile(thread, {
+      reasoning_effort: daemonEffort || null,
+    });
+  } catch (error) {
+    restoreThreadRuntimeOverlay(thread.id, previous);
+    throw error;
+  }
 }
 
 export async function applyThreadContextWindow(thread: AgentThread, tokens: number): Promise<void> {
   const clamped = clampContextWindowTokens(tokens);
-  await patchDaemonThreadExecutionProfile(thread, {
-    context_window_tokens: clamped,
-  });
-  patchThreadProfile(thread.id, { profileContextWindowTokens: clamped });
+  const previous = snapshotThreadRuntimeOverlay(thread);
+  const overlay = {
+    ...previous,
+    profileContextWindowTokens: clamped,
+  };
+  pinThreadRuntimeOverlay(thread.id, overlay);
+  patchThreadProfile(thread.id, overlay);
+  try {
+    await patchDaemonThreadExecutionProfile(thread, {
+      context_window_tokens: clamped,
+    });
+  } catch (error) {
+    restoreThreadRuntimeOverlay(thread.id, previous);
+    throw error;
+  }
+}
+
+function restoreThreadRuntimeOverlay(
+  threadId: string,
+  previous: ReturnType<typeof snapshotThreadRuntimeOverlay>,
+): void {
+  if (previous.profileProvider || previous.profileModel) {
+    pinThreadRuntimeOverlay(threadId, previous);
+  } else {
+    clearThreadRuntimeOverlay(threadId);
+  }
+  patchThreadProfile(threadId, previous);
 }
 
 export async function applyManagedSecurityLevel(level: ThreadManagedSecurityLevel): Promise<void> {

@@ -52,6 +52,7 @@ fn sample_goal_run(
         compensation_status: None,
         compensation_summary: None,
         active_task_id: None,
+        pending_review_report: None,
         duration_ms: None,
         steps: vec![GoalRunStep {
             id: "step-1".to_string(),

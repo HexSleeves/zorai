@@ -65,6 +65,14 @@ function dedupeIds(messages: AgentMessage[]): AgentMessage[] {
   });
 }
 
+export function isLiveLocalThreadMessage(message: AgentMessage): boolean {
+  return message.isStreaming === true || isOptimisticMessage(message);
+}
+
+export function retainLiveLocalMessages(messages: readonly AgentMessage[]): AgentMessage[] {
+  return messages.filter(isLiveLocalThreadMessage);
+}
+
 function isOptimisticMessage(message: AgentMessage): boolean {
   return message.id.startsWith("queued-prompt:") || /^msg_\d+$/.test(message.id);
 }

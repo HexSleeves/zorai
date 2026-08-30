@@ -1660,15 +1660,8 @@ async fn work_context_goal_todo_context_resolves_persisted_task_and_goal_by_id()
         .expect("goal todo context should resolve persisted rows");
 
     assert_eq!(context.goal_run_id, goal_run.id);
-    assert_eq!(context.goal_step_id, None);
     assert_eq!(context.current_step_index, goal_run.current_step_index);
-    assert_eq!(
-        context.step_status,
-        goal_run
-            .steps
-            .get(goal_run.current_step_index)
-            .map(|step| step.status)
-    );
+    assert!(context.authoritative);
 }
 
 #[tokio::test]

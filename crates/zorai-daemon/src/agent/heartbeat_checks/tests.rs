@@ -56,6 +56,7 @@ fn make_goal_run(id: &str, title: &str, status: GoalRunStatus, updated_at: u64) 
         compensation_status: None,
         compensation_summary: None,
         active_task_id: None,
+        pending_review_report: None,
         duration_ms: None,
         steps: Vec::new(),
         events: Vec::new(),
@@ -110,6 +111,7 @@ async fn make_test_engine(
     let (skill_discovery_result_tx, _skill_discovery_result_rx) = mpsc::unbounded_channel();
     let (auto_thread_title_jobs, _auto_thread_title_rx) = mpsc::unbounded_channel();
     let (prompt_queue_wake_tx, _prompt_queue_wake_rx) = mpsc::unbounded_channel();
+    let (internal_dm_jobs_tx, _internal_dm_jobs_rx) = mpsc::unbounded_channel();
 
     let history = crate::history::HistoryStore::new_test_store(&data_dir)
         .await
@@ -190,6 +192,7 @@ async fn make_test_engine(
         whatsapp_link: Arc::new(super::whatsapp_link::WhatsAppLinkRuntime::new()),
         external_runners: RwLock::new(HashMap::new()),
         subagent_runtime: RwLock::new(HashMap::new()),
+        agent_terminal_leases: Mutex::new(HashMap::new()),
         trusted_weles_tasks: RwLock::new(HashSet::new()),
         weles_health: RwLock::new(WelesHealthStatus {
             state: WelesHealthState::Healthy,
@@ -204,7 +207,6 @@ async fn make_test_engine(
         active_operator_sessions: RwLock::new(HashMap::new()),
         pending_operator_approvals: RwLock::new(HashMap::new()),
         pending_approval_commands: RwLock::new(HashMap::new()),
-        quiet_goal_recovery: Mutex::new(HashMap::new()),
         critique_approval_continuations: Mutex::new(HashMap::new()),
         policy_escalation_session_grants: RwLock::new(HashSet::new()),
         task_approval_rules: RwLock::new(Vec::new()),
@@ -217,6 +219,7 @@ async fn make_test_engine(
         skill_discovery_result_tx,
         auto_thread_title_jobs,
         prompt_queue_wake_tx,
+        internal_dm_jobs_tx,
         skill_discovery_test_runner: std::sync::OnceLock::new(),
         force_mesh_discovery_degraded_for_tests: std::sync::atomic::AtomicBool::new(false),
         aline_startup_reconcile_started: std::sync::atomic::AtomicBool::new(false),

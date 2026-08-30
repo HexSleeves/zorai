@@ -17,7 +17,30 @@ import type { Workspace } from "@/lib/types";
 import type { WelesHealthState } from "@/lib/agentStore/types";
 import { findTaskWorkspaceLocation } from "../tasks-view/helpers";
 import { formatSkillWorkflowNotice } from "./skillWorkflowNotice";
-import { reconcileThreadMessages } from "./threadMessageReducer";
+import { mergeRemoteThreadProfile } from "@/lib/agentStore/threadProfileMerge";
+import { reconcileThreadMessages, retainLiveLocalMessages } from "./threadMessageReducer";
+
+const threadHistoryReplaceEpochs = new Map<string, number>();
+
+export function threadHistoryReplaceEpoch(localThreadId: string): number {
+  return threadHistoryReplaceEpochs.get(localThreadId) ?? 0;
+}
+
+export function beginThreadHistoryReplace(localThreadId: string): number {
+  const epoch = threadHistoryReplaceEpoch(localThreadId) + 1;
+  threadHistoryReplaceEpochs.set(localThreadId, epoch);
+  useAgentStore.setState((state) => ({
+    messages: {
+      ...state.messages,
+      [localThreadId]: retainLiveLocalMessages(state.messages[localThreadId] ?? []),
+    },
+  }));
+  return epoch;
+}
+
+export function resetThreadHistoryReplaceEpochsForTests(): void {
+  threadHistoryReplaceEpochs.clear();
+}
 
 type RemoteAgentThread = {
   id: string;
@@ -132,6 +155,26 @@ export function resolveAbsoluteMessageIndex(
   return Math.max(0, loadedMessageStart ?? 0) + localIndex;
 }
 
+export function resolveDaemonOwnedThreadId({
+  threads,
+  threadId,
+  activeThreadId,
+  activeDaemonThreadId,
+}: {
+  threads: Array<{ id: string; daemonThreadId?: string | null }>;
+  threadId: string;
+  activeThreadId?: string | null;
+  activeDaemonThreadId?: string | null;
+}): string | null {
+  const mapped = threads.find((thread) => thread.id === threadId)?.daemonThreadId?.trim();
+  if (mapped) return mapped;
+  if (threadId === activeThreadId) {
+    const fallback = activeDaemonThreadId?.trim();
+    if (fallback) return fallback;
+  }
+  return null;
+}
+
 export async function refreshDaemonThreadMessagesIntoLocalState({
   daemonThreadId,
   setThreadTodos,
@@ -174,6 +217,7 @@ export async function loadDaemonThreadPageIntoLocalState({
   messageLimit,
   messageOffset,
   mergeMode,
+  replaceEpoch,
   setThreadTodos,
   setDaemonTodosByThread,
 }: {
@@ -182,6 +226,7 @@ export async function loadDaemonThreadPageIntoLocalState({
   messageLimit?: number | null;
   messageOffset?: number | null;
   mergeMode: "replace" | "prepend" | "append" | "metadata";
+  replaceEpoch?: number;
   setThreadTodos: (threadId: string, todos: AgentTodoItem[]) => void;
   setDaemonTodosByThread: Dispatch<SetStateAction<Record<string, AgentTodoItem[]>>>;
 }): Promise<boolean> {
@@ -197,6 +242,9 @@ export async function loadDaemonThreadPageIntoLocalState({
       (thread) => thread.daemonThreadId === daemonThreadId,
     )?.id;
   if (!localThreadId) return false;
+  const epochAtStart = mergeMode === "replace"
+    ? (replaceEpoch ?? threadHistoryReplaceEpoch(localThreadId))
+    : 0;
 
   const remotePayload = await zorai.agentGetThread(daemonThreadId, {
     messageLimit: messageLimit ?? resolveReactChatHistoryMessageLimit(
@@ -233,10 +281,15 @@ export async function loadDaemonThreadPageIntoLocalState({
     if (!hasNewMessages && mergeMode === "prepend") return false;
   }
 
+  if (mergeMode === "replace" && threadHistoryReplaceEpoch(localThreadId) !== epochAtStart) {
+    return false;
+  }
+
   useAgentStore.setState((state) => ({
     threads: state.threads.map((thread) => thread.id === localThreadId ? {
       ...thread,
       ...reloadedThread,
+      ...mergeRemoteThreadProfile(thread, reloadedThread),
       lastMessagePreview: reloadedThread.lastMessagePreview || thread.lastMessagePreview,
       loadedMessageStart: mergeMode === "prepend" || mergeMode === "append"
         ? Math.min(thread.loadedMessageStart ?? reloadedThread.loadedMessageStart ?? 0, reloadedThread.loadedMessageStart ?? 0)
@@ -256,9 +309,10 @@ export async function loadDaemonThreadPageIntoLocalState({
       },
   }));
 
-  const todos = await fetchThreadTodos(daemonThreadId).catch(() => []);
-  setThreadTodos(localThreadId, todos);
-  setDaemonTodosByThread((current) => ({ ...current, [daemonThreadId]: todos }));
+  void fetchThreadTodos(daemonThreadId).catch(() => []).then((todos) => {
+    setThreadTodos(localThreadId, todos);
+    setDaemonTodosByThread((current) => ({ ...current, [daemonThreadId]: todos }));
+  });
   return true;
 }
 

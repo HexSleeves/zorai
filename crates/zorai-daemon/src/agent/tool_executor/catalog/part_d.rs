@@ -175,34 +175,22 @@ pub(crate) fn add_available_tools_part_d(
             "offset": { "type": "integer", "minimum": 0, "description": "Zero-based pagination offset over goal runs sorted by updated_at descending (default: 0)" }
         }
     })));
-    tools.push(tool_def(tool_names::SUBMIT_GOAL_FINAL_REVIEW, "Submit the authoritative final goal review through a daemon transition. Plain assistant text cannot complete a final review.", serde_json::json!({
+    tools.push(tool_def(tool_names::REQUEST_GOAL_REVIEW, "Worker-only: claim this goal is complete and block until the owner supervisor verdicts. The goal is not done until they accept.", serde_json::json!({
         "type": "object",
         "properties": {
-            "verdict": { "type": "string", "enum": ["pass", "fail"], "description": "pass only when the complete goal plan, todos, artifacts, and delivered work satisfy the objective" },
-            "explanation": { "type": "string", "description": "Concrete final-review explanation; for fail, list required fixes" },
-            "verifier": { "type": "string", "description": "Required for pass: what concretely ran or was inspected" },
-            "coverage": { "type": "string", "description": "Required for pass: final goal scope actually verified" },
-            "gaps": { "type": "string", "description": "Optional uncovered scope" },
-            "scores": { "type": "object", "additionalProperties": { "type": "number" } },
-            "task_id": { "type": "string", "description": "Optional final-review task ID when hidden context is unavailable" },
-            "goal_run_id": { "type": "string", "description": "Optional guard; must match the final-review task" }
+            "report": { "type": "string", "description": "Concrete report of what was delivered" },
+            "goal_run_id": { "type": "string", "description": "Optional guard; must match the active goal worker" }
         },
-        "required": ["verdict", "explanation"]
+        "required": ["report"]
     })));
-    tools.push(tool_def(tool_names::SUBMIT_GOAL_STEP_VERDICT, "Submit the authoritative pass/fail verdict that advances or requeues the current goal step.", serde_json::json!({
+    tools.push(tool_def(tool_names::SUBMIT_GOAL_REVIEW, "Owner-supervisor only: verdict a worker completeness report. accept completes the goal, soft_reject continues the same worker with your explanation, hard_reject stops the goal and unpins supervision.", serde_json::json!({
         "type": "object",
         "properties": {
-            "verdict": { "type": "string", "enum": ["pass", "fail"], "description": "pass only when all instructions, criteria, todos, artifacts, and proofs are satisfied" },
-            "explanation": { "type": "string", "description": "Concrete explanation; for fail, list required fixes" },
-            "verifier": { "type": "string", "description": "Required for pass: what concretely ran (command + exit code, test name, review, build)" },
-            "coverage": { "type": "string", "description": "Required for pass: the scope the verifier actually exercised" },
-            "gaps": { "type": "string", "description": "Optional for pass: scope the verifier did not cover" },
-            "scores": { "type": "object", "description": "Optional named metric scores (e.g. benchmark results); only meaningful for pass verdicts", "additionalProperties": { "type": "number" } },
-            "task_id": { "type": "string", "description": "Optional verification task ID when hidden task context is unavailable" },
-            "goal_run_id": { "type": "string", "description": "Optional guard; must match the verification task" },
-            "goal_step_id": { "type": "string", "description": "Optional guard; must match the verification task" }
+            "verdict": { "type": "string", "enum": ["accept", "soft_reject", "hard_reject"] },
+            "explanation": { "type": "string", "description": "Required for soft_reject and hard_reject" },
+            "goal_run_id": { "type": "string", "description": "Goal run to verdict" }
         },
-        "required": ["verdict", "explanation"]
+        "required": ["verdict", "goal_run_id"]
     })));
     tools.push(tool_def(tool_names::CREATE_ROUTINE, "Create a durable routine definition with a schedule and target payload; it does not execute immediately.", serde_json::json!({
         "type": "object",

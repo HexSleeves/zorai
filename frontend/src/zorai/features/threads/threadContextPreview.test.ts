@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { WorkContextEntry } from "@/lib/agentWorkContext";
-import { previewRequestsForWorkContextEntry, threadContextEntryKey } from "./threadContextPreview";
+import { previewRequestsForWorkContextEntry, threadContextEntryKey, isMarkdownPath } from "./threadContextPreview";
 
 function entry(overrides: Partial<WorkContextEntry>): WorkContextEntry {
   return {
@@ -39,5 +39,13 @@ describe("thread context preview helpers", () => {
   it("keeps entries with the same path but different repo roots distinct", () => {
     expect(threadContextEntryKey(entry({ source: "daemon", repoRoot: "/repo-a", path: "README.md" })))
       .not.toBe(threadContextEntryKey(entry({ source: "daemon", repoRoot: "/repo-b", path: "README.md" })));
+  });
+
+  it("treats markdown extensions the same way TUI file preview does", () => {
+    expect(isMarkdownPath("docs/README.md")).toBe(true);
+    expect(isMarkdownPath("notes.MARKDOWN")).toBe(true);
+    expect(isMarkdownPath("page.mdx")).toBe(true);
+    expect(isMarkdownPath("src/App.tsx")).toBe(false);
+    expect(isMarkdownPath("/tmp/result.txt")).toBe(false);
   });
 });

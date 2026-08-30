@@ -57,10 +57,11 @@ fn goal_view_scroll_up_moves_off_bottom_after_mouse_overscroll() {
         goal_run_id: "goal-1".to_string(),
         step_id: None,
     });
+    model.goal_workspace.set_prompt_expanded(true);
 
     let chat_area = rendered_chat_area(&model);
-    let mouse_column = chat_area.x.saturating_add(1);
-    let mouse_row = chat_area.y.saturating_add(1);
+    let mouse_column = chat_area.x.saturating_add(2);
+    let mouse_row = chat_area.y.saturating_add(6);
 
     for _ in 0..400 {
         model.handle_mouse(MouseEvent {

@@ -1528,6 +1528,7 @@ impl AgentEngine {
         self.remove_repo_watcher(thread_id).await;
         self.thread_todos.write().await.remove(thread_id);
         self.thread_work_contexts.write().await.remove(thread_id);
+        self.release_agent_terminals_for_thread(thread_id).await;
         if let Err(error) = self.history.delete_thread(thread_id).await {
             tracing::warn!(thread_id = %thread_id, %error, "failed to delete thread history");
         }

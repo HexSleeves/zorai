@@ -249,12 +249,13 @@ export function TasksView({ onOpenThreadView }: TasksViewProps) {
 
   const changeGoalRunState = async (
     goalRunId: string,
-    action: "pause" | "resume" | "cancel" | "retry_step" | "rerun_from_step",
+    action: "pause" | "resume" | "cancel" | "accept" | "soft_reject" | "hard_reject",
     stepIndex?: number,
+    explanation?: string,
   ) => {
     setGoalActionId(goalRunId);
     try {
-      await controlGoalRun(goalRunId, action, stepIndex ?? null);
+      await controlGoalRun(goalRunId, action, stepIndex ?? null, explanation ?? null);
       await refreshGoalRuns();
     } finally {
       setGoalActionId(null);

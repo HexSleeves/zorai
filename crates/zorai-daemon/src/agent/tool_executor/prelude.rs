@@ -37,9 +37,8 @@ pub(crate) use super::super::tool_synthesis::{
 };
 
 pub(crate) use super::super::types::{
-    AgentConfig, AgentEvent, GoalFinalReviewRecord, GoalStepReviewRecord, GoalStepReviewVerdict,
-    NotificationSeverity, TodoItem, TodoStatus, ToolCall, ToolDefinition, ToolFunctionDef,
-    ToolPendingApproval, ToolResult,
+    AgentConfig, AgentEvent, NotificationSeverity, TodoItem, TodoStatus, ToolCall, ToolDefinition,
+    ToolFunctionDef, ToolPendingApproval, ToolResult,
 };
 pub(crate) use super::super::AgentEngine;
 

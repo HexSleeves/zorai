@@ -282,7 +282,7 @@ impl TaskState {
 
         // Live todos override event snapshots.
         for (key, todos) in &self.goal_step_live_todos {
-            let Some((prefix, suffix)) = key.rsplit_once(':') else {
+            let Some((prefix, suffix)) = key.rsplit_once("::") else {
                 continue;
             };
             if prefix != goal_run_id {

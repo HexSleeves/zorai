@@ -244,13 +244,14 @@ describe("Zorai feature surfaces", () => {
     const source = readFeature("./goals/goalWorkspaceModel.ts");
     const panelSource = readFeature("./goals/GoalWorkspacePanel.tsx");
 
-    expect(source).toContain("Dossier");
-    expect(source).toContain("Files");
-    expect(source).toContain("Progress");
-    expect(source).toContain("Usage");
-    expect(source).toContain("Active agent");
+    expect(source).toContain("Work");
+    expect(source).toContain("Review");
+    expect(source).toContain("Activity");
     expect(source).toContain("Threads");
-    expect(source).toContain("Needs attention");
+    expect(source).toContain("Files");
+    expect(source).not.toContain("Dossier");
+    expect(source).not.toContain("Active agent");
+    expect(source).not.toContain("Needs attention");
     expect(source).toContain("targetThreadId");
     expect(source).toContain("targetFilePath");
     expect(panelSource).toContain("loadGoalProjectionFiles");
@@ -259,9 +260,13 @@ describe("Zorai feature surfaces", () => {
     expect(panelSource).toContain("zorai-ghost-button");
     expect(panelSource).toContain("footerActions");
     expect(panelSource).toContain("{action.label}");
-    expect(source).toContain('label: "Retry step"');
-    expect(source).toContain('label: "Rerun from here"');
+    expect(panelSource).not.toContain("More details");
+    expect(source).toContain('label: "Accept"');
+    expect(source).toContain('label: "Soft reject"');
+    expect(source).toContain('label: "Hard reject"');
     expect(source).toContain('label: "Stop"');
+    expect(source).not.toContain('label: "Retry step"');
+    expect(source).not.toContain('label: "Rerun from here"');
     expect(panelSource).not.toContain("[Actions]");
   });
 
@@ -694,6 +699,15 @@ describe("Zorai feature surfaces", () => {
     expect(source).toContain("Pin Limit Reached");
   });
 
+  it("keeps TUI-style thread forking on native message actions", () => {
+    const source = readFeature("./threads/ThreadsView.tsx");
+    const messageSource = readFeature("./threads/NativeThreadMessageBubble.tsx");
+
+    expect(source).toContain("runtime.forkThread(message.id)");
+    expect(messageSource).toContain("Fork thread from this message");
+    expect(messageSource).toContain("onFork");
+  });
+
   it("renders thread tool calls through collapsed tool rows instead of plain message bubbles", () => {
     const source = readFeature("./threads/ThreadsView.tsx");
     const toolSource = readFeature("../../components/agent-chat-panel/chat-view/ToolEventRow.tsx");
@@ -758,6 +772,8 @@ describe("Zorai feature surfaces", () => {
     expect(contextSource).not.toContain("zorai-file-preview");
     expect(overlaySource).toContain("zorai-file-preview-overlay");
     expect(overlaySource).toContain("Close preview");
+    expect(overlaySource).toContain("MarkdownContent");
+    expect(overlaySource).toContain("isMarkdownPath");
     expect(css).toMatch(/\.zorai-file-preview-overlay\s*{[^}]*position:\s*absolute/s);
   });
 
@@ -837,6 +853,8 @@ describe("Zorai feature surfaces", () => {
     expect(source).toContain("onScroll");
     expect(source).toContain("loadOlderThreadMessages");
     expect(source).toContain("consumeThreadHistoryScroll");
+    expect(source).toContain("fillThreadHistoryIfUnscrollable");
+    expect(source).toContain("threadHasOlderHistory");
     expect(railSource).toContain("threadHistoryLabel");
     expect(railSource).toContain("threadTabs");
     expect(railSource).toContain("fixedThreadTabs");
@@ -856,9 +874,11 @@ describe("Zorai feature surfaces", () => {
     expect(runtimeSource.indexOf("const finishLoading")).toBeLessThan(runtimeSource.indexOf("const runThreadPageLoad"));
     expect(runtimeSource).toContain("latestLoadedThreadIdRef");
     expect(runtimeSource).toContain("loadThreadPage(activeThreadId, \"latest\")");
+    expect(runtimeSource).toContain("beginThreadHistoryReplace");
+    expect(runtimeSource).toContain("threadHistoryReplaceEpoch");
+    expect(runtimeSource).not.toContain("threadPageLoadChainRef");
     expect(runtimeSource).toContain("localThreadId: threadId");
     expect(runtimeSource).toContain("messageOffset");
-    expect(runtimeSource).toContain("threadPageLoadChainRef");
     expect(eventsSource).toContain("resolveDaemonEventLocalThreadId");
     expect(eventsSource).toContain("event.thread_id");
   });

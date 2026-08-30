@@ -1,4 +1,5 @@
 use super::*;
+use crate::agent::parse_goal_supervisor_verdict;
 pub(crate) async fn execute_list_subagents(
     args: &serde_json::Value,
     agent: &AgentEngine,
@@ -774,67 +775,31 @@ pub(crate) async fn execute_list_goal_runs(
     .unwrap_or_else(|_| "{}".to_string()))
 }
 
-pub(crate) async fn execute_submit_goal_final_review(
+pub(crate) async fn execute_request_goal_review(
     args: &serde_json::Value,
     agent: &AgentEngine,
+    _thread_id: &str,
     current_task_id: Option<&str>,
 ) -> Result<String> {
-    let explicit_task_id = args
-        .get("task_id")
+    let report = args
+        .get("report")
         .and_then(|value| value.as_str())
         .map(str::trim)
-        .filter(|value| !value.is_empty());
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| anyhow::anyhow!("missing non-empty 'report' argument"))?;
     let task_id = current_task_id
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .or(explicit_task_id)
         .ok_or_else(|| {
-            anyhow::anyhow!("submit_goal_final_review requires a current final-review task")
+            anyhow::anyhow!("request_goal_review can only be called by the goal worker")
         })?;
-    if let (Some(current), Some(explicit)) = (current_task_id, explicit_task_id) {
-        if current != explicit {
-            anyhow::bail!(
-                "task_id mismatch: current task is '{current}' but tool received '{explicit}'"
-            );
-        }
-    }
-
-    let verdict = match args
-        .get("verdict")
-        .and_then(|value| value.as_str())
-        .map(str::trim)
-        .map(str::to_ascii_lowercase)
-        .as_deref()
-    {
-        Some("pass") => GoalStepReviewVerdict::Pass,
-        Some("fail") => GoalStepReviewVerdict::Fail,
-        Some(other) => anyhow::bail!("unsupported verdict '{other}'; expected 'pass' or 'fail'"),
-        None => anyhow::bail!("missing 'verdict' argument"),
-    };
-    let explanation = args
-        .get("explanation")
-        .and_then(|value| value.as_str())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("missing non-empty 'explanation' argument"))?
-        .to_string();
-    let evidence = super::super::parse_goal_verdict_evidence(args)?;
-    if matches!(verdict, GoalStepReviewVerdict::Pass) {
-        super::super::validate_pass_verdict_evidence(evidence.as_ref())?;
-    }
-
     let task = task_by_id_for_tool_scope(agent, task_id)
         .await
         .ok_or_else(|| anyhow::anyhow!("task {task_id} not found"))?;
-    if task.source != super::super::GOAL_FINAL_REVIEW_SOURCE {
-        anyhow::bail!(
-            "submit_goal_final_review can only be used by final-review tasks; current task source is '{}'",
-            task.source
-        );
-    }
-    let goal_run_id = task.goal_run_id.as_deref().ok_or_else(|| {
-        anyhow::anyhow!("current final-review task is missing goal_run_id context")
-    })?;
+    let goal_run_id = task
+        .goal_run_id
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("request_goal_review requires an active goal worker"))?;
     if let Some(provided) = args
         .get("goal_run_id")
         .and_then(|value| value.as_str())
@@ -842,247 +807,61 @@ pub(crate) async fn execute_submit_goal_final_review(
         .filter(|value| !value.is_empty())
     {
         if provided != goal_run_id {
-            anyhow::bail!("goal_run_id mismatch: current task is bound to '{goal_run_id}' but tool received '{provided}'");
-        }
-    }
-
-    let record = GoalFinalReviewRecord {
-        task_id: task.id.clone(),
-        goal_run_id: goal_run_id.to_string(),
-        verdict,
-        explanation,
-        evidence,
-        submitted_at: crate::agent::now_millis(),
-    };
-    let record_json = serde_json::to_string(&record)?;
-    let verdict_key = super::super::goal_planner::goal_final_review_verdict_state_key(task_id);
-    if agent
-        .history
-        .get_consolidation_state(&verdict_key)
-        .await?
-        .is_some()
-    {
-        anyhow::bail!("final-review verdict already submitted for task {task_id}");
-    }
-    agent
-        .history
-        .set_consolidation_state(&verdict_key, &record_json, record.submitted_at)
-        .await?;
-
-    let mut updated = task.clone();
-    updated.result = Some(format!(
-        "Structured final review: {:?}\n{}",
-        record.verdict, record.explanation
-    ));
-    updated.logs.push(make_task_log_entry(
-        updated.retry_count,
-        TaskLogLevel::Info,
-        "final_review",
-        "structured final goal review submitted",
-        Some(record_json),
-    ));
-    agent.history.upsert_agent_task(&updated).await?;
-    {
-        let mut tasks = agent.tasks.lock().await;
-        if let Some(live) = tasks.iter_mut().find(|task| task.id == task_id) {
-            *live = updated.clone();
-        }
-    }
-    agent.emit_task_update(&updated, Some("Final goal review submitted".into()));
-    Ok(serde_json::to_string_pretty(&record).unwrap_or_else(|_| "{}".to_string()))
-}
-
-pub(crate) async fn execute_submit_goal_step_verdict(
-    args: &serde_json::Value,
-    agent: &AgentEngine,
-    current_task_id: Option<&str>,
-) -> Result<String> {
-    let explicit_task_id = args
-        .get("task_id")
-        .and_then(|value| value.as_str())
-        .map(str::trim)
-        .filter(|value| !value.is_empty());
-    let task_id = current_task_id
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .or(explicit_task_id)
-        .ok_or_else(|| {
-            anyhow::anyhow!("submit_goal_step_verdict requires a current verification task")
-        })?;
-    if let (Some(current_task_id), Some(explicit_task_id)) = (
-        current_task_id
-            .map(str::trim)
-            .filter(|value| !value.is_empty()),
-        explicit_task_id,
-    ) {
-        if current_task_id != explicit_task_id {
             anyhow::bail!(
-                "task_id mismatch: current task is '{}' but tool received '{}'",
-                current_task_id,
-                explicit_task_id
+                "goal_run_id mismatch: worker is on '{goal_run_id}' but tool received '{provided}'"
             );
         }
     }
-    let verdict = match args
-        .get("verdict")
-        .and_then(|value| value.as_str())
-        .map(str::trim)
-        .map(str::to_ascii_lowercase)
-        .as_deref()
-    {
-        Some("pass") => GoalStepReviewVerdict::Pass,
-        Some("fail") => GoalStepReviewVerdict::Fail,
-        Some(other) => anyhow::bail!("unsupported verdict '{other}'; expected 'pass' or 'fail'"),
-        None => anyhow::bail!("missing 'verdict' argument"),
-    };
-    let explanation = args
-        .get("explanation")
-        .and_then(|value| value.as_str())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("missing non-empty 'explanation' argument"))?
-        .to_string();
-    let evidence = super::super::parse_goal_verdict_evidence(args)?;
-    if matches!(verdict, GoalStepReviewVerdict::Pass) {
-        super::super::validate_pass_verdict_evidence(evidence.as_ref())?;
-    }
+    let updated = agent
+        .request_goal_review(goal_run_id, task_id, report)
+        .await?;
+    Ok(serde_json::to_string_pretty(&serde_json::json!({
+        "ok": true,
+        "state": "awaiting_review",
+        "goal_run_id": updated.id,
+        "message": "Worker is blocked until the owner supervisor verdicts."
+    }))
+    .unwrap_or_else(|_| "{}".to_string()))
+}
 
-    let task = task_by_id_for_tool_scope(agent, task_id)
-        .await
-        .ok_or_else(|| anyhow::anyhow!("task {task_id} not found"))?;
-    if task.source != super::super::GOAL_VERIFICATION_SOURCE {
-        anyhow::bail!(
-            "submit_goal_step_verdict can only be used by goal verification tasks; current task source is '{}'.",
-            task.source
-        );
-    }
-
-    let goal_run_id = task.goal_run_id.as_deref().ok_or_else(|| {
-        anyhow::anyhow!("current verification task is missing goal_run_id context")
-    })?;
-    let goal_step_id = task.goal_step_id.as_deref().ok_or_else(|| {
-        anyhow::anyhow!("current verification task is missing goal_step_id context")
-    })?;
-    if let Some(provided_goal_run_id) = args
+pub(crate) async fn execute_submit_goal_review(
+    args: &serde_json::Value,
+    agent: &AgentEngine,
+    thread_id: &str,
+    current_task_id: Option<&str>,
+) -> Result<String> {
+    let goal_run_id = args
         .get("goal_run_id")
         .and_then(|value| value.as_str())
         .map(str::trim)
         .filter(|value| !value.is_empty())
-    {
-        if provided_goal_run_id != goal_run_id {
-            anyhow::bail!(
-                "goal_run_id mismatch: current task is bound to '{}' but tool received '{}'",
-                goal_run_id,
-                provided_goal_run_id
-            );
-        }
-    }
-    if let Some(provided_goal_step_id) = args
-        .get("goal_step_id")
+        .ok_or_else(|| anyhow::anyhow!("missing 'goal_run_id' argument"))?;
+    let verdict = parse_goal_supervisor_verdict(
+        args.get("verdict")
+            .and_then(|value| value.as_str())
+            .unwrap_or(""),
+    )?;
+    let explanation = args
+        .get("explanation")
         .and_then(|value| value.as_str())
-        .map(str::trim)
-        .filter(|value| !value.is_empty())
-    {
-        if provided_goal_step_id != goal_step_id {
-            anyhow::bail!(
-                "goal_step_id mismatch: current task is bound to '{}' but tool received '{}'",
-                goal_step_id,
-                provided_goal_step_id
-            );
+        .unwrap_or("");
+    if let Some(task_id) = current_task_id {
+        if let Some(task) = task_by_id_for_tool_scope(agent, task_id).await {
+            if task.goal_run_id.as_deref() == Some(goal_run_id) && task.source == "goal_run" {
+                anyhow::bail!("submit_goal_review can only be used by the owner supervisor");
+            }
         }
     }
-
-    let goal_run = agent
-        .get_goal_run(goal_run_id)
-        .await
-        .ok_or_else(|| anyhow::anyhow!("goal run {goal_run_id} not found"))?;
-    let active_step_id = goal_run
-        .steps
-        .get(goal_run.current_step_index)
-        .map(|step| step.id.as_str())
-        .ok_or_else(|| anyhow::anyhow!("goal run {goal_run_id} has no active step"))?;
-    if active_step_id != goal_step_id {
-        anyhow::bail!(
-            "current goal step is '{}' but verification task is bound to '{}'",
-            active_step_id,
-            goal_step_id
-        );
-    }
-
-    let record = GoalStepReviewRecord {
-        task_id: task.id.clone(),
-        goal_run_id: goal_run_id.to_string(),
-        goal_step_id: goal_step_id.to_string(),
-        verdict,
-        explanation,
-        evidence,
-        submitted_at: crate::agent::now_millis(),
-    };
-    let record_json = serde_json::to_string(&record)?;
-    agent
-        .history
-        .set_consolidation_state(
-            &super::super::goal_planner::goal_step_verdict_state_key(task_id),
-            &record_json,
-            record.submitted_at,
-        )
+    let updated = agent
+        .submit_goal_review(goal_run_id, verdict, explanation, Some(thread_id))
         .await?;
-
-    let mut updated = task.clone();
-    let mut result_text = format!(
-        "Structured verdict: {:?}\n{}",
-        record.verdict, record.explanation
-    );
-    if let Some(evidence) = record.evidence.as_ref() {
-        result_text.push_str(&format!(
-            "\nEvidence — verifier: {} | coverage: {}{}",
-            evidence.verifier,
-            evidence.coverage,
-            evidence
-                .gaps
-                .as_deref()
-                .filter(|gaps| !gaps.trim().is_empty())
-                .map(|gaps| format!(" | gaps: {gaps}"))
-                .unwrap_or_default()
-        ));
-    }
-    updated.result = Some(result_text);
-    updated.logs.push(make_task_log_entry(
-        updated.retry_count,
-        TaskLogLevel::Info,
-        "verification",
-        "structured goal-step verdict submitted",
-        Some(record_json.clone()),
-    ));
-
-    let updated_live_task = {
-        let mut tasks = agent.tasks.lock().await;
-        if let Some(task) = tasks.iter_mut().find(|task| task.id == task_id) {
-            *task = updated.clone();
-            true
-        } else {
-            false
-        }
-    };
-    agent.history.upsert_agent_task(&updated).await?;
-    if updated_live_task {
-        agent.persist_tasks().await;
-    }
-    agent.emit_task_update(&updated, Some("Goal-step verdict submitted".into()));
-    agent
-        .record_provenance_event(
-            "goal_step_verdict_submitted",
-            "structured goal-step verification verdict submitted",
-            serde_json::to_value(&record).unwrap_or_else(|_| serde_json::json!({})),
-            Some(goal_run_id),
-            Some(task_id),
-            task.thread_id.as_deref(),
-            None,
-            None,
-        )
-        .await;
-
-    Ok(serde_json::to_string_pretty(&record).unwrap_or_else(|_| "{}".to_string()))
+    Ok(serde_json::to_string_pretty(&serde_json::json!({
+        "ok": true,
+        "verdict": verdict.as_str(),
+        "goal_run_id": updated.id,
+        "status": updated.status.as_label(),
+    }))
+    .unwrap_or_else(|_| "{}".to_string()))
 }
 
 pub(crate) async fn execute_list_triggers(

@@ -735,10 +735,24 @@ pub(crate) enum GoalAction {
         /// Goal run ID to resume.
         goal_run_id: String,
     },
-    /// Retry the latest failed step in one goal run.
-    Retry {
-        /// Goal run ID to retry.
+    /// Accept a goal awaiting supervisor review.
+    Accept {
+        /// Goal run ID to accept.
         goal_run_id: String,
+    },
+    /// Soft-reject a completeness report and keep the same worker going.
+    SoftReject {
+        /// Goal run ID to continue.
+        goal_run_id: String,
+        /// Why the work is incomplete.
+        explanation: String,
+    },
+    /// Hard-reject a goal and fail it.
+    HardReject {
+        /// Goal run ID to fail.
+        goal_run_id: String,
+        /// Why the goal is rejected.
+        explanation: String,
     },
     /// Delete one goal run.
     Delete {
@@ -1450,16 +1464,16 @@ mod tests {
     }
 
     #[test]
-    fn goal_retry_subcommand_parses() {
-        let cli = Cli::try_parse_from(["zorai", "goal", "retry", "goal-123"])
-            .expect("goal retry subcommand should parse");
+    fn goal_accept_subcommand_parses() {
+        let cli = Cli::try_parse_from(["zorai", "goal", "accept", "goal-123"])
+            .expect("goal accept subcommand should parse");
         match cli.command {
             Some(Commands::Goal {
-                action: GoalAction::Retry { goal_run_id },
+                action: GoalAction::Accept { goal_run_id },
             }) => {
                 assert_eq!(goal_run_id, "goal-123");
             }
-            other => panic!("expected goal retry command, got {other:?}"),
+            other => panic!("expected goal accept command, got {other:?}"),
         }
     }
 

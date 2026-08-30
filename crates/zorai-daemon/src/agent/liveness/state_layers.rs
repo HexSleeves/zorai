@@ -229,6 +229,7 @@ mod tests {
             compensation_status: None,
             compensation_summary: None,
             active_task_id: Some("task_1".into()),
+            pending_review_report: None,
             duration_ms: None,
             steps: vec![],
             events: vec![],

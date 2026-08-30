@@ -646,6 +646,7 @@ async fn hydrate_restores_full_persisted_goal_run_event_history() {
         compensation_status: None,
         compensation_summary: None,
         active_task_id: None,
+        pending_review_report: None,
         duration_ms: Some(500),
         steps: Vec::new(),
         events: (0..event_count)

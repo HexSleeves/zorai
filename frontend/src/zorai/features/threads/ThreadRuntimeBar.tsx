@@ -6,6 +6,7 @@ import {
   applyThreadContextWindow,
   applyThreadProviderModel,
   applyThreadReasoningEffort,
+  modelForThreadProviderChange,
   threadProviderIds,
   threadReasoningEfforts,
 } from "./threadRuntimeActions";
@@ -39,13 +40,14 @@ export function ThreadRuntimeBar({ thread }: { thread: AgentThread }) {
       pendingApplyRef.current = action;
       return;
     }
-    busyRef.current = true;
-    setBusy(true);
     let next: (() => Promise<void>) | null = action;
+    busyRef.current = true;
     try {
       while (next) {
         pendingApplyRef.current = null;
-        await next();
+        const inflight = next();
+        setBusy(true);
+        await inflight;
         next = pendingApplyRef.current;
       }
     } finally {
@@ -64,8 +66,11 @@ export function ThreadRuntimeBar({ thread }: { thread: AgentThread }) {
           disabled={busy}
           onChange={(event) => {
             const nextProvider = event.target.value;
-            const nextConfig = agentSettings[nextProvider as AgentProviderId] as { model?: string } | undefined;
-            void run(() => applyThreadProviderModel(thread, nextProvider, nextConfig?.model || model));
+            void run(() => applyThreadProviderModel(
+              thread,
+              nextProvider,
+              modelForThreadProviderChange(nextProvider, model),
+            ));
           }}
         >
           {providers.map((id) => <option key={id} value={id}>{id}</option>)}

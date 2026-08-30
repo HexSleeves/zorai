@@ -405,6 +405,7 @@ async fn send_message_request_includes_runtime_continuity_and_negative_knowledge
             compensation_status: None,
             compensation_summary: None,
             active_task_id: Some("task-runtime-continuity-request".to_string()),
+            pending_review_report: None,
             duration_ms: None,
             steps: vec![crate::agent::types::GoalRunStep {
                 id: "step-runtime-1".to_string(),

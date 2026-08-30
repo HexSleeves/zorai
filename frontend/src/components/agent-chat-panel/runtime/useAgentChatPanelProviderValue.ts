@@ -32,9 +32,12 @@ import { useDaemonAgentActions } from "./useDaemonAgentActions";
 import { useDaemonAgentEvents } from "./useDaemonAgentEvents";
 import {
   hydrateDaemonThreadIntoLocalState,
+  beginThreadHistoryReplace,
   loadDaemonThreadPageIntoLocalState,
   reloadDaemonThreadIntoLocalState,
   resolveAbsoluteMessageIndex,
+  resolveDaemonOwnedThreadId,
+  threadHistoryReplaceEpoch,
   trimDaemonThreadMessagesToLatestWindow,
 } from "./daemonHelpers";
 import {
@@ -52,6 +55,7 @@ import type {
 } from "./types";
 import { createThreadCollaborationActions } from "./threadCollaborationActions";
 import { fetchHydratedRemoteThreads, findThreadByAuthoritativeIdentity } from "./threadListQueries";
+import { mergeRemoteThreadProfile } from "@/lib/agentStore/threadProfileMerge";
 import {
   pinnedMessageBudgetChars,
   sumMessageContentChars,
@@ -347,11 +351,36 @@ export function useAgentChatPanelProviderValue(): {
   const threadHistoryStack = useAgentStore((state) => state.threadHistoryStack);
   const storeCreateThread = useAgentStore((state) => state.createThread);
   const deleteThread = useAgentStore((state) => state.deleteThread);
-  const setActiveThread = useAgentStore((state) => state.setActiveThread);
-  const openSpawnedThreadInStore = useAgentStore((state) => state.openSpawnedThread);
-  const goBackThread = useAgentStore((state) => state.goBackThread);
+  const storeSetActiveThread = useAgentStore((state) => state.setActiveThread);
+  const storeOpenSpawnedThread = useAgentStore((state) => state.openSpawnedThread);
+  const storeGoBackThread = useAgentStore((state) => state.goBackThread);
+  const setActiveThread = useCallback((id: string | null) => {
+    if (id && id !== useAgentStore.getState().activeThreadId) {
+      beginThreadHistoryReplace(id);
+    }
+    storeSetActiveThread(id);
+  }, [storeSetActiveThread]);
+  const openSpawnedThreadInStore = useCallback((fromThreadId: string, toThreadId: string) => {
+    if (toThreadId !== useAgentStore.getState().activeThreadId) {
+      beginThreadHistoryReplace(toThreadId);
+    }
+    storeOpenSpawnedThread(fromThreadId, toThreadId);
+  }, [storeOpenSpawnedThread]);
+  const goBackThread = useCallback(() => {
+    const state = useAgentStore.getState();
+    for (let index = state.threadHistoryStack.length - 1; index >= 0; index -= 1) {
+      const previousId = state.threadHistoryStack[index];
+      if (previousId && state.threads.some((thread) => thread.id === previousId)) {
+        if (previousId !== state.activeThreadId) {
+          beginThreadHistoryReplace(previousId);
+        }
+        break;
+      }
+    }
+    storeGoBackThread();
+  }, [storeGoBackThread]);
   const addMessage = useAgentStore((state) => state.addMessage);
-  const deleteMessage = useAgentStore((state) => state.deleteMessage);
+  const deleteMessageFromStore = useAgentStore((state) => state.deleteMessage);
   const updateLastAssistantMessage = useAgentStore((state) => state.updateLastAssistantMessage);
   const setThreadTodos = useAgentStore((state) => state.setThreadTodos);
   const setThreadDaemonId = useAgentStore((state) => state.setThreadDaemonId);
@@ -394,7 +423,6 @@ export function useAgentChatPanelProviderValue(): {
   const daemonLocalThreadRef = useRef<string | null>(null);
   const pendingGatewayMessagesRef = useRef<Array<{ role: "user"; content: string; inputTokens: number; outputTokens: number; totalTokens: number; isCompactionSummary: boolean }>>([]);
   const goalRunWorkspacesRef = useRef<Record<string, string>>({});
-  const threadPageLoadChainRef = useRef<Promise<unknown>>(Promise.resolve());
   const latestLoadedThreadIdRef = useRef<string | null>(null);
 
   const createThread = useCallback((opts: Parameters<typeof storeCreateThread>[0]) => {
@@ -749,13 +777,17 @@ export function useAgentChatPanelProviderValue(): {
 
         const existing = existingByDaemonThreadId.get(daemonThreadId);
         if (existing) {
-          nextThreads.push({
+          const merged = {
             ...existing,
             ...hydrated.thread,
             id: existing.id,
             workspaceId: existing.workspaceId,
             surfaceId: existing.surfaceId,
             paneId: existing.paneId,
+          };
+          nextThreads.push({
+            ...merged,
+            ...mergeRemoteThreadProfile(existing, merged),
           });
           if (!(existing.id in nextMessages)) {
             nextMessages[existing.id] = hydrated.messages.map((message) => ({
@@ -839,33 +871,6 @@ export function useAgentChatPanelProviderValue(): {
     }
   }, [activeThread]);
 
-  const forkThread = useCallback(async (messageId: string) => {
-    const notify = useNotificationStore.getState().addNotification;
-    const daemonThreadId = activeThread?.daemonThreadId ?? null;
-    if (!daemonThreadId) {
-      notify({ source: "system", title: "Fork unavailable", body: "This thread is not saved yet." });
-      return;
-    }
-    const api = getAgentDbApi();
-    if (!api?.dbForkThread) {
-      notify({ source: "system", title: "Fork unavailable", body: "Fork is not supported by this build." });
-      return;
-    }
-    const result = await api
-      .dbForkThread(daemonThreadId, messageId)
-      .catch((error) => ({ ok: false, thread_id: null, title: null, error: String(error) }));
-    if (result?.ok && result.thread_id) {
-      await refreshThreadList();
-      const local = findLocalThreadByDaemonThreadId(useAgentStore.getState().threads, result.thread_id);
-      if (local) {
-        setActiveThread(local.id);
-      }
-      notify({ source: "system", title: "Thread forked", body: result.title || "Forked thread created." });
-    } else {
-      notify({ source: "system", title: "Fork failed", body: result?.error || "Unknown error." });
-    }
-  }, [activeThread, refreshThreadList, setActiveThread]);
-
   const fetchThreadList = useCallback(async (options?: { agentFilter?: string | null; includeInternal?: boolean }) => {
     const zorai = getAgentBridge();
     if (!zorai?.agentListThreads) {
@@ -884,6 +889,7 @@ export function useAgentChatPanelProviderValue(): {
     threadId: string,
     direction: "latest" | "older",
   ): Promise<boolean> => {
+    const replaceEpoch = direction === "latest" ? threadHistoryReplaceEpoch(threadId) : undefined;
     const thread = useAgentStore.getState().threads.find((entry) => entry.id === threadId);
     const finishLoading = direction === "latest"
       && thread?.daemonThreadId
@@ -905,6 +911,7 @@ export function useAgentChatPanelProviderValue(): {
           messageLimit,
           messageOffset: 0,
           mergeMode: "replace",
+          replaceEpoch,
           setThreadTodos,
           setDaemonTodosByThread,
         });
@@ -931,11 +938,7 @@ export function useAgentChatPanelProviderValue(): {
       }
     };
 
-    const nextLoad = threadPageLoadChainRef.current
-      .catch(() => undefined)
-      .then(runThreadPageLoad);
-    threadPageLoadChainRef.current = nextLoad.catch(() => undefined);
-    return nextLoad;
+    return runThreadPageLoad();
   }, [agentSettings.react_chat_history_page_size, setThreadTodos]);
 
   const openThread = useCallback((threadId: string) => {
@@ -951,6 +954,43 @@ export function useAgentChatPanelProviderValue(): {
     setView("chat");
     void loadThreadPage(localId, "latest");
   }, [loadThreadPage, setActiveThread]);
+
+  const forkThread = useCallback(async (messageId: string) => {
+    const notify = useNotificationStore.getState().addNotification;
+    const daemonThreadId = resolveDaemonOwnedThreadId({
+      threads: useAgentStore.getState().threads,
+      threadId: activeThreadId ?? "",
+      activeThreadId,
+      activeDaemonThreadId: daemonThreadIdRef.current,
+    });
+    if (!daemonThreadId) {
+      notify({ source: "system", title: "Fork unavailable", body: "This thread is not saved yet." });
+      return;
+    }
+    const api = getAgentDbApi();
+    if (!api?.dbForkThread) {
+      notify({ source: "system", title: "Fork unavailable", body: "Fork is not supported by this build." });
+      return;
+    }
+    const result = await api
+      .dbForkThread(daemonThreadId, messageId)
+      .catch((error) => ({ ok: false, thread_id: null, title: null, error: String(error) }));
+    if (result?.ok && result.thread_id) {
+      await refreshThreadList();
+      let local = findLocalThreadByDaemonThreadId(useAgentStore.getState().threads, result.thread_id);
+      if (!local) {
+        const localId = storeCreateThread({ title: result.title || "Forked thread" });
+        setThreadDaemonId(localId, result.thread_id);
+        local = useAgentStore.getState().threads.find((thread) => thread.id === localId);
+      }
+      if (local) {
+        openThread(local.id);
+      }
+      notify({ source: "system", title: "Thread forked", body: result.title || "Forked thread created." });
+    } else {
+      notify({ source: "system", title: "Fork failed", body: result?.error || "Unknown error." });
+    }
+  }, [activeThreadId, openThread, refreshThreadList, setThreadDaemonId, storeCreateThread]);
 
   useEffect(() => {
     if (!activeThreadId || latestLoadedThreadIdRef.current === activeThreadId) {
@@ -1034,6 +1074,20 @@ export function useAgentChatPanelProviderValue(): {
     sendParticipantSuggestion,
     dismissParticipantSuggestion,
   } = collaborationActions;
+
+  const deleteMessage = useCallback((threadId: string, messageId: string) => {
+    const daemonThreadId = resolveDaemonOwnedThreadId({
+      threads: useAgentStore.getState().threads,
+      threadId,
+      activeThreadId,
+      activeDaemonThreadId: daemonThreadIdRef.current,
+    });
+    deleteMessageFromStore(threadId, messageId);
+    if (!shouldUseDaemonRuntime(agentSettings.agent_backend) || !daemonThreadId) {
+      return;
+    }
+    void getAgentDbApi()?.dbDeleteMessage?.(daemonThreadId, messageId);
+  }, [activeThreadId, agentSettings.agent_backend, deleteMessageFromStore]);
 
   const pinMessageForCompaction = useCallback(async (threadId: string, messageId: string) => {
     const thread = useAgentStore.getState().threads.find((entry) => entry.id === threadId);

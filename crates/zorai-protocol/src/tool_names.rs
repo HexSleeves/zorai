@@ -184,8 +184,8 @@ pub const SPAWN_SUBAGENT: &str = "spawn_subagent";
 pub const SPEECH_TO_TEXT: &str = "speech_to_text";
 pub const SPLIT_PANE: &str = "split_pane";
 pub const START_GOAL_RUN: &str = "start_goal_run";
-pub const SUBMIT_GOAL_FINAL_REVIEW: &str = "submit_goal_final_review";
-pub const SUBMIT_GOAL_STEP_VERDICT: &str = "submit_goal_step_verdict";
+pub const REQUEST_GOAL_REVIEW: &str = "request_goal_review";
+pub const SUBMIT_GOAL_REVIEW: &str = "submit_goal_review";
 pub const SUMMARY: &str = "summary";
 pub const SYMBOL_SEARCH: &str = "symbol_search";
 pub const SWITCH_MODEL: &str = "switch_model";
@@ -420,7 +420,8 @@ pub const GOAL_TOOLS: &[&str] = &[
     LIST_GOAL_RUNS,
     GET_GOAL_RUN,
     CONTROL_GOAL_RUN,
-    SUBMIT_GOAL_STEP_VERDICT,
+    REQUEST_GOAL_REVIEW,
+    SUBMIT_GOAL_REVIEW,
 ];
 pub const ROUTINE_TOOLS: &[&str] = &[
     CREATE_ROUTINE,

@@ -516,6 +516,7 @@ pub(crate) async fn execute_spawn_subagent(
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned);
     let mut allocated_lane_summary = None;
+    let mut allocated_lane_session = None;
     if chosen_session.is_none() && scheduled_at.is_none() {
         let default_source_session = task_snapshot
             .as_ref()
@@ -540,6 +541,7 @@ pub(crate) async fn execute_spawn_subagent(
                 "allocated terminal {} in workspace {} as \"{}\"",
                 lane.session_id, lane.workspace_id, lane.pane_name
             ));
+            allocated_lane_session = Some((lane.session_id, lane.workspace_id));
         }
     }
 
@@ -561,6 +563,18 @@ pub(crate) async fn execute_spawn_subagent(
             Some(runtime.clone()),
         )
         .await;
+
+    if let Some((session_id, workspace_id)) = allocated_lane_session {
+        agent
+            .register_agent_terminal_lease(crate::agent::terminal_leases::AgentTerminalLease::new(
+                session_id,
+                Some(workspace_id),
+                Some(subagent.id.clone()),
+                None,
+                crate::agent::task_prompt::now_millis(),
+            ))
+            .await;
+    }
 
     if let Some(provider_id) = provider_override.as_deref() {
         validate_spawn_provider_override(agent, provider_id, model_override.as_deref()).await?;
@@ -812,112 +826,163 @@ pub(crate) async fn execute_list_models(
 pub(crate) async fn execute_list_agents(agent: &AgentEngine) -> Result<String> {
     let config = agent.get_config().await;
     let mut rows = vec![
-        serde_json::json!({
-            "agent": zorai_protocol::AGENT_HANDLE_SVAROG,
-            "name": MAIN_AGENT_NAME,
-            "kind": "main",
-            "provider": config.provider,
-            "model": config.model,
-            "switchable": true
-        }),
-        serde_json::json!({
-            "agent": CONCIERGE_AGENT_ID,
-            "name": CONCIERGE_AGENT_NAME,
-            "kind": "concierge",
-            "provider": config.concierge.provider.clone().unwrap_or_else(|| config.provider.clone()),
-            "model": config.concierge.model.clone().unwrap_or_else(|| config.model.clone()),
-            "switchable": true
-        }),
-        serde_json::json!({
-            "agent": crate::agent::agent_identity::WELES_AGENT_ID,
-            "name": crate::agent::agent_identity::WELES_AGENT_NAME,
-            "kind": "builtin",
-            "provider": config.builtin_sub_agents.weles.provider.clone().unwrap_or_else(|| config.provider.clone()),
-            "model": config.builtin_sub_agents.weles.model.clone().unwrap_or_else(|| config.model.clone()),
-            "switchable": true
-        }),
-        serde_json::json!({
-            "agent": crate::agent::agent_identity::SWAROZYC_AGENT_ID,
-            "name": crate::agent::agent_identity::SWAROZYC_AGENT_NAME,
-            "kind": "builtin",
-            "provider": config.builtin_sub_agents.swarozyc.provider.clone(),
-            "model": config.builtin_sub_agents.swarozyc.model.clone(),
-            "switchable": true
-        }),
-        serde_json::json!({
-            "agent": crate::agent::agent_identity::RADOGOST_AGENT_ID,
-            "name": crate::agent::agent_identity::RADOGOST_AGENT_NAME,
-            "kind": "builtin",
-            "provider": config.builtin_sub_agents.radogost.provider.clone(),
-            "model": config.builtin_sub_agents.radogost.model.clone(),
-            "switchable": true
-        }),
-        serde_json::json!({
-            "agent": crate::agent::agent_identity::DOMOWOJ_AGENT_ID,
-            "name": crate::agent::agent_identity::DOMOWOJ_AGENT_NAME,
-            "kind": "builtin",
-            "provider": config.builtin_sub_agents.domowoj.provider.clone(),
-            "model": config.builtin_sub_agents.domowoj.model.clone(),
-            "switchable": true
-        }),
-        serde_json::json!({
-            "agent": crate::agent::agent_identity::SWIETOWIT_AGENT_ID,
-            "name": crate::agent::agent_identity::SWIETOWIT_AGENT_NAME,
-            "kind": "builtin",
-            "provider": config.builtin_sub_agents.swietowit.provider.clone(),
-            "model": config.builtin_sub_agents.swietowit.model.clone(),
-            "switchable": true
-        }),
-        serde_json::json!({
-            "agent": crate::agent::agent_identity::PERUN_AGENT_ID,
-            "name": crate::agent::agent_identity::PERUN_AGENT_NAME,
-            "kind": "builtin",
-            "provider": config.builtin_sub_agents.perun.provider.clone(),
-            "model": config.builtin_sub_agents.perun.model.clone(),
-            "switchable": true
-        }),
-        serde_json::json!({
-            "agent": crate::agent::agent_identity::MOKOSH_AGENT_ID,
-            "name": crate::agent::agent_identity::MOKOSH_AGENT_NAME,
-            "kind": "builtin",
-            "provider": config.builtin_sub_agents.mokosh.provider.clone(),
-            "model": config.builtin_sub_agents.mokosh.model.clone(),
-            "switchable": true
-        }),
-        serde_json::json!({
-            "agent": crate::agent::agent_identity::DAZHBOG_AGENT_ID,
-            "name": crate::agent::agent_identity::DAZHBOG_AGENT_NAME,
-            "kind": "builtin",
-            "provider": config.builtin_sub_agents.dazhbog.provider.clone(),
-            "model": config.builtin_sub_agents.dazhbog.model.clone(),
-            "switchable": true
-        }),
-        serde_json::json!({
-            "agent": crate::agent::agent_identity::ROD_AGENT_ID,
-            "name": crate::agent::agent_identity::ROD_AGENT_NAME,
-            "kind": "builtin",
-            "provider": config.builtin_sub_agents.rod.provider.clone(),
-            "model": config.builtin_sub_agents.rod.model.clone(),
-            "switchable": true
-        }),
+        list_agents_target_row(
+            zorai_protocol::AGENT_HANDLE_SVAROG,
+            MAIN_AGENT_NAME,
+            "main",
+            serde_json::json!(config.provider),
+            serde_json::json!(config.model),
+            true,
+        ),
+        list_agents_target_row(
+            CONCIERGE_AGENT_ID,
+            CONCIERGE_AGENT_NAME,
+            "concierge",
+            serde_json::json!(config
+                .concierge
+                .provider
+                .clone()
+                .unwrap_or_else(|| config.provider.clone())),
+            serde_json::json!(config
+                .concierge
+                .model
+                .clone()
+                .unwrap_or_else(|| config.model.clone())),
+            true,
+        ),
+        list_agents_target_row(
+            crate::agent::agent_identity::WELES_AGENT_ID,
+            crate::agent::agent_identity::WELES_AGENT_NAME,
+            "builtin",
+            serde_json::json!(config
+                .builtin_sub_agents
+                .weles
+                .provider
+                .clone()
+                .unwrap_or_else(|| config.provider.clone())),
+            serde_json::json!(config
+                .builtin_sub_agents
+                .weles
+                .model
+                .clone()
+                .unwrap_or_else(|| config.model.clone())),
+            true,
+        ),
+        list_agents_target_row(
+            crate::agent::agent_identity::SWAROZYC_AGENT_ID,
+            crate::agent::agent_identity::SWAROZYC_AGENT_NAME,
+            "builtin",
+            serde_json::json!(config.builtin_sub_agents.swarozyc.provider),
+            serde_json::json!(config.builtin_sub_agents.swarozyc.model),
+            true,
+        ),
+        list_agents_target_row(
+            crate::agent::agent_identity::RADOGOST_AGENT_ID,
+            crate::agent::agent_identity::RADOGOST_AGENT_NAME,
+            "builtin",
+            serde_json::json!(config.builtin_sub_agents.radogost.provider),
+            serde_json::json!(config.builtin_sub_agents.radogost.model),
+            true,
+        ),
+        list_agents_target_row(
+            crate::agent::agent_identity::DOMOWOJ_AGENT_ID,
+            crate::agent::agent_identity::DOMOWOJ_AGENT_NAME,
+            "builtin",
+            serde_json::json!(config.builtin_sub_agents.domowoj.provider),
+            serde_json::json!(config.builtin_sub_agents.domowoj.model),
+            true,
+        ),
+        list_agents_target_row(
+            crate::agent::agent_identity::SWIETOWIT_AGENT_ID,
+            crate::agent::agent_identity::SWIETOWIT_AGENT_NAME,
+            "builtin",
+            serde_json::json!(config.builtin_sub_agents.swietowit.provider),
+            serde_json::json!(config.builtin_sub_agents.swietowit.model),
+            true,
+        ),
+        list_agents_target_row(
+            crate::agent::agent_identity::PERUN_AGENT_ID,
+            crate::agent::agent_identity::PERUN_AGENT_NAME,
+            "builtin",
+            serde_json::json!(config.builtin_sub_agents.perun.provider),
+            serde_json::json!(config.builtin_sub_agents.perun.model),
+            true,
+        ),
+        list_agents_target_row(
+            crate::agent::agent_identity::MOKOSH_AGENT_ID,
+            crate::agent::agent_identity::MOKOSH_AGENT_NAME,
+            "builtin",
+            serde_json::json!(config.builtin_sub_agents.mokosh.provider),
+            serde_json::json!(config.builtin_sub_agents.mokosh.model),
+            true,
+        ),
+        list_agents_target_row(
+            crate::agent::agent_identity::DAZHBOG_AGENT_ID,
+            crate::agent::agent_identity::DAZHBOG_AGENT_NAME,
+            "builtin",
+            serde_json::json!(config.builtin_sub_agents.dazhbog.provider),
+            serde_json::json!(config.builtin_sub_agents.dazhbog.model),
+            true,
+        ),
+        list_agents_target_row(
+            crate::agent::agent_identity::ROD_AGENT_ID,
+            crate::agent::agent_identity::ROD_AGENT_NAME,
+            "builtin",
+            serde_json::json!(config.builtin_sub_agents.rod.provider),
+            serde_json::json!(config.builtin_sub_agents.rod.model),
+            true,
+        ),
     ];
 
     for sub_agent in agent.list_sub_agents().await {
         if sub_agent.id == crate::agent::agent_identity::WELES_BUILTIN_SUBAGENT_ID {
             continue;
         }
-        rows.push(serde_json::json!({
-            "agent": sub_agent.id,
-            "name": sub_agent.name,
-            "kind": if sub_agent.builtin { "builtin" } else { "subagent" },
-            "provider": sub_agent.provider,
-            "model": sub_agent.model,
-            "switchable": sub_agent.enabled
-        }));
+        let mut row = list_agents_target_row(
+            &sub_agent.id,
+            &sub_agent.name,
+            if sub_agent.builtin {
+                "builtin"
+            } else {
+                "subagent"
+            },
+            serde_json::json!(sub_agent.provider),
+            serde_json::json!(sub_agent.model),
+            sub_agent.enabled,
+        );
+        row["spawnable"] = serde_json::Value::Bool(sub_agent.is_spawnable());
+        if let Some(role) = sub_agent
+            .role
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            row["role"] = serde_json::Value::String(role.to_string());
+        }
+        rows.push(row);
     }
 
     serde_json::to_string_pretty(&rows)
         .map_err(|error| anyhow::anyhow!("failed to serialize agent targets: {error}"))
+}
+
+fn list_agents_target_row(
+    agent: &str,
+    name: &str,
+    kind: &str,
+    provider: serde_json::Value,
+    model: serde_json::Value,
+    switchable: bool,
+) -> serde_json::Value {
+    serde_json::json!({
+        "agent": agent,
+        "name": name,
+        "kind": kind,
+        "provider": provider,
+        "model": model,
+        "switchable": switchable,
+        "spawnable": false
+    })
 }
 
 pub(crate) async fn execute_list_participants(
@@ -930,6 +995,7 @@ pub(crate) async fn execute_list_participants(
     }
     if crate::agent::agent_identity::is_internal_dm_thread(thread_id)
         || crate::agent::agent_identity::is_participant_playground_thread(thread_id)
+        || crate::agent::agent_identity::is_goal_run_thread(thread_id)
         || crate::agent::is_internal_handoff_thread(thread_id)
     {
         anyhow::bail!("list_participants is only available on visible operator threads");
@@ -1989,19 +2055,25 @@ async fn execute_message_agent_internal_dm(
     resolved_target_name: &str,
     message: &str,
     preferred_session_hint: Option<&str>,
+    originator_thread_id: &str,
+    originator_task_id: Option<&str>,
 ) -> Result<serde_json::Value> {
-    let result = Box::pin(agent.send_internal_agent_message(
-        sender,
-        resolved_target_id,
-        message,
-        preferred_session_hint,
-    ))
-    .await?;
+    let thread_id = agent
+        .enqueue_internal_agent_message(
+            sender,
+            resolved_target_id,
+            message,
+            preferred_session_hint,
+            originator_thread_id,
+            originator_task_id,
+        )
+        .await?;
     Ok(serde_json::json!({
         "target": resolved_target_name,
-        "thread_id": result.thread_id,
-        "response": result.response,
-        "upstream_message": result.upstream_message,
+        "thread_id": thread_id,
+        "delivered": true,
+        "response": "Internal DM delivered asynchronously. Continue other work; this thread resumes when the recipient replies.",
+        "upstream_message": serde_json::Value::Null,
         "visible_thread_continuation_requested": false,
     }))
 }
@@ -2044,6 +2116,7 @@ pub(crate) async fn execute_message_agent(
     let visible_operator_thread = !thread_id.trim().is_empty()
         && !crate::agent::agent_identity::is_internal_dm_thread(thread_id)
         && !crate::agent::agent_identity::is_participant_playground_thread(thread_id)
+        && !crate::agent::agent_identity::is_goal_run_thread(thread_id)
         && !crate::agent::is_internal_handoff_thread(thread_id);
     if requested_visible_thread_continuation == Some(true) && !visible_operator_thread {
         anyhow::bail!(
@@ -2085,6 +2158,8 @@ pub(crate) async fn execute_message_agent(
             &resolved_target_name,
             message,
             preferred_session_hint.as_deref(),
+            thread_id,
+            task_id,
         ))
         .await?
     };

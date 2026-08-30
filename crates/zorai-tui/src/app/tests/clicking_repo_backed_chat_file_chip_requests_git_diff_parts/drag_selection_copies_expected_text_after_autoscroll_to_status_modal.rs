@@ -211,20 +211,17 @@ fn goal_view_drag_selection_copies_beyond_visible_window() {
         .reduce(task::TaskAction::GoalRunDetailReceived(task::GoalRun {
             id: "goal-1".to_string(),
             title: "Large Goal".to_string(),
-            steps: (1..=80)
-                .map(|idx| task::GoalRunStep {
-                    id: format!("step-{idx}"),
-                    title: format!("Step {idx}"),
-                    order: idx - 1,
-                    ..Default::default()
-                })
-                .collect(),
+            goal: (1..=80)
+                .map(|idx| format!("Selectable goal line {idx}"))
+                .collect::<Vec<_>>()
+                .join(" "),
             ..Default::default()
         }));
     model.main_pane_view = MainPaneView::Task(SidebarItemTarget::GoalRun {
         goal_run_id: "goal-1".to_string(),
         step_id: None,
     });
+    model.goal_workspace.set_prompt_expanded(true);
 
     let chat_area = rendered_chat_area(&model);
     let start_row = chat_area.y.saturating_add(6);
@@ -256,7 +253,7 @@ fn goal_view_drag_selection_copies_beyond_visible_window() {
     let copied = super::conversion::last_copied_text()
         .expect("dragging across goal view content should copy selected text");
     assert!(
-        copied.contains("Step"),
+        copied.contains("Selectable goal line"),
         "expected goal selection to include goal text, got: {copied:?}"
     );
     assert_eq!(model.status_line, "Copied selection to clipboard");

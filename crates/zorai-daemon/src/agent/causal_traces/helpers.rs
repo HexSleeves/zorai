@@ -48,6 +48,7 @@ pub(crate) fn estimated_success_probability(
     }
 }
 
+#[cfg(test)]
 pub(crate) fn estimate_plan_success(step_count: usize, command_steps: usize) -> f64 {
     let complexity_penalty = ((step_count.saturating_sub(2)) as f64 * 0.08).min(0.32);
     let command_penalty = (command_steps as f64 * 0.05).min(0.2);

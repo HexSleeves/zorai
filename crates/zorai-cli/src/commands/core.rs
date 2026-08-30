@@ -627,11 +627,25 @@ fn format_goal_control_output(goal_run_id: &str, action: &str, ok: bool) -> Stri
                 format!("Goal {} was not resumable.", goal_run_id)
             }
         }
-        "retry_step" => {
+        "accept" => {
             if ok {
-                format!("Requested goal step retry for {}.", goal_run_id)
+                format!("Accepted goal {}.", goal_run_id)
             } else {
-                format!("Goal {} was not retryable.", goal_run_id)
+                format!("Goal {} was not accepted.", goal_run_id)
+            }
+        }
+        "soft_reject" => {
+            if ok {
+                format!("Soft-rejected goal {}; worker continues.", goal_run_id)
+            } else {
+                format!("Goal {} was not soft-rejected.", goal_run_id)
+            }
+        }
+        "hard_reject" => {
+            if ok {
+                format!("Hard-rejected goal {}.", goal_run_id)
+            } else {
+                format!("Goal {} was not hard-rejected.", goal_run_id)
             }
         }
         _ => {
@@ -641,35 +655,6 @@ fn format_goal_control_output(goal_run_id: &str, action: &str, ok: bool) -> Stri
                 format!("Goal {} update failed.", goal_run_id)
             }
         }
-    }
-}
-
-fn latest_failed_goal_step(
-    goal: &client::AgentGoalRunRecord,
-) -> Option<&client::AgentGoalRunStepRecord> {
-    goal.steps
-        .iter()
-        .filter(|step| step.status.eq_ignore_ascii_case("failed"))
-        .max_by_key(|step| step.position)
-}
-
-fn format_goal_retry_no_failed_step_output(goal_run_id: &str) -> String {
-    format!("No failed step found for goal {goal_run_id}; nothing to retry.")
-}
-
-fn format_goal_retry_output(goal_run_id: &str, step_index: usize, ok: bool) -> String {
-    if ok {
-        format!(
-            "Requested retry for step {} of goal {}.",
-            step_index + 1,
-            goal_run_id
-        )
-    } else {
-        format!(
-            "Goal {} was not retryable from step {}.",
-            goal_run_id,
-            step_index + 1
-        )
     }
 }
 
@@ -915,10 +900,9 @@ mod tests {
         command_startup_action, default_startup_action, format_direct_message_output,
         format_goal_control_output, format_goal_delete_output, format_goal_detail_output,
         format_goal_dossier_output, format_goal_list_output, format_goal_proof_output,
-        format_goal_reports_output, format_goal_retry_no_failed_step_output,
-        format_operation_status_output, format_prompt_output, format_status_output,
-        format_thread_control_output, format_thread_delete_output, format_thread_detail_output,
-        format_thread_list_output, latest_failed_goal_step, DefaultStartupAction,
+        format_goal_reports_output, format_operation_status_output, format_prompt_output,
+        format_status_output, format_thread_control_output, format_thread_delete_output,
+        format_thread_detail_output, format_thread_list_output, DefaultStartupAction,
     };
     use crate::cli::Commands;
     use crate::client::{
@@ -1307,7 +1291,7 @@ mod tests {
     }
 
     #[test]
-    fn goal_control_output_reports_stop_and_resume_state() {
+    fn goal_control_output_reports_stop_resume_and_review() {
         assert_eq!(
             format_goal_control_output("goal-1", "stop", true),
             "Stopped goal goal-1."
@@ -1316,64 +1300,9 @@ mod tests {
             format_goal_control_output("goal-1", "resume", false),
             "Goal goal-1 was not resumable."
         );
-    }
-
-    #[test]
-    fn latest_failed_goal_step_picks_highest_failed_position() {
-        let goal = AgentGoalRunRecord {
-            id: "goal-1".to_string(),
-            steps: vec![
-                AgentGoalRunStepRecord {
-                    id: "step-1".to_string(),
-                    position: 0,
-                    title: "Plan".to_string(),
-                    status: "failed".to_string(),
-                    ..Default::default()
-                },
-                AgentGoalRunStepRecord {
-                    id: "step-2".to_string(),
-                    position: 1,
-                    title: "Deploy".to_string(),
-                    status: "completed".to_string(),
-                    ..Default::default()
-                },
-                AgentGoalRunStepRecord {
-                    id: "step-3".to_string(),
-                    position: 2,
-                    title: "Verify".to_string(),
-                    status: "failed".to_string(),
-                    ..Default::default()
-                },
-            ],
-            ..Default::default()
-        };
-        let step = latest_failed_goal_step(&goal).expect("expected failed step");
-
-        assert_eq!(step.position, 2);
-        assert_eq!(step.title, "Verify");
-    }
-
-    #[test]
-    fn latest_failed_goal_step_returns_none_when_no_failed_step_exists() {
-        assert!(latest_failed_goal_step(&AgentGoalRunRecord {
-            id: "goal-1".to_string(),
-            steps: vec![AgentGoalRunStepRecord {
-                id: "step-1".to_string(),
-                position: 0,
-                title: "Plan".to_string(),
-                status: "completed".to_string(),
-                ..Default::default()
-            }],
-            ..Default::default()
-        })
-        .is_none());
-    }
-
-    #[test]
-    fn goal_retry_no_failed_step_output_is_informational() {
         assert_eq!(
-            format_goal_retry_no_failed_step_output("goal-1"),
-            "No failed step found for goal goal-1; nothing to retry."
+            format_goal_control_output("goal-1", "accept", true),
+            "Accepted goal goal-1."
         );
     }
 
@@ -1882,25 +1811,45 @@ pub(crate) async fn run(command: Commands) -> Result<()> {
                     format_goal_control_output(&result.goal_run_id, &result.action, result.ok)
                 );
             }
-            GoalAction::Retry { goal_run_id } => {
-                let goal = client::send_goal_get_query(goal_run_id.clone()).await?;
-                let Some(goal) = goal else {
-                    println!("Goal not found.");
-                    return Ok(());
-                };
-                let Some(step) = latest_failed_goal_step(&goal) else {
-                    println!("{}", format_goal_retry_no_failed_step_output(&goal_run_id));
-                    return Ok(());
-                };
+            GoalAction::Accept { goal_run_id } => {
+                let result = client::send_goal_control(goal_run_id, "accept").await?;
+                println!(
+                    "{}",
+                    format_goal_control_output(&result.goal_run_id, &result.action, result.ok)
+                );
+            }
+            GoalAction::SoftReject {
+                goal_run_id,
+                explanation,
+            } => {
+                let payload = serde_json::json!({ "explanation": explanation }).to_string();
                 let result = client::send_goal_control_with_step(
-                    goal_run_id.clone(),
-                    "retry_step",
-                    Some(step.position),
+                    goal_run_id,
+                    "soft_reject",
+                    None,
+                    Some(payload),
                 )
                 .await?;
                 println!(
                     "{}",
-                    format_goal_retry_output(&result.goal_run_id, step.position, result.ok)
+                    format_goal_control_output(&result.goal_run_id, &result.action, result.ok)
+                );
+            }
+            GoalAction::HardReject {
+                goal_run_id,
+                explanation,
+            } => {
+                let payload = serde_json::json!({ "explanation": explanation }).to_string();
+                let result = client::send_goal_control_with_step(
+                    goal_run_id,
+                    "hard_reject",
+                    None,
+                    Some(payload),
+                )
+                .await?;
+                println!(
+                    "{}",
+                    format_goal_control_output(&result.goal_run_id, &result.action, result.ok)
                 );
             }
             GoalAction::Delete { goal_run_id, yes } => {

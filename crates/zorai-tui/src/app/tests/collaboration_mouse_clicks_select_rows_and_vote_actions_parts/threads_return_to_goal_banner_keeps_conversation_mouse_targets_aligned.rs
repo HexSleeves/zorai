@@ -468,15 +468,12 @@ fn esc_from_goal_run_keeps_user_in_goals_view() {
 fn goal_workspace_mouse_wheel_scrolls_plan_rows() {
     let mut model = goal_sidebar_model();
     if let Some(run) = model.tasks.goal_run_by_id_mut("goal-1") {
-        run.steps = (1..=60)
-            .map(|idx| task::GoalRunStep {
-                id: format!("step-{idx}"),
-                title: format!("Step {idx}"),
-                order: idx - 1,
-                ..Default::default()
-            })
-            .collect();
+        run.goal = (0..80)
+            .map(|idx| format!("constraint-{idx}"))
+            .collect::<Vec<_>>()
+            .join(" ");
     }
+    model.goal_workspace.set_prompt_expanded(true);
     model.focus = FocusArea::Chat;
 
     let chat_area = model.pane_layout().chat;
@@ -503,13 +500,20 @@ fn goal_workspace_mouse_wheel_scrolls_timeline_and_details_rows() {
                 phase: "execution".to_string(),
                 message: format!("event {idx} with wrapped timeline details"),
                 details: Some(format!(
-                    "details line for event {idx} that should wrap in the timeline panel"
+                    "details line for event {idx} that should wrap in the timeline panel {}",
+                    (0..200)
+                        .map(|line| format!("detailwrap-{idx}-{line}"))
+                        .collect::<Vec<_>>()
+                        .join(" ")
                 )),
                 step_index: Some(1),
                 ..Default::default()
             })
             .collect();
     }
+    model
+        .goal_workspace
+        .set_mode(goal_workspace::GoalWorkspaceMode::Activity);
     model.tasks.reduce(task::TaskAction::WorkContextReceived(
         task::ThreadWorkContext {
             thread_id: "thread-1".to_string(),
@@ -536,9 +540,12 @@ fn goal_workspace_mouse_wheel_scrolls_timeline_and_details_rows() {
     });
     assert_eq!(model.goal_workspace.timeline_scroll(), 3);
 
+    model
+        .goal_workspace
+        .set_focused_pane(goal_workspace::GoalWorkspacePane::Details);
     model.handle_mouse(MouseEvent {
         kind: MouseEventKind::ScrollDown,
-        column: details.x,
+        column: details.x.saturating_add(2),
         row: details.y.saturating_add(2),
         modifiers: KeyModifiers::NONE,
     });

@@ -104,7 +104,7 @@ fn render_local_skills_section(
     generated_skills_root: &std::path::Path,
 ) -> String {
     format!(
-        "- Skills root: {}\n- Generated skills: {}\n- Curated local skills live directly under {} (zorai reference docs for terminals, browser, tasks, goals, memory, safety, etc.).\n- Before non-trivial work, use `discover_skills` to find the best tailored to your task, consult MEMORY.md and USER.md, then follow the daemon-provided skill discovery result for this turn.\n- If you call `discover_skills` directly, start with a brief intent description (one short sentence describing what you're trying to accomplish) instead of pasting the whole task or sending a 2-3 word fragment. Descriptive sentences match better against semantic vectors and richer skill excerpts.\n- Strong matches require `read_skill` before other substantial tools.\n- Weak matches still point to the best-fit local workflow. Prefer `read_skill` for that candidate first, and use `justify_skill_skip` only if you intentionally bypass it or no local skill fits.\n- When you need clarification or the operator must choose among options, call `ask_questions`. Do not ask clarifying questions in plain text when this tool fits.\n- For `ask_questions`, keep buttons compact with ordered tokens like `A`, `B`, `C`, `D` or `1`, `2`, `3`, and place the full answer text in `content`.\n- `list_skills` remains the raw catalog view, not the decision authority for the task.\n- The `cheatsheet` skill provides a quick reference for all available MCP tools.\n- Prefer reusing an existing skill over inventing a brand-new workflow.",
+        "- Skills root: {}\n- Generated skills: {}\n- Curated local skills live directly under {} (zorai reference docs for terminals, browser, tasks, goals, memory, safety, etc.).\n- Call `discover_skills` then `read_skill` only when a local playbook would help. Use `read_memory`, `read_user`, and `read_soul` when you need memory recall.\n- `discover_guidelines`, `discover_skills`, `read_guideline`, and `read_skill` are optional. Call them only when a local workflow would change how you do this turn; skip them for simple Q&A, status, and work you already know how to do.\n- When you do call `discover_guidelines` or `discover_skills`, send a brief intent sentence (e.g., 'modify python wheel builder for alternate compiler flag'), not the full task transcript and not a 2-3 word fragment.\n- Read a guideline or skill only for a match you will actually follow.\n- When you need clarification or the operator must choose among options, call `ask_questions`. Do not ask clarifying questions in plain text when this tool fits.\n- For `ask_questions`, keep buttons compact with ordered tokens like `A`, `B`, `C`, `D` or `1`, `2`, `3`, and place the full answer text in `content`.\n- `list_skills` is the raw catalog if you already know a name.\n- The `cheatsheet` skill provides a quick reference for all available MCP tools.\n- Prefer reusing an existing skill over inventing a brand-new workflow.",
         skills_root.display(),
         generated_skills_root.display(),
         skills_root.display(),
@@ -113,7 +113,7 @@ fn render_local_skills_section(
 
 fn render_local_guidelines_section(guidelines_root: &std::path::Path) -> String {
     format!(
-        "- Guidelines root: {}\n- Guidelines are documentation-only workflow orchestrators above skills.\n- For non-trivial work, call `discover_guidelines` with a brief intent description (one short sentence describing what you're trying to accomplish) and `read_guideline` for the best match before calling `discover_skills`.\n- Follow the guideline's recommended skills, checks, and task-specific failure modes.",
+        "- Guidelines root: {}\n- Guidelines are optional documentation-only workflow orchestrators above skills.\n- Call `discover_guidelines` then `read_guideline` only when a guideline would change this turn; do not start every task with them.",
         guidelines_root.display(),
     )
 }
@@ -147,7 +147,7 @@ fn render_recall_and_memory_section(config: &AgentConfig) -> String {
         "- Prefer `read_memory`, `read_user`, and `read_soul` for memory recall before raw file reads.\n- Treat zorai memory as layered: SOUL.md is identity, MEMORY.md stores durable facts and reusable strategy hints, USER.md stores operator profile, and structured daemon state plus recall systems carry the rest.\n- Use `session_search` or `onecontext_search` when the user asks about prior decisions, existing implementations, or historical debugging context.\n- Use `semantic_query` when you need local package/crate summaries, compose service topology, code import relationships, or learned workspace conventions before editing.\n- Before big or multi-step work, write or update a short working spec in the current thread artifact specs directory under zorai data root (`threads/<thread_id>/artifacts/specs/`) so it survives handoffs and restarts.\n- Before proceeding after a pause, handoff, or context shift, look up and reread the relevant spec from that current thread artifact specs directory so execution stays anchored to the latest written plan.\n- For any non-trivial or multi-step task, call `update_todo` early to enter plan mode, then keep that todo list current as work progresses.\n- Create a general specs todo for big work, keep follow-up items visible, and continue following up on spawned/background tasks until each one is resolved, explicitly blocked, or cancelled.\n- When you learn durable operator preferences, stable project facts, or reusable strategy hints, call `update_memory` with a concise update so future sessions start with that context.\n- Do not write task progress, temporary TODOs, approval status, or transient risk labels into durable memory.\n- Memory is provenance-backed and operator-auditable. Correct or retract stale durable facts explicitly instead of silently layering contradictions on top.\n- Memory files have hard limits: SOUL.md 2000 chars, MEMORY.md 3600 chars, USER.md 1800 chars.\n",
     );
     section.push_str(&format!(
-        "- {} is your concierge peer in zorai. Use `message_agent` only for private cross-agent coordination or quick checks. It does not switch the active responder for the operator thread and future operator turns do not route to the message target. On visible threads, targeting an active thread participant defaults to visible-thread continuation so participant work stays in the operator thread.\n",
+        "- {} is your concierge peer in zorai. Use `message_agent` only for private cross-agent coordination or quick checks. It delivers asynchronously and does not wait for the reply; this thread resumes when the recipient answers. It does not switch the active responder for the operator thread and future operator turns do not route to the message target. On visible threads, targeting an active thread participant defaults to visible-thread continuation so participant work stays in the operator thread.\n",
         CONCIERGE_AGENT_NAME
     ));
     section.push_str(
@@ -172,7 +172,7 @@ fn render_recall_and_memory_section(config: &AgentConfig) -> String {
 }
 
 fn render_terminal_session_discipline_section() -> &'static str {
-    "- Before running actions that truly need an existing terminal, call `list_terminals` to discover current live session IDs and CWD.\n- Do not force a `session` argument in normal TUI chat or goal-run turns just because a previous frontend session existed. Omit `session` unless you intentionally target a known live terminal or the operator explicitly asked you to reuse one.\n- When you do target a live terminal, reuse that `session` value across related tool calls so all actions stay in one terminal context.\n- For long-running terminal work, prefer non-blocking execution: set `wait_for_completion=false` or use `timeout_seconds > 600`, capture the returned `operation_id`, and continue other work. This thread auto-resumes when the command finishes. Do not poll `get_operation_status`. If you cannot continue without the result, call `get_operation_status` once with `wait=true`.\n- If a command is still running, timed out while still active, or is waiting for interactive completion, treat that terminal as occupied and switch to another terminal/session before continuing other work.\n- If you need another terminal in the same agent workspace, call `allocate_terminal`, then continue with the returned session ID.\n- If the operator asks to use another terminal, call `list_terminals` again and switch explicitly."
+    "- Before running actions that truly need an existing terminal, call `list_terminals` to discover current live session IDs and CWD.\n- Do not force a `session` argument in normal TUI chat or goal-run turns just because a previous frontend session existed. Omit `session` unless you intentionally target a known live terminal or the operator explicitly asked you to reuse one.\n- When you do target a live terminal, reuse that `session` value across related tool calls so all actions stay in one terminal context.\n- For long-running terminal work, prefer non-blocking execution: set `wait_for_completion=false` or use `timeout_seconds > 600`, capture the returned `operation_id`, and continue other work. This thread auto-resumes when the command finishes. Do not poll `get_operation_status`. If you cannot continue without the result, call `get_operation_status` once with `wait=true`.\n- If a command is still running, timed out while still active, or is waiting for interactive completion, treat that terminal as occupied and switch to another terminal/session before continuing other work.\n- If you need another terminal in the same agent workspace, call `allocate_terminal`, then continue with the returned session ID.\n- Agent-allocated terminals are reclaimed when the owning task or subagent finishes, and unused idle lanes are closed automatically. Do not assume an allocated session stays forever.\n- If the operator asks to use another terminal, call `list_terminals` again and switch explicitly."
 }
 
 fn render_large_file_writes_section() -> &'static str {
@@ -273,32 +273,6 @@ fn render_morphogenesis_soul_adaptations_section(
         ));
     }
     lines.join("\n")
-}
-
-fn render_subagent_supervision_section(config: &AgentConfig) -> String {
-    let mut section = String::from(
-        "- For large tasks with clearly separable work, call `spawn_subagent` to create bounded child tasks instead of trying to do everything in one loop.\n- If a child should use a specific provider or model, call `fetch_authenticated_providers` first and `fetch_provider_models` for the chosen provider before setting `spawn_subagent.provider` or `spawn_subagent.model`.\n- Keep each subagent narrow in scope and avoid creating duplicate child assignments.\n- Monitor child progress with `list_subagents` and integrate their results before declaring the parent task complete.\n- If a child reports that it exhausted its execution budget and still has useful remaining work, call `extend_subagent_budget` on that child thread instead of respawning from scratch.\n- Do not use `list_agents` to check spawned child progress; it only lists runtime targets.\n- Do not busy-wait on child agents. If there is no other useful work to do after delegating, send a normal progress update and stop so zorai can resume you when children finish.\n- Spawned agents carry their own Slavic persona. Treat those identities as real collaborators with bounded scope, not as disposable copies of yourself.\n",
-    );
-    if config.collaboration.enabled {
-        section.push_str(
-            "- When subagents need to coordinate, use `broadcast_contribution`, `read_peer_memory`, and `vote_on_disagreement` so disagreements are explicit instead of implicit.\n",
-        );
-    }
-    section.push_str(
-        "- zorai caps active subagents per parent, so queue additional children only when they materially advance the task.\n- For tasks requiring domain expertise, prefer `route_to_specialist` over `spawn_subagent`. The handoff broker matches capability tags to specialist profiles, assembles context bundles with episodic memory and negative constraints, and records a WORM audit trail.",
-    );
-    section
-}
-
-fn render_sub_agent_registry_section(sub_agents: &[SubAgentDefinition]) -> Option<String> {
-    let mut content = String::new();
-    super::task_prompt::append_sub_agent_registry(&mut content, sub_agents);
-    let trimmed = content.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
 }
 
 fn render_active_skill_gate_section(
@@ -469,7 +443,6 @@ fn build_sections(
     target: &PromptInspectionTarget,
     memory: &AgentMemory,
     memory_paths: &super::task_prompt::MemoryPaths,
-    sub_agents: &[SubAgentDefinition],
     operator_model_summary: Option<&str>,
     operational_context: Option<&str>,
     causal_guidance: Option<&str>,
@@ -598,14 +571,6 @@ fn build_sections(
         "Subagent Supervision",
         render_subagent_supervision_section(config),
     );
-    if let Some(subagent_registry) = render_sub_agent_registry_section(sub_agents) {
-        push_section(
-            &mut sections,
-            "available_subagents",
-            "Available Sub-Agents",
-            subagent_registry,
-        );
-    }
     push_section(
         &mut sections,
         "runtime_identity",
@@ -721,7 +686,6 @@ impl AgentEngine {
             &target,
             &memory,
             &memory_paths,
-            &sub_agents,
             operator_model_summary.as_deref(),
             operational_context.as_deref(),
             causal_guidance.as_deref(),

@@ -462,6 +462,14 @@ impl AgentEngine {
         context: PolicyEvaluationContext,
         now_epoch_secs: u64,
     ) -> Result<SelectedPolicyDecision> {
+        if scope.goal_run_id.is_some() {
+            return Ok(SelectedPolicyDecision {
+                source: PolicyDecisionSource::ReusedRecent,
+                decision: continue_policy_decision(
+                    "Goal worker uses owner supervisor review instead of orchestrator policy.",
+                ),
+            });
+        }
         let recent = self.latest_policy_decision(scope, now_epoch_secs).await;
         if let Some(recent) = recent.as_ref() {
             if recent.decision.action != PolicyAction::Continue

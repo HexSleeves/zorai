@@ -1,13 +1,10 @@
 use super::*;
-use serde::Deserialize;
 
 #[derive(Debug, Clone)]
 pub(crate) struct ResolvedGoalLocalAgent {
     pub role_id: String,
-    pub agent_label: String,
     pub provider: String,
     pub model: String,
-    pub reasoning_effort: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -148,21 +145,6 @@ fn matches_global_subagent(definition: &SubAgentDefinition, identifier: &str) ->
             .is_some_and(|value| value.eq_ignore_ascii_case(identifier))
 }
 
-fn goal_local_agent_label(role_id: &str) -> String {
-    role_id
-        .split(['_', '-', ' '])
-        .filter(|part| !part.is_empty())
-        .map(|part| {
-            let mut chars = part.chars();
-            match chars.next() {
-                Some(first) => first.to_ascii_uppercase().to_string() + chars.as_str(),
-                None => String::new(),
-            }
-        })
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
 fn exact_goal_local_match(
     identifier: &str,
     assignments: &[GoalAgentAssignment],
@@ -175,10 +157,8 @@ fn exact_goal_local_match(
         .map(|assignment| {
             GoalResolvedAgentTarget::GoalLocal(ResolvedGoalLocalAgent {
                 role_id: assignment.role_id.clone(),
-                agent_label: goal_local_agent_label(&assignment.role_id),
                 provider: assignment.provider.clone(),
                 model: assignment.model.clone(),
-                reasoning_effort: assignment.reasoning_effort.clone(),
             })
         })
 }
@@ -204,24 +184,10 @@ fn heuristic_goal_local_match(
         .map(|assignment| {
             GoalResolvedAgentTarget::GoalLocal(ResolvedGoalLocalAgent {
                 role_id: assignment.role_id.clone(),
-                agent_label: goal_local_agent_label(&assignment.role_id),
                 provider: assignment.provider.clone(),
                 model: assignment.model.clone(),
-                reasoning_effort: assignment.reasoning_effort.clone(),
             })
         })
-}
-
-fn exact_or_heuristic_goal_local_match(
-    identifier: &str,
-    assignments: &[GoalAgentAssignment],
-) -> Option<ResolvedGoalLocalAgent> {
-    match exact_goal_local_match(identifier, assignments)
-        .or_else(|| heuristic_goal_local_match(identifier, assignments))
-    {
-        Some(GoalResolvedAgentTarget::GoalLocal(agent)) => Some(agent),
-        _ => None,
-    }
 }
 
 #[cfg(test)]
@@ -273,142 +239,7 @@ pub(crate) fn goal_local_agent_prompt_block(assignments: &[GoalAgentAssignment])
         .join("\n")
 }
 
-pub(crate) fn goal_run_step_execution_binding(
-    goal_run: &GoalRun,
-    step: &GoalRunStep,
-) -> Option<GoalRoleBinding> {
-    goal_run
-        .dossier
-        .as_ref()?
-        .units
-        .iter()
-        .find(|unit| unit.id == step.id)
-        .map(|unit| unit.execution_binding.clone())
-}
-
-#[derive(Debug, Deserialize)]
-struct GoalLocalRoleMatch {
-    #[serde(default)]
-    selected_role_id: Option<String>,
-}
-
 impl AgentEngine {
-    async fn request_goal_local_role_match(
-        &self,
-        identifier: &str,
-        step_title: &str,
-        step_instructions: &str,
-        assignments: &[GoalAgentAssignment],
-    ) -> Option<String> {
-        let available_roles = assignments
-            .iter()
-            .filter(|assignment| assignment.enabled)
-            .map(|assignment| {
-                format!(
-                    "- role_id={} provider={} model={}",
-                    assignment.role_id, assignment.provider, assignment.model
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        if available_roles.is_empty() {
-            return None;
-        }
-
-        let prompt = format!(
-            "Choose the best goal-local role for this requested binding.\n\
-             Return strict JSON only in the form {{\"selected_role_id\":string|null}}.\n\
-             Pick only from the available role ids below. If none fit, return null.\n\n\
-             Requested binding: {}\n\
-             Step title: {}\n\
-             Step instructions: {}\n\n\
-             Available role ids:\n{}",
-            identifier, step_title, step_instructions, available_roles
-        );
-
-        let selection = self
-            .run_goal_structured::<GoalLocalRoleMatch>(&prompt)
-            .await
-            .ok()?;
-        let selected_role_id = selection
-            .selected_role_id
-            .as_deref()
-            .map(str::trim)
-            .filter(|value| !value.is_empty())?;
-
-        assignments
-            .iter()
-            .find(|assignment| {
-                assignment.enabled && assignment.role_id.eq_ignore_ascii_case(selected_role_id)
-            })
-            .map(|assignment| assignment.role_id.clone())
-    }
-
-    pub(crate) async fn resolve_goal_local_binding_with_fallback(
-        &self,
-        identifier: &str,
-        step_title: &str,
-        step_instructions: &str,
-        assignments: &[GoalAgentAssignment],
-    ) -> Option<ResolvedGoalLocalAgent> {
-        if let Some(local) = exact_or_heuristic_goal_local_match(identifier, assignments) {
-            return Some(local);
-        }
-        let selected_role_id = self
-            .request_goal_local_role_match(identifier, step_title, step_instructions, assignments)
-            .await?;
-        exact_or_heuristic_goal_local_match(&selected_role_id, assignments)
-    }
-
-    pub(crate) async fn resolve_goal_target_for_binding(
-        &self,
-        goal_run: &GoalRun,
-        step: &GoalRunStep,
-        binding: &GoalRoleBinding,
-    ) -> Option<GoalResolvedAgentTarget> {
-        let identifier = match binding {
-            GoalRoleBinding::Builtin(value) | GoalRoleBinding::Subagent(value) => value,
-        };
-        if is_main_identifier(identifier) {
-            return Some(GoalResolvedAgentTarget::BuiltinMain);
-        }
-        if let Some(local) = self
-            .resolve_goal_local_binding_with_fallback(
-                identifier,
-                &step.title,
-                &step.instructions,
-                &goal_run.runtime_assignment_list,
-            )
-            .await
-        {
-            return Some(GoalResolvedAgentTarget::GoalLocal(local));
-        }
-        let global_subagents = self.list_sub_agents().await;
-        global_subagents
-            .iter()
-            .find(|definition| {
-                definition.enabled && matches_global_subagent(definition, identifier)
-            })
-            .cloned()
-            .map(GoalResolvedAgentTarget::GlobalSubagent)
-    }
-
-    pub(crate) async fn resolve_goal_execution_target(
-        &self,
-        goal_run: &GoalRun,
-        step: &GoalRunStep,
-    ) -> Option<GoalResolvedAgentTarget> {
-        let binding =
-            goal_run_step_execution_binding(goal_run, step).or_else(|| match &step.kind {
-                GoalRunStepKind::Specialist(role) if !role.trim().is_empty() => {
-                    Some(GoalRoleBinding::Subagent(role.clone()))
-                }
-                _ => None,
-            })?;
-        self.resolve_goal_target_for_binding(goal_run, step, &binding)
-            .await
-    }
-
     pub(crate) async fn apply_goal_resolved_target_to_task(
         &self,
         task_id: &str,
@@ -463,22 +294,6 @@ impl AgentEngine {
             self.trusted_weles_tasks.write().await.insert(task_id);
         }
         Some(updated)
-    }
-
-    pub(crate) async fn goal_owner_profile_for_task_target(
-        &self,
-        task: &AgentTask,
-        target: Option<&GoalResolvedAgentTarget>,
-    ) -> GoalRuntimeOwnerProfile {
-        match target {
-            Some(GoalResolvedAgentTarget::GoalLocal(agent)) => GoalRuntimeOwnerProfile {
-                agent_label: agent.agent_label.clone(),
-                provider: agent.provider.clone(),
-                model: agent.model.clone(),
-                reasoning_effort: agent.reasoning_effort.clone(),
-            },
-            _ => self.current_step_owner_profile_for_task(task).await,
-        }
     }
 }
 
@@ -635,10 +450,8 @@ mod tests {
         engine.tasks.lock().await.clear();
         let target = GoalResolvedAgentTarget::GoalLocal(ResolvedGoalLocalAgent {
             role_id: "planning".to_string(),
-            agent_label: "Planning".to_string(),
             provider: "openai".to_string(),
             model: "gpt-5.4-mini".to_string(),
-            reasoning_effort: Some("medium".to_string()),
         });
 
         let updated = engine

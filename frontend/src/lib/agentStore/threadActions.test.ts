@@ -237,3 +237,45 @@ describe("agentStore generated thread titles", () => {
     expect(useAgentStore.getState().threads[0]?.title).toBe("thread-a");
   });
 });
+
+describe("agentStore deleteMessage", () => {
+  it("removes the message from local thread state", () => {
+    const local = makeThread("local-1");
+    local.daemonThreadId = "daemon-1";
+    local.messageCount = 2;
+    resetStoreState([local], "local-1", []);
+    useAgentStore.setState({
+      messages: {
+        "local-1": [
+          {
+            id: "msg-keep",
+            threadId: "local-1",
+            createdAt: 1,
+            role: "user",
+            content: "keep",
+            inputTokens: 0,
+            outputTokens: 0,
+            totalTokens: 0,
+            isCompactionSummary: false,
+          },
+          {
+            id: "msg-drop",
+            threadId: "local-1",
+            createdAt: 2,
+            role: "assistant",
+            content: "drop",
+            inputTokens: 0,
+            outputTokens: 0,
+            totalTokens: 0,
+            isCompactionSummary: false,
+          },
+        ],
+      },
+    } as any);
+
+    useAgentStore.getState().deleteMessage("local-1", "msg-drop");
+
+    expect(useAgentStore.getState().messages["local-1"]?.map((message) => message.id)).toEqual(["msg-keep"]);
+    expect(useAgentStore.getState().threads.find((thread) => thread.id === "local-1")?.messageCount).toBe(1);
+  });
+});

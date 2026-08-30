@@ -25,6 +25,9 @@ impl TuiModel {
                 .unwrap_or(0);
             format!("subagent-{now}")
         });
+        let active_owner_matches = self
+            .active_thread_owner_agent_id()
+            .is_some_and(|owner_id| owner_id.eq_ignore_ascii_case(&id));
         let mut raw = editor
             .raw_json
             .clone()
@@ -171,6 +174,14 @@ impl TuiModel {
             );
         }
         self.send_daemon_command(DaemonCommand::SetSubAgent(raw.to_string()));
+        if active_owner_matches {
+            crate::app::commands::apply_active_thread_provider_model_to_daemon(
+                self,
+                &editor.provider,
+                &editor.model,
+                editor.reasoning_effort.as_deref(),
+            );
+        }
 
         let optimistic = crate::state::SubAgentEntry {
             id: raw

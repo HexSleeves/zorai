@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAgentStore } from "@/lib/agentStore";
 import type { AgentThread } from "@/lib/agentStore";
+import { useWorkspaceStore } from "@/lib/workspaceStore";
+import { findPaneIdsForSession } from "@/lib/workspace-store/helpers";
 import {
   handleGatewayIncomingEvent,
   handleThreadCreatedEvent,
+  handleWorkspaceCommand,
 } from "./daemonEventHandlers";
 import { clearPendingUnboundThreadBind, notePendingUnboundThreadBind } from "./newThreadTargetAgent";
 
@@ -258,5 +261,41 @@ describe("handleThreadCreatedEvent", () => {
     expect(useAgentStore.getState().activeThreadId).toBe("local-new");
     expect(useAgentStore.getState().threads.some((thread) => thread.daemonThreadId === "daemon-from-previous-visit"))
       .toBe(true);
+  });
+});
+
+describe("handleWorkspaceCommand close_agent_terminal", () => {
+  beforeEach(() => {
+    useWorkspaceStore.setState({
+      workspaces: [],
+      activeWorkspaceId: null,
+    } as any);
+  });
+
+  it("closes agent-owned panes even when they are not on the active surface", () => {
+    const store = useWorkspaceStore.getState();
+    const agentWorkspaceId = store.createWorkspace("Agent workspace", {
+      layoutMode: "canvas",
+      makeActive: true,
+    });
+    const agentSurfaceId = useWorkspaceStore.getState().workspaces.find((workspace) => workspace.id === agentWorkspaceId)
+      ?.activeSurfaceId ?? null;
+    const paneId = store.createCanvasPanel(agentSurfaceId ?? undefined, {
+      paneName: "Subagent · tests",
+      sessionId: "sess-subagent-1",
+    });
+    expect(paneId).toBeTruthy();
+    expect(findPaneIdsForSession(useWorkspaceStore.getState().workspaces, "sess-subagent-1")).toEqual([paneId]);
+
+    store.createWorkspace("Operator workspace", { layoutMode: "canvas", makeActive: true });
+    expect(useWorkspaceStore.getState().activeWorkspaceId).not.toBe(agentWorkspaceId);
+
+    handleWorkspaceCommand({
+      command: "close_agent_terminal",
+      args: { session_id: "sess-subagent-1" },
+    });
+
+    expect(findPaneIdsForSession(useWorkspaceStore.getState().workspaces, "sess-subagent-1")).toEqual([]);
+    expect(useWorkspaceStore.getState().workspaces.find((workspace) => workspace.id === agentWorkspaceId)).toBeTruthy();
   });
 });

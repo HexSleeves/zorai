@@ -53,6 +53,7 @@ fn sample_goal_run_for_welcome(
         compensation_status: None,
         compensation_summary: None,
         active_task_id: None,
+        pending_review_report: None,
         duration_ms: None,
         steps: vec![GoalRunStep {
             id: "step-1".to_string(),
@@ -124,6 +125,7 @@ fn sample_goal_run_with_kind(
         compensation_status: None,
         compensation_summary: None,
         active_task_id: None,
+        pending_review_report: None,
         duration_ms: None,
         steps: vec![GoalRunStep {
             id: "step-1".to_string(),

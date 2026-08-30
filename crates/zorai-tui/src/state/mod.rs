@@ -206,6 +206,10 @@ pub enum DaemonCommand {
         target_agent_id: String,
         context_window_tokens: u32,
     },
+    SetThreadExecutionProfile {
+        thread_id: String,
+        profile_json: String,
+    },
     ControlGoalRun {
         goal_run_id: String,
         action: String,

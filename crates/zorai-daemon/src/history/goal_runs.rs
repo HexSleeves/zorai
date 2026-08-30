@@ -148,6 +148,7 @@ fn map_goal_run_row_db(row: &db::Row) -> anyhow::Result<GoalRun> {
         compensation_status: row.get(32)?,
         compensation_summary: row.get(33)?,
         active_task_id: row.get(34)?,
+        pending_review_report: None,
         duration_ms: row.get::<Option<i64>>(35)?.map(|value| value as u64),
         steps: Vec::new(),
         events: Vec::new(),
@@ -1439,6 +1440,7 @@ impl HistoryStore {
             GoalRunStatus::Planning,
             GoalRunStatus::Running,
             GoalRunStatus::AwaitingApproval,
+            GoalRunStatus::AwaitingReview,
             GoalRunStatus::Paused,
         ]
         .into_iter()
@@ -1675,6 +1677,7 @@ impl HistoryStore {
                     compensation_status: None,
                     compensation_summary: None,
                     active_task_id: None,
+                    pending_review_report: None,
                     duration_ms: None,
                     steps,
                     events: Vec::new(),
@@ -2050,6 +2053,7 @@ impl HistoryStore {
                 compensation_status: row.get(29)?,
                 compensation_summary: row.get(30)?,
                 active_task_id: row.get(31)?,
+                pending_review_report: None,
                 duration_ms: row.get::<Option<i64>>(32)?.map(|v| v as u64),
                 steps: Vec::new(),
                 events: Vec::new(),

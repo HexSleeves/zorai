@@ -208,6 +208,7 @@ async fn maybe_run_consolidation_if_idle_blocks_when_goal_run_is_awaiting_approv
         compensation_status: None,
         compensation_summary: None,
         active_task_id: None,
+        pending_review_report: None,
         duration_ms: None,
         steps: Vec::new(),
         events: Vec::new(),

@@ -78,6 +78,7 @@ pub(crate) async fn allocate_terminal_lane(
             "session_id": new_session_id.to_string(),
             "pane_name": pane_name.clone(),
             "cwd": cwd.clone(),
+            "auto_owned": true,
         }),
     });
 
@@ -92,6 +93,9 @@ pub(crate) async fn allocate_terminal_lane(
 
 pub(crate) async fn execute_allocate_terminal(
     args: &serde_json::Value,
+    agent: &AgentEngine,
+    thread_id: &str,
+    task_id: Option<&str>,
     session_manager: &Arc<SessionManager>,
     preferred_session_id: Option<SessionId>,
     event_tx: &broadcast::Sender<AgentEvent>,
@@ -126,6 +130,15 @@ pub(crate) async fn execute_allocate_terminal(
         &default_pane_name,
     )
     .await?;
+    agent
+        .register_agent_terminal_lease(crate::agent::terminal_leases::AgentTerminalLease::new(
+            lane.session_id,
+            Some(lane.workspace_id.clone()),
+            task_id.map(ToOwned::to_owned),
+            Some(thread_id.to_string()),
+            crate::agent::task_prompt::now_millis(),
+        ))
+        .await;
 
     let source_command_suffix = lane
         .source_active_command

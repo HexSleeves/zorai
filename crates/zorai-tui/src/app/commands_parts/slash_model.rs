@@ -81,17 +81,18 @@ impl TuiModel {
 
     pub(crate) fn apply_active_thread_custom_model(&mut self, name: &str, model_id: &str) {
         if let Some(pending) = self.pending_target_agent_config.clone() {
-            self.send_daemon_command(DaemonCommand::SetTargetAgentProviderModel {
-                target_agent_id: pending.target_agent_id.clone(),
-                provider_id: pending.provider_id.clone(),
-                model: model_id.to_string(),
-            });
             apply_target_agent_custom_model_locally(
                 self,
                 &pending.target_agent_id,
                 &pending.target_agent_name,
                 &pending.provider_id,
                 model_id,
+            );
+            apply_active_thread_provider_model_to_daemon(
+                self,
+                &pending.provider_id,
+                model_id,
+                pending.reasoning_effort.as_deref(),
             );
             self.status_line = format!("{} model: {model_id}", pending.target_agent_name);
             return;
@@ -118,6 +119,7 @@ impl TuiModel {
             "{} model: {model_id}",
             self.active_thread_context_owner_label()
         );
+        apply_active_thread_provider_model_to_daemon(self, &self.config.provider, model_id, None);
     }
 }
 
@@ -167,7 +169,58 @@ fn apply_svarog_custom_model_locally(model: &mut TuiModel, name: &str, model_id:
     }
 }
 
-fn apply_target_agent_custom_model_locally(
+pub(crate) fn push_active_thread_execution_profile_to_daemon(
+    model: &TuiModel,
+    provider_id: &str,
+    model_id: &str,
+    reasoning_effort: Option<&str>,
+) {
+    let Some(thread_id) = model.chat.active_thread().map(|thread| thread.id.clone()) else {
+        return;
+    };
+    let mut profile = serde_json::Map::new();
+    profile.insert(
+        "provider".to_string(),
+        serde_json::Value::String(provider_id.trim().to_string()),
+    );
+    profile.insert(
+        "model".to_string(),
+        serde_json::Value::String(model_id.trim().to_string()),
+    );
+    if let Some(reasoning_effort) = reasoning_effort.map(str::trim).filter(|value| !value.is_empty())
+    {
+        profile.insert(
+            "reasoning_effort".to_string(),
+            serde_json::Value::String(reasoning_effort.to_string()),
+        );
+    }
+    model.send_daemon_command(DaemonCommand::SetThreadExecutionProfile {
+        thread_id,
+        profile_json: serde_json::Value::Object(profile).to_string(),
+    });
+}
+
+pub(crate) fn apply_active_thread_provider_model_to_daemon(
+    model: &TuiModel,
+    provider_id: &str,
+    model_id: &str,
+    reasoning_effort: Option<&str>,
+) {
+    push_active_thread_execution_profile_to_daemon(model, provider_id, model_id, reasoning_effort);
+    let Some(target_agent_id) = model.active_thread_owner_agent_id() else {
+        return;
+    };
+    if target_agent_id.eq_ignore_ascii_case(zorai_protocol::AGENT_ID_SWAROG) {
+        return;
+    }
+    model.send_daemon_command(DaemonCommand::SetTargetAgentProviderModel {
+        target_agent_id,
+        provider_id: provider_id.trim().to_string(),
+        model: model_id.trim().to_string(),
+    });
+}
+
+pub(crate) fn apply_target_agent_custom_model_locally(
     model: &mut TuiModel,
     target_agent_id: &str,
     target_agent_name: &str,
@@ -179,6 +232,23 @@ fn apply_target_agent_custom_model_locally(
         if model.concierge.provider.as_deref().unwrap_or("").is_empty() {
             model.concierge.provider = Some(provider_id.to_string());
         }
+    }
+
+    if model.is_explicit_builtin_persona(target_agent_id) {
+        let key = target_agent_id.trim().to_ascii_lowercase();
+        let mut raw = model
+            .config
+            .agent_config_raw
+            .clone()
+            .unwrap_or_else(|| serde_json::json!({}));
+        if raw.get("builtin_sub_agents").is_none() {
+            raw["builtin_sub_agents"] = serde_json::json!({});
+        }
+        raw["builtin_sub_agents"][key.as_str()]["provider"] =
+            serde_json::Value::String(provider_id.to_string());
+        raw["builtin_sub_agents"][key.as_str()]["model"] =
+            serde_json::Value::String(model_id.to_string());
+        model.config.agent_config_raw = Some(raw);
     }
 
     for entry in &mut model.subagents.entries {

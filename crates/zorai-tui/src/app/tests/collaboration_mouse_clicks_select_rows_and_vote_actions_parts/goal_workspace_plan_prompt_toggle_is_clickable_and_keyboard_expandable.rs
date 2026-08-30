@@ -44,7 +44,10 @@ fn goal_workspace_plan_step_is_clickable_and_keyboard_expandable() {
 
     let click = find_goal_workspace_hit_position(
         &model,
-        widgets::goal_workspace::GoalWorkspaceHitTarget::PlanStep("step-1".to_string()),
+        widgets::goal_workspace::GoalWorkspaceHitTarget::PlanTodo {
+            step_id: String::new(),
+            todo_id: "todo-1".to_string(),
+        },
     );
     model.handle_mouse(MouseEvent {
         kind: MouseEventKind::Down(MouseButton::Left),
@@ -59,35 +62,17 @@ fn goal_workspace_plan_step_is_clickable_and_keyboard_expandable() {
         modifiers: KeyModifiers::NONE,
     });
 
-    assert!(model.goal_workspace.is_step_expanded("step-1"));
+    assert!(
+        matches!(
+            model.goal_workspace.selected_plan_item(),
+            Some(goal_workspace::GoalPlanSelection::Todo { todo_id, .. })
+                if todo_id == "todo-1" || todo_id == "todo-impl-1"
+        ),
+        "expected a worker todo row to be selected, got {:?}",
+        model.goal_workspace.selected_plan_item()
+    );
     let plain = render_chat_plain(&mut model);
-    assert!(plain.contains("[~] Draft outline"), "{plain}");
-    assert!(plain.contains("[ ] Verify sources"), "{plain}");
-    assert!(
-        !plain.contains("Ground the user's background before planning"),
-        "{plain}"
-    );
-    assert!(
-        !plain.contains("Gather current experience and constraints first."),
-        "{plain}"
-    );
-
-    let mut model = goal_sidebar_model();
-    model.focus = FocusArea::Chat;
-    model.goal_workspace.set_selected_plan_row(2);
-    model
-        .goal_workspace
-        .set_selected_plan_item(Some(goal_workspace::GoalPlanSelection::Step {
-            step_id: "step-1".to_string(),
-        }));
-
-    let handled = model.handle_key(KeyCode::Enter, KeyModifiers::NONE);
-    assert!(!handled);
-    assert!(model.goal_workspace.is_step_expanded("step-1"));
-
-    let handled = model.handle_key(KeyCode::Enter, KeyModifiers::NONE);
-    assert!(!handled);
-    assert!(!model.goal_workspace.is_step_expanded("step-1"));
+    assert!(plain.contains("Draft outline"), "{plain}");
 }
 
 #[test]
@@ -178,8 +163,7 @@ fn goal_workspace_prompt_footer_actions_are_clickable_when_goal_has_no_steps() {
         Some(modal::ModalKind::GoalStepActionPicker)
     );
     let items = model.goal_action_picker_items();
-    assert!(items.contains(&crate::app::commands::GoalActionPickerItem::RetryStep));
-    assert!(items.contains(&crate::app::commands::GoalActionPickerItem::RerunFromStep));
+    assert!(items.contains(&crate::app::commands::GoalActionPickerItem::DeleteGoal));
 }
 
 #[test]
@@ -187,13 +171,13 @@ fn goal_workspace_progress_mode_restores_checkpoint_and_dossier_views() {
     let mut model = goal_sidebar_model();
     model
         .goal_workspace
-        .set_mode(goal_workspace::GoalWorkspaceMode::Progress);
+        .set_mode(goal_workspace::GoalWorkspaceMode::Work);
 
     let plain = render_chat_plain(&mut model);
 
-    assert!(plain.contains("Execution Dossier"), "{plain}");
-    assert!(plain.contains("Checkpoints"), "{plain}");
-    assert!(plain.contains("Checkpoint for Implement"), "{plain}");
+    assert!(plain.contains("Worker progress"), "{plain}");
+    assert!(plain.contains("Draft outline"), "{plain}");
+    assert!(plain.contains("Verify sources"), "{plain}");
 }
 
 #[test]
@@ -201,14 +185,15 @@ fn goal_workspace_active_agent_mode_restores_assignments_and_threads() {
     let mut model = goal_sidebar_model();
     model
         .goal_workspace
-        .set_mode(goal_workspace::GoalWorkspaceMode::ActiveAgent);
+        .set_mode(goal_workspace::GoalWorkspaceMode::Review);
 
     let plain = render_chat_plain(&mut model);
 
-    assert!(plain.contains("Executor"), "{plain}");
-    assert!(plain.contains("Planner"), "{plain}");
-    assert!(plain.contains("implementer"), "{plain}");
-    assert!(plain.contains("thread-exec"), "{plain}");
+    assert!(plain.contains("Supervisor review"), "{plain}");
+    assert!(
+        plain.contains("No supervisor review is pending"),
+        "{plain}"
+    );
 }
 
 #[test]
@@ -221,9 +206,9 @@ fn goal_workspace_threads_mode_lists_clickable_threads() {
     let plain = render_chat_plain(&mut model);
 
     assert!(plain.contains("Threads"), "{plain}");
-    assert!(plain.contains("Executor"), "{plain}");
-    assert!(plain.contains("thread-exec"), "{plain}");
-    assert!(plain.contains("Planner"), "{plain}");
+    assert!(plain.contains("Worker"), "{plain}");
+    assert!(plain.contains("thread-1"), "{plain}");
+    assert!(plain.contains("Child Task Two"), "{plain}");
     assert!(plain.contains("thread-2"), "{plain}");
 }
 
@@ -243,7 +228,7 @@ fn goal_workspace_threads_mode_enter_opens_selected_thread() {
 
     assert!(!handled);
     assert!(matches!(model.main_pane_view, MainPaneView::Conversation));
-    assert_eq!(model.chat.active_thread_id(), Some("thread-exec"));
+    assert_eq!(model.chat.active_thread_id(), Some("thread-1"));
 }
 
 #[test]
@@ -302,14 +287,18 @@ fn goal_workspace_threads_mode_pins_and_opens_spawned_goal_descendant() {
 #[test]
 fn goal_workspace_needs_attention_mode_restores_non_empty_attention_surface() {
     let mut model = goal_sidebar_model();
+    if let Some(run) = model.tasks.goal_run_by_id_mut("goal-1") {
+        run.status = Some(task::GoalRunStatus::AwaitingReview);
+        run.pending_review_report = Some("upstream returned an empty error body".to_string());
+    }
     model
         .goal_workspace
-        .set_mode(goal_workspace::GoalWorkspaceMode::NeedsAttention);
+        .set_mode(goal_workspace::GoalWorkspaceMode::Review);
 
     let plain = render_chat_plain(&mut model);
 
-    assert!(plain.contains("Approvals"), "{plain}");
-    assert!(plain.contains("Last error"), "{plain}");
+    assert!(plain.contains("[report]"), "{plain}");
+    assert!(plain.contains("[Accept]"), "{plain}");
     assert!(
         plain.contains("upstream returned an empty error"),
         "{plain}"

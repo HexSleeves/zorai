@@ -33,6 +33,9 @@ fn goal_workspace_keyboard_navigation_auto_scrolls_timeline() {
     model.focus = FocusArea::Chat;
     model
         .goal_workspace
+        .set_mode(goal_workspace::GoalWorkspaceMode::Activity);
+    model
+        .goal_workspace
         .set_focused_pane(goal_workspace::GoalWorkspacePane::Timeline);
 
     for _ in 0..20 {

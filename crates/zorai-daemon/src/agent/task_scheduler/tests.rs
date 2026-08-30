@@ -88,6 +88,31 @@ fn select_ready_task_indices_excludes_queued_tasks_for_awaiting_approval_goal_ru
 }
 
 #[test]
+fn select_ready_task_indices_excludes_queued_tasks_for_awaiting_review_goal_runs() {
+    let mut tasks = VecDeque::new();
+    tasks.push_back(make_task(
+        "goal-task",
+        TaskStatus::Queued,
+        Some("goal-awaiting-review"),
+    ));
+    tasks.push_back(make_task("independent-task", TaskStatus::Queued, None));
+
+    let mut goal_run_statuses = HashMap::new();
+    goal_run_statuses.insert(
+        "goal-awaiting-review".to_string(),
+        GoalRunStatus::AwaitingReview,
+    );
+    let selected =
+        select_ready_task_indices(&tasks, &[], &goal_run_statuses, &make_default_config());
+
+    assert_eq!(
+        selected,
+        vec![(1, "daemon-main".to_string())],
+        "supervisor-review goal should not dispatch a second worker"
+    );
+}
+
+#[test]
 fn select_ready_task_indices_fail_closed_when_goal_metadata_missing_for_goal_linked_task() {
     let mut tasks = VecDeque::new();
     tasks.push_back(make_task(

@@ -20,7 +20,8 @@ pub(crate) fn render_goal_controls(
         Some(GoalRunStatus::Queued)
         | Some(GoalRunStatus::Planning)
         | Some(GoalRunStatus::Running)
-        | Some(GoalRunStatus::AwaitingApproval) => {
+        | Some(GoalRunStatus::AwaitingApproval)
+        | Some(GoalRunStatus::AwaitingReview) => {
             controls.push(("⏸", "Pause", "Ctrl+S", theme.accent_secondary))
         }
         _ => {}
@@ -33,6 +34,7 @@ pub(crate) fn render_goal_controls(
             | Some(GoalRunStatus::Planning)
             | Some(GoalRunStatus::Running)
             | Some(GoalRunStatus::AwaitingApproval)
+            | Some(GoalRunStatus::AwaitingReview)
     );
     if has_goal_actions || !run.steps.is_empty() {
         controls.push(("☰", "Actions", "A", theme.accent_primary));
@@ -46,12 +48,13 @@ pub(crate) fn render_goal_controls(
                 .any(|step| step.order as usize == run.current_step_index)
                 || run.current_step_title.is_some()
                 || !run.steps.is_empty());
-    if has_step_context {
-        controls.push(("↻", "Retry step", "R", theme.accent_secondary));
-        controls.push(("⟲", "Rerun from here", "Ctrl+R", theme.accent_primary));
-    }
     if has_goal_actions {
         controls.push(("⟳", "Refresh goal", "Shift+R", theme.accent_primary));
+    }
+    if matches!(run.status, Some(GoalRunStatus::AwaitingReview)) {
+        controls.push(("✓", "Accept", "Y", theme.accent_success));
+        controls.push(("↺", "Soft reject", "S", theme.accent_secondary));
+        controls.push(("✕", "Hard reject", "H", theme.accent_danger));
     }
 
     if has_goal_actions || has_step_context {

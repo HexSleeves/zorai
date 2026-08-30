@@ -1,12 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   consumeThreadHistoryScroll,
+  fillThreadHistoryIfUnscrollable,
   resetThreadHistoryPagination,
   resetThreadHistoryScrollStateForTest,
   resolveThreadHistoryScrollAction,
   setFollowThreadHistoryBottom,
   shouldFollowThreadHistoryBottom,
   THREAD_HISTORY_OLDER_LOAD_DEBOUNCE_MS,
+  threadHasOlderHistory,
 } from "./threadHistoryScroll";
 
 describe("resolveThreadHistoryScrollAction", () => {
@@ -22,6 +24,18 @@ describe("resolveThreadHistoryScrollAction", () => {
     });
 
     expect(action).toBe("none");
+    expect(shouldFollowThreadHistoryBottom()).toBe(true);
+  });
+
+  it("loads older history when the latest page fits on screen but older rows remain", () => {
+    const action = resolveThreadHistoryScrollAction({
+      scrollTop: 0,
+      scrollHeight: 400,
+      clientHeight: 400,
+      hasOlderHistory: true,
+    });
+
+    expect(action).toBe("load-older");
     expect(shouldFollowThreadHistoryBottom()).toBe(true);
   });
 
@@ -141,6 +155,67 @@ describe("consumeThreadHistoryScroll", () => {
     await vi.advanceTimersByTimeAsync(THREAD_HISTORY_OLDER_LOAD_DEBOUNCE_MS);
 
     expect(loadOlder).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("threadHasOlderHistory", () => {
+  it("is true only when the loaded window starts after the first stored message", () => {
+    expect(threadHasOlderHistory({ loadedMessageStart: 70 })).toBe(true);
+    expect(threadHasOlderHistory({ loadedMessageStart: 0 })).toBe(false);
+    expect(threadHasOlderHistory({ loadedMessageStart: null })).toBe(false);
+    expect(threadHasOlderHistory(null)).toBe(false);
+  });
+});
+
+describe("fillThreadHistoryIfUnscrollable", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    resetThreadHistoryScrollStateForTest();
+  });
+
+  it("pages older history when the latest window cannot be scrolled", async () => {
+    vi.useFakeTimers();
+    const scroller = makeScroller(0, 400, 400);
+    const loadOlder = vi.fn(async () => true);
+
+    fillThreadHistoryIfUnscrollable({
+      scroller,
+      loadOlder,
+      hasOlderHistory: true,
+    });
+    expect(loadOlder).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(THREAD_HISTORY_OLDER_LOAD_DEBOUNCE_MS);
+    expect(loadOlder).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not page when the operator can already swipe the loaded window", async () => {
+    vi.useFakeTimers();
+    const scroller = makeScroller(1600, 2000, 400);
+    const loadOlder = vi.fn(async () => true);
+
+    fillThreadHistoryIfUnscrollable({
+      scroller,
+      loadOlder,
+      hasOlderHistory: true,
+    });
+    await vi.advanceTimersByTimeAsync(THREAD_HISTORY_OLDER_LOAD_DEBOUNCE_MS);
+
+    expect(loadOlder).not.toHaveBeenCalled();
+  });
+
+  it("does not page when the database has no older rows", async () => {
+    vi.useFakeTimers();
+    const loadOlder = vi.fn(async () => true);
+
+    fillThreadHistoryIfUnscrollable({
+      scroller: makeScroller(0, 400, 400),
+      loadOlder,
+      hasOlderHistory: false,
+    });
+    await vi.advanceTimersByTimeAsync(THREAD_HISTORY_OLDER_LOAD_DEBOUNCE_MS);
+
+    expect(loadOlder).not.toHaveBeenCalled();
   });
 });
 

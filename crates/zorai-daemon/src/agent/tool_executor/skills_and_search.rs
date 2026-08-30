@@ -655,75 +655,6 @@ pub(crate) async fn execute_update_todo(
     thread_id: &str,
     task_id: Option<&str>,
 ) -> Result<String> {
-    let goal_todo_context = if let Some(task_id) = task_id {
-        agent.goal_todo_context_for_task(task_id).await
-    } else {
-        None
-    };
-
-    if task_id.is_some() {
-        if let Some(context) = goal_todo_context.as_ref() {
-            if context.authoritative {
-                let provided_goal_run_id = args
-                    .get("goal_run_id")
-                    .and_then(|value| value.as_str())
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty());
-                let provided_goal_step_id = args
-                    .get("goal_step_id")
-                    .and_then(|value| value.as_str())
-                    .map(str::trim)
-                    .filter(|value| !value.is_empty());
-                let mut missing_fields = Vec::new();
-                if provided_goal_run_id.is_none() {
-                    missing_fields.push("'goal_run_id'");
-                }
-                if provided_goal_step_id.is_none() {
-                    missing_fields.push("'goal_step_id'");
-                }
-                if !missing_fields.is_empty() {
-                    return Err(anyhow::anyhow!(
-                        "missing required {} for goal-owned main-task update_todo",
-                        missing_fields.join(" and ")
-                    ));
-                }
-                let provided_goal_run_id = provided_goal_run_id
-                    .expect("goal_run_id presence already validated for goal-owned main task");
-                let provided_goal_step_id = provided_goal_step_id
-                    .expect("goal_step_id presence already validated for goal-owned main task");
-                if provided_goal_run_id != context.goal_run_id {
-                    return Err(anyhow::anyhow!(
-                        "goal-owned main-task update_todo must use goal_run_id '{}' but received '{}'",
-                        context.goal_run_id,
-                        provided_goal_run_id
-                    ));
-                }
-                let expected_goal_step_id = context.goal_step_id.as_deref().ok_or_else(|| {
-                    anyhow::anyhow!("goal-owned main task is missing internal goal_step_id context")
-                })?;
-                if provided_goal_step_id != expected_goal_step_id {
-                    return Err(anyhow::anyhow!(
-                        "goal-owned main-task update_todo must use goal_step_id '{}' but received '{}'",
-                        expected_goal_step_id,
-                        provided_goal_step_id
-                    ));
-                }
-                if matches!(
-                    context.step_status,
-                    Some(
-                        crate::agent::types::GoalRunStepStatus::Completed
-                            | crate::agent::types::GoalRunStepStatus::Failed
-                            | crate::agent::types::GoalRunStepStatus::Skipped
-                    )
-                ) {
-                    return Err(anyhow::anyhow!(
-                        "goal-step todos are closed for this step; closed steps cannot update todo items or statuses"
-                    ));
-                }
-            }
-        }
-    }
-
     let raw_items = args
         .get("todos")
         .or_else(|| args.get("items"))
@@ -767,46 +698,6 @@ pub(crate) async fn execute_update_todo(
             created_at: now,
             updated_at: now,
         });
-    }
-
-    if let Some(context) = goal_todo_context
-        .as_ref()
-        .filter(|context| context.authoritative)
-    {
-        let existing_items = agent.get_todos(thread_id).await;
-        let existing_step_items = existing_items
-            .iter()
-            .filter(|item| item.step_index == Some(context.current_step_index))
-            .collect::<Vec<_>>();
-
-        if !existing_step_items.is_empty() {
-            if existing_step_items.len() != items.len() {
-                return Err(anyhow::anyhow!(
-                    "goal-step todos are already set for this step; only update todo statuses without adding or removing items"
-                ));
-            }
-
-            for (index, (existing, requested)) in
-                existing_step_items.iter().zip(items.iter()).enumerate()
-            {
-                if existing.content != requested.content {
-                    return Err(anyhow::anyhow!(
-                        "goal-step todos are already set for this step; only update todo statuses without changing item {index} content or order"
-                    ));
-                }
-            }
-
-            items = existing_step_items
-                .into_iter()
-                .zip(items.into_iter())
-                .map(|(existing, requested)| {
-                    let mut item = existing.clone();
-                    item.status = requested.status;
-                    item.updated_at = now;
-                    item
-                })
-                .collect();
-        }
     }
 
     agent
