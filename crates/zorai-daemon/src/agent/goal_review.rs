@@ -318,6 +318,22 @@ impl AgentEngine {
                 None => return Ok(()),
             },
         };
+        // If the worker is hibernated (waiting on a background operation or
+        // a scheduled wakeup), do NOT nudge or requeue. The thread parked
+        // itself deliberately and the runtime will resume it when the
+        // awaited event fires; requeueing here re-sends the full goal task
+        // prompt mid-hibernation and the worker loops. The task stays
+        // terminal until the wakeup resumes the thread; the next turn end
+        // without review will re-enter this nudge path then.
+        if self.thread_is_hibernated(&thread_id).await {
+            tracing::info!(
+                goal_run_id,
+                thread_id = %thread_id,
+                task_id = %task.id,
+                "goal worker hibernated on background work; skipping review nudge requeue"
+            );
+            return Ok(());
+        }
         let message = "You finished a turn without calling `request_goal_review`. \
                        The goal is not complete until the owner supervisor reviews your work. \
                        Call `request_goal_review` with a concrete report, or keep working.";

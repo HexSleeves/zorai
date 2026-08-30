@@ -193,6 +193,97 @@ async fn worker_completed_without_review_does_not_complete_goal() {
 }
 
 #[tokio::test]
+async fn hibernated_worker_is_not_requeued_by_review_nudge() {
+    let engine = test_engine().await;
+    let goal = start_supervised_goal(&engine).await;
+    let mut worker = enqueue_worker(&engine, &goal.id).await;
+    let worker_thread = goal.thread_id.clone().expect("worker thread");
+    worker.thread_id = Some(worker_thread.clone());
+    worker.status = TaskStatus::Completed;
+    worker.completed_at = Some(now_millis());
+    engine.upsert_live_task(&worker).await;
+
+    // Hibernation signal 1: pending operation wakeup (background op in flight).
+    engine
+        .register_operation_wakeup(&worker_thread, "bash_command", "op-hibernated-1", true)
+        .await;
+
+    engine
+        .nudge_goal_worker_for_review(&goal.id, &worker)
+        .await
+        .expect("nudge");
+
+    let after = engine
+        .task_by_id_for_dispatcher(&worker.id)
+        .await
+        .expect("worker");
+    assert_eq!(
+        after.status,
+        TaskStatus::Completed,
+        "hibernated worker must not be requeued"
+    );
+    {
+        let threads = engine.threads.read().await;
+        let thread = threads.get(&worker_thread).expect("worker thread");
+        assert!(
+            !thread
+                .messages
+                .iter()
+                .any(|message| message.role == MessageRole::System
+                    && message.content.contains("finished a turn without calling")),
+            "hibernated worker must not receive the review nudge message"
+        );
+    }
+
+    // Hibernation signal 2: pending scheduled timer wakeup.
+    engine.claim_operation_wakeup("op-hibernated-1").await;
+    engine
+        .timer_wakeups
+        .lock()
+        .await
+        .insert(
+            "wakeup-hibernated-1".to_string(),
+            crate::agent::agent_wakeup::AgentWakeup {
+                id: "wakeup-hibernated-1".to_string(),
+                thread_id: worker_thread.clone(),
+                message: "training checkpoint".to_string(),
+                interval_ms: 3_600_000,
+                next_fire_at: now_millis() + 3_600_000,
+                repetitions_remaining: Some(1),
+                wakeup_kind: "generic".to_string(),
+                goal_run_id: None,
+                created_at: now_millis(),
+            },
+        );
+    engine
+        .nudge_goal_worker_for_review(&goal.id, &worker)
+        .await
+        .expect("nudge");
+    let after = engine
+        .task_by_id_for_dispatcher(&worker.id)
+        .await
+        .expect("worker");
+    assert_eq!(
+        after.status,
+        TaskStatus::Completed,
+        "timer-hibernated worker must not be requeued"
+    );
+
+    // Once hibernation clears (no pending wakeups), the nudge resumes normal
+    // behavior: requeue so the worker gets the review reminder turn.
+    engine.timer_wakeups.lock().await.remove("wakeup-hibernated-1");
+    engine
+        .nudge_goal_worker_for_review(&goal.id, &worker)
+        .await
+        .expect("nudge");
+    let after = engine
+        .task_by_id_for_dispatcher(&worker.id)
+        .await
+        .expect("worker");
+    assert_eq!(after.status, TaskStatus::Queued);
+}
+
+#[tokio::test]
 async fn non_owner_cannot_submit_goal_review() {
     let engine = test_engine().await;
     let goal = start_supervised_goal(&engine).await;
