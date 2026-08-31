@@ -53,8 +53,8 @@ pub const ALIBABA_CODING_MODELS: &[ModelDefinition] = &[
 
 pub const ALIBABA_TOKEN_MODELS: &[ModelDefinition] = &[
     ModelDefinition {
-        id: "qwen3.8-max-preview",
-        name: "Qwen3.8 Max Preview",
+        id: "qwen3.8-max",
+        name: "Qwen3.8 Max",
         context_window: 1_000_000,
         modalities: TEXT_IMAGE,
     },

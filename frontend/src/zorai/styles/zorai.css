@@ -56,6 +56,7 @@
   border-top-color: var(--zorai-accent);
   border-radius: 999px;
   animation: zorai-loader-spin .72s linear infinite;
+  color: var(--zorai-accent);
 }
 .zorai-loading-spinner__label { font-size: var(--text-xs); white-space: nowrap; }
 .zorai-loading-skeleton { display: grid; gap: 8px; width: 100%; }
@@ -975,31 +976,43 @@
 }
 
 .zorai-message__actions {
-  display: none;
+  /* Always render in flow (no display:none), preserve layout */
   justify-content: flex-end;
+  display: flex;
   gap: 6px;
   opacity: 0;
-  transform: translateY(2px);
-  transition: opacity 160ms ease-out, transform 160ms ease-out;
+  transform: translateY(6px) scale(0.98);
+  /* Add transition-delay to sync the fade-in/out with display toggling */
+  transition:
+    opacity 160ms cubic-bezier(0.39, 0.575, 0.565, 1) 40ms,
+    transform 160ms cubic-bezier(0.39, 0.575, 0.565, 1) 40ms,
+    visibility 160ms linear 0ms;
   pointer-events: none;
+  visibility: hidden;
+  min-height: 0; /* prevent jumping */
+  min-width: 0;  /* prevent jumping */
+  height: 0;
 }
 
 .zorai-message:hover .zorai-message__actions,
 .zorai-message:focus-within .zorai-message__actions {
   opacity: 1;
-  transform: translateY(0);
+  transform: translateY(0) scale(1);
   pointer-events: auto;
-  display: flex;
+  visibility: visible;
+  height: inherit;
+  /* Remove transition-delay on showing for immediate effect after display: flex */
+  transition-delay: 0ms, 0ms, 0ms;
 }
 
 @keyframes zorai-message-actions-in {
   from {
     opacity: 0;
-    transform: translateY(2px);
+    transform: translateY(6px) scale(0.98);
   }
   to {
     opacity: 1;
-    transform: translateY(0);
+    transform: translateY(0) scale(1);
   }
 }
 
@@ -1141,6 +1154,10 @@
   display: grid;
   gap: 12px;
   padding: 12px;
+}
+
+.zorai-thread-item__spinner {
+  color: var(--text-primary);
 }
 
 .zorai-context-window-summary {
