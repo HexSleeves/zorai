@@ -1720,7 +1720,7 @@ async fn tui_python_execute_wait_for_response_detaches_long_running_command() {
 }
 
 #[tokio::test]
-async fn bash_command_wait_true_backgrounds_non_quick_headless_command() {
+async fn bash_command_wait_true_waits_for_non_quick_headless_command() {
     let root = tempdir().expect("tempdir should succeed");
     let manager = SessionManager::new_test(root.path()).await;
     let engine = AgentEngine::new_test(manager.clone(), AgentConfig::default(), root.path()).await;
@@ -1746,7 +1746,7 @@ async fn bash_command_wait_true_backgrounds_non_quick_headless_command() {
     );
 
     let result = timeout(
-        Duration::from_millis(250),
+        Duration::from_secs(10),
         execute_tool(
             &tool_call,
             &engine,
@@ -1761,26 +1761,21 @@ async fn bash_command_wait_true_backgrounds_non_quick_headless_command() {
         ),
     )
     .await
-    .expect("non-quick bash_command should return a background handle quickly");
+    .expect("non-quick bash_command should honor wait_for_completion=true in the foreground");
 
     assert!(
         !result.is_error,
-        "non-quick bash command should be accepted as background work: {}",
+        "wait=true non-quick bash command should complete synchronously: {}",
         result.content
     );
     assert!(
-        result.content.contains("operation_id: "),
-        "backgrounded bash command should return an operation handle: {}",
+        !result.content.contains("background_task_id: "),
+        "explicit wait_for_completion=true must not be silently rewritten to a background dispatch: {}",
         result.content
     );
     assert!(
-        result.content.contains("background_task_id: "),
-        "backgrounded bash command should return a background_task_id alias: {}",
-        result.content
-    );
-    assert!(
-        !marker.exists(),
-        "backgrounded command should return before the subprocess finishes"
+        marker.exists(),
+        "wait=true command should finish before the tool call returns"
     );
 }
 
@@ -2172,7 +2167,10 @@ async fn tui_bash_command_wait_false_completes_when_descendant_keeps_pipes_open(
 
     let mut payload = serde_json::Value::Null;
     let mut completed = false;
-    for _ in 0..10 {
+    // Poll up to ~4s under parallel test load (python3 startup can exceed the
+    // old 1s window on a busy machine); the descendant invariant is still
+    // enforced below via duration_ms, which must stay well under the 5s sleep.
+    for _ in 0..40 {
         let status = execute_tool(
             &status_call,
             &engine,
@@ -2211,6 +2209,13 @@ async fn tui_bash_command_wait_false_completes_when_descendant_keeps_pipes_open(
     assert_eq!(payload["operation_id"], operation_id);
     assert_eq!(payload["state"], "completed");
     assert_eq!(payload["exit_code"], 0);
+    assert!(
+        payload["terminal_result"]["duration_ms"]
+            .as_u64()
+            .is_some_and(|value| value < 4500),
+        "operation must complete after the primary shell exits, not when the 5s descendant releases the pipes: {}",
+        payload
+    );
     assert!(
         payload["terminal_result"]["stdout"]
             .as_str()

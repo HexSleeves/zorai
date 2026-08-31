@@ -388,7 +388,7 @@ pub(crate) async fn execute_managed_command(
                 }
                 return Ok((
                     format!(
-                        "{queued_summary}\nbackground_task_id: {execution_id}\noperation_id: {execution_id}\nNot waiting for completion because wait_for_completion=false. {BACKGROUND_OPERATION_COMPLETION_GUIDANCE} `get_background_task_status` remains available as a compatibility alias."
+                        "{queued_summary}\nbackground_task_id: {execution_id}\noperation_id: {execution_id}\nNot waiting for completion (wait_for_completion=false; non-quick or long-running commands default to background). {BACKGROUND_OPERATION_COMPLETION_GUIDANCE} `get_background_task_status` remains available as a compatibility alias."
                     ),
                     None,
                 ));

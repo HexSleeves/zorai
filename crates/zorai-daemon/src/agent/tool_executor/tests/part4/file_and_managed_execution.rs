@@ -564,3 +564,37 @@ fn bash_command_does_not_force_background_when_weles_forces_headless() {
         "__weles_force_headless": true
     })));
 }
+
+#[test]
+fn bash_command_respects_explicit_wait_for_completion() {
+    // Long-running command families (pytest, cargo test) default to background,
+    // but an explicit wait_for_completion=true must stay authoritative and only
+    // the >600s auto-background cap may override it. Silently rewriting the
+    // caller's wait flag into a background dispatch produced the confusing
+    // "Not waiting for completion because wait_for_completion=false" result
+    // while the arguments clearly said wait=true.
+    assert!(!bash_command_should_force_background(&serde_json::json!({
+        "command": ".venv/bin/pytest tests/ccpsm/test_normalized_multisource_training.py -q",
+        "wait_for_completion": true,
+        "timeout_seconds": 120
+    })));
+    assert!(!bash_command_should_force_background(&serde_json::json!({
+        "command": "cargo test -p zorai-daemon",
+        "wait_for_completion": true
+    })));
+    // The >600s auto-background cap still applies even with an explicit wait.
+    assert!(bash_command_should_force_background(&serde_json::json!({
+        "command": ".venv/bin/pytest tests -q",
+        "wait_for_completion": true,
+        "timeout_seconds": 900
+    })));
+    // Legacy wait_for_response spelling is equally authoritative.
+    assert!(!bash_command_should_force_background(&serde_json::json!({
+        "command": ".venv/bin/pytest tests -q",
+        "wait_for_response": true
+    })));
+    // Without an explicit flag, non-quick commands still default to background.
+    assert!(bash_command_should_force_background(&serde_json::json!({
+        "command": ".venv/bin/pytest tests -q"
+    })));
+}
