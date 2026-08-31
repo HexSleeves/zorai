@@ -102,7 +102,10 @@ export function ThreadsRail() {
         })
         .catch(() => {
           if (pendingFetchIdRef.current !== fetchId) return;
-          setDaemonFilteredThreads(null);
+          // Keep the last successful list for the same filter instead of
+          // blanking the rail into "No threads match this search" while the
+          // daemon is slow; only fall back when we never loaded this filter.
+          setDaemonFilteredThreads((prev) => (loadedAgentFilterRef.current === fetchKey ? prev : null));
           setLoadingTab(null);
         });
     }, loadedAgentFilterRef.current == null ? 0 : THREAD_FILTER_FETCH_DEBOUNCE_MS);
@@ -123,6 +126,7 @@ export function ThreadsRail() {
         });
       })
       .catch(() => {
+        // Refresh failures keep the previously loaded list visible.
         if (pendingFetchIdRef.current === fetchId) setLoadingTab(null);
       });
   };

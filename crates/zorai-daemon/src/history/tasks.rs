@@ -432,6 +432,7 @@ fn map_agent_task_quiet_recovery_ref(row: &db::Row) -> anyhow::Result<AgentTaskQ
 async fn hydrate_agent_task_related_rows(
     conn: &dyn db::DbConn,
     tasks: &mut [AgentTask],
+    include_logs: bool,
 ) -> anyhow::Result<()> {
     if tasks.is_empty() {
         return Ok(());
@@ -468,30 +469,37 @@ async fn hydrate_agent_task_related_rows(
         dependency_map.entry(task_id).or_default().push(dependency);
     }
 
-    let log_rows = conn
-        .query(
-            &format!(
-                "SELECT id, task_id, timestamp, level, phase, message, details, attempt \
+    // `agent_task_logs` can hold hundreds of MB of historical tool output
+    // (a single runaway task accumulated 200MB on 2026-08-30). List endpoints
+    // that only need task metadata must not read, serialize, and ship it —
+    // that blocked the SQLite read pool for 15-30s and stalled every other
+    // IPC query (thread list, status, prompt queue) behind it.
+    let mut log_map = std::collections::HashMap::<String, Vec<AgentTaskLogEntry>>::new();
+    if include_logs {
+        let log_rows = conn
+            .query(
+                &format!(
+                    "SELECT id, task_id, timestamp, level, phase, message, details, attempt \
              FROM agent_task_logs \
              WHERE deleted_at IS NULL AND task_id IN ({id_placeholders}) \
              ORDER BY task_id ASC, timestamp ASC"
-            ),
-            db::Params::Positional(id_values()),
-        )
-        .await?;
-    let mut log_map = std::collections::HashMap::<String, Vec<AgentTaskLogEntry>>::new();
-    for row in log_rows.iter() {
-        let task_id = row.get::<String>(1)?;
-        let log = AgentTaskLogEntry {
-            id: row.get(0)?,
-            timestamp: row.get::<i64>(2)? as u64,
-            level: parse_task_log_level(&row.get::<String>(3)?),
-            phase: row.get(4)?,
-            message: row.get(5)?,
-            details: row.get(6)?,
-            attempt: row.get::<i64>(7)? as u32,
-        };
-        log_map.entry(task_id).or_default().push(log);
+                ),
+                db::Params::Positional(id_values()),
+            )
+            .await?;
+        for row in log_rows.iter() {
+            let task_id = row.get::<String>(1)?;
+            let log = AgentTaskLogEntry {
+                id: row.get(0)?,
+                timestamp: row.get::<i64>(2)? as u64,
+                level: parse_task_log_level(&row.get::<String>(3)?),
+                phase: row.get(4)?,
+                message: row.get(5)?,
+                details: row.get(6)?,
+                attempt: row.get::<i64>(7)? as u32,
+            };
+            log_map.entry(task_id).or_default().push(log);
+        }
     }
 
     for task in tasks {
@@ -504,8 +512,18 @@ async fn hydrate_agent_task_related_rows(
 async fn load_agent_tasks_from_query(
     conn: &dyn db::DbConn,
     query: &AgentTaskListQuery,
+    task_sql: String,
+    task_values: Vec<db::Value>,
+) -> anyhow::Result<Vec<AgentTask>> {
+    load_agent_tasks_from_query_with_logs(conn, query, task_sql, task_values, true).await
+}
+
+async fn load_agent_tasks_from_query_with_logs(
+    conn: &dyn db::DbConn,
+    query: &AgentTaskListQuery,
     mut task_sql: String,
     mut task_values: Vec<db::Value>,
+    include_logs: bool,
 ) -> anyhow::Result<Vec<AgentTask>> {
     append_agent_task_query_filters(&mut task_sql, &mut task_values, query);
     append_agent_task_order_and_limit(&mut task_sql, &mut task_values, query);
@@ -518,7 +536,7 @@ async fn load_agent_tasks_from_query(
         .map(map_agent_task_row)
         .collect::<anyhow::Result<Vec<_>>>()?;
 
-    hydrate_agent_task_related_rows(conn, &mut tasks).await?;
+    hydrate_agent_task_related_rows(conn, &mut tasks, include_logs).await?;
     Ok(tasks)
 }
 
@@ -902,6 +920,24 @@ impl HistoryStore {
             query,
             AGENT_TASK_SELECT_SQL.to_string(),
             Vec::<db::Value>::new(),
+        )
+        .await
+    }
+
+    /// Task list without `logs` hydration. Used by the Electron `list-tasks`
+    /// IPC path: the log table can hold hundreds of MB, and shipping it to
+    /// the renderer every 4-5s stalled the SQLite read pool and every other
+    /// IPC query.
+    pub(crate) async fn list_agent_tasks_filtered_without_logs(
+        &self,
+        query: &AgentTaskListQuery,
+    ) -> Result<Vec<AgentTask>> {
+        load_agent_tasks_from_query_with_logs(
+            &*self.interactive_read_db,
+            query,
+            AGENT_TASK_SELECT_SQL.to_string(),
+            Vec::<db::Value>::new(),
+            false,
         )
         .await
     }
