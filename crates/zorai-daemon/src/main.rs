@@ -1,6 +1,10 @@
 #![recursion_limit = "512"]
 
-#[cfg(feature = "jemalloc")]
+// jemalloc on Linux: the glibc per-thread arena behavior retained >13 GB of
+// fragmented heap under multi-thread load (30+ tokio workers plus 14 rusqlite
+// connection threads). See crates/zorai-daemon/Cargo.toml for the full note.
+// The `jemalloc` cargo feature is kept as a no-op alias for compatibility.
+#[cfg(target_os = "linux")]
 #[global_allocator]
 static GLOBAL: tikv_jemallocator::Jemalloc = tikv_jemallocator::Jemalloc;
 

@@ -18,7 +18,7 @@ export async function openThreadTarget(runtime: AgentChatPanelRuntimeValue, targ
     return true;
   }
 
-  const finishLoading = beginThreadLoading();
+  const finishLoading = beginThreadLoading(target);
   try {
     const remoteThread = await fetchDaemonThread(target);
     const raced = findThreadByAuthoritativeIdentity(useAgentStore.getState().threads, target);

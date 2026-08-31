@@ -31,7 +31,7 @@ export function resolveThreadListSource<T>(
   return daemonFilteredThreads ?? fallbackThreads;
 }
 
-export function overlayStoreThreadTitles<T extends { id: string; title: string }>(
+export function overlayStoreThreadTitles<T extends { id: string; title: string; daemonThreadId?: string | null }>(
   daemonThreads: T[],
   storeThreads: Array<{ id: string; title: string; daemonThreadId?: string | null }>,
 ): T[] {
@@ -50,7 +50,11 @@ export function overlayStoreThreadTitles<T extends { id: string; title: string }
     }
   }
   return daemonThreads.map((thread) => {
-    const title = titlesById.get(thread.id);
+    // Daemon rows carry the daemon id; a local row for the same thread is
+    // keyed by daemonThreadId, so look that up too (id-only lookup misses
+    // it and the rail shows stale daemon titles).
+    const title = titlesById.get(thread.id)
+      ?? (thread.daemonThreadId ? titlesById.get(thread.daemonThreadId) : undefined);
     if (!title || title === thread.title) {
       return thread;
     }

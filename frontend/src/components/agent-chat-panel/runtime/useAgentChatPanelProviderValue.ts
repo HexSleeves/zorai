@@ -894,7 +894,7 @@ export function useAgentChatPanelProviderValue(): {
     const finishLoading = direction === "latest"
       && thread?.daemonThreadId
       && getAgentBridge()?.agentGetThread
-      ? beginThreadLoading()
+      ? beginThreadLoading(threadId)
       : () => {};
     const runThreadPageLoad = async (): Promise<boolean> => {
       try {
@@ -945,15 +945,24 @@ export function useAgentChatPanelProviderValue(): {
     const state = useAgentStore.getState();
     const thread = findThreadByAuthoritativeIdentity(state.threads, threadId);
     const localId = thread?.id ?? threadId;
+    // Mark this thread as "latest loaded" BEFORE issuing the fetch. The
+    // activeThread effect below also triggers loadThreadPage for newly
+    // selected daemon threads; without this guard the two concurrent
+    // "latest" loads bump each other's replace epoch and the loser is
+    // discarded, leaving the chat pane empty ("click a thread, nothing
+    // happens" until you click again).
+    const alreadyLatest = latestLoadedThreadIdRef.current === localId;
+    latestLoadedThreadIdRef.current = localId;
     daemonLocalThreadRef.current = localId;
     daemonThreadIdRef.current = thread?.daemonThreadId ?? null;
-    latestLoadedThreadIdRef.current = localId;
     setFollowThreadHistoryBottom(true);
     setActiveThread(localId);
     setChatBackView("threads");
     setView("chat");
-    void loadThreadPage(localId, "latest");
-  }, [loadThreadPage, setActiveThread]);
+    if (!alreadyLatest) {
+      void loadThreadPage(localId, "latest");
+    }
+  }, [loadThreadPage, setActiveThread, setChatBackView, setFollowThreadHistoryBottom, setView]);
 
   const forkThread = useCallback(async (messageId: string) => {
     const notify = useNotificationStore.getState().addNotification;

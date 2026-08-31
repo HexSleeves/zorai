@@ -179,13 +179,16 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
             const messageOffset = Number.isFinite(options?.messageOffset)
                 ? Number(options.messageOffset)
                 : null;
+            // 30s: large threads (9k+ messages) can take several seconds to
+            // build + chunk; the old 5s default made openThreadTarget get
+            // null and the click silently did nothing.
             return await sendAgentQuery({
                 type: 'get-thread',
                 thread_id: threadId,
                 message_limit: messageLimit,
                 message_offset: messageOffset,
                 collapse_tool_calls: true,
-            }, 'thread-detail');
+            }, 'thread-detail', 30000);
         } catch {
             return null;
         }
@@ -258,7 +261,10 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
         }
     });
     ipcMain.handle('agent-cancel-task', async (_event, taskId) => { try { sendAgentCommand({ type: 'cancel-task', task_id: taskId }); return true; } catch { return false; } });
-    ipcMain.handle('agent-list-tasks', async () => { try { return await sendAgentQuery({ type: 'list-tasks' }, 'task-list'); } catch { return []; } });
+    // 30s: the task list can legitimately take a few seconds on a busy
+    // daemon; the old 5s default made every slow poll return [] and the
+    // tray/views flicker empty.
+    ipcMain.handle('agent-list-tasks', async () => { try { return await sendAgentQuery({ type: 'list-tasks' }, 'task-list', 30000); } catch { return []; } });
     ipcMain.handle('agent-list-runs', async (_event, parentThreadId) => { try { return await sendAgentQuery({ type: 'list-runs', parent_thread_id: typeof parentThreadId === 'string' && parentThreadId.trim() ? parentThreadId.trim() : null }, 'run-list'); } catch { return []; } });
     ipcMain.handle('agent-get-run', async (_event, runId) => { try { return await sendAgentQuery({ type: 'get-run', run_id: runId }, 'run-detail'); } catch { return null; } });
     ipcMain.handle('agent-list-todos', async () => { try { return await sendAgentQuery({ type: 'list-todos' }, 'todo-list'); } catch { return {}; } });

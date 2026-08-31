@@ -1213,7 +1213,7 @@ impl AgentEngine {
             .await
     }
 
-    async fn refresh_task_queue_state_for_filtered_list(&self) {
+    pub(super) async fn refresh_task_queue_state_for_filtered_list(&self) {
         let sessions = self.session_manager.list().await;
         let config = self.config.read().await.clone();
         let changed = {

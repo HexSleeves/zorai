@@ -285,13 +285,39 @@ async fn tool_list_todos() -> Result<Value> {
 }
 
 async fn tool_get_todos(args: &Value) -> Result<Value> {
-    let thread_id = args
+    let mut thread_id = args
         .get("thread_id")
         .and_then(|v| v.as_str())
         .map(str::trim)
         .filter(|v| !v.is_empty())
-        .ok_or_else(|| anyhow::anyhow!("missing required parameter: thread_id"))?
-        .to_string();
+        .map(ToOwned::to_owned);
+
+    if thread_id.is_none() {
+        let task_id = args
+            .get("task_id")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|v| !v.is_empty());
+        if let Some(task_id) = task_id {
+            let tasks = tool_list_tasks().await?;
+            thread_id = tasks
+                .get("tasks")
+                .and_then(|value| value.as_array())
+                .and_then(|tasks| {
+                    tasks
+                        .iter()
+                        .find(|task| task.get("id").and_then(|id| id.as_str()) == Some(task_id))
+                })
+                .and_then(|task| task.get("thread_id"))
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(ToOwned::to_owned);
+        }
+    }
+
+    let thread_id = thread_id
+        .ok_or_else(|| anyhow::anyhow!("missing required parameter: thread_id or task_id"))?;
 
     let resp = daemon_roundtrip(ClientMessage::AgentGetTodos {
         thread_id: thread_id.clone(),

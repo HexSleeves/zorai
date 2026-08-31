@@ -143,6 +143,24 @@ export function markdownRenderMode(streaming: boolean | undefined): "plain" | "m
   return streaming ? "plain" : "markdown";
 }
 
+// Full react-markdown + KaTeX rendering of multi-MB messages (tool output,
+// long reports) blocks the renderer for seconds per bubble; opening a large
+// thread multiplied that across the whole page and looked like "the GUI
+// doesn't react to clicks". Above this size fall back to a truncated plain
+// view with a copy affordance; the full text stays in the message store.
+export const MARKDOWN_FULL_RENDER_MAX_CHARS = 20_000;
+const MARKDOWN_PLAIN_PREVIEW_CHARS = 8_000;
+
+export function truncateForPlainRender(content: string): { text: string; truncated: boolean } {
+  if (content.length <= MARKDOWN_PLAIN_PREVIEW_CHARS) {
+    return { text: content, truncated: false };
+  }
+  return {
+    text: `${content.slice(0, MARKDOWN_PLAIN_PREVIEW_CHARS)}\n\n… [truncated ${content.length - MARKDOWN_PLAIN_PREVIEW_CHARS} chars for rendering — use Copy for the full text]`,
+    truncated: true,
+  };
+}
+
 export const MarkdownContent = memo(function MarkdownContent({
   content,
   streaming = false,
@@ -151,7 +169,12 @@ export const MarkdownContent = memo(function MarkdownContent({
   streaming?: boolean;
 }) {
   const rootRef = useRef<HTMLDivElement>(null);
-  const renderMode = markdownRenderMode(streaming);
+  const oversized = !streaming && content.length > MARKDOWN_FULL_RENDER_MAX_CHARS;
+  const renderMode = oversized ? "plain" : markdownRenderMode(streaming);
+  const plainPreview = useMemo(
+    () => (oversized ? truncateForPlainRender(content) : null),
+    [content, oversized],
+  );
   const protectedMath = useMemo(
     () => renderMode === "markdown" ? protectMathSegments(content) : { content, segments: [] },
     [content, renderMode],
@@ -171,7 +194,7 @@ export const MarkdownContent = memo(function MarkdownContent({
   }, [protectedMath, renderMode]);
 
   if (renderMode === "plain") {
-    return <div ref={rootRef} className="acp-md acp-md--streaming">{content}</div>;
+    return <div ref={rootRef} className="acp-md acp-md--streaming">{plainPreview?.text ?? content}</div>;
   }
   return (
     <div ref={rootRef} className="acp-md">

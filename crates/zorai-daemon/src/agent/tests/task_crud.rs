@@ -2685,6 +2685,89 @@ async fn list_tasks_capped_for_ipc_truncates_oversized_task_logs() {
 }
 
 #[tokio::test]
+async fn list_tasks_metadata_only_for_ipc_skips_persisted_task_logs() {
+    let root = tempdir().expect("temp dir");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+
+    engine.tasks.lock().await.push_back(AgentTask {
+        id: "task-logged".to_string(),
+        title: "logged task".to_string(),
+        description: "persisted with huge logs".to_string(),
+        status: TaskStatus::Completed,
+        priority: TaskPriority::Normal,
+        progress: 100,
+        created_at: 1,
+        started_at: None,
+        completed_at: Some(2),
+        error: None,
+        result: Some("ok".to_string()),
+        thread_id: None,
+        source: "user".to_string(),
+        notify_on_complete: false,
+        notify_channels: Vec::new(),
+        dependencies: Vec::new(),
+        command: None,
+        session_id: None,
+        goal_run_id: None,
+        goal_run_title: None,
+        goal_step_id: None,
+        goal_step_title: None,
+        parent_task_id: None,
+        parent_thread_id: None,
+        runtime: "daemon".to_string(),
+        retry_count: 0,
+        max_retries: 1,
+        next_retry_at: None,
+        scheduled_at: None,
+        blocked_reason: None,
+        awaiting_approval_id: None,
+        policy_fingerprint: None,
+        approval_expires_at: None,
+        containment_scope: None,
+        compensation_status: None,
+        compensation_summary: None,
+        lane_id: None,
+        last_error: None,
+        logs: vec![AgentTaskLogEntry {
+            id: "task-logged-entry".to_string(),
+            timestamp: 3,
+            level: TaskLogLevel::Info,
+            phase: "done".to_string(),
+            message: "persisted log body".to_string(),
+            details: None,
+            attempt: 0,
+        }],
+        completion_contract: None,
+        tool_whitelist: None,
+        tool_blacklist: None,
+        context_budget_tokens: None,
+        context_overflow_action: None,
+        termination_conditions: None,
+        success_criteria: None,
+        max_duration_secs: None,
+        supervisor_config: None,
+        override_provider: None,
+        override_model: None,
+        override_api_transport: None,
+        override_system_prompt: None,
+        sub_agent_def_id: None,
+    });
+    engine.persist_tasks().await;
+    engine.tasks.lock().await.clear();
+
+    let (tasks, _) = engine.list_tasks_metadata_only_capped_for_ipc().await;
+    let listed = tasks
+        .iter()
+        .find(|task| task.id == "task-logged")
+        .expect("metadata-only IPC list should include persisted tasks");
+    assert!(
+        listed.logs.is_empty(),
+        "metadata-only IPC list must not hydrate persisted task logs"
+    );
+}
+
+#[tokio::test]
 async fn list_todos_capped_for_ipc_truncates_oversized_payload() {
     let root = tempdir().expect("temp dir");
     let manager = SessionManager::new_test(root.path()).await;

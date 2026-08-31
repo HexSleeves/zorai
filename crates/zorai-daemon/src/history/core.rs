@@ -21,6 +21,12 @@ async fn apply_sqlite_connection_pragmas(
         conn.pragma_update(None, "synchronous", "NORMAL")?;
         conn.pragma_update(None, "foreign_keys", "ON")?;
         conn.pragma_update(None, "wal_autocheckpoint", "1000")?;
+        // Cap the WAL file after checkpoints so a long-lived reader snapshot
+        // cannot leave a multi-GB `-wal` file behind forever (observed at
+        // 12 GB on 2026-08-30). Only takes effect when a checkpoint actually
+        // runs to the current WAL end (see the TRUNCATE checkpoint loop in
+        // `run_wal_checkpoint_loop`).
+        conn.pragma_update(None, "journal_size_limit", "268435456")?;
         conn.pragma_update(None, "busy_timeout", "5000")?;
         conn.pragma_update(None, "cache_size", "-65536")?;
         conn.pragma_update(None, "mmap_size", "268435456")?;
@@ -588,6 +594,46 @@ pub(crate) async fn run_db_sync_loop(
             _ = shutdown.changed() => {
                 if let Err(e) = conn_db.sync().await {
                     tracing::warn!(error = %e, "final database replica sync on shutdown failed");
+                }
+                return;
+            }
+        }
+    }
+}
+
+/// Periodically runs `PRAGMA wal_checkpoint(TRUNCATE)` on the primary
+/// writer connection. Autocheckpoint (1000 pages) cannot run while any
+/// reader holds a snapshot older than the WAL end, and zorai keeps 12+
+/// long-lived read connections — so under sustained multi-thread load the
+/// WAL grew to 12 GB and never shrank (2026-08-30 investigation). TRUNCATE
+/// checkpoints block new writers only for the final rename/commit step and
+/// retry harmlessly on `SQLITE_BUSY`, so they are safe alongside live
+/// traffic. `journal_size_limit` (set per connection) bounds the file size
+/// after each successful truncation.
+pub(crate) async fn run_wal_checkpoint_loop(
+    conn: tokio_rusqlite::Connection,
+    interval: std::time::Duration,
+    mut shutdown: tokio::sync::watch::Receiver<bool>,
+) {
+    loop {
+        tokio::select! {
+            _ = tokio::time::sleep(interval) => {
+                match conn
+                    .call(|c| Ok(c.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?))
+                    .await
+                {
+                    Ok(()) => {}
+                    Err(e) => {
+                        tracing::debug!(error = %e, "periodic WAL truncate checkpoint skipped");
+                    }
+                }
+            }
+            _ = shutdown.changed() => {
+                if let Err(e) = conn
+                    .call(|c| Ok(c.query_row("PRAGMA wal_checkpoint(TRUNCATE)", [], |_| Ok(()))?))
+                    .await
+                {
+                    tracing::debug!(error = %e, "shutdown WAL truncate checkpoint failed");
                 }
                 return;
             }

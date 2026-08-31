@@ -1329,8 +1329,55 @@ impl AgentEngine {
         self.thread_todos.read().await.clone()
     }
 
+    /// Full task list with logs; kept for tests that exercise log capping.
+    /// IPC list endpoints use `list_tasks_metadata_only_capped_for_ipc`.
+    #[cfg(test)]
     pub(crate) async fn list_tasks_capped_for_ipc(&self) -> (Vec<AgentTask>, bool) {
         cap_task_list_for_ipc(self.list_tasks().await)
+    }
+
+    /// Task list for the Electron `list-tasks` IPC poll: metadata only, no
+    /// `logs` hydration. The persisted log table can hold hundreds of MB of
+    /// historical tool output; hydrating it on every poll stalled the SQLite
+    /// read pool for tens of seconds and starved every other IPC query
+    /// (thread list, status, prompt queue) into client-side timeouts.
+    pub(crate) async fn list_tasks_metadata_only_capped_for_ipc(&self) -> (Vec<AgentTask>, bool) {
+        self.refresh_task_queue_state_for_filtered_list().await;
+        let tasks = match self
+            .history
+            .list_agent_tasks_filtered_without_logs(&crate::history::AgentTaskListQuery::default())
+            .await
+        {
+            Ok(mut tasks) => {
+                for task in &mut tasks {
+                    crate::agent::persistence::sanitize_task_for_external_view(task);
+                }
+                let in_memory = self.snapshot_tasks().await;
+                if !in_memory.is_empty() {
+                    let known_ids: std::collections::HashSet<String> =
+                        tasks.iter().map(|task| task.id.clone()).collect();
+                    for mut task in in_memory {
+                        if !known_ids.contains(&task.id) {
+                            task.logs.clear();
+                            tasks.push(task);
+                        }
+                    }
+                }
+                tasks
+            }
+            Err(error) => {
+                tracing::warn!("failed to list persisted tasks without logs: {error}");
+                self.snapshot_tasks()
+                    .await
+                    .into_iter()
+                    .map(|mut task| {
+                        task.logs.clear();
+                        task
+                    })
+                    .collect()
+            }
+        };
+        cap_task_list_for_ipc(tasks)
     }
 
     pub(crate) async fn list_todos_capped_for_ipc(&self) -> (HashMap<String, Vec<TodoItem>>, bool) {

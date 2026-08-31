@@ -304,7 +304,7 @@ pub(crate) async fn dispatch_part4(
 
         ClientMessage::AgentListTasks => {
             let started = std::time::Instant::now();
-            let (tasks, truncated) = agent.list_tasks_capped_for_ipc().await;
+            let (tasks, truncated) = agent.list_tasks_metadata_only_capped_for_ipc().await;
             let read_ms = started.elapsed().as_millis() as u64;
             if truncated {
                 tracing::warn!("truncated task list to fit IPC frame limit");

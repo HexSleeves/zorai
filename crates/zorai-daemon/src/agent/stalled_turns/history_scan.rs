@@ -7,6 +7,27 @@ use crate::agent::types::StuckReason;
 use crate::history::{GoalRunThreadRef, SubagentMetrics};
 
 impl AgentEngine {
+    /// A thread is *hibernated* when it deliberately ended its turn waiting
+    /// for an external event: a running background operation (registered in
+    /// `operation_wakeups`) or a scheduled timer wakeup (`timer_wakeups`).
+    /// Hibernation is a designed pause, not a stall: the runtime will resume
+    /// the thread when the operation completes or the wakeup fires.
+    /// Stalled-turn recovery must never fire for these threads — doing so
+    /// requeues work the thread intentionally deferred and the worker gets
+    /// re-prompted with the full task description again and again.
+    pub(in crate::agent) async fn thread_is_hibernated(&self, thread_id: &str) -> bool {
+        {
+            let wakeups = self.operation_wakeups.lock().await;
+            if wakeups.values().any(|wakeup| wakeup.thread_id == thread_id) {
+                return true;
+            }
+        }
+        let wakeups = self.timer_wakeups.lock().await;
+        wakeups
+            .values()
+            .any(|wakeup| wakeup.thread_id == thread_id)
+    }
+
     pub(super) async fn collect_stalled_turn_observations(&self) -> Vec<ThreadStallObservation> {
         let active_streams = {
             let streams = self.stream_cancellations.lock().await;
@@ -103,9 +124,20 @@ impl AgentEngine {
         }
         let recent_cutoff = now.saturating_sub(recent_window_ms);
 
+        // Hibernated threads deliberately parked on a background operation or
+        // a scheduled wakeup are not stalled — the runtime already owns their
+        // resume path. Filter them out before any classification runs.
+        let mut hibernated_thread_ids = HashSet::new();
+        for thread_id in threads.keys() {
+            if self.thread_is_hibernated(thread_id).await {
+                hibernated_thread_ids.insert(thread_id.clone());
+            }
+        }
+
         let mut observations = threads
             .values()
             .filter(|thread| !active_stream_ids.contains(&thread.id))
+            .filter(|thread| !hibernated_thread_ids.contains(&thread.id))
             .filter(|thread| !pending_operator_question_thread_ids.contains(&thread.id))
             .filter(|thread| {
                 let in_db = unanswered_tool_call_thread_ids

@@ -2359,7 +2359,7 @@ mod tests {
             id: "kimus".to_string(),
             name: "Kimus".to_string(),
             provider: "alibaba-token-plan".to_string(),
-            model: "qwen3.8-max-preview".to_string(),
+            model: "qwen3.8-max".to_string(),
             base_url: None,
             role: None,
             system_prompt: Some("Handle delegated work.".to_string()),

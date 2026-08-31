@@ -218,7 +218,7 @@ function AgentChatPanelThreadBrowserSurface({
 }: {
   browserView: "threads" | "internal" | "gateway";
 }) {
-  const { filteredThreads, searchQuery, setSearchQuery, refreshThreadList, openThread, setView, setChatBackView, deleteThread } = useAgentChatPanelRuntime();
+  const { filteredThreads, searchQuery, setSearchQuery, refreshThreadList, openThread, setView, setChatBackView, deleteThread, activeThreadId } = useAgentChatPanelRuntime();
 
   return (
     <ThreadList
@@ -232,6 +232,7 @@ function AgentChatPanelThreadBrowserSurface({
         setView("chat");
       }}
       onDelete={deleteThread}
+      activeThreadId={activeThreadId}
     />
   );
 }

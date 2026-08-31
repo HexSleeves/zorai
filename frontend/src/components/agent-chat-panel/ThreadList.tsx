@@ -47,6 +47,7 @@ export function ThreadList({
     onRefresh,
     onSelect,
     onDelete,
+    activeThreadId,
 }: {
     threads: AgentThread[];
     searchQuery: string;
@@ -54,6 +55,7 @@ export function ThreadList({
     onRefresh: () => void;
     onSelect: (t: AgentThread) => void;
     onDelete: (id: string) => void;
+    activeThreadId?: string | null;
 }) {
     const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
     const [page, setPage] = useState(1);
@@ -104,6 +106,7 @@ export function ThreadList({
                     <div
                         key={t.id}
                         onClick={() => onSelect(t)}
+                        className={t.id === activeThreadId ? "zorai-thread-item--active" : undefined}
                         style={{
                             padding: "var(--space-3)",
                             borderRadius: "var(--radius-lg)",
