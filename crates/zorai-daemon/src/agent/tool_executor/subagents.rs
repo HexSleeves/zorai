@@ -1,6 +1,7 @@
 use super::*;
 use crate::agent::operator_model::SatisfactionAdaptationMode;
 use crate::agent::types::AgentTask;
+use crate::agent::types::TaskStatus;
 use crate::agent::SendMessageOutcome;
 use crate::history::AgentTaskListQuery;
 use std::collections::HashSet;
@@ -127,6 +128,99 @@ pub(super) fn extract_tool_call_limit(dsl: Option<&str>) -> Option<u32> {
 
 async fn reserve_subagent_thread_id(agent: &AgentEngine) -> String {
     agent.reserve_unique_thread_id().await
+}
+
+/// Active (non-terminal) subagent tasks sharing the caller's parent scope:
+/// - a spawned subagent caller: siblings with the same parent_task_id or
+///   parent_thread_id (excluding the caller itself);
+/// - the main agent caller: subagent tasks spawned from this thread.
+///
+/// These are the only agents a sibling `message_agent` DM may target.
+async fn active_sibling_subagent_tasks(
+    agent: &AgentEngine,
+    caller_task_id: Option<&str>,
+    parent_thread_id: &str,
+) -> Vec<AgentTask> {
+    let caller_task = match caller_task_id {
+        Some(id) => find_task_for_spawn(agent, id).await,
+        None => None,
+    };
+    let scope_parent_task_id = caller_task
+        .as_ref()
+        .and_then(|task| task.parent_task_id.clone());
+    let scope_parent_thread_id = caller_task
+        .as_ref()
+        .and_then(|task| task.parent_thread_id.clone())
+        .unwrap_or_else(|| parent_thread_id.to_string());
+
+    let active_statuses = [
+        TaskStatus::Queued,
+        TaskStatus::InProgress,
+        TaskStatus::AwaitingApproval,
+        TaskStatus::Blocked,
+        TaskStatus::FailedAnalyzing,
+        TaskStatus::BudgetExceeded,
+    ];
+    let tasks = list_subagent_tasks_for_spawn(agent).await;
+    tasks
+        .into_iter()
+        .filter(|task| {
+            if Some(task.id.as_str()) == caller_task_id {
+                return false;
+            }
+            if !active_statuses.contains(&task.status) {
+                return false;
+            }
+            match scope_parent_task_id.as_deref() {
+                Some(parent_id) => task.parent_task_id.as_deref() == Some(parent_id),
+                None => {
+                    task.parent_thread_id.as_deref() == Some(scope_parent_thread_id.as_str())
+                        || task.thread_id.as_deref() == Some(scope_parent_thread_id.as_str())
+                }
+            }
+        })
+        .collect()
+}
+
+/// Persona ids already claimed by active sibling tasks in the caller's
+/// parent scope — used to guarantee unique persona names per scope so
+/// persona-keyed internal DM threads cannot collide across subagents.
+async fn active_sibling_persona_ids(siblings: &[AgentTask]) -> Vec<String> {
+    siblings
+        .iter()
+        .filter_map(|task| {
+            crate::agent::agent_identity::extract_persona_id(task.override_system_prompt.as_deref())
+        })
+        .collect()
+}
+
+fn is_global_service_target(resolved_target_id: &str) -> bool {
+    matches!(
+        resolved_target_id,
+        crate::agent::agent_identity::MAIN_AGENT_ID
+            | crate::agent::agent_identity::CONCIERGE_AGENT_ID
+            | crate::agent::agent_identity::WELES_AGENT_ID
+    )
+}
+
+fn sibling_task_matches_target(task: &AgentTask, raw_target: &str, resolved_target_id: &str) -> bool {
+    let normalized = raw_target.trim().to_ascii_lowercase();
+    if task.id.eq_ignore_ascii_case(raw_target.trim()) {
+        return true;
+    }
+    if task.title.eq_ignore_ascii_case(raw_target.trim()) {
+        return true;
+    }
+    crate::agent::agent_identity::extract_persona_id(task.override_system_prompt.as_deref())
+        .map(|persona_id| {
+            persona_id.eq_ignore_ascii_case(resolved_target_id)
+                || persona_id.eq_ignore_ascii_case(&normalized)
+        })
+        .unwrap_or(false)
+}
+
+async fn subagent_tasks_snapshot(agent: &AgentEngine) -> Vec<AgentTask> {
+    list_subagent_tasks_for_spawn(agent).await
 }
 
 async fn find_task_for_spawn(agent: &AgentEngine, task_id: &str) -> Option<AgentTask> {
@@ -508,6 +602,36 @@ pub(crate) async fn execute_spawn_subagent(
             );
         }
     }
+    // Reject spawning a second active instance of the same sub-agent
+    // definition under one parent scope: duplicate persona names collide in
+    // persona-keyed internal DM thread routing and split work context.
+    if let Some(def) = matched_def.as_ref() {
+        let def_scope_id = def
+            .id
+            .strip_suffix("_builtin")
+            .unwrap_or(def.id.as_str())
+            .to_ascii_lowercase();
+        let siblings = active_sibling_subagent_tasks(agent, task_id, thread_id).await;
+        let duplicate = siblings.iter().find(|task| {
+            crate::agent::agent_identity::extract_persona_id(
+                task.override_system_prompt.as_deref(),
+            )
+            .map(|persona_id| persona_id.eq_ignore_ascii_case(&def_scope_id))
+            .unwrap_or(false)
+                || task.sub_agent_def_id
+                    .as_deref()
+                    .map(|id| id.eq_ignore_ascii_case(&def.id))
+                    .unwrap_or(false)
+        });
+        if let Some(duplicate) = duplicate {
+            anyhow::bail!(
+                "sub-agent '{}' is already active under this parent scope as task {} (thread {}). Spawn with a different title, wait for it to finish, or message the existing instance directly instead of duplicating it.",
+                def.name,
+                duplicate.id,
+                duplicate.thread_id.as_deref().unwrap_or("(none)")
+            );
+        }
+    }
 
     let mut chosen_session = args
         .get("session")
@@ -675,7 +799,23 @@ pub(crate) async fn execute_spawn_subagent(
         let resolved_scope = def.id.strip_suffix("_builtin").unwrap_or(def.id.as_str());
         build_spawned_persona_prompt(resolved_scope)
     } else {
-        build_spawned_persona_prompt(&subagent.id)
+        // Persona names must stay unique within a parent scope: two active
+        // siblings sharing a persona made message_agent route sibling DMs into
+        // one shared context-free internal-dm thread keyed by persona names.
+        let siblings =
+            active_sibling_subagent_tasks(agent, task_id, thread_id).await;
+        let taken_persona_ids = active_sibling_persona_ids(&siblings).await;
+        let persona = crate::agent::agent_identity::pick_unique_spawned_persona_seed(
+            &subagent.id,
+            taken_persona_ids.iter().map(String::as_str),
+        )
+        .ok_or_else(|| {
+            anyhow::anyhow!(
+                "cannot assign a unique persona to subagent '{}': all 9 spawned personas are already active under this parent scope. Reuse an existing subagent (list_subagents) or let one finish before spawning another.",
+                subagent.title
+            )
+        })?;
+        build_spawned_persona_prompt(persona)
     };
     subagent.override_system_prompt = Some(match subagent.override_system_prompt.take() {
         Some(existing) if !existing.trim().is_empty() => {
@@ -2112,6 +2252,110 @@ pub(crate) async fn execute_message_agent(
 
     if canonical_agent_id(&sender) == canonical_agent_id(&resolved_target_id) {
         anyhow::bail!("message_agent cannot target the current active responder");
+    }
+
+    // Sibling subagent routing: when the caller is a spawned subagent task
+    // (or the main agent coordinating its children), a persona-name target
+    // must resolve to the ACTIVE sibling task in the same parent scope —
+    // never to the global persona registry, which used to route the DM into
+    // a context-free internal-dm thread under unrelated provider/model
+    // settings while a perfectly good reserved task thread existed.
+    let caller_task_source_subagent = if let Some(current_task_id) = task_id {
+        let tasks = subagent_tasks_snapshot(agent).await;
+        tasks
+            .iter()
+            .any(|task| task.id == current_task_id && task.source == "subagent")
+    } else {
+        false
+    };
+    if caller_task_source_subagent || !is_global_service_target(&resolved_target_id) {
+        let siblings = active_sibling_subagent_tasks(agent, task_id, thread_id).await;
+        let matches: Vec<&AgentTask> = siblings
+            .iter()
+            .filter(|task| sibling_task_matches_target(task, target, &resolved_target_id))
+            .collect();
+        match matches.len() {
+            1 => {
+                let sibling = matches[0];
+                let sibling_thread_id = sibling
+                    .thread_id
+                    .clone()
+                    .ok_or_else(|| anyhow::anyhow!(
+                        "sibling subagent task {} has no reserved thread",
+                        sibling.id
+                    ))?;
+                let sender_name = crate::agent::agent_identity::canonical_agent_name(&sender);
+                let continuation_prompt = format!(
+                    "Internal DM from sibling subagent {sender_name} (task context). This is asynchronous mailbox delivery to your task thread, not a new operator request.\n\n{}\n\nIntegrate this into your assigned work and continue. Do not take over the sender's task; reply via message_agent only if the sender explicitly asked for an answer.",
+                    message
+                );
+                let agent_id = agent
+                    .agent_scope_id_for_turn(Some(sibling_thread_id.as_str()), Some(sibling.id.as_str()))
+                    .await;
+                agent
+                    .enqueue_visible_thread_continuation(
+                        &sibling_thread_id,
+                        crate::agent::DeferredVisibleThreadContinuation {
+                            agent_id,
+                            task_id: Some(sibling.id.clone()),
+                            preferred_session_hint: preferred_session_id
+                                .as_ref()
+                                .map(|value| value.to_string()),
+                            llm_user_content: continuation_prompt,
+                            queued_at_ms: 0,
+                            force_compaction: false,
+                            rerun_participant_observers_after_turn: false,
+                            internal_delegate_sender: None,
+                            internal_delegate_message: None,
+                        },
+                    )
+                    .await;
+                if agent.thread_is_idle_for_subagent_wakeup(&sibling_thread_id).await {
+                    let _ = agent.stop_stream(&sibling_thread_id).await;
+                }
+                if let Err(error) = agent
+                    .flush_deferred_visible_thread_continuations(&sibling_thread_id)
+                    .await
+                {
+                    tracing::warn!(
+                        thread_id = %sibling_thread_id,
+                        sibling_task_id = %sibling.id,
+                        %error,
+                        "failed to flush sibling continuation after internal DM"
+                    );
+                }
+                return Ok(serde_json::to_string_pretty(&serde_json::json!({
+                    "target": resolved_target_name,
+                    "sibling_task_id": sibling.id,
+                    "thread_id": sibling_thread_id,
+                    "delivered": true,
+                    "response": "Internal DM delivered to the sibling subagent's dedicated task thread; it will resume there with full work context.",
+                    "upstream_message": serde_json::Value::Null,
+                    "visible_thread_continuation_requested": false,
+                }))
+                .unwrap_or_else(|_| "{}".to_string()));
+            }
+            0 => {
+                if caller_task_source_subagent && !is_global_service_target(&resolved_target_id) {
+                    anyhow::bail!(
+                        "no active sibling subagent named '{}' exists in this parent scope. Spawned subagents may only internal-DM their active siblings, the parent (svarog), the concierge (rarog), or weles. Use report_subagent_outcome, ask_parent, or ask the parent to relay instead of messaging the global persona directly."
+                    ,
+                        resolved_target_name
+                    );
+                }
+            }
+            _ => {
+                let candidates = matches
+                    .iter()
+                    .map(|task| format!("{} ({})", task.id, task.title))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                anyhow::bail!(
+                    "multiple active sibling subagents match target '{}': {candidates}. Target the specific task id instead.",
+                    resolved_target_name
+                );
+            }
+        }
     }
     let visible_operator_thread = !thread_id.trim().is_empty()
         && !crate::agent::agent_identity::is_internal_dm_thread(thread_id)
