@@ -26,33 +26,39 @@ export function ThreadComposerQueue({
               .filter(Boolean)
               .join(" ")}
           >
-            <span className="zorai-composer-queue__label">{editing ? "Editing" : `Queued ${index + 1}`}</span>
-            <span className="zorai-composer-queue__text">{label.slice(0, 100)}</span>
-            {label.length > 100 ? <span className="zorai-composer-queue__text-ellipsis">…</span> : null}
-            <button
-              type="button"
-              className="zorai-composer-queue__send-now"
-              title="Edit this queued message"
-              onClick={() => onEdit(queued)}
-            >
-              Edit
-            </button>
-            <button
-              type="button"
-              className="zorai-composer-queue__send-now"
-              title="Interrupt the current response and send this message now"
-              onClick={() => onSendNow(queued.id)}
-            >
-              Send now
-            </button>
-            <button
-              type="button"
-              className="zorai-composer-queue__remove"
-              aria-label="Cancel queued message"
-              onClick={() => onCancel(queued.id)}
-            >
-              ×
-            </button>
+            <div className="zorai-composer-queue__header">
+              <span className="zorai-composer-queue__label">{editing ? "Editing" : `Queued ${index + 1}`}</span>
+              <div className="zorai-composer-queue__actions">
+                <button
+                  type="button"
+                  className="zorai-composer-queue__send-now"
+                  title="Edit this queued message"
+                  onClick={() => onEdit(queued)}
+                >
+                  Edit
+                </button>
+                <button
+                  type="button"
+                  className="zorai-composer-queue__send-now"
+                  title="Interrupt the current response and send this message now"
+                  onClick={() => onSendNow(queued.id)}
+                >
+                  Send now
+                </button>
+                <button
+                  type="button"
+                  className="zorai-composer-queue__remove"
+                  aria-label="Cancel queued message"
+                  onClick={() => onCancel(queued.id)}
+                >
+                  ×
+                </button>
+              </div>
+            </div>
+            <div className="zorai-composer-queue__content">
+              <span className="zorai-composer-queue__text">{label.slice(0, 100)}</span>
+              {label.length > 100 ? <span className="zorai-composer-queue__text-ellipsis">…</span> : null}
+            </div>
           </div>
         );
       })}
