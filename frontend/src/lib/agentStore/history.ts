@@ -209,9 +209,14 @@ const threadAbortControllers = new Map<string, AbortController>();
 let threadIdCounter = 0;
 let messageIdCounter = 0;
 
+// Local ids must never share the daemon's `thread_` prefix: a persisted
+// local thread (`thread_10100`) and a daemon thread with the same id would
+// collide in identity lookups (findThreadByAuthoritativeIdentity matches
+// `id` first), making clicks on a daemon thread open the unrelated local
+// one. `local_thread_` keeps the namespaces disjoint.
 export function nextThreadId(): string {
   threadIdCounter += 1;
-  return `thread_${threadIdCounter}`;
+  return `local_thread_${threadIdCounter}`;
 }
 
 export function nextMessageId(): string {
@@ -531,7 +536,7 @@ export function syncChatCounters(chat: AgentChatState): void {
   let maxMessage = 0;
 
   for (const thread of chat.threads) {
-    const match = /^thread_(\d+)$/.exec(thread.id);
+    const match = /^(?:local_thread_|thread_)(\d+)$/.exec(thread.id);
     if (match) {
       maxThread = Math.max(maxThread, Number(match[1]));
     }

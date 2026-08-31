@@ -179,13 +179,16 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
             const messageOffset = Number.isFinite(options?.messageOffset)
                 ? Number(options.messageOffset)
                 : null;
+            // 30s: large threads (9k+ messages) can take several seconds to
+            // build + chunk; the old 5s default made openThreadTarget get
+            // null and the click silently did nothing.
             return await sendAgentQuery({
                 type: 'get-thread',
                 thread_id: threadId,
                 message_limit: messageLimit,
                 message_offset: messageOffset,
                 collapse_tool_calls: true,
-            }, 'thread-detail');
+            }, 'thread-detail', 30000);
         } catch {
             return null;
         }

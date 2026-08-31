@@ -72,7 +72,7 @@ export function CodeAgentPane() {
           const daemonId = thread.daemonThreadId?.trim();
           if (daemonId) daemonByLocal.set(thread.id, daemonId);
         }
-        const needsHeal = projectThreadIds.some((id) => /^thread_\d+$/.test(id) && !id.includes(":"));
+        const needsHeal = projectThreadIds.some((id) => /^(?:local_thread_|thread_)\d+$/.test(id) && !id.includes(":"));
         if (needsHeal) {
           for (const id of [...projectThreadIds]) {
             const daemonId = daemonByLocal.get(id);
