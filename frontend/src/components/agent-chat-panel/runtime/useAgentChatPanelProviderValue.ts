@@ -894,7 +894,7 @@ export function useAgentChatPanelProviderValue(): {
     const finishLoading = direction === "latest"
       && thread?.daemonThreadId
       && getAgentBridge()?.agentGetThread
-      ? beginThreadLoading()
+      ? beginThreadLoading(threadId)
       : () => {};
     const runThreadPageLoad = async (): Promise<boolean> => {
       try {

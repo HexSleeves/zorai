@@ -723,7 +723,7 @@
   padding: 24px;
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 8px;
 }
 
 .zorai-thread-chat-scroll > * {
@@ -975,7 +975,7 @@
 }
 
 .zorai-message__actions {
-  display: flex;
+  display: none;
   justify-content: flex-end;
   gap: 6px;
   opacity: 0;
@@ -989,6 +989,18 @@
   opacity: 1;
   transform: translateY(0);
   pointer-events: auto;
+  display: flex;
+}
+
+@keyframes zorai-message-actions-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .zorai-message__actions:has(.zorai-button--active) {

@@ -16,6 +16,7 @@ import {
   type ThreadFilterTab,
 } from "./threadFilterModel";
 import { openThreadTarget } from "./openThreadTarget";
+import { isThreadLoading, useThreadLoadingStore } from "./threadLoadingStore";
 import { ZORAI_FOCUS_SEARCH_EVENT, consumePendingFocusSearch } from "../../shell/zoraiNavigationEvents";
 
 const THREAD_FILTER_FETCH_DEBOUNCE_MS = 1000;
@@ -24,6 +25,7 @@ export function ThreadsRail() {
   const runtime = useAgentChatPanelRuntime();
   const subAgents = useAgentStore((state) => state.subAgents);
   const storeThreads = useAgentStore((state) => state.threads);
+  const threadLoadingByThreadId = useThreadLoadingStore((state) => state.byThreadId);
   const refreshSubAgents = useAgentStore((state) => state.refreshSubAgents);
   const [tab, setTab] = useState<ThreadFilterTab>("svarog");
   const [dateFilter, setDateFilter] = useState<DateFilterId>(DEFAULT_THREAD_DATE_FILTER);
@@ -198,18 +200,23 @@ export function ThreadsRail() {
           <ThreadListSkeleton />
         ) : displayedThreads.length === 0 ? (
           <div className="zorai-empty">No threads match this search.</div>
-        ) : displayedThreads.map((thread) => (
-          <button
-            type="button"
-            key={thread.daemonThreadId ?? thread.id}
-            className={["zorai-thread-item", thread.id === runtime.activeThreadId || thread.daemonThreadId === runtime.activeThread?.daemonThreadId ? "zorai-thread-item--active" : ""].filter(Boolean).join(" ")}
-            onClick={() => void openThreadTarget(runtime, thread.daemonThreadId || thread.id)}
-          >
-            <span className="zorai-thread-title">{thread.title}</span>
-            {thread.lastMessagePreview ? <span className="zorai-thread-preview">{thread.lastMessagePreview}</span> : null}
-            <span className="zorai-thread-meta">{threadHistoryLabel(thread)} - {new Date(thread.updatedAt).toLocaleDateString()}</span>
-          </button>
-        ))}
+        ) : displayedThreads.map((thread) => {
+          const loading = isThreadLoading(threadLoadingByThreadId, thread.id, thread.daemonThreadId);
+          return (
+            <button
+              type="button"
+              key={thread.daemonThreadId ?? thread.id}
+              className={["zorai-thread-item", thread.id === runtime.activeThreadId || thread.daemonThreadId === runtime.activeThread?.daemonThreadId ? "zorai-thread-item--active" : "", loading ? "zorai-thread-item--loading" : ""].filter(Boolean).join(" ")}
+              aria-busy={loading}
+              onClick={() => void openThreadTarget(runtime, thread.daemonThreadId || thread.id)}
+            >
+              <span className="zorai-thread-title">{thread.title}</span>
+              {loading ? <LoadingState size={12} className="zorai-thread-item__spinner" /> : null}
+              {thread.lastMessagePreview ? <span className="zorai-thread-preview">{thread.lastMessagePreview}</span> : null}
+              <span className="zorai-thread-meta">{threadHistoryLabel(thread)} - {new Date(thread.updatedAt).toLocaleDateString()}</span>
+            </button>
+          );
+        })}
       </div>
     </div>
   );
