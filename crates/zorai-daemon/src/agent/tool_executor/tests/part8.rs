@@ -1276,6 +1276,67 @@ async fn read_skill_accepts_multiple_skills_in_one_call() {
 }
 
 #[tokio::test]
+async fn list_skills_reads_catalog_without_blocking_sync() {
+    let root = tempdir().expect("tempdir");
+    let agent_data_dir = root.path().join("agent");
+    fs::create_dir_all(&agent_data_dir).expect("create agent data dir");
+    let generated_dir = root.path().join("skills").join("generated");
+    fs::create_dir_all(&generated_dir).expect("create generated dir");
+    let skill_path = generated_dir.join("systematic-debugging.md");
+    fs::write(
+        &skill_path,
+        "# Systematic Debugging\nUse this workflow to debug failures.\n",
+    )
+    .expect("write skill");
+
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager.clone(), AgentConfig::default(), root.path()).await;
+    engine
+        .history
+        .register_skill_document(&skill_path)
+        .await
+        .expect("register skill");
+    let (event_tx, _) = broadcast::channel(8);
+
+    let tool_call = ToolCall::with_default_weles_review(
+        "tool-list-skills".to_string(),
+        ToolFunction {
+            name: "list_skills".to_string(),
+            arguments: serde_json::json!({
+                "query": "systematic-debugging",
+                "limit": 5
+            })
+            .to_string(),
+        },
+    );
+
+    let result = execute_tool(
+        &tool_call,
+        &engine,
+        "thread-list-skills",
+        None,
+        &manager,
+        None,
+        &event_tx,
+        &agent_data_dir,
+        &engine.http_client,
+        None,
+    )
+    .await;
+
+    assert!(
+        !result.is_error,
+        "list_skills should succeed: {}",
+        result.content
+    );
+    assert!(
+        result.content.contains("systematic-debugging"),
+        "list_skills should include the registered skill: {}",
+        result.content
+    );
+}
+
+#[tokio::test]
 async fn read_skill_uses_workspace_root_when_session_is_absent() {
     let _cwd_lock = current_dir_test_lock().lock().expect("cwd lock");
     let original_cwd = std::env::current_dir().expect("current dir");

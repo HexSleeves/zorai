@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AgentThread, SubAgentDefinition } from "@/lib/agentStore";
-import { buildThreadFilterTabs, daemonAgentFilterForThreadTab, DEFAULT_THREAD_DATE_FILTER, filterThreads, normalizeEpochMs, overlayStoreThreadTitles, resolveThreadCreationAgent, resolveThreadListSource } from "./threadFilterModel";
+import { buildThreadFilterTabs, daemonAgentFilterForThreadTab, DEFAULT_THREAD_DATE_FILTER, filterThreads, mergeLocalDraftThreads, normalizeEpochMs, overlayStoreThreadTitles, resolveThreadCreationAgent, resolveThreadListSource } from "./threadFilterModel";
 
 function thread(overrides: Partial<AgentThread>): AgentThread {
   return {
@@ -292,6 +292,21 @@ describe("thread filters", () => {
     expect(overlayStoreThreadTitles(daemon, store).map((item) => item.title)).toEqual([
       "Billing invoice parser",
       "Keep this",
+    ]);
+  });
+
+  it("merges unbound local draft threads ahead of daemon rows without duplicating bound threads", () => {
+    const daemon = [
+      thread({ id: "daemon-1", daemonThreadId: "thread_a", title: "Persisted" }),
+    ];
+    const store = [
+      thread({ id: "local_thread_1", daemonThreadId: null, title: "Draft", updatedAt: Date.now() }),
+      thread({ id: "local-2", daemonThreadId: "thread_a", title: "Persisted local copy" }),
+    ];
+
+    expect(mergeLocalDraftThreads(daemon, store).map((item) => item.id)).toEqual([
+      "local_thread_1",
+      "daemon-1",
     ]);
   });
 });

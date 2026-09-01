@@ -65,6 +65,23 @@ async fn register_skill_document_infers_variant_metadata() -> Result<()> {
 }
 
 #[tokio::test]
+async fn register_skill_document_skips_unchanged_files() -> Result<()> {
+    let (store, root) = make_test_store().await?;
+    store.init_schema().await?;
+    let skill_path = root.join("skills/generated/build-pipeline.md");
+    fs::write(&skill_path, "# Build pipeline\nRun cargo build.\n")?;
+
+    let first = store.register_skill_document(&skill_path).await?;
+    let second = store.register_skill_document(&skill_path).await?;
+
+    assert_eq!(second.variant_id, first.variant_id);
+    assert_eq!(second.updated_at, first.updated_at);
+
+    fs::remove_dir_all(root)?;
+    Ok(())
+}
+
+#[tokio::test]
 async fn register_skill_document_preserves_persisted_fitness_score_on_reregistration() -> Result<()>
 {
     let (store, root) = make_test_store().await?;
