@@ -183,6 +183,19 @@ pub(crate) fn bash_command_should_force_background(args: &serde_json::Value) -> 
         return false;
     }
 
+    // An explicitly requested wait flag is authoritative: only the >600s
+    // auto-background cap may override it. If the caller explicitly asked to
+    // wait, never silently rewrite that into a background dispatch.
+    let wait_explicitly_requested = args.get("wait_for_completion").and_then(|value| value.as_bool())
+        .or_else(|| args.get("wait_for_response").and_then(|value| value.as_bool()));
+    if wait_explicitly_requested == Some(true) {
+        let requested_timeout = args
+            .get("timeout_seconds")
+            .and_then(|value| value.as_u64())
+            .unwrap_or(30);
+        return requested_timeout > 600;
+    }
+
     let wait_for_completion = tool_waits_for_completion(args);
     if !wait_for_completion {
         return false;
@@ -1005,7 +1018,7 @@ fn spawn_headless_shell_command_background(
     } else {
         Ok((
             format!(
-                "{queued_summary}\nbackground_task_id: {operation_id}\noperation_id: {operation_id}\nNot waiting for completion because wait_for_completion=false. {BACKGROUND_OPERATION_COMPLETION_GUIDANCE}"
+                "{queued_summary}\nbackground_task_id: {operation_id}\noperation_id: {operation_id}\nNot waiting for completion (wait_for_completion=false; non-quick or long-running commands default to background). {BACKGROUND_OPERATION_COMPLETION_GUIDANCE}"
             ),
             None,
         ))

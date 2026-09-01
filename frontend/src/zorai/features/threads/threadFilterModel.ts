@@ -31,6 +31,41 @@ export function resolveThreadListSource<T>(
   return daemonFilteredThreads ?? fallbackThreads;
 }
 
+export function mergeLocalDraftThreads(
+  daemonThreads: AgentThread[],
+  storeThreads: AgentThread[],
+): AgentThread[] {
+  if (storeThreads.length === 0) {
+    return daemonThreads;
+  }
+
+  const byDaemonId = new Map<string, AgentThread>();
+  const byLocalId = new Map<string, AgentThread>();
+  for (const thread of daemonThreads) {
+    byLocalId.set(thread.id, thread);
+    if (thread.daemonThreadId) {
+      byDaemonId.set(thread.daemonThreadId, thread);
+    }
+  }
+
+  const extras: AgentThread[] = [];
+  for (const thread of storeThreads) {
+    if (byLocalId.has(thread.id)) {
+      continue;
+    }
+    if (thread.daemonThreadId && byDaemonId.has(thread.daemonThreadId)) {
+      continue;
+    }
+    extras.push(thread);
+  }
+
+  if (extras.length === 0) {
+    return daemonThreads;
+  }
+
+  return [...extras, ...daemonThreads].sort((left, right) => right.updatedAt - left.updatedAt);
+}
+
 export function overlayStoreThreadTitles<T extends { id: string; title: string; daemonThreadId?: string | null }>(
   daemonThreads: T[],
   storeThreads: Array<{ id: string; title: string; daemonThreadId?: string | null }>,

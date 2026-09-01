@@ -541,24 +541,14 @@ export function useDaemonAgentActions({
       }
 
       const targetAgentId = resolveNewThreadTargetAgent(thread, daemonThreadId);
-      const workspaceContext = useWorkspaceContextStore.getState().byThreadId[threadId];
-      if (workspaceContext && zorai.agentSetThreadWorkspaceContext) {
-        await zorai.agentSetThreadWorkspaceContext(daemonThreadId || threadId, workspaceContext);
-      }
-      if (
-        !daemonThreadId
-        && zorai.agentSetThreadExecutionProfile
-        && (thread?.profileProvider || thread?.profileModel)
-      ) {
-        await zorai.agentSetThreadExecutionProfile(threadId, {
-          provider: thread.profileProvider ?? null,
-          model: thread.profileModel ?? null,
-          reasoning_effort: thread.profileReasoningEffort ?? null,
-          context_window_tokens: thread.profileContextWindowTokens ?? null,
-        });
+      if (daemonThreadId) {
+        const workspaceContext = useWorkspaceContextStore.getState().byThreadId[threadId];
+        if (workspaceContext && zorai.agentSetThreadWorkspaceContext) {
+          await zorai.agentSetThreadWorkspaceContext(daemonThreadId, workspaceContext);
+        }
       }
       await sendAgentMessage(
-        daemonThreadId || threadId,
+        daemonThreadId,
         text,
         preferredSessionId,
         contextMessages,

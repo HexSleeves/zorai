@@ -252,7 +252,10 @@ async fn load_graph_seed_nodes(history: &HistoryStore, query: &str) -> Result<Ve
     Ok(seeds)
 }
 
-fn schedule_background_skill_catalog_sync(history: HistoryStore, skills_root: PathBuf) {
+pub(crate) fn schedule_background_skill_catalog_sync(
+    history: HistoryStore,
+    skills_root: PathBuf,
+) {
     tokio::spawn(async move {
         if let Err(error) = sync_skill_catalog(&history, &skills_root).await {
             tracing::warn!(
@@ -559,6 +562,59 @@ async fn collect_registered_skill_candidates(
         });
     }
     Ok(candidates)
+}
+
+pub(crate) fn list_filesystem_skill_variants(
+    skills_root: &Path,
+    query: Option<&str>,
+    limit: usize,
+) -> Result<Vec<SkillVariantRecord>> {
+    let mut files = Vec::new();
+    collect_skill_documents(skills_root, &mut files)?;
+    files.sort();
+    let needle = query.map(|value| value.to_ascii_lowercase());
+    let now = crate::history::now_ts();
+    let mut entries = Vec::new();
+    for path in files {
+        let relative_path = path
+            .strip_prefix(skills_root)
+            .unwrap_or(path.as_path())
+            .to_string_lossy()
+            .replace('\\', "/");
+        let skill_name = path
+            .file_stem()
+            .and_then(|value| value.to_str())
+            .unwrap_or("skill")
+            .to_string();
+        if let Some(needle) = needle.as_deref() {
+            if !skill_name.to_ascii_lowercase().contains(needle)
+                && !relative_path.to_ascii_lowercase().contains(needle)
+            {
+                continue;
+            }
+        }
+        entries.push(SkillVariantRecord {
+            variant_id: format!("fs:{relative_path}"),
+            skill_name: skill_name.clone(),
+            variant_name: "canonical".to_string(),
+            relative_path,
+            parent_variant_id: None,
+            version: "v1.0".to_string(),
+            context_tags: Vec::new(),
+            use_count: 0,
+            success_count: 0,
+            failure_count: 0,
+            fitness_score: 0.0,
+            status: "active".to_string(),
+            last_used_at: None,
+            created_at: now,
+            updated_at: now,
+        });
+        if entries.len() >= limit {
+            break;
+        }
+    }
+    Ok(entries)
 }
 
 fn collect_filesystem_skill_candidates(skills_root: &Path) -> Result<Vec<SkillCandidateInput>> {

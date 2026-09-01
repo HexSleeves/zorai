@@ -258,7 +258,7 @@ fn spawn_python_execute_background(
     } else {
         Ok((
             format!(
-                "{queued_summary}\nbackground_task_id: {operation_id}\noperation_id: {operation_id}\nNot waiting for completion because wait_for_completion=false. {BACKGROUND_OPERATION_COMPLETION_GUIDANCE}"
+                "{queued_summary}\nbackground_task_id: {operation_id}\noperation_id: {operation_id}\nNot waiting for completion (wait_for_completion=false; non-quick or long-running commands default to background). {BACKGROUND_OPERATION_COMPLETION_GUIDANCE}"
             ),
             None,
         ))

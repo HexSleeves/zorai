@@ -16,27 +16,22 @@ pub(crate) async fn execute_list_skills(
         .unwrap_or(20)
         .clamp(1, 100) as usize;
 
-    let mut entries = sync_skill_catalog(&skills_root, history).await?;
-    if entries.is_empty() {
-        return Ok(format!(
-            "No local skills found under {}.",
-            skills_root.display()
-        ));
-    }
+    super::super::skill_recommendation::schedule_background_skill_catalog_sync(
+        history.clone(),
+        skills_root.to_path_buf(),
+    );
 
-    entries.retain(|entry| match query.as_ref() {
-        Some(needle) => {
-            entry.skill_name.to_ascii_lowercase().contains(needle)
-                || entry.variant_name.to_ascii_lowercase().contains(needle)
-                || entry.relative_path.to_ascii_lowercase().contains(needle)
-                || entry
-                    .context_tags
-                    .iter()
-                    .any(|tag| tag.to_ascii_lowercase().contains(needle))
-        }
-        None => true,
-    });
-    entries.truncate(limit);
+    let mut entries = match query.as_deref() {
+        Some(_) => history.list_skill_variants(query.as_deref(), limit).await?,
+        None => history.list_discoverable_skill_variants(limit).await?,
+    };
+    if entries.is_empty() {
+        entries = super::super::skill_recommendation::list_filesystem_skill_variants(
+            &skills_root,
+            query.as_deref(),
+            limit,
+        )?;
+    }
 
     if entries.is_empty() {
         return Ok(format!(
@@ -412,7 +407,10 @@ pub(crate) async fn execute_read_skill(
         .unwrap_or(200)
         .clamp(20, 1000) as usize;
     let skills_root = super::super::task_prompt::skills_dir(agent_data_dir);
-    sync_skill_catalog(&skills_root, history).await?;
+    super::super::skill_recommendation::schedule_background_skill_catalog_sync(
+        history.clone(),
+        skills_root.to_path_buf(),
+    );
     let context_tags =
         resolve_skill_context_tags(agent.workspace_root.as_ref(), session_manager, session_id)
             .await;

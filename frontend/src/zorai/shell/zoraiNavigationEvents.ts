@@ -4,6 +4,7 @@ import type { ZoraiViewId } from "./navigation";
 
 export const ZORAI_NAVIGATE_EVENT = "zorai-navigate";
 export const ZORAI_FOCUS_SEARCH_EVENT = "zorai-focus-search";
+export const ZORAI_THREAD_LIST_REFRESH_EVENT = "zorai-thread-list-refresh";
 
 export type ZoraiReturnTarget = {
   view: ZoraiViewId;
@@ -27,6 +28,13 @@ export function consumePendingFocusSearch(): boolean {
   if (!pendingFocusSearch) return false;
   pendingFocusSearch = false;
   return true;
+}
+
+export function notifyThreadListRefresh(): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.dispatchEvent(new CustomEvent(ZORAI_THREAD_LIST_REFRESH_EVENT));
 }
 
 export function navigateZorai(detail: ZoraiNavigateDetail) {

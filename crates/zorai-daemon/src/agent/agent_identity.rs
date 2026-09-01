@@ -56,6 +56,13 @@ struct PersonaSeed {
     guidance: &'static str,
 }
 
+impl PersonaSeed {
+    pub(crate) fn id(&self) -> &'static str {
+        self.id
+    }
+}
+
+
 #[derive(Debug, Clone)]
 pub(crate) struct ResolvedAgentTarget {
     pub(super) scope_id: String,
@@ -120,6 +127,39 @@ fn spawned_persona(seed: &str) -> &'static PersonaSeed {
     seed.hash(&mut hasher);
     let idx = (hasher.finish() as usize) % SPAWNED_PERSONAS.len();
     &SPAWNED_PERSONAS[idx]
+}
+
+pub(crate) fn spawned_persona_id_for_seed(seed: &str) -> &'static str {
+    spawned_persona(seed).id
+}
+
+/// Pick a spawned persona for `seed` that is not already used by an active
+/// sibling task under the same parent scope.
+/// Two concurrent subagents hashing to the same persona name made
+/// `message_agent` route sibling DMs into one shared context-free
+/// `internal-dm:<persona-a>:<persona-b>` thread, so persona names must stay
+/// unique within a parent scope.
+pub(crate) fn pick_unique_spawned_persona_seed<'a>(
+    seed: &str,
+    taken_persona_ids: impl IntoIterator<Item = &'a str>,
+) -> Option<&'static str> {
+    let taken: std::collections::HashSet<String> = taken_persona_ids
+        .into_iter()
+        .map(|id| id.trim().to_ascii_lowercase())
+        .collect();
+    let primary = spawned_persona(seed);
+    if !taken.contains(primary.id) {
+        return Some(primary.id);
+    }
+    // Deterministic fallback: stable rotation from the primary slot so the
+    // same seed always maps to the same alternate persona.
+    let primary_idx = SPAWNED_PERSONAS
+        .iter()
+        .position(|persona| persona.id == primary.id)
+        .unwrap_or(0);
+    (1..=SPAWNED_PERSONAS.len())
+        .map(|offset| SPAWNED_PERSONAS[(primary_idx + offset) % SPAWNED_PERSONAS.len()].id)
+        .find(|persona_id| !taken.contains(&persona_id.to_ascii_lowercase()))
 }
 
 fn persona_by_alias(alias: &str) -> Option<&'static PersonaSeed> {
@@ -602,6 +642,32 @@ pub(crate) fn concierge_should_escalate(content: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn pick_unique_spawned_persona_seed_prefers_unused_persona() {
+        let primary_id = spawned_persona_id_for_seed("task_seed_a");
+        let picked_id = pick_unique_spawned_persona_seed("task_seed_a", ["weles"])
+            .expect("persona should be picked when primary is free");
+        assert_eq!(picked_id, spawned_persona_id_for_seed("task_seed_a"));
+    }
+
+    #[test]
+    fn pick_unique_spawned_persona_seed_rotates_on_collision() {
+        let primary_id = spawned_persona_id_for_seed("task_seed_a");
+        let picked = pick_unique_spawned_persona_seed("task_seed_a", [primary_id])
+            .expect("an alternate persona should be picked");
+        assert_ne!(picked, primary_id);
+        // Deterministic: the same collision yields the same alternate.
+        let picked_again = pick_unique_spawned_persona_seed("task_seed_a", [primary_id])
+            .expect("alternate pick should be repeatable");
+        assert_eq!(picked, picked_again);
+    }
+
+    #[test]
+    fn pick_unique_spawned_persona_seed_returns_none_when_all_taken() {
+        let all: Vec<&str> = SPAWNED_PERSONAS.iter().map(|persona| persona.id).collect();
+        assert!(pick_unique_spawned_persona_seed("task_seed_a", all).is_none());
+    }
 
     #[test]
     fn internal_dm_thread_id_is_stable_and_sorted() {

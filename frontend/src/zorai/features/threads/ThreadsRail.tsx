@@ -1,5 +1,5 @@
 import { LoadingState, ThreadListSkeleton } from "@/components/LoadingState";
-import { startTransition, useEffect, useMemo, useRef, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAgentChatPanelRuntime } from "@/components/agent-chat-panel/runtime/context";
 import { useAgentStore, type AgentThread } from "@/lib/agentStore";
 import {
@@ -9,6 +9,7 @@ import {
   DEFAULT_THREAD_DATE_FILTER,
   filterThreads,
   fixedThreadTabs,
+  mergeLocalDraftThreads,
   overlayStoreThreadTitles,
   resolveThreadCreationAgent,
   resolveThreadListSource,
@@ -17,7 +18,7 @@ import {
 } from "./threadFilterModel";
 import { openThreadTarget } from "./openThreadTarget";
 import { isThreadLoading, useThreadLoadingStore } from "./threadLoadingStore";
-import { ZORAI_FOCUS_SEARCH_EVENT, consumePendingFocusSearch } from "../../shell/zoraiNavigationEvents";
+import { ZORAI_FOCUS_SEARCH_EVENT, ZORAI_THREAD_LIST_REFRESH_EVENT, consumePendingFocusSearch } from "../../shell/zoraiNavigationEvents";
 
 const THREAD_FILTER_FETCH_DEBOUNCE_MS = 1000;
 
@@ -42,7 +43,10 @@ export function ThreadsRail() {
   const fetchThreadList = runtime.fetchThreadList;
   const sourceThreads = useMemo(() => {
     const baseThreads = overlayStoreThreadTitles(
-      resolveThreadListSource(daemonFilteredThreads, runtime.filteredThreads),
+      mergeLocalDraftThreads(
+        resolveThreadListSource(daemonFilteredThreads, runtime.filteredThreads),
+        storeThreads,
+      ),
       storeThreads,
     );
     return filterThreadsForSearchQuery(baseThreads, runtime.searchQuery);
@@ -114,7 +118,7 @@ export function ThreadsRail() {
     return () => window.clearTimeout(timeoutId);
   }, [daemonAgentFilter, fetchKey, fetchThreadList, tab]);
 
-  const refreshSelectedTab = () => {
+  const refreshSelectedTab = useCallback(() => {
     pendingFetchIdRef.current += 1;
     const fetchId = pendingFetchIdRef.current;
     setLoadingTab(tab);
@@ -128,10 +132,15 @@ export function ThreadsRail() {
         });
       })
       .catch(() => {
-        // Refresh failures keep the previously loaded list visible.
         if (pendingFetchIdRef.current === fetchId) setLoadingTab(null);
       });
-  };
+  }, [daemonAgentFilter, fetchKey, fetchThreadList, tab]);
+
+  useEffect(() => {
+    const onRefresh = () => refreshSelectedTab();
+    window.addEventListener(ZORAI_THREAD_LIST_REFRESH_EVENT, onRefresh);
+    return () => window.removeEventListener(ZORAI_THREAD_LIST_REFRESH_EVENT, onRefresh);
+  }, [refreshSelectedTab]);
 
   return (
     <div className="zorai-rail-stack">
@@ -152,7 +161,7 @@ export function ThreadsRail() {
           New Thread
         </button>
         <button type="button" className="zorai-ghost-button" onClick={refreshSelectedTab} disabled={loadingTab !== null} aria-busy={loadingTab !== null}>
-          {loadingTab !== null ? <LoadingState size={14} label="Refreshing" /> : "Refresh"}
+          Refresh
         </button>
       </div>
       <input ref={searchInputRef} className="zorai-search-input" value={runtime.searchQuery} onChange={(event) => runtime.setSearchQuery(event.target.value)} placeholder="Search threads" />

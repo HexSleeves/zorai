@@ -103,6 +103,30 @@ impl HistoryStore {
             .unwrap_or(canonical.as_path())
             .to_string_lossy()
             .replace('\\', "/");
+
+        let existing: Option<SkillVariantRecord> = self
+            .conn_db
+            .query_opt(
+                "SELECT variant_id, skill_name, variant_name, relative_path, parent_variant_id, version, context_tags_json, use_count, success_count, failure_count, fitness_score, status, last_used_at, created_at, updated_at \
+                 FROM skill_variants WHERE relative_path = ?1",
+                db::db_params![relative_path.clone()],
+            )
+            .await?
+            .map(|row| map_skill_variant_row_db(&row))
+            .transpose()?;
+
+        let file_mtime = std::fs::metadata(&canonical)
+            .ok()
+            .and_then(|meta| meta.modified().ok())
+            .and_then(|modified| modified.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|duration| duration.as_secs())
+            .unwrap_or(0);
+        if let Some(record) = existing.as_ref() {
+            if file_mtime <= record.updated_at {
+                return Ok(record.clone());
+            }
+        }
+
         let content = std::fs::read_to_string(&canonical)
             .with_context(|| format!("failed to read skill document {}", canonical.display()))?;
         let metadata = derive_skill_metadata(&relative_path, &content);
@@ -113,15 +137,6 @@ impl HistoryStore {
 
         let _path = path;
         let mut txn = self.conn_db.transaction().await?;
-        let existing: Option<SkillVariantRecord> = txn
-            .query_opt(
-                "SELECT variant_id, skill_name, variant_name, relative_path, parent_variant_id, version, context_tags_json, use_count, success_count, failure_count, fitness_score, status, last_used_at, created_at, updated_at \
-                 FROM skill_variants WHERE relative_path = ?1",
-                db::db_params![relative_path.clone()],
-            )
-            .await?
-            .map(|row| map_skill_variant_row_db(&row))
-            .transpose()?;
 
         let variant_id = existing
             .as_ref()

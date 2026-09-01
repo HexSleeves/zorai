@@ -47,12 +47,12 @@
 .zorai-code-loading__editor span { display: block; height: 10px; margin-left: 48px; border-radius: 4px; background: linear-gradient(100deg, color-mix(in srgb, var(--zorai-muted) 22%, var(--zorai-bg-panel)) 20%, color-mix(in srgb, var(--zorai-muted) 42%, var(--zorai-bg-panel)) 42%, color-mix(in srgb, var(--zorai-muted) 22%, var(--zorai-bg-panel)) 64%); background-size: 220% 100%; animation: zorai-loader-shimmer 1.45s ease-in-out infinite; }
 
 .zorai-loading-state { min-width: 0; }
-.zorai-loading-spinner { display: inline-flex; align-items: center; gap: 8px; color: var(--zorai-muted); }
+.zorai-loading-spinner { display: inline-flex; align-items: center; gap: 8px; color: var(--zorai-muted); justify-content: flex-end; }
 .zorai-loading-spinner__ring {
   display: inline-block;
   flex: 0 0 auto;
   box-sizing: border-box;
-  border: 2px solid var(--zorai-border-strong);
+  border: 2px solid var(--zorai-border);
   border-top-color: var(--zorai-accent);
   border-radius: 999px;
   animation: zorai-loader-spin .72s linear infinite;
@@ -821,9 +821,8 @@
   /* border: 1px solid var(--zorai-border); */
   /* background: var(--zorai-bg-panel); */
   /* border-radius: 7px; */
-  padding: 8px 2px;
   display: grid;
-  gap: 9px;
+  gap: 4px;
   overflow-wrap: anywhere;
 }
 
@@ -991,7 +990,6 @@
   visibility: hidden;
   min-height: 0; /* prevent jumping */
   min-width: 0;  /* prevent jumping */
-  height: 0;
 }
 
 .zorai-message:hover .zorai-message__actions,
@@ -1000,7 +998,6 @@
   transform: translateY(0) scale(1);
   pointer-events: auto;
   visibility: visible;
-  height: inherit;
   /* Remove transition-delay on showing for immediate effect after display: flex */
   transition-delay: 0ms, 0ms, 0ms;
 }
@@ -1824,7 +1821,8 @@
 
 .zorai-composer-queue__chip {
   display: flex;
-  align-items: center;
+  flex-direction: column;
+  align-items: space-between;
   gap: 8px;
   border: 1px dashed var(--zorai-border-strong);
   border-radius: 8px;
@@ -1834,6 +1832,13 @@
   color: var(--zorai-text);
 }
 
+.zorai-composer-queue__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
 .zorai-composer-queue__label {
   flex-shrink: 0;
   color: var(--zorai-accent);
@@ -1841,6 +1846,13 @@
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.1em;
+}
+
+.zorai-composer-queue__actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  gap: 8px;
 }
 
 .zorai-composer-queue__text {

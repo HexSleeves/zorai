@@ -5,9 +5,11 @@ import { useAgentMissionStore } from "@/lib/agentMissionStore";
 import { useSnippetStore } from "@/lib/snippetStore";
 import { closePanesForSession, provisionTerminalPaneInWorkspace } from "@/lib/agentWorkspace";
 import { useWorkspaceStore } from "@/lib/workspaceStore";
+import { useWorkspaceContextStore } from "@/lib/workspaceContextStore";
 import { fetchThreadTodos } from "@/lib/agentTodos";
 import type { AgentTodoItem } from "@/lib/agentStore";
 import { TOOL_NAMES } from "@/lib/agentTools/toolNames";
+import { notifyThreadListRefresh } from "@/zorai/shell/zoraiNavigationEvents";
 import {
   appendDaemonSystemMessage,
   normalizeBridgePayload,
@@ -28,6 +30,31 @@ export function handleThreadTitleUpdatedEvent({ event }: { event: any }) {
 
 function findLocalThreadIdByDaemonId(daemonThreadId: string): string | null {
   return useAgentStore.getState().threads.find((thread) => thread.daemonThreadId === daemonThreadId)?.id ?? null;
+}
+
+function applyDeferredThreadDaemonSettings(localThreadId: string, daemonThreadId: string): void {
+  const bridge = getBridge();
+  const thread = useAgentStore.getState().threads.find((entry) => entry.id === localThreadId);
+  if (!thread) {
+    return;
+  }
+
+  const workspaceContext = useWorkspaceContextStore.getState().byThreadId[localThreadId];
+  if (workspaceContext && bridge?.agentSetThreadWorkspaceContext) {
+    void bridge.agentSetThreadWorkspaceContext(daemonThreadId, workspaceContext);
+  }
+
+  if (
+    bridge?.agentSetThreadExecutionProfile
+    && (thread.profileProvider || thread.profileModel)
+  ) {
+    void bridge.agentSetThreadExecutionProfile(daemonThreadId, {
+      provider: thread.profileProvider ?? null,
+      model: thread.profileModel ?? null,
+      reasoning_effort: thread.profileReasoningEffort ?? null,
+      context_window_tokens: thread.profileContextWindowTokens ?? null,
+    });
+  }
 }
 
 function appendGatewayTurn(addMessage: any, threadId: string, userMessages: any[]) {
@@ -122,7 +149,9 @@ export function handleThreadCreatedEvent({
     daemonThreadIdRef.current = event.thread_id;
     if (currentLocalId) {
       setThreadDaemonId(currentLocalId, event.thread_id);
+      applyDeferredThreadDaemonSettings(currentLocalId, event.thread_id);
     }
+    notifyThreadListRefresh();
     return;
   }
 
@@ -146,6 +175,7 @@ export function handleThreadCreatedEvent({
     });
   }
   appendGatewayTurn(addMessage, localId, takePendingGatewayMessages(pendingGatewayMessagesRef));
+  notifyThreadListRefresh();
 }
 
 export function handleTaskUpdateEvent({ event, activePaneId, activeWorkspace, addNotification }: any) {

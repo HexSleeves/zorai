@@ -2,10 +2,11 @@ use super::super::*;
 use super::super::{execute_gateway_message, execute_tool};
 use crate::agent::{
     types::{AgentConfig, AgentEvent, ToolCall, ToolFunction},
-    AgentEngine,
+    AgentEngine, StreamCancellationEntry, StreamProgressKind,
 };
 use crate::session_manager::SessionManager;
 use std::sync::{Arc, Mutex};
+use tokio_util::sync::CancellationToken;
 use tempfile::tempdir;
 use tokio::sync::broadcast;
 use tokio::time::{timeout, Duration};
@@ -1720,7 +1721,7 @@ async fn tui_python_execute_wait_for_response_detaches_long_running_command() {
 }
 
 #[tokio::test]
-async fn bash_command_wait_true_backgrounds_non_quick_headless_command() {
+async fn bash_command_wait_true_waits_for_non_quick_headless_command() {
     let root = tempdir().expect("tempdir should succeed");
     let manager = SessionManager::new_test(root.path()).await;
     let engine = AgentEngine::new_test(manager.clone(), AgentConfig::default(), root.path()).await;
@@ -1746,7 +1747,7 @@ async fn bash_command_wait_true_backgrounds_non_quick_headless_command() {
     );
 
     let result = timeout(
-        Duration::from_millis(250),
+        Duration::from_secs(10),
         execute_tool(
             &tool_call,
             &engine,
@@ -1761,26 +1762,21 @@ async fn bash_command_wait_true_backgrounds_non_quick_headless_command() {
         ),
     )
     .await
-    .expect("non-quick bash_command should return a background handle quickly");
+    .expect("non-quick bash_command should honor wait_for_completion=true in the foreground");
 
     assert!(
         !result.is_error,
-        "non-quick bash command should be accepted as background work: {}",
+        "wait=true non-quick bash command should complete synchronously: {}",
         result.content
     );
     assert!(
-        result.content.contains("operation_id: "),
-        "backgrounded bash command should return an operation handle: {}",
+        !result.content.contains("background_task_id: "),
+        "explicit wait_for_completion=true must not be silently rewritten to a background dispatch: {}",
         result.content
     );
     assert!(
-        result.content.contains("background_task_id: "),
-        "backgrounded bash command should return a background_task_id alias: {}",
-        result.content
-    );
-    assert!(
-        !marker.exists(),
-        "backgrounded command should return before the subprocess finishes"
+        marker.exists(),
+        "wait=true command should finish before the tool call returns"
     );
 }
 
@@ -2172,7 +2168,10 @@ async fn tui_bash_command_wait_false_completes_when_descendant_keeps_pipes_open(
 
     let mut payload = serde_json::Value::Null;
     let mut completed = false;
-    for _ in 0..10 {
+    // Poll up to ~4s under parallel test load (python3 startup can exceed the
+    // old 1s window on a busy machine); the descendant invariant is still
+    // enforced below via duration_ms, which must stay well under the 5s sleep.
+    for _ in 0..40 {
         let status = execute_tool(
             &status_call,
             &engine,
@@ -2211,6 +2210,13 @@ async fn tui_bash_command_wait_false_completes_when_descendant_keeps_pipes_open(
     assert_eq!(payload["operation_id"], operation_id);
     assert_eq!(payload["state"], "completed");
     assert_eq!(payload["exit_code"], 0);
+    assert!(
+        payload["terminal_result"]["duration_ms"]
+            .as_u64()
+            .is_some_and(|value| value < 4500),
+        "operation must complete after the primary shell exits, not when the 5s descendant releases the pipes: {}",
+        payload
+    );
     assert!(
         payload["terminal_result"]["stdout"]
             .as_str()
@@ -3447,6 +3453,309 @@ async fn spawn_subagent_seeds_reserved_thread_with_spawned_persona_identity() {
     assert_eq!(
         handoff_state.responder_stack[0].agent_name, persona_name,
         "reserved child thread should keep the seeded responder name"
+    );
+}
+
+#[tokio::test]
+async fn spawn_subagent_assigns_unique_persona_per_parent_scope() {
+    let root = tempdir().expect("tempdir should succeed");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager.clone(), AgentConfig::default(), root.path()).await;
+    let (event_tx, _) = broadcast::channel(8);
+    let thread_id = "thread-persona-unique";
+
+    {
+        let mut threads = engine.threads.write().await;
+        threads.insert(
+            thread_id.to_string(),
+            crate::agent::types::AgentThread {
+                id: thread_id.to_string(),
+                agent_name: None,
+                title: "Parent".to_string(),
+                messages: vec![crate::agent::types::AgentMessage::user(
+                    "Spawn two children.",
+                    1,
+                )],
+                pinned: false,
+                upstream_thread_id: None,
+                upstream_transport: None,
+                upstream_provider: None,
+                upstream_model: None,
+                upstream_assistant_id: None,
+                total_input_tokens: 0,
+                total_output_tokens: 0,
+                created_at: 1,
+                updated_at: 1,
+            },
+        );
+    }
+
+    let first = super::execute_spawn_subagent(
+        &serde_json::json!({
+            "title": "First worker",
+            "description": "First child task."
+        }),
+        &engine,
+        thread_id,
+        None,
+        &manager,
+        None,
+        &event_tx,
+    )
+    .await
+    .expect("first spawn should succeed");
+    let second = super::execute_spawn_subagent(
+        &serde_json::json!({
+            "title": "Second worker",
+            "description": "Second child task."
+        }),
+        &engine,
+        thread_id,
+        None,
+        &manager,
+        None,
+        &event_tx,
+    )
+    .await
+    .expect("second spawn should succeed");
+
+    let persona_id_for = |result: String| {
+        let engine = engine.clone();
+        async move {
+        let tasks = engine.list_tasks().await;
+        let task = tasks
+            .iter()
+            .find(|task| result.contains(&task.id))
+            .expect("spawned subagent should exist");
+        let prompt = task
+            .override_system_prompt
+            .as_deref()
+            .expect("spawned subagent should carry a persona prompt");
+        prompt
+            .lines()
+            .find_map(|line: &str| {
+                line.trim()
+                    .strip_prefix("Agent persona id:")
+                    .map(str::trim)
+                    .map(str::to_string)
+            })
+            .expect("persona prompt should expose the persona id")
+        }
+    };
+
+    let first_persona = persona_id_for(first.clone()).await;
+    let second_persona = persona_id_for(second.clone()).await;
+    assert_ne!(
+        first_persona, second_persona,
+        "two concurrent subagents under one parent must never share a persona name"
+    );
+}
+
+#[tokio::test]
+async fn message_agent_routes_sibling_dm_to_active_task_thread() {
+    let root = tempdir().expect("tempdir should succeed");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager.clone(), AgentConfig::default(), root.path()).await;
+    let (event_tx, _) = broadcast::channel(8);
+    let thread_id = "thread-sibling-dm";
+
+    let parent = engine
+        .enqueue_task(
+            "Parent coordinator".to_string(),
+            "Coordinate the child work".to_string(),
+            "normal",
+            None,
+            None,
+            Vec::new(),
+            None,
+            "user",
+            None,
+            None,
+            Some(thread_id.to_string()),
+            Some("daemon".to_string()),
+        )
+        .await;
+
+    let spawned = super::execute_spawn_subagent(
+        &serde_json::json!({
+            "title": "Sibling worker",
+            "description": "Child task that will receive a sibling DM."
+        }),
+        &engine,
+        thread_id,
+        Some(&parent.id),
+        &manager,
+        None,
+        &event_tx,
+    )
+    .await
+    .expect("spawn should succeed");
+    let sibling_task = engine
+        .list_tasks()
+        .await
+        .into_iter()
+        .find(|task| spawned.contains(&task.id))
+        .expect("spawned sibling task should exist");
+    let sibling_thread_id = sibling_task
+        .thread_id
+        .clone()
+        .expect("sibling task should have a reserved thread");
+    let sibling_persona_id = crate::agent::agent_identity::extract_persona_id(
+        sibling_task.override_system_prompt.as_deref(),
+    )
+    .expect("sibling task should carry a persona id");
+
+    // Simulate the sibling actively working: a live (non-cancelled) stream on
+    // its reserved thread makes the post-DM flush defer the continuation so
+    // it stays observable in the queue (it would otherwise drain into an
+    // immediate LLM turn attempt).
+    {
+        let mut streams = engine.stream_cancellations.lock().await;
+        streams.insert(
+            sibling_thread_id.clone(),
+            StreamCancellationEntry {
+                generation: 1,
+                token: CancellationToken::new(),
+                retry_now: Arc::new(tokio::sync::Notify::new()),
+                started_at: 1,
+                last_progress_at: 1,
+                last_progress_kind: StreamProgressKind::Started,
+                last_progress_excerpt: String::new(),
+            },
+        );
+    }
+
+    let tool_call = ToolCall::with_default_weles_review(
+        "tool-sibling-dm".to_string(),
+        ToolFunction {
+            name: "message_agent".to_string(),
+            arguments: serde_json::json!({
+                "target": sibling_persona_id,
+                "message": "Here are my results; integrate them into your work."
+            })
+            .to_string(),
+        },
+    );
+
+    let result = execute_tool(
+        &tool_call,
+        &engine,
+        thread_id,
+        Some(&parent.id),
+        &manager,
+        None,
+        &event_tx,
+        root.path(),
+        &engine.http_client,
+        None,
+    )
+    .await;
+
+    assert!(
+        !result.is_error,
+        "sibling DM should route to the active task thread: {}",
+        result.content
+    );
+    let payload: serde_json::Value =
+        serde_json::from_str(&result.content).expect("sibling DM result should be JSON");
+    assert_eq!(payload["sibling_task_id"], serde_json::json!(sibling_task.id));
+    assert_eq!(payload["thread_id"], serde_json::json!(sibling_thread_id));
+    assert!(
+        !engine
+            .threads
+            .read()
+            .await
+            .contains_key(&format!("dm:{}", sibling_persona_id)),
+        "no context-free internal-dm thread should be created for sibling routing"
+    );
+    let queued = engine
+        .deferred_visible_thread_continuations_for(&sibling_thread_id)
+        .await;
+    assert!(
+        !queued.is_empty(),
+        "sibling DM should queue a continuation on the sibling task thread"
+    );
+}
+
+#[tokio::test]
+async fn message_agent_rejects_spawned_subagent_dm_to_unused_global_persona() {
+    let root = tempdir().expect("tempdir should succeed");
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager.clone(), AgentConfig::default(), root.path()).await;
+    let (event_tx, _) = broadcast::channel(8);
+    let thread_id = "thread-sibling-dm-reject";
+
+    let parent = engine
+        .enqueue_task(
+            "Parent coordinator".to_string(),
+            "Coordinate the child work".to_string(),
+            "normal",
+            None,
+            None,
+            Vec::new(),
+            None,
+            "user",
+            None,
+            None,
+            Some(thread_id.to_string()),
+            Some("daemon".to_string()),
+        )
+        .await;
+    let child = engine
+        .enqueue_task(
+            "Child sender".to_string(),
+            "Child task that will try a bad DM.".to_string(),
+            "normal",
+            None,
+            None,
+            Vec::new(),
+            None,
+            "subagent",
+            None,
+            Some(parent.id.clone()),
+            Some(thread_id.to_string()),
+            Some("daemon".to_string()),
+        )
+        .await;
+
+    let tool_call = ToolCall::with_default_weles_review(
+        "tool-sibling-dm-reject".to_string(),
+        ToolFunction {
+            name: "message_agent".to_string(),
+            arguments: serde_json::json!({
+                "target": "swietowit",
+                "message": "Random global persona ping."
+            })
+            .to_string(),
+        },
+    );
+
+    let result = execute_tool(
+        &tool_call,
+        &engine,
+        thread_id,
+        Some(&child.id),
+        &manager,
+        None,
+        &event_tx,
+        root.path(),
+        &engine.http_client,
+        None,
+    )
+    .await;
+
+    assert!(
+        result.is_error,
+        "spawned subagent DM to a persona with no active sibling should be rejected: {}",
+        result.content
+    );
+    assert!(
+        result
+            .content
+            .contains("no active sibling subagent named") 
+            || result.content.contains("only internal-DM their active siblings"),
+        "rejection should explain scope rules: {}",
+        result.content
     );
 }
 
