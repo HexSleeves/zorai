@@ -152,7 +152,7 @@ export function ThreadsRail() {
           New Thread
         </button>
         <button type="button" className="zorai-ghost-button" onClick={refreshSelectedTab} disabled={loadingTab !== null} aria-busy={loadingTab !== null}>
-          {loadingTab !== null ? <LoadingState size={14} label="Refreshing" /> : "Refresh"}
+          Refresh
         </button>
       </div>
       <input ref={searchInputRef} className="zorai-search-input" value={runtime.searchQuery} onChange={(event) => runtime.setSearchQuery(event.target.value)} placeholder="Search threads" />
