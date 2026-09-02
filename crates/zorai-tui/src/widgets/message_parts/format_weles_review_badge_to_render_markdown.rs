@@ -403,6 +403,32 @@ pub(crate) fn render_markdown_pub(content: &str, width: usize) -> Vec<Line<'stat
     render_markdown(content, width)
 }
 
+thread_local! {
+    static MARKDOWN_LINE_CACHE_REVISION: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+    static MARKDOWN_LINE_CACHE: std::cell::RefCell<
+        std::collections::HashMap<(u64, usize), Vec<Line<'static>>>,
+    > = std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+pub(crate) fn prepare_markdown_render_cache(render_revision: u64) {
+    MARKDOWN_LINE_CACHE_REVISION.with(|revision| {
+        if revision.get() == render_revision {
+            return;
+        }
+        revision.set(render_revision);
+        MARKDOWN_LINE_CACHE.with(|cache| cache.borrow_mut().clear());
+    });
+}
+
+fn markdown_cache_key(content: &str, width: usize) -> (u64, usize) {
+    use std::collections::hash_map::DefaultHasher;
+    use std::hash::{Hash, Hasher};
+
+    let mut hasher = DefaultHasher::new();
+    content.hash(&mut hasher);
+    (hasher.finish(), width)
+}
+
 #[cfg(test)]
 thread_local! {
     static MARKDOWN_RENDER_CALLS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
@@ -482,12 +508,19 @@ pub(crate) fn fence_marker(line: &str) -> Option<(char, usize)> {
 }
 
 pub(crate) fn render_markdown(content: &str, width: usize) -> Vec<Line<'static>> {
-    #[cfg(test)]
-    MARKDOWN_RENDER_CALLS.with(|calls| calls.set(calls.get() + 1));
-
     if content.is_empty() {
         return vec![];
     }
+
+    let cache_key = markdown_cache_key(content, width);
+    if let Some(cached) =
+        MARKDOWN_LINE_CACHE.with(|cache| cache.borrow().get(&cache_key).cloned())
+    {
+        return cached;
+    }
+
+    #[cfg(test)]
+    MARKDOWN_RENDER_CALLS.with(|calls| calls.set(calls.get() + 1));
 
     let raw_lines: Vec<&str> = content.lines().collect();
     let mut result = Vec::new();
@@ -519,6 +552,10 @@ pub(crate) fn render_markdown(content: &str, width: usize) -> Vec<Line<'static>>
     if !markdown_buffer.is_empty() {
         result.extend(render_markdown_segment(&markdown_buffer, width));
     }
+
+    MARKDOWN_LINE_CACHE.with(|cache| {
+        cache.borrow_mut().insert(cache_key, result.clone());
+    });
 
     result
 }

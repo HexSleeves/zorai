@@ -291,6 +291,8 @@ pub(crate) fn build_transcript_metrics(
     #[cfg(test)]
     BUILD_TRANSCRIPT_METRICS_CALLS.with(|calls| calls.set(calls.get() + 1));
 
+    crate::widgets::message::prepare_markdown_render_cache(chat.render_revision());
+
     let mut total_lines = 0usize;
     let mut message_line_ranges = Vec::new();
     let mode = chat.transcript_mode();
@@ -449,9 +451,7 @@ pub(crate) fn estimated_message_content_line_count(
                 return 1;
             }
 
-            if msg.is_operator_question
-                || crate::widgets::message::is_collapsible_system_notice_message(msg)
-            {
+            if msg.is_operator_question {
                 return crate::widgets::message::message_to_lines(
                     msg,
                     msg_index,
@@ -462,6 +462,28 @@ pub(crate) fn estimated_message_content_line_count(
                     expanded_tools,
                 )
                 .len();
+            }
+
+            if crate::widgets::message::is_collapsible_system_notice_message(msg) {
+                if exact_message_metrics {
+                    return crate::widgets::message::message_to_lines(
+                        msg,
+                        msg_index,
+                        mode,
+                        theme,
+                        content_width,
+                        expanded,
+                        expanded_tools,
+                    )
+                    .len();
+                }
+                return crate::widgets::message::estimated_collapsible_system_notice_line_count(
+                    msg,
+                    msg_index,
+                    mode,
+                    content_width,
+                    expanded,
+                );
             }
 
             if msg.content.is_empty() && image_line_count == 0 && msg.role != MessageRole::Assistant
@@ -495,7 +517,9 @@ pub(crate) fn estimated_message_content_line_count(
 
             let content_lines = if msg.content.is_empty() {
                 0
-            } else if msg.role == MessageRole::Assistant && exact_message_metrics {
+            } else if (msg.role == MessageRole::Assistant || msg.role == MessageRole::System)
+                && exact_message_metrics
+            {
                 crate::widgets::message::render_markdown_pub(&msg.content, content_width).len()
             } else {
                 wrap_text(&msg.content, content_width).len()
@@ -574,6 +598,8 @@ pub(crate) fn build_rendered_line_window(
     window_end: usize,
     metrics: &TranscriptMetrics,
 ) -> Vec<RenderedChatLine> {
+    crate::widgets::message::prepare_markdown_render_cache(chat.render_revision());
+
     let mut lines = vec![RenderedChatLine::padding(); window_end.saturating_sub(window_start)];
     let mode = chat.transcript_mode();
     let expanded = chat.expanded_reasoning();

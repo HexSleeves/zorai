@@ -132,6 +132,87 @@ fn meta_cognition_message_expands_with_reasoning_state() {
 }
 
 #[test]
+fn expanded_system_notice_markdown_is_parsed_once_per_snapshot_build() {
+    let mut expanded = empty_expanded();
+    expanded.insert(0);
+    let msg = AgentMessage {
+        role: MessageRole::System,
+        content: "Background operation finished.\n\n## Report\n\n**bold item**".into(),
+        ..Default::default()
+    };
+    let chat = {
+        let mut chat = crate::state::chat::ChatState::default();
+        chat.reduce(crate::state::chat::ChatAction::ThreadCreated {
+            thread_id: "thread-1".to_string(),
+            title: "Thread".to_string(),
+        });
+        chat.reduce(crate::state::chat::ChatAction::SelectThread(
+            "thread-1".to_string(),
+        ));
+        chat.reduce(crate::state::chat::ChatAction::AppendMessage {
+            thread_id: "thread-1".to_string(),
+            message: msg,
+        });
+        chat.toggle_reasoning(0);
+        chat
+    };
+
+    crate::widgets::message::reset_markdown_render_call_count();
+    let area = ratatui::layout::Rect::new(0, 0, 80, 24);
+    let snapshot = crate::widgets::chat::build_selection_snapshot(
+        area,
+        &chat,
+        &ThemeTokens::default(),
+        0,
+        false,
+    );
+    assert!(snapshot.is_some(), "snapshot should build");
+    assert_eq!(
+        crate::widgets::message::markdown_render_call_count(),
+        1,
+        "metrics plus visible render should share one markdown parse for the expanded system notice"
+    );
+}
+
+#[test]
+fn expanded_background_operation_renders_markdown_detail() {
+    let msg = AgentMessage {
+        role: MessageRole::System,
+        content: "Background operation finished.\n\nStatus: error\n\n## Report\n\n**bold item** and `code`".into(),
+        ..Default::default()
+    };
+    let mut expanded = empty_expanded();
+    expanded.insert(0);
+
+    let lines = message_to_lines(
+        &msg,
+        0,
+        TranscriptMode::Compact,
+        &ThemeTokens::default(),
+        80,
+        &expanded,
+        &empty_tools(),
+    );
+
+    let has_bold = lines.iter().any(|line| {
+        line.spans.iter().any(|span| {
+            span.style
+                .add_modifier
+                .contains(ratatui::style::Modifier::BOLD)
+        })
+    });
+    assert!(
+        has_bold,
+        "expanded background operation detail should render markdown bold"
+    );
+    let plain = plain_lines(&lines).join("\n");
+    assert!(
+        !plain.contains("**bold item**"),
+        "raw markdown markers should not appear in rendered output: {plain}"
+    );
+}
+
+#[test]
 fn background_operation_finished_message_collapses_by_default_and_expands() {
     let msg = AgentMessage {
         role: MessageRole::System,
