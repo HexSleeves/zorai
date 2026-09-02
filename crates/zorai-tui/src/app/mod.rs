@@ -141,6 +141,7 @@ pub struct TuiModel {
     openai_auth_url: Option<String>,
     openai_auth_status_text: Option<String>,
     settings_picker_target: Option<SettingsPickerTarget>,
+    model_picker_provider_id: Option<String>,
     last_attention_surface: Option<String>,
 
     show_sidebar_override: Option<bool>,
@@ -187,6 +188,7 @@ pub struct TuiModel {
     cancelled_thread_id: Option<String>,
 
     pending_new_thread_target_agent: Option<String>,
+    pending_new_thread_execution_profile: Option<PendingThreadExecutionProfile>,
     pending_thread_picker_refresh: Option<PendingThreadPickerRefresh>,
     thread_picker_loading_tab: Option<modal::ThreadPickerTab>,
 

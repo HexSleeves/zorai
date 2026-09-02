@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAgentChatPanelRuntime } from "@/components/agent-chat-panel/runtime/context";
+import { refreshDaemonThreadMetadataIntoLocalState } from "@/components/agent-chat-panel/runtime/daemonHelpers";
 import { useAgentStore, type AgentMessage, type AgentThread, type AgentTodoItem } from "@/lib/agentStore";
 import { fetchThreadWorkContext, type ThreadWorkContext, type WorkContextEntry } from "@/lib/agentWorkContext";
 import { getBridge } from "@/lib/bridge";
@@ -52,6 +53,18 @@ export function ThreadsContext() {
     return () => {
       cancelled = true;
     };
+  }, [daemonThreadId]);
+
+  useEffect(() => {
+    if (!daemonThreadId) {
+      return;
+    }
+
+    void refreshDaemonThreadMetadataIntoLocalState({
+      daemonThreadId,
+      setThreadTodos: useAgentStore.getState().setThreadTodos,
+      setDaemonTodosByThread: () => {},
+    });
   }, [daemonThreadId]);
 
   useEffect(() => {
@@ -296,11 +309,14 @@ function PinnedThreadContext({
 }
 
 function resolveCurrentContextTokens(thread: AgentThread | undefined, messages: AgentMessage[]): number {
-  if (typeof thread?.activeContextWindowTokens === "number" && thread.activeContextWindowTokens >= 0) {
+  if (typeof thread?.activeContextWindowTokens === "number" && thread.activeContextWindowTokens > 0) {
     return Math.trunc(thread.activeContextWindowTokens);
   }
 
-  return messages.reduce((sum, message) => sum + Math.max(0, Math.trunc(message.totalTokens || 0)), 0);
+  return messages.reduce(
+    (sum, message) => sum + Math.ceil((message.content?.length ?? 0) / 4) + 8,
+    0,
+  );
 }
 
 function countSpawnedNodes(tree: ReturnType<typeof useAgentChatPanelRuntime>["spawnedAgentTree"]): number {

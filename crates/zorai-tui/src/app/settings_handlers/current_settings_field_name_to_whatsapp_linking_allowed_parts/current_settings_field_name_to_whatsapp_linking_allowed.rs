@@ -192,17 +192,58 @@ impl TuiModel {
         }
     }
 
+    fn target_agent_chat_picker_models(
+        &self,
+        provider_id: &str,
+        auth_source: &str,
+    ) -> Vec<crate::state::config::FetchedModel> {
+        let mut models = providers::known_models_for_provider_auth(provider_id, auth_source);
+        let allows_unlisted = matches!(
+            provider_id,
+            zorai_shared::providers::PROVIDER_ID_OLLAMA
+                | zorai_shared::providers::PROVIDER_ID_LMSTUDIO
+                | zorai_shared::providers::PROVIDER_ID_HUGGINGFACE
+                | zorai_shared::providers::PROVIDER_ID_CUSTOM
+        );
+        let fetched_for_active_picker = self
+            .model_picker_provider_id
+            .as_deref()
+            .is_some_and(|active_provider| active_provider == provider_id);
+        let merge_fetched = fetched_for_active_picker
+            && (allows_unlisted || self.should_fetch_remote_models(provider_id, auth_source));
+        if merge_fetched {
+            for model in self.config.fetched_models() {
+                if !models.iter().any(|existing| existing.id == model.id) {
+                    models.push(model.clone());
+                }
+            }
+        }
+        models
+    }
+
     pub(crate) fn available_model_picker_models(&self) -> Vec<crate::state::config::FetchedModel> {
         let (current_model, custom_model_name) = self.model_picker_current_selection();
         match self
             .settings_picker_target
             .unwrap_or(SettingsPickerTarget::Model)
         {
+            SettingsPickerTarget::TargetAgentModel => {
+                let provider_id = self
+                    .pending_target_agent_config
+                    .as_ref()
+                    .map(|pending| pending.provider_id.as_str())
+                    .unwrap_or(self.config.provider.as_str());
+                let auth_source = self.provider_auth_snapshot(provider_id).2;
+                widgets::model_picker::merge_models_for_selection(
+                    &self.target_agent_chat_picker_models(provider_id, &auth_source),
+                    &current_model,
+                    custom_model_name.as_deref(),
+                )
+            }
             SettingsPickerTarget::AudioSttModel
             | SettingsPickerTarget::AudioTtsModel
             | SettingsPickerTarget::ImageGenerationModel
-            | SettingsPickerTarget::EmbeddingModel
-            | SettingsPickerTarget::TargetAgentModel => {
+            | SettingsPickerTarget::EmbeddingModel => {
                 let (endpoint, provider_id) = match self
                     .settings_picker_target
                     .unwrap_or(SettingsPickerTarget::Model)
@@ -219,19 +260,11 @@ impl TuiModel {
                     SettingsPickerTarget::EmbeddingModel => {
                         ("embedding", self.config.semantic_embedding_provider())
                     }
-                    SettingsPickerTarget::TargetAgentModel => (
-                        "chat",
-                        self.pending_target_agent_config
-                            .as_ref()
-                            .map(|pending| pending.provider_id.clone())
-                            .unwrap_or_else(|| self.config.provider.clone()),
-                    ),
                     _ => return Vec::new(),
                 };
                 let mut models = match endpoint {
                     "image_generation" => Self::image_generation_catalog_models(&provider_id),
                     "embedding" => Self::embedding_catalog_models(&provider_id),
-                    "chat" => self.config.fetched_models().to_vec(),
                     _ => Self::audio_catalog_models(endpoint, &provider_id),
                 };
                 for model in self.config.fetched_models() {
@@ -264,7 +297,6 @@ impl TuiModel {
                                     })
                                     .unwrap_or(false)
                         }
-                        "chat" => true,
                         _ => Self::fetched_model_supports_audio_endpoint(model, endpoint),
                     };
                     if include && !models.iter().any(|existing| existing.id == model.id) {

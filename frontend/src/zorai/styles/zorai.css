@@ -1992,6 +1992,12 @@
   white-space: pre-wrap;
 }
 
+.zorai-retry-status__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .zorai-retry-status__stop {
   justify-self: start;
   padding: 4px 10px;

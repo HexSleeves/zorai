@@ -345,6 +345,7 @@ pub(crate) fn selection_snapshot_windowed(
     if inner.width == 0 || inner.height == 0 {
         return None;
     }
+    crate::widgets::message::prepare_markdown_render_cache(chat.render_revision());
     let key = render_cache_key(area, chat, current_tick, retry_wait_start_selected);
     let metrics_key = transcript_metrics_cache_key(area, chat);
 

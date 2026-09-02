@@ -172,6 +172,7 @@ mod slash_context;
 mod slash_model;
 pub(crate) use slash_model::{
     apply_active_thread_provider_model_to_daemon, apply_target_agent_custom_model_locally,
+    push_active_thread_execution_profile_to_daemon,
 };
 #[path = "commands_parts/stage_mission_control_assignment_modal_edit_to_open_selected_spawned.rs"]
 mod stage_mission_control_assignment_modal_edit_to_open_selected_spawned;

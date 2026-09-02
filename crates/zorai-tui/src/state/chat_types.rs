@@ -252,6 +252,11 @@ pub struct RetryStatusVm {
     pub received_at_tick: u64,
 }
 
+pub fn retry_status_shows_prompt_actions(status: &RetryStatusVm) -> bool {
+    matches!(status.phase, RetryPhase::Waiting)
+        || (matches!(status.phase, RetryPhase::Retrying) && status.failure_class == "rate_limit")
+}
+
 #[derive(Debug, Clone)]
 pub(super) struct StoredMessageRef {
     pub(super) thread_id: String,

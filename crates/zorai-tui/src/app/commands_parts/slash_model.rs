@@ -119,7 +119,8 @@ impl TuiModel {
             "{} model: {model_id}",
             self.active_thread_context_owner_label()
         );
-        apply_active_thread_provider_model_to_daemon(self, &self.config.provider, model_id, None);
+        let provider_id = self.config.provider.clone();
+        apply_active_thread_provider_model_to_daemon(self, &provider_id, model_id, None);
     }
 }
 
@@ -201,11 +202,23 @@ pub(crate) fn push_active_thread_execution_profile_to_daemon(
 }
 
 pub(crate) fn apply_active_thread_provider_model_to_daemon(
-    model: &TuiModel,
+    model: &mut TuiModel,
     provider_id: &str,
     model_id: &str,
     reasoning_effort: Option<&str>,
 ) {
+    let provider_id = provider_id.trim();
+    let model_id = model_id.trim();
+    let reasoning_effort = reasoning_effort
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if model.chat.active_thread().is_none() && model.pending_new_thread_target_agent.is_some() {
+        model.pending_new_thread_execution_profile = Some(PendingThreadExecutionProfile {
+            provider_id: provider_id.to_string(),
+            model: model_id.to_string(),
+            reasoning_effort: reasoning_effort.map(ToOwned::to_owned),
+        });
+    }
     push_active_thread_execution_profile_to_daemon(model, provider_id, model_id, reasoning_effort);
     let Some(target_agent_id) = model.active_thread_owner_agent_id() else {
         return;
@@ -215,8 +228,8 @@ pub(crate) fn apply_active_thread_provider_model_to_daemon(
     }
     model.send_daemon_command(DaemonCommand::SetTargetAgentProviderModel {
         target_agent_id,
-        provider_id: provider_id.trim().to_string(),
-        model: model_id.trim().to_string(),
+        provider_id: provider_id.to_string(),
+        model: model_id.to_string(),
     });
 }
 

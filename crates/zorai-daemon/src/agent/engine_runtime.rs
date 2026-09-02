@@ -427,6 +427,15 @@ impl AgentEngine {
         };
         if let Some(token) = token {
             token.cancel();
+            let _ = self.event_tx.send(AgentEvent::RetryStatus {
+                thread_id: thread_id.to_string(),
+                phase: "cleared".to_string(),
+                attempt: 0,
+                max_retries: 0,
+                delay_ms: 0,
+                failure_class: String::new(),
+                message: String::new(),
+            });
             true
         } else {
             false
@@ -444,10 +453,31 @@ impl AgentEngine {
     }
 
     pub async fn retry_stream_now(self: &Arc<Self>, thread_id: &str) -> bool {
-        let retry_now = {
+        let active_retry_now = {
             let streams = self.stream_cancellations.lock().await;
-            streams.get(thread_id).map(|entry| entry.retry_now.clone())
+            streams.get(thread_id).and_then(|entry| {
+                (!entry.token.is_cancelled()).then(|| entry.retry_now.clone())
+            })
         };
+
+        if let Some(retry_now) = active_retry_now {
+            tracing::info!(
+                thread_id = %thread_id,
+                "retry-now requested; notifying active stream waiters"
+            );
+            let _ = self.event_tx.send(AgentEvent::RetryStatus {
+                thread_id: thread_id.to_string(),
+                phase: "cleared".to_string(),
+                attempt: 0,
+                max_retries: 0,
+                delay_ms: 0,
+                failure_class: String::new(),
+                message: String::new(),
+            });
+            retry_now.notify_one();
+            return true;
+        }
+
         let last_user_content = match self.history.latest_user_message_content(thread_id).await {
             Ok(message) => message.filter(|content| !content.trim().is_empty()),
             Err(error) => {
@@ -484,13 +514,6 @@ impl AgentEngine {
                     tracing::warn!(thread_id = %thread_id, error = %error, "retry-now fresh resend failed");
                 }
             });
-            true
-        } else if let Some(retry_now) = retry_now {
-            tracing::info!(
-                thread_id = %thread_id,
-                "retry-now requested without a reusable user turn; notifying current stream"
-            );
-            retry_now.notify_one();
             true
         } else {
             false

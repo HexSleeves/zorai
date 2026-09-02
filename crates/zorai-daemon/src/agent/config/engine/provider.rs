@@ -76,6 +76,7 @@ impl AgentEngine {
             &validation_config,
             provider_id,
             model,
+            true,
         )?;
         Ok(())
     }
@@ -109,7 +110,7 @@ impl AgentEngine {
     ) -> Result<AgentConfig> {
         let current = self.get_config().await;
         let selection =
-            provider_resolution::resolve_provider_model_switch(&current, provider_id, model)?;
+            provider_resolution::resolve_provider_model_switch(&current, provider_id, model, false)?;
 
         let mut updated = current;
         updated.provider = selection.provider_id;

@@ -1,6 +1,6 @@
 use super::render_streaming_markdown_to_message_block_style::*;
 use crate::state::chat::{
-    AgentMessage, ChatHitTarget, ChatState, MessageRole, RetryPhase, TranscriptMode,
+    AgentMessage, ChatHitTarget, ChatState, MessageRole, TranscriptMode,
 };
 use crate::theme::ThemeTokens;
 use crate::widgets::message::wrap_text;
@@ -212,27 +212,26 @@ pub(crate) fn retry_action_line(
     current_tick: u64,
     retry_wait_start_selected: bool,
 ) -> Line<'static> {
-    match status.phase {
-        RetryPhase::Retrying => Line::from(vec![Span::styled("[Stop]", theme.accent_primary)]),
-        RetryPhase::Waiting => {
-            let yes_label = format!("[Yes {}s]", retry_wait_remaining_secs(status, current_tick));
-            let yes_style = if retry_wait_start_selected {
-                theme.accent_primary
-            } else {
-                theme.fg_dim
-            };
-            let no_style = if retry_wait_start_selected {
-                theme.fg_dim
-            } else {
-                theme.accent_primary
-            };
-            Line::from(vec![
-                Span::styled(yes_label, yes_style),
-                Span::raw(" "),
-                Span::styled("[No]", no_style),
-            ])
-        }
+    if crate::state::chat::retry_status_shows_prompt_actions(status) {
+        let yes_label = format!("[Yes {}s]", retry_wait_remaining_secs(status, current_tick));
+        let yes_style = if retry_wait_start_selected {
+            theme.accent_primary
+        } else {
+            theme.fg_dim
+        };
+        let no_style = if retry_wait_start_selected {
+            theme.fg_dim
+        } else {
+            theme.accent_primary
+        };
+        return Line::from(vec![
+            Span::styled(yes_label, yes_style),
+            Span::raw(" "),
+            Span::styled("[No]", no_style),
+        ]);
     }
+
+    Line::from(vec![Span::styled("[Stop]", theme.accent_primary)])
 }
 
 pub(crate) fn classify_message_lines(
@@ -313,11 +312,24 @@ pub(crate) fn classify_message_lines(
 
             if crate::widgets::message::is_collapsible_system_notice_message(msg) {
                 let mut kinds = vec![reasoning_toggle_kind];
-                if reasoning_expanded {
+                if msg.message_kind == "compaction_artifact" {
                     let detail_width = content_width.saturating_sub(2).max(1);
-                    let detail = crate::widgets::message::collapsible_system_notice_detail(msg)
-                        .unwrap_or_default();
-                    let detail_line_count = wrap_text(&detail, detail_width).len();
+                    let visible_line_count =
+                        wrap_text(msg.content.trim(), detail_width).len().max(1);
+                    kinds.extend(std::iter::repeat_n(
+                        RenderedLineKind::MessageBody,
+                        visible_line_count,
+                    ));
+                    if reasoning_expanded {
+                        let detail_line_count = rendered_message_line_count
+                            .saturating_sub(1 + visible_line_count);
+                        kinds.extend(std::iter::repeat_n(
+                            RenderedLineKind::ReasoningContent,
+                            detail_line_count.max(1),
+                        ));
+                    }
+                } else if reasoning_expanded {
+                    let detail_line_count = rendered_message_line_count.saturating_sub(1);
                     kinds.extend(std::iter::repeat_n(
                         RenderedLineKind::ReasoningContent,
                         detail_line_count.max(1),
@@ -363,6 +375,8 @@ pub(crate) fn classify_message_lines(
                 rendered_message_line_count
                     .saturating_sub(reasoning_lines)
                     .saturating_sub(image_line_count)
+            } else if msg.role == MessageRole::System {
+                crate::widgets::message::render_markdown_pub(&msg.content, content_width).len()
             } else {
                 wrap_text(&msg.content, content_width).len()
             };

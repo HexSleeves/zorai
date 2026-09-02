@@ -265,6 +265,7 @@ pub(super) fn resolve_provider_model_switch(
     config: &AgentConfig,
     provider_id: &str,
     model: &str,
+    allow_unlisted_model: bool,
 ) -> Result<ProviderModelSwitch> {
     let provider_id = provider_id.trim();
     let model = model.trim();
@@ -287,7 +288,8 @@ pub(super) fn resolve_provider_model_switch(
     } else {
         let def = get_provider_definition(provider_id)
             .ok_or_else(|| anyhow::anyhow!("unknown provider '{provider_id}'"))?;
-        if !provider_allows_unlisted_models(provider_id)
+        if !allow_unlisted_model
+            && !provider_allows_unlisted_models(provider_id)
             && !def.models.is_empty()
             && !def.models.iter().any(|entry| entry.id == model)
         {

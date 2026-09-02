@@ -526,6 +526,9 @@ impl TuiModel {
                 if let Some(thread_id) = self.chat.active_thread_id().map(str::to_string) {
                     self.retry_wait_start_selected = false;
                     self.cancelled_thread_id = Some(thread_id.clone());
+                    self.chat.reduce(chat::ChatAction::ClearRetryStatus {
+                        thread_id: thread_id.clone(),
+                    });
                     self.chat.reduce(chat::ChatAction::ForceStopStreaming);
                     self.clear_active_thread_activity();
                     self.send_daemon_command(DaemonCommand::StopStream { thread_id });

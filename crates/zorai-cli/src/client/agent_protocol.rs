@@ -61,6 +61,9 @@ pub(super) enum AgentBridgeCommand {
     StopStream {
         thread_id: String,
     },
+    RetryStreamNow {
+        thread_id: String,
+    },
     ListThreads {
         #[serde(default)]
         agent_filter: Option<String>,

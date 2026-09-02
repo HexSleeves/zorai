@@ -897,6 +897,7 @@ declare global {
         resolveManagedApproval?: (paneId: string, approvalId: string, decision: string) => Promise<unknown>;
         onAgentEvent?: (cb: (event: any) => void) => (() => void) | void;
         agentStopStream?: (threadId: string) => Promise<unknown>;
+        agentRetryStreamNow?: (threadId: string) => Promise<unknown>;
         agentCancelTask?: (taskId: string) => Promise<unknown>;
         agentHeartbeatGetItems?: () => Promise<unknown[]>;
         setWindowOpacity?: (opacity: number) => Promise<void>;

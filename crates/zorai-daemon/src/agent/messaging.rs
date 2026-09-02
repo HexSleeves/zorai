@@ -1105,6 +1105,16 @@ impl AgentEngine {
         backend_override: Option<&str>,
         content: &str,
     ) -> Result<SendMessageOutcome> {
+        if let Some(thread_id) = thread_id {
+            if self
+                .thread_has_task_dispatch_user_message(thread_id, task_id)
+                .await
+            {
+                return self
+                    .resend_existing_user_message_for_task(thread_id, content, task_id)
+                    .await;
+            }
+        }
         let client_surface = if let Some(thread_id) = thread_id {
             self.get_thread_client_surface(thread_id).await
         } else {
@@ -1136,6 +1146,24 @@ impl AgentEngine {
             false,
         ))
         .await
+    }
+
+    pub(super) async fn thread_has_task_dispatch_user_message(
+        &self,
+        thread_id: &str,
+        task_id: &str,
+    ) -> bool {
+        if !self.ensure_thread_messages_loaded(thread_id).await {
+            return false;
+        }
+        let threads = self.threads.read().await;
+        let Some(thread) = threads.get(thread_id) else {
+            return false;
+        };
+        thread.messages.iter().any(|message| {
+            message.role == MessageRole::User
+                && task_prompt::content_has_task_dispatch_prompt(&message.content, task_id)
+        })
     }
 
     pub(super) async fn send_internal_task_message(

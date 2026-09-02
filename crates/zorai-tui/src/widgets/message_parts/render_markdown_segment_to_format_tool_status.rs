@@ -201,6 +201,58 @@ pub(crate) fn toggle_glyph(expanded: bool) -> &'static str {
     }
 }
 
+fn render_collapsible_detail_lines(
+    content: &str,
+    detail_width: usize,
+    dark_blue: Style,
+) -> Vec<Line<'static>> {
+    render_markdown(content, detail_width)
+        .into_iter()
+        .map(|line| {
+            let mut spans = vec![Span::styled("\u{2502}", dark_blue), Span::raw(" ")];
+            spans.extend(line.spans);
+            Line::from(spans).style(line.style)
+        })
+        .collect()
+}
+
+pub(crate) fn estimated_collapsible_system_notice_line_count(
+    msg: &AgentMessage,
+    msg_index: usize,
+    mode: TranscriptMode,
+    content_width: usize,
+    expanded: &ExpandedReasoning,
+) -> usize {
+    let reasoning_expanded =
+        matches!(mode, TranscriptMode::Full) || expanded.contains(&msg_index);
+    let detail_width = content_width.saturating_sub(2).max(1);
+    let mut count = 1usize;
+
+    if msg.message_kind == "compaction_artifact" {
+        count = count.saturating_add(wrap_text(msg.content.trim(), detail_width).len().max(1));
+        if reasoning_expanded {
+            let visible = msg.content.trim();
+            if let Some(payload) = msg
+                .compaction_payload
+                .as_deref()
+                .map(str::trim)
+                .filter(|payload| !payload.is_empty() && !visible.contains(payload))
+            {
+                count = count.saturating_add(1);
+                count = count.saturating_add(wrap_text(payload, detail_width).len().max(1));
+            }
+        }
+        return count;
+    }
+
+    if reasoning_expanded {
+        let detail = collapsible_system_notice_detail(msg).unwrap_or_default();
+        count = count.saturating_add(wrap_text(&detail, detail_width).len().max(1));
+    }
+
+    count
+}
+
 /// Convert a message into ratatui Lines (all owned/static)
 pub(crate) fn message_to_lines(
     msg: &AgentMessage,
@@ -388,24 +440,20 @@ pub(crate) fn render_compact(
                         Span::styled("\u{2502}", dark_blue),
                         Span::raw(" "),
                     ]));
-                    for detail_line in wrap_text(payload, detail_width) {
-                        lines.push(Line::from(vec![
-                            Span::styled("\u{2502}", dark_blue),
-                            Span::raw(" "),
-                            Span::styled(detail_line, theme.fg_dim),
-                        ]));
-                    }
+                    lines.extend(render_collapsible_detail_lines(
+                        payload,
+                        detail_width,
+                        dark_blue,
+                    ));
                 }
             }
         } else if is_expanded {
             let detail = collapsible_system_notice_detail(msg).unwrap_or_default();
-            for detail_line in wrap_text(&detail, detail_width) {
-                lines.push(Line::from(vec![
-                    Span::styled("\u{2502}", dark_blue),
-                    Span::raw(" "),
-                    Span::styled(detail_line, theme.fg_dim),
-                ]));
-            }
+            lines.extend(render_collapsible_detail_lines(
+                &detail,
+                detail_width,
+                dark_blue,
+            ));
         }
 
         if !image_lines.is_empty() {
@@ -430,10 +478,7 @@ pub(crate) fn render_compact(
             .map(|s| Line::from(Span::styled(s, theme.fg_active)))
             .collect()
     } else if msg.role == MessageRole::System {
-        wrap_text(content, content_width)
-            .into_iter()
-            .map(|s| Line::from(Span::styled(s, theme.fg_dim)))
-            .collect()
+        render_markdown(content, content_width)
     } else {
         wrap_text(content, content_width)
             .into_iter()

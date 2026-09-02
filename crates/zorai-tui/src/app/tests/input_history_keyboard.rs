@@ -42,3 +42,19 @@ fn left_arrow_commits_selected_history_to_normal_composer_editing() {
 
     assert_eq!(model.input.buffer(), "sent promp!t");
 }
+
+#[test]
+fn conversation_typing_d_goes_to_composer_even_when_chat_focused() {
+    let mut model = build_model();
+    model.main_pane_view = MainPaneView::Conversation;
+    model.focus = FocusArea::Chat;
+
+    model.handle_key(KeyCode::Char('d'), KeyModifiers::NONE);
+
+    assert_eq!(model.input.buffer(), "d");
+    assert_eq!(model.focus, FocusArea::Input);
+    assert!(
+        model.input_notice.is_none(),
+        "typing d must not trigger single-letter shortcut notices"
+    );
+}

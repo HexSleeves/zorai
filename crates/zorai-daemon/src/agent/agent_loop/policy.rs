@@ -175,6 +175,10 @@ async fn build_policy_context_for_tool_result(
     super::orchestrator_policy::PolicyDecisionScope,
     super::orchestrator_policy::PolicyEvaluationContext,
 )> {
+    if task.is_spawned_subagent() {
+        return None;
+    }
+
     let scope = super::orchestrator_policy::PolicyDecisionScope {
         thread_id: thread_id.to_string(),
         goal_run_id: task.goal_run_id.clone(),
@@ -346,6 +350,7 @@ pub(super) async fn apply_post_tool_policy_checkpoint(
             task_snapshot.goal_run_id.as_deref(),
             &trigger,
             &selection.decision,
+            selection.source,
             now_epoch_secs,
         )
         .await?;

@@ -10,6 +10,14 @@ use super::agent_identity::{
 use super::task_scheduler::describe_scheduled_time;
 use super::types::*;
 
+pub(super) fn task_dispatch_prompt_marker(task_id: &str) -> String {
+    format!("Current task ID: {task_id}")
+}
+
+pub(super) fn content_has_task_dispatch_prompt(content: &str, task_id: &str) -> bool {
+    content.contains(&task_dispatch_prompt_marker(task_id))
+}
+
 pub(super) fn build_task_prompt(task: &AgentTask) -> String {
     let mut prompt = format!(
         "Execute the following queued task.\n\nCurrent task ID: {}\nTitle: {}\nDescription: {}",
@@ -681,9 +689,18 @@ mod tests {
         let prompt = build_task_prompt(&task);
 
         assert!(
-            prompt.contains("Current task ID: task-1"),
+            prompt.contains(&task_dispatch_prompt_marker("task-1")),
             "queued task prompts should expose the durable task id for task-scoped tools"
         );
+    }
+
+    #[test]
+    fn content_has_task_dispatch_prompt_matches_durable_task_id() {
+        let task = sample_task();
+        let prompt = build_task_prompt(&task);
+
+        assert!(content_has_task_dispatch_prompt(&prompt, "task-1"));
+        assert!(!content_has_task_dispatch_prompt(&prompt, "task-2"));
     }
 
     #[test]

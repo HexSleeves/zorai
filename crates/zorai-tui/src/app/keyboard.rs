@@ -246,10 +246,10 @@ impl TuiModel {
             && self
                 .chat
                 .retry_status()
-                .is_some_and(|status| matches!(status.phase, chat::RetryPhase::Waiting));
+                .is_some_and(crate::state::chat::retry_status_shows_prompt_actions);
         let auto_response_waiting = matches!(self.main_pane_view, MainPaneView::Conversation)
             && self.active_auto_response_suggestion().is_some()
-            && matches!(self.focus, FocusArea::Chat | FocusArea::Input);
+            && self.focus == FocusArea::Chat;
         if auto_response_waiting {
             let remaining_secs = self.active_auto_response_countdown_secs().unwrap_or(0);
             match code {
@@ -294,8 +294,7 @@ impl TuiModel {
                 _ => {}
             }
         }
-        let retry_wait_accepts_keyboard =
-            retry_waiting && matches!(self.focus, FocusArea::Chat | FocusArea::Input);
+        let retry_wait_accepts_keyboard = retry_waiting && self.focus == FocusArea::Chat;
         if retry_wait_accepts_keyboard {
             match code {
                 KeyCode::Left | KeyCode::Char('h') if matches!(self.focus, FocusArea::Chat) => {
@@ -329,6 +328,9 @@ impl TuiModel {
                             self.set_active_thread_activity("retrying");
                         } else {
                             self.cancelled_thread_id = Some(thread_id.clone());
+                            self.chat.reduce(chat::ChatAction::ClearRetryStatus {
+                                thread_id: thread_id.clone(),
+                            });
                             self.chat.reduce(chat::ChatAction::ForceStopStreaming);
                             self.clear_active_thread_activity();
                             self.send_daemon_command(DaemonCommand::StopStream { thread_id });
@@ -402,6 +404,14 @@ impl TuiModel {
         if let Some(result) = self.handle_global_key_action(code, modifiers, ctrl) {
             self.sync_goal_mission_control_prompt_from_input();
             return result;
+        }
+        if Self::unmodified_printable_char(code, modifiers).is_some()
+            && self.should_prioritize_composer_input()
+        {
+            if let Some(result) = self.handle_input_key_action(code, modifiers, ctrl) {
+                self.sync_goal_mission_control_prompt_from_input();
+                return result;
+            }
         }
         if let Some(result) = self.handle_navigation_key_action(code, modifiers, ctrl) {
             self.sync_goal_mission_control_prompt_from_input();

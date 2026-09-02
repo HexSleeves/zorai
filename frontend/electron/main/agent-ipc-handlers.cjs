@@ -156,6 +156,7 @@ function registerAgentIpcHandlers(ipcMain, runtime, options = {}) {
         }
     });
     ipcMain.handle('agent-stop-stream', async (_event, threadId) => { try { sendAgentCommand({ type: 'stop-stream', thread_id: threadId }); } catch {} return { ok: true }; });
+    ipcMain.handle('agent-retry-stream-now', async (_event, threadId) => { try { sendAgentCommand({ type: 'retry-stream-now', thread_id: threadId }); } catch {} return { ok: true }; });
     ipcMain.handle('agent-list-threads', async (_event, options) => {
         const agentFilter = typeof options?.agentFilter === 'string' && options.agentFilter.trim()
             ? options.agentFilter.trim()

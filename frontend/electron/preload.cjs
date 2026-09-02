@@ -318,6 +318,7 @@ const bridgeApi = {
     agentSendParticipantSuggestion: (payload) => ipcRenderer.invoke('agent-send-participant-suggestion', payload),
     agentDismissParticipantSuggestion: (payload) => ipcRenderer.invoke('agent-dismiss-participant-suggestion', payload),
     agentStopStream: (threadId) => ipcRenderer.invoke('agent-stop-stream', threadId),
+    agentRetryStreamNow: (threadId) => ipcRenderer.invoke('agent-retry-stream-now', threadId),
     agentListThreads: (options) => ipcRenderer.invoke('agent-list-threads', options),
     agentGetThread: (threadId, options) => ipcRenderer.invoke('agent-get-thread', threadId, options),
     agentPinThreadMessageForCompaction: (threadId, messageId) => ipcRenderer.invoke('agent-pin-thread-message-for-compaction', threadId, messageId),

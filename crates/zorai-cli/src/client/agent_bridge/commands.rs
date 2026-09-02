@@ -82,6 +82,11 @@ where
                 .send(ClientMessage::AgentStopStream { thread_id })
                 .await?;
         }
+        AgentBridgeCommand::RetryStreamNow { thread_id } => {
+            framed
+                .send(ClientMessage::AgentRetryStreamNow { thread_id })
+                .await?;
+        }
         AgentBridgeCommand::ListThreads {
             agent_filter,
             include_internal,

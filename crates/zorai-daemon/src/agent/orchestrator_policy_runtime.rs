@@ -410,8 +410,15 @@ impl AgentEngine {
         goal_run_id: Option<&str>,
         trigger: &PolicyTriggerContext,
         decision: &PolicyDecision,
+        decision_source: PolicyDecisionSource,
         now_epoch_secs: u64,
     ) -> Result<PolicyLoopAction> {
+        if decision_source == PolicyDecisionSource::ReusedRecent
+            && decision.action != PolicyAction::Continue
+        {
+            return Ok(policy_loop_action_for_decision(decision));
+        }
+
         match decision.action {
             PolicyAction::Continue => Ok(PolicyLoopAction::Continue),
             PolicyAction::Pivot => {
@@ -518,5 +525,14 @@ impl AgentEngine {
             source: PolicyDecisionSource::FreshEvaluation,
             decision: evaluated,
         })
+    }
+}
+
+fn policy_loop_action_for_decision(decision: &PolicyDecision) -> PolicyLoopAction {
+    match decision.action {
+        PolicyAction::Continue => PolicyLoopAction::Continue,
+        PolicyAction::Pivot => PolicyLoopAction::RestartLoop,
+        PolicyAction::Escalate => PolicyLoopAction::InterruptForApproval,
+        PolicyAction::HaltRetries => PolicyLoopAction::AbortRetry,
     }
 }

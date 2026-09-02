@@ -377,6 +377,7 @@ impl TuiModel {
         let models = providers::known_models_for_provider_auth(&provider_id, &auth_source);
         self.config
             .reduce(config::ConfigAction::ModelsFetched(models));
+        self.model_picker_provider_id = Some(provider_id.clone());
         if self.should_fetch_remote_models(&provider_id, &auth_source) {
             self.send_daemon_command(DaemonCommand::FetchModels {
                 provider_id,

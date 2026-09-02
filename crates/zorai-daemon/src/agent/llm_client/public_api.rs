@@ -2,6 +2,28 @@ use super::*;
 
 const MAX_RETRY_DELAY_MS: u64 = 60_000;
 
+async fn wait_for_retry_delay_or_abort(
+    tx: &mpsc::Sender<Result<CompletionChunk>>,
+    delay_ms: u64,
+    retry_now: Option<&Arc<tokio::sync::Notify>>,
+) -> bool {
+    if tx.is_closed() {
+        return false;
+    }
+    let delay_ms = delay_ms.max(1);
+    match retry_now {
+        Some(retry_now) => tokio::select! {
+            _ = tx.closed() => false,
+            _ = retry_now.notified() => !tx.is_closed(),
+            _ = tokio::time::sleep(std::time::Duration::from_millis(delay_ms)) => !tx.is_closed(),
+        },
+        None => tokio::select! {
+            _ = tx.closed() => false,
+            _ = tokio::time::sleep(std::time::Duration::from_millis(delay_ms)) => !tx.is_closed(),
+        },
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct AttemptTarget {
     pub(crate) api_type: ApiType,
@@ -130,6 +152,7 @@ pub(crate) struct CompletionRequestOptions {
     pub copilot_initiator: CopilotInitiator,
     pub working_dir: Option<String>,
     pub claude_permission_mode: Option<String>,
+    pub retry_now: Option<Arc<tokio::sync::Notify>>,
 }
 
 /// Send a completion request. Returns a stream of `CompletionChunk`.
@@ -359,6 +382,9 @@ pub(crate) fn send_completion_request_with_options(
                                     retry_reason = analysis.structured_class.as_deref().unwrap_or("transient"),
                                     "llm retry scheduled"
                                 );
+                                if tx.is_closed() {
+                                    break;
+                                }
                                 let _ = tx
                                     .send(Ok(CompletionChunk::Retry {
                                         attempt: retry_attempt,
@@ -368,7 +394,9 @@ pub(crate) fn send_completion_request_with_options(
                                         message: retry_message.clone(),
                                     }))
                                     .await;
-                                tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                                if !wait_for_retry_delay_or_abort(&tx, delay_ms, options.retry_now.as_ref()).await {
+                                    break;
+                                }
                                 continue;
                             }
                             RetryStrategy::DurableRateLimited if analysis.is_rate_limited => {
@@ -387,6 +415,9 @@ pub(crate) fn send_completion_request_with_options(
                                     retry_reason = analysis.structured_class.as_deref().unwrap_or("rate_limit"),
                                     "durable llm retry scheduled"
                                 );
+                                if tx.is_closed() {
+                                    break;
+                                }
                                 let _ = tx
                                     .send(Ok(CompletionChunk::Retry {
                                         attempt: retry_attempt,
@@ -396,7 +427,9 @@ pub(crate) fn send_completion_request_with_options(
                                         message: retry_message.clone(),
                                     }))
                                     .await;
-                                tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                                if !wait_for_retry_delay_or_abort(&tx, delay_ms, options.retry_now.as_ref()).await {
+                                    break;
+                                }
                                 continue;
                             }
                             _ => {}

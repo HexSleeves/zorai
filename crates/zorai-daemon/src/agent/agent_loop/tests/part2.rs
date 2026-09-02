@@ -2296,7 +2296,7 @@ async fn structured_upstream_diagnostics_are_not_persisted_or_streamed_to_user()
 }
 
 #[tokio::test]
-async fn retry_stream_now_replaces_waiting_stream_with_fresh_send_generation() {
+async fn retry_stream_now_resumes_active_waiting_stream() {
     let root = tempdir().unwrap();
     let manager = SessionManager::new_test(root.path()).await;
     let request_counter = Arc::new(AtomicUsize::new(0));
@@ -2417,7 +2417,7 @@ async fn retry_stream_now_replaces_waiting_stream_with_fresh_send_generation() {
 
     assert!(
         engine.retry_stream_now(thread_id).await,
-        "retry-now should start a fresh resend"
+        "retry-now should resume the active waiting stream"
     );
 
     tokio::time::timeout(std::time::Duration::from_secs(1), async {
@@ -2428,31 +2428,24 @@ async fn retry_stream_now_replaces_waiting_stream_with_fresh_send_generation() {
     .await
     .expect("retry-now should perform a second request");
 
-    let refreshed_generation = {
+    let resumed_generation = {
         let streams = engine.stream_cancellations.lock().await;
         streams
             .get(thread_id)
             .map(|entry| entry.generation)
-            .expect("fresh resend should replace the active stream entry")
+            .expect("waiting retry stream should remain registered")
     };
-    assert!(
-        refreshed_generation > waiting_generation,
-        "retry-now should replace the waiting stream with a fresh generation"
+    assert_eq!(
+        resumed_generation, waiting_generation,
+        "retry-now should resume the same active stream instead of replacing it"
     );
 
-    let original = tokio::time::timeout(std::time::Duration::from_secs(1), &mut send_task)
-        .await
-        .expect("original send task should stop once retry-now spawns a fresh send")
-        .expect("original send join should succeed");
-    if let Err(error) = original {
-        panic!("original send task should finish cleanly after retry-now: {error}");
-    }
-
+    release_second_request.notify_waiters();
     assert!(
         engine.stop_stream(thread_id).await,
-        "fresh resend stream should still be cancellable"
+        "resumed stream should remain cancellable until the operator stops it"
     );
-    release_second_request.notify_waiters();
+    let _ = send_task.await;
 }
 
 #[tokio::test]
