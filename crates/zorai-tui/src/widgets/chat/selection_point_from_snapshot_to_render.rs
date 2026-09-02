@@ -2,7 +2,7 @@ use super::build_rendered_lines_to_build_visible_window_from_snapshot_to_apply::
 use super::render_streaming_markdown_to_message_block_style_to_message_action::*;
 use super::resolved_scroll_to_highlight_line_range_to_selected_text_to_selection::*;
 use super::*;
-use crate::state::chat::{ChatHitTarget, ChatState, MessageRole, RetryPhase};
+use crate::state::chat::{ChatHitTarget, ChatState, MessageRole};
 use crate::theme::ThemeTokens;
 use unicode_width::UnicodeWidthStr;
 pub(crate) fn selection_point_from_snapshot(
@@ -145,31 +145,27 @@ pub(crate) fn hit_test_snapshot(
             let (_, content_start, _) = rendered_line_content_bounds(hit);
             let action_col = content_col.saturating_sub(content_start);
             let status = chat.retry_status()?;
-            match status.phase {
-                RetryPhase::Retrying => {
-                    let label_width = UnicodeWidthStr::width("[Stop]");
-                    if action_col < label_width {
+            if crate::state::chat::retry_status_shows_prompt_actions(status) {
+                let yes_label =
+                    format!("[Yes {}s]", retry_wait_remaining_secs(status, current_tick));
+                let yes_width = UnicodeWidthStr::width(yes_label.as_str());
+                if action_col < yes_width {
+                    Some(ChatHitTarget::RetryStartNow)
+                } else {
+                    let no_start = yes_width.saturating_add(1);
+                    let no_width = UnicodeWidthStr::width("[No]");
+                    if action_col >= no_start && action_col < no_start.saturating_add(no_width) {
                         Some(ChatHitTarget::RetryStop)
                     } else {
                         None
                     }
                 }
-                RetryPhase::Waiting => {
-                    let yes_label =
-                        format!("[Yes {}s]", retry_wait_remaining_secs(status, current_tick));
-                    let yes_width = UnicodeWidthStr::width(yes_label.as_str());
-                    if action_col < yes_width {
-                        Some(ChatHitTarget::RetryStartNow)
-                    } else {
-                        let no_start = yes_width.saturating_add(1);
-                        let no_width = UnicodeWidthStr::width("[No]");
-                        if action_col >= no_start && action_col < no_start.saturating_add(no_width)
-                        {
-                            Some(ChatHitTarget::RetryStop)
-                        } else {
-                            None
-                        }
-                    }
+            } else {
+                let label_width = UnicodeWidthStr::width("[Stop]");
+                if action_col < label_width {
+                    Some(ChatHitTarget::RetryStop)
+                } else {
+                    None
                 }
             }
         }

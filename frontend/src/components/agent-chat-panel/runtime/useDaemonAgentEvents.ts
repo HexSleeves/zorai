@@ -39,6 +39,7 @@ import {
 import {
   applyDaemonRetryStatusEvent,
   clearThreadRetryStatus,
+  releaseSuppressedThreadRetryStatus,
 } from "@/zorai/features/threads/threadRetryStatus";
 
 export function resolveDaemonEventLocalThreadId(
@@ -334,6 +335,7 @@ export function useDaemonAgentEvents({
           break;
         }
         case "done": {
+          releaseSuppressedThreadRetryStatus(typeof event.thread_id === "string" ? event.thread_id : null);
           clearThreadRetryStatus(typeof event.thread_id === "string" ? event.thread_id : null);
           if (!tid) break;
           flushStreamDeltas();
@@ -364,6 +366,7 @@ export function useDaemonAgentEvents({
           break;
         }
         case "turn_interrupted": {
+          releaseSuppressedThreadRetryStatus(typeof event.thread_id === "string" ? event.thread_id : null);
           clearThreadRetryStatus(typeof event.thread_id === "string" ? event.thread_id : null);
           if (!tid) break;
           flushStreamDeltas();

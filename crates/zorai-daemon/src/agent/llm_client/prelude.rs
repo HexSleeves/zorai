@@ -4,6 +4,7 @@ pub(crate) use serde::{Deserialize, Serialize};
 pub(crate) use std::collections::HashMap;
 pub(crate) use std::fmt;
 pub(crate) use std::pin::Pin;
+pub(crate) use std::sync::Arc;
 pub(crate) use std::task::Poll;
 pub(crate) use std::time::Duration;
 pub(crate) use tokio::sync::mpsc;

@@ -5,7 +5,8 @@ use zorai_shared::providers::{
     PROVIDER_ID_ANTHROPIC, PROVIDER_ID_ARCEE, PROVIDER_ID_CHUTES, PROVIDER_ID_CLAUDE_CODE_CLI,
     PROVIDER_ID_DEEPSEEK, PROVIDER_ID_ELEVENLABS, PROVIDER_ID_GITHUB_COPILOT,
     PROVIDER_ID_HERMES_AGENT_API, PROVIDER_ID_MINIMAX, PROVIDER_ID_MINIMAX_CODING_PLAN,
-    PROVIDER_ID_NVIDIA, PROVIDER_ID_OPENAI, PROVIDER_ID_POOLSIDE, PROVIDER_ID_XAI,
+    PROVIDER_ID_NVIDIA, PROVIDER_ID_OLLAMA, PROVIDER_ID_OPENAI, PROVIDER_ID_OPENROUTER,
+    PROVIDER_ID_POOLSIDE, PROVIDER_ID_XAI,
 };
 
 #[test]
@@ -1199,4 +1200,11 @@ fn goal_dossier_deserializes_sparse_payloads_with_defaults() {
             .reason_code,
         ""
     );
+}
+
+#[test]
+fn provider_allows_unlisted_models_for_runtime_catalog_providers() {
+    assert!(provider_allows_unlisted_models(PROVIDER_ID_OLLAMA));
+    assert!(!provider_allows_unlisted_models(PROVIDER_ID_OPENROUTER));
+    assert!(!provider_allows_unlisted_models(PROVIDER_ID_ANTHROPIC));
 }

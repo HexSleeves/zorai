@@ -14,6 +14,10 @@ import {
   draftThreadForOwnerSnapshot,
   snapshotThreadOwnerRuntimeProfile,
 } from "@/zorai/features/threads/threadOwnerRuntime";
+import {
+  clearThreadRetryStatus,
+  suppressThreadRetryStatus,
+} from "@/zorai/features/threads/threadRetryStatus";
 import { resolveReactChatHistoryMessageLimit } from "@/lib/chatHistoryPageSize";
 import { deriveSpawnedAgentTree } from "@/lib/spawnedAgentTree";
 import type { SpawnedAgentTree } from "@/lib/spawnedAgentTree";
@@ -470,13 +474,28 @@ export function useAgentChatPanelProviderValue(): {
     setWelesHealth,
   });
 
+  const resolveTargetDaemonThreadId = useCallback((threadId?: string | null) => {
+    const targetThreadId = threadId ?? activeThreadId;
+    if (!targetThreadId) return null;
+    return resolveDaemonOwnedThreadId({
+      threads: useAgentStore.getState().threads,
+      threadId: targetThreadId,
+      activeThreadId,
+      activeDaemonThreadId: daemonThreadIdRef.current,
+    });
+  }, [activeThreadId]);
+
   const stopStreaming = useCallback((threadId?: string | null) => {
     const targetThreadId = threadId ?? activeThreadId;
     if (!targetThreadId) return;
 
+    const daemonThreadId = resolveTargetDaemonThreadId(targetThreadId);
+    if (daemonThreadId) {
+      suppressThreadRetryStatus(daemonThreadId);
+    }
+
     if (shouldUseDaemonRuntime(agentSettings.agent_backend)) {
       const zorai = getAgentBridge();
-      const daemonThreadId = daemonThreadIdRef.current;
       if (daemonThreadId && zorai?.agentStopStream) {
         beginThreadStopBarrier(targetThreadId);
         void zorai.agentStopStream(daemonThreadId).then((result) => {
@@ -500,7 +519,26 @@ export function useAgentChatPanelProviderValue(): {
     }
     finalizeStreamingAssistantMessages(targetThreadId);
     useAgentMissionStore.getState().setSharedCursorMode("idle");
-  }, [activeThreadId, agentSettings.agent_backend, updateLastAssistantMessage]);
+  }, [activeThreadId, agentSettings.agent_backend, resolveTargetDaemonThreadId, updateLastAssistantMessage]);
+
+  const retryStreamNow = useCallback((threadId?: string | null) => {
+    const targetThreadId = threadId ?? activeThreadId;
+    if (!targetThreadId) return;
+
+    const daemonThreadId = resolveTargetDaemonThreadId(targetThreadId);
+    if (!daemonThreadId) return;
+
+    clearThreadRetryStatus(daemonThreadId);
+
+    if (!shouldUseDaemonRuntime(agentSettings.agent_backend)) {
+      return;
+    }
+
+    const zorai = getAgentBridge();
+    if (zorai?.agentRetryStreamNow) {
+      void zorai.agentRetryStreamNow(daemonThreadId);
+    }
+  }, [activeThreadId, agentSettings.agent_backend, resolveTargetDaemonThreadId]);
 
   const { sendMessageLegacy } = useLegacyAgentMessaging({
     activeThreadId,
@@ -1313,6 +1351,7 @@ export function useAgentChatPanelProviderValue(): {
     unpinMessageForCompaction,
     submitMessageFeedback,
     stopStreaming,
+    retryStreamNow,
     handleSend,
     handleKeyDown,
     builtinAgentSetup,
@@ -1380,6 +1419,7 @@ export function useAgentChatPanelProviderValue(): {
     setSearchQuery,
     snippets,
     stopStreaming,
+    retryStreamNow,
     submitBuiltinAgentSetup,
     symbolHits,
     symbolQuery,

@@ -5,6 +5,8 @@ import {
   formatThreadRetrySummary,
   getThreadRetryStatus,
   parseRetryStatusEvent,
+  retryStatusShowsPromptActions,
+  suppressThreadRetryStatus,
 } from "./threadRetryStatus";
 
 describe("threadRetryStatus", () => {
@@ -42,6 +44,55 @@ describe("threadRetryStatus", () => {
     });
     applyDaemonRetryStatusEvent({ thread_id: "thread-quota", phase: "cleared" });
     expect(getThreadRetryStatus("thread-quota")).toBeNull();
+  });
+
+  it("ignores retry status after the operator stops the stream", () => {
+    clearThreadRetryStatus("thread-stop");
+    suppressThreadRetryStatus("thread-stop");
+    applyDaemonRetryStatusEvent({
+      thread_id: "thread-stop",
+      phase: "retrying",
+      attempt: 2,
+      max_retries: 3,
+      delay_ms: 3000,
+      failure_class: "rate_limit",
+      message: "429 Too Many Requests",
+    });
+    expect(getThreadRetryStatus("thread-stop")).toBeNull();
+    applyDaemonRetryStatusEvent({ thread_id: "thread-stop", phase: "cleared" });
+    applyDaemonRetryStatusEvent({
+      thread_id: "thread-stop",
+      phase: "retrying",
+      attempt: 1,
+      max_retries: 3,
+      delay_ms: 3000,
+      failure_class: "rate_limit",
+      message: "429 Too Many Requests",
+    });
+    expect(getThreadRetryStatus("thread-stop")).not.toBeNull();
+  });
+
+  it("shows yes/no actions for provider rate-limit retries", () => {
+    expect(retryStatusShowsPromptActions({
+      daemonThreadId: "thread-rate-limit",
+      phase: "retrying",
+      attempt: 2,
+      maxRetries: 3,
+      delayMs: 3000,
+      failureClass: "rate_limit",
+      message: "429 Too Many Requests",
+      receivedAt: Date.now(),
+    })).toBe(true);
+    expect(retryStatusShowsPromptActions({
+      daemonThreadId: "thread-timeout",
+      phase: "retrying",
+      attempt: 1,
+      maxRetries: 3,
+      delayMs: 3000,
+      failureClass: "timeout",
+      message: "timed out",
+      receivedAt: Date.now(),
+    })).toBe(false);
   });
 
   it("parses waiting copy for automatic retry", () => {

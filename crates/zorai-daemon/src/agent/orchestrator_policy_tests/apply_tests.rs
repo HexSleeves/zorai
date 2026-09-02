@@ -39,6 +39,7 @@ async fn apply_halt_retries_blocks_same_pattern_retry_in_same_thread() {
                 strategy_hint: None,
                 retry_guard: Some("approach-hash-1".to_string()),
             },
+            PolicyDecisionSource::FreshEvaluation,
             1_000,
         )
         .await
@@ -90,6 +91,7 @@ async fn apply_fresh_halt_retries_marks_task_as_failed_immediately() {
             Some("goal-1"),
             &trigger,
             &decision,
+            PolicyDecisionSource::FreshEvaluation,
             1_000,
         )
         .await
@@ -146,6 +148,7 @@ async fn apply_fresh_halt_retries_marks_persisted_task_after_live_queue_clear() 
             Some("goal-1"),
             &trigger,
             &decision,
+            PolicyDecisionSource::FreshEvaluation,
             1_000,
         )
         .await
@@ -235,6 +238,7 @@ async fn apply_pivot_routes_into_existing_strategy_refresh_behavior() {
             Some("goal-1"),
             &trigger,
             &decision,
+            PolicyDecisionSource::FreshEvaluation,
             1_000,
         )
         .await
@@ -292,6 +296,7 @@ async fn apply_escalate_routes_into_existing_escalation_behavior() {
             Some("goal-1"),
             &trigger,
             &decision,
+            PolicyDecisionSource::FreshEvaluation,
             1_000,
         )
         .await
@@ -363,6 +368,7 @@ async fn apply_escalate_reuses_session_approval_for_later_same_thread_escalation
             Some("goal-1"),
             &trigger,
             &decision,
+            PolicyDecisionSource::FreshEvaluation,
             1_000,
         )
         .await
@@ -394,6 +400,7 @@ async fn apply_escalate_reuses_session_approval_for_later_same_thread_escalation
             Some("goal-1"),
             &trigger,
             &decision,
+            PolicyDecisionSource::FreshEvaluation,
             1_010,
         )
         .await
@@ -452,6 +459,7 @@ async fn apply_escalate_reuses_saved_always_approve_rule() {
             Some("goal-1"),
             &trigger,
             &decision,
+            PolicyDecisionSource::FreshEvaluation,
             1_000,
         )
         .await
@@ -508,6 +516,7 @@ async fn apply_continue_leaves_current_flow_unchanged() {
             Some("goal-1"),
             &trigger,
             &decision,
+            PolicyDecisionSource::FreshEvaluation,
             1_000,
         )
         .await
@@ -538,6 +547,7 @@ async fn apply_pivot_uses_actual_trigger_context_when_refreshing_strategy() {
             Some("goal-1"),
             &trigger,
             &decision,
+            PolicyDecisionSource::FreshEvaluation,
             1_000,
         )
         .await
@@ -560,4 +570,86 @@ async fn apply_pivot_uses_actual_trigger_context_when_refreshing_strategy() {
         .content
         .contains("Spawn a sub-agent with expertise"));
     assert!(!injected.content.contains("Disable the following tools"));
+}
+
+#[tokio::test]
+async fn apply_reused_pivot_does_not_reinject_strategy_refresh_message() {
+    let engine = test_engine().await;
+    let thread_id = "thread-policy-reuse-no-duplicate";
+    seed_runtime(&engine, thread_id).await;
+    let decision = PolicyDecision {
+        action: PolicyAction::Pivot,
+        reason: "Switch away from the repeating failure.".to_string(),
+        strategy_hint: Some("Inspect the workspace before running commands again.".to_string()),
+        retry_guard: Some("approach-hash-1".to_string()),
+    };
+    let trigger = PolicyTriggerContext {
+        thread_id: thread_id.to_string(),
+        goal_run_id: None,
+        repeated_approach: true,
+        awareness_stuck: true,
+        self_assessment: PolicySelfAssessmentSummary {
+            should_pivot: true,
+            should_escalate: false,
+        },
+    };
+
+    let first = engine
+        .apply_orchestrator_policy_decision(
+            thread_id,
+            Some("task-1"),
+            None,
+            &trigger,
+            &decision,
+            PolicyDecisionSource::FreshEvaluation,
+            1_000,
+        )
+        .await
+        .expect("fresh pivot should apply");
+    assert_eq!(first, PolicyLoopAction::RestartLoop);
+
+    let replan_count = {
+        let threads = engine.threads.read().await;
+        threads
+            .get(thread_id)
+            .expect("thread")
+            .messages
+            .iter()
+            .filter(|message| {
+                message.role == MessageRole::System && message.content.starts_with("[REPLAN]")
+            })
+            .count()
+    };
+    assert_eq!(replan_count, 1, "fresh pivot should inject one strategy refresh message");
+
+    let reused = engine
+        .apply_orchestrator_policy_decision(
+            thread_id,
+            Some("task-1"),
+            None,
+            &trigger,
+            &decision,
+            PolicyDecisionSource::ReusedRecent,
+            1_010,
+        )
+        .await
+        .expect("reused pivot should still restart the loop");
+    assert_eq!(reused, PolicyLoopAction::RestartLoop);
+
+    let replan_count_after_reuse = {
+        let threads = engine.threads.read().await;
+        threads
+            .get(thread_id)
+            .expect("thread")
+            .messages
+            .iter()
+            .filter(|message| {
+                message.role == MessageRole::System && message.content.starts_with("[REPLAN]")
+            })
+            .count()
+    };
+    assert_eq!(
+        replan_count_after_reuse, 1,
+        "reused pivot must not inject duplicate strategy refresh messages"
+    );
 }

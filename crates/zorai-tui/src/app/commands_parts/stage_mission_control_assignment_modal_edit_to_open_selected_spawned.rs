@@ -474,6 +474,7 @@ impl TuiModel {
         self.clear_work_context_drag_selection();
         self.clear_task_view_drag_selection();
         self.pending_new_thread_target_agent = None;
+        self.pending_new_thread_execution_profile = None;
 
         if !self
             .chat

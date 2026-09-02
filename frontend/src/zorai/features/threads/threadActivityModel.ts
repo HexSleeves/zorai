@@ -41,6 +41,11 @@ export type ThreadActivity =
       kind: "budget";
       title: string;
       rawText: string;
+    }
+  | {
+      kind: "replan";
+      title: string;
+      rawText: string;
     };
 
 type JsonRecord = Record<string, unknown>;
@@ -62,6 +67,11 @@ export function classifyThreadActivityMessage(message: AgentMessage): ThreadActi
     return budget;
   }
 
+  const replan = classifyReplan(rawText);
+  if (replan) {
+    return replan;
+  }
+
   const metacognition = classifyMetacognition(rawText);
   if (metacognition) {
     return metacognition;
@@ -79,6 +89,14 @@ function classifyBudget(rawText: string): ThreadActivity | null {
     return { kind: "budget", title: "Subagent budget exceeded", rawText };
   }
   return null;
+}
+
+function classifyReplan(rawText: string): ThreadActivity | null {
+  const firstLine = rawText.trimStart().split("\n", 1)[0]?.trim() ?? "";
+  if (!firstLine.startsWith("[REPLAN]")) {
+    return null;
+  }
+  return { kind: "replan", title: "Strategy refresh", rawText };
 }
 
 function classifyHandoff(rawText: string): ThreadActivity | null {

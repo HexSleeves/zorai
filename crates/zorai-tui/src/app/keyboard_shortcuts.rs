@@ -19,6 +19,30 @@ impl TuiModel {
             && matches!(code, KeyCode::Char(ch) if ch.eq_ignore_ascii_case(&expected))
     }
 
+    pub(crate) fn unmodified_printable_char(
+        code: KeyCode,
+        modifiers: KeyModifiers,
+    ) -> Option<char> {
+        if modifiers.intersects(KeyModifiers::CONTROL | KeyModifiers::ALT) {
+            return None;
+        }
+        match code {
+            KeyCode::Char(c) if !c.is_control() => Some(c),
+            _ => None,
+        }
+    }
+
+    pub(crate) fn should_prioritize_composer_input(&self) -> bool {
+        if self.focus == FocusArea::Input {
+            return true;
+        }
+        self.focus == FocusArea::Chat
+            && matches!(
+                self.main_pane_view,
+                MainPaneView::Conversation | MainPaneView::GoalComposer
+            )
+    }
+
     pub(crate) fn pinned_shortcut_scope_active(&self) -> bool {
         !self.sidebar_uses_goal_sidebar()
             && self.sidebar_visible()

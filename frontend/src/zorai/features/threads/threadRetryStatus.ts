@@ -14,6 +14,7 @@ export type ThreadRetryStatus = {
 };
 
 const statuses = new Map<string, ThreadRetryStatus>();
+const suppressedRetryThreads = new Set<string>();
 const listeners = new Set<() => void>();
 let statusVersion = 0;
 
@@ -49,6 +50,17 @@ export function clearThreadRetryStatus(daemonThreadId: string | null | undefined
   emit();
 }
 
+export function suppressThreadRetryStatus(daemonThreadId: string | null | undefined): void {
+  if (!daemonThreadId) return;
+  suppressedRetryThreads.add(daemonThreadId);
+  clearThreadRetryStatus(daemonThreadId);
+}
+
+export function releaseSuppressedThreadRetryStatus(daemonThreadId: string | null | undefined): void {
+  if (!daemonThreadId) return;
+  suppressedRetryThreads.delete(daemonThreadId);
+}
+
 export function retryWaitRemainingMs(status: ThreadRetryStatus, now = Date.now()): number {
   return Math.max(0, status.receivedAt + status.delayMs - now);
 }
@@ -61,6 +73,13 @@ export function formatThreadRetrySummary(status: ThreadRetryStatus, now = Date.n
   }
   const max = status.maxRetries === 0 ? "∞" : String(status.maxRetries);
   return `retry ${status.attempt}/${max} in ${seconds}s · ${failure}`;
+}
+
+export function retryStatusShowsPromptActions(status: ThreadRetryStatus): boolean {
+  if (status.phase === "waiting") {
+    return true;
+  }
+  return status.phase === "retrying" && status.failureClass === "rate_limit";
 }
 
 export function parseRetryStatusEvent(event: {
@@ -96,7 +115,11 @@ export function applyDaemonRetryStatusEvent(event: unknown): void {
   const parsed = parseRetryStatusEvent(event as { thread_id?: unknown });
   if (!parsed) return;
   if (parsed.phase === "cleared") {
+    releaseSuppressedThreadRetryStatus(parsed.daemonThreadId);
     clearThreadRetryStatus(parsed.daemonThreadId);
+    return;
+  }
+  if (suppressedRetryThreads.has(parsed.daemonThreadId)) {
     return;
   }
   setThreadRetryStatus(parsed);

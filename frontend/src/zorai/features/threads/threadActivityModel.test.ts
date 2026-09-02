@@ -387,4 +387,13 @@ Operation results saved to file.
       rawText: content,
     });
   });
+
+  it("classifies orchestrator strategy refresh prompts as replan activity", () => {
+    const content = "[REPLAN] Step: 'Investigate failure'\nStrategy: inspect workspace state before retrying.";
+    expect(classifyThreadActivityMessage(message(content))).toEqual({
+      kind: "replan",
+      title: "Strategy refresh",
+      rawText: content,
+    });
+  });
 });

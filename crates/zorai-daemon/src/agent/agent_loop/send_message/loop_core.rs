@@ -347,6 +347,7 @@ impl<'a> SendMessageRunner<'a> {
                 copilot_initiator,
                 working_dir,
                 claude_permission_mode,
+                retry_now: Some(self.stream_retry_now.clone()),
             },
         );
 
@@ -466,6 +467,10 @@ impl<'a> SendMessageRunner<'a> {
                             failure_class,
                             message,
                         } => {
+                            if self.stream_cancel_token.is_cancelled() {
+                                self.was_cancelled = true;
+                                break;
+                            }
                             if self.execution_profile_supersedes_runner().await {
                                 return Err(self.fresh_runner_retry_err());
                             }

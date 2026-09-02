@@ -17,6 +17,7 @@ impl TuiModel {
         self.clear_work_context_drag_selection();
         self.clear_task_view_drag_selection();
         self.pending_new_thread_target_agent = None;
+        self.pending_new_thread_execution_profile = None;
 
         let Some(thread_id) = self.chat.go_back_thread() else {
             self.status_line = "No previous thread".to_string();

@@ -455,13 +455,18 @@ impl TuiModel {
         self.clear_pending_stop();
     }
 
+    pub(crate) fn clear_pending_new_thread_target(&mut self) {
+        self.pending_new_thread_target_agent = None;
+        self.pending_new_thread_execution_profile = None;
+    }
+
     pub(crate) fn open_thread_conversation(&mut self, thread_id: String) {
         self.set_mission_control_return_targets(self.current_goal_return_target(), None);
         self.cleanup_concierge_on_navigate();
         self.clear_chat_drag_selection();
         self.clear_work_context_drag_selection();
         self.clear_task_view_drag_selection();
-        self.pending_new_thread_target_agent = None;
+        self.clear_pending_new_thread_target();
         self.chat
             .reduce(chat::ChatAction::SelectThread(thread_id.clone()));
         self.request_latest_thread_page(thread_id, true);
@@ -475,7 +480,7 @@ impl TuiModel {
         self.clear_chat_drag_selection();
         self.clear_work_context_drag_selection();
         self.clear_task_view_drag_selection();
-        self.pending_new_thread_target_agent = None;
+        self.clear_pending_new_thread_target();
         self.chat
             .reduce(chat::ChatAction::SelectThread(thread_id.clone()));
         self.request_latest_thread_page(thread_id, true);
@@ -490,7 +495,7 @@ impl TuiModel {
         self.clear_chat_drag_selection();
         self.clear_work_context_drag_selection();
         self.clear_task_view_drag_selection();
-        self.pending_new_thread_target_agent = None;
+        self.clear_pending_new_thread_target();
         self.main_pane_view = MainPaneView::Conversation;
         self.task_view_scroll = 0;
         self.focus = focus;
@@ -507,6 +512,7 @@ impl TuiModel {
         self.clear_chat_drag_selection();
         self.clear_work_context_drag_selection();
         self.clear_task_view_drag_selection();
+        self.pending_new_thread_execution_profile = None;
         self.pending_new_thread_target_agent = target_agent_id.map(str::to_string);
         self.thread_loading_id = None;
         self.chat.reduce(chat::ChatAction::NewThread);

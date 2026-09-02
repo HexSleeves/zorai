@@ -274,6 +274,13 @@ pub(crate) struct PendingTargetAgentConfig {
 }
 
 #[derive(Clone, Debug)]
+pub(crate) struct PendingThreadExecutionProfile {
+    pub(crate) provider_id: String,
+    pub(crate) model: String,
+    pub(crate) reasoning_effort: Option<String>,
+}
+
+#[derive(Clone, Debug)]
 pub(crate) enum PendingBuiltinPersonaSetupContinuation {
     SubmitPrompt(String),
     SelectWorkspaceActor {

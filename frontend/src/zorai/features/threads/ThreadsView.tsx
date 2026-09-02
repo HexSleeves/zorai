@@ -409,6 +409,7 @@ export function ThreadsView({
         {retryStatus ? (
           <ThreadRetryStatusBanner
             status={retryStatus}
+            onRetryNow={() => runtime.retryStreamNow(runtime.activeThreadId)}
             onStop={() => runtime.stopStreaming(runtime.activeThreadId)}
           />
         ) : runtime.isStreamingResponse ? (

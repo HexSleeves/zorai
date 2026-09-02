@@ -550,6 +550,158 @@ fn slash_provider_updates_active_svarog_thread_header_after_model_pick() {
 }
 
 #[test]
+fn slash_provider_model_on_new_subagent_thread_queues_execution_profile_for_first_prompt() {
+    let (mut model, mut daemon_rx) = make_model();
+    model.connected = true;
+    model.agent_config_loaded = true;
+    model.auth.loaded = true;
+    model
+        .auth
+        .entries
+        .push(crate::state::auth::ProviderAuthEntry {
+            provider_id: PROVIDER_ID_XAI.to_string(),
+            provider_name: "xAI".to_string(),
+            authenticated: true,
+            auth_source: "api_key".to_string(),
+            model: "grok-4".to_string(),
+        });
+    model.subagents.entries.push(crate::state::SubAgentEntry {
+        claude_permission_mode: None,
+        id: "dola".to_string(),
+        name: "Dola".to_string(),
+        provider: PROVIDER_ID_OPENAI.to_string(),
+        model: "gpt-5.4".to_string(),
+        role: Some("helper".to_string()),
+        enabled: true,
+        builtin: false,
+        immutable_identity: false,
+        disable_allowed: true,
+        delete_allowed: true,
+        protected_reason: None,
+        reasoning_effort: None,
+        api_transport: None,
+        openrouter_provider_order: String::new(),
+        openrouter_provider_ignore: String::new(),
+        openrouter_allow_fallbacks: true,
+        huggingface_provider: String::new(),
+        raw_json: None,
+    });
+
+    model.start_new_thread_view_for_agent(Some("dola"));
+    assert!(model.execute_slash_command_line("/provider"));
+    let provider_index = model
+        .filtered_provider_picker_defs()
+        .iter()
+        .position(|provider| provider.id == PROVIDER_ID_XAI)
+        .expect("expected xAI provider");
+    model
+        .modal
+        .reduce(modal::ModalAction::Navigate(provider_index as i32));
+    model.handle_modal_enter(modal::ModalKind::ProviderPicker);
+
+    let model_index = model
+        .available_model_picker_models()
+        .iter()
+        .position(|entry| entry.id == "grok-4")
+        .expect("expected xAI model");
+    model
+        .modal
+        .reduce(modal::ModalAction::Navigate(model_index as i32));
+    model.handle_modal_enter(modal::ModalKind::ModelPicker);
+
+    let profile = model.current_header_agent_profile();
+    assert_eq!(profile.provider, PROVIDER_ID_XAI);
+    assert_eq!(profile.model, "grok-4");
+
+    let mut saw_target_update = false;
+    while let Ok(command) = daemon_rx.try_recv() {
+        if matches!(
+            command,
+            DaemonCommand::SetTargetAgentProviderModel {
+                target_agent_id,
+                provider_id,
+                model,
+            } if target_agent_id == "dola"
+                && provider_id == PROVIDER_ID_XAI
+                && model == "grok-4"
+        ) {
+            saw_target_update = true;
+        }
+    }
+    assert!(saw_target_update);
+
+    model.submit_prompt("hello from dola".to_string());
+
+    let mut saw_execution_profile = false;
+    while let Ok(command) = daemon_rx.try_recv() {
+        match command {
+            DaemonCommand::SetThreadExecutionProfile {
+                profile_json, ..
+            } if profile_json.contains(PROVIDER_ID_XAI) && profile_json.contains("grok-4") => {
+                saw_execution_profile = true;
+            }
+            DaemonCommand::SendMessage { .. } | DaemonCommand::DismissConciergeWelcome => {}
+            other => panic!("unexpected daemon command: {:?}", other),
+        }
+    }
+    assert!(saw_execution_profile);
+    let thread = model
+        .chat
+        .active_thread()
+        .expect("local thread should exist after first prompt");
+    assert_eq!(thread.profile_provider.as_deref(), Some(PROVIDER_ID_XAI));
+    assert_eq!(thread.profile_model.as_deref(), Some("grok-4"));
+}
+
+#[test]
+fn target_agent_model_picker_excludes_stale_models_from_other_providers() {
+    let (mut model, _daemon_rx) = make_model();
+    seed_active_weles_thread(&mut model);
+    model.start_new_thread_view_for_agent(Some("weles"));
+    model.config.reduce(crate::state::config::ConfigAction::ModelsFetched(vec![
+        crate::state::config::FetchedModel {
+            id: "grok-4".to_string(),
+            name: Some("Grok 4".to_string()),
+            context_window: None,
+            pricing: None,
+            metadata: None,
+        },
+    ]));
+    assert!(model.execute_slash_command_line("/model"));
+    assert!(
+        !model
+            .available_model_picker_models()
+            .iter()
+            .any(|entry| entry.id == "grok-4"),
+        "stale xAI models must be cleared when the OpenAI picker opens"
+    );
+}
+
+#[test]
+fn target_agent_model_picker_includes_remote_models_for_active_provider() {
+    let (mut model, _daemon_rx) = make_model();
+    seed_active_weles_thread(&mut model);
+    model.start_new_thread_view_for_agent(Some("weles"));
+    assert!(model.execute_slash_command_line("/model"));
+    model.config.reduce(crate::state::config::ConfigAction::ModelsFetched(vec![
+        crate::state::config::FetchedModel {
+            id: "gpt-5.4-mini".to_string(),
+            name: Some("GPT-5.4 mini".to_string()),
+            context_window: Some(128_000),
+            pricing: None,
+            metadata: None,
+        },
+    ]));
+    assert!(
+        model
+            .available_model_picker_models()
+            .iter()
+            .any(|entry| entry.id == "gpt-5.4-mini"),
+        "remote OpenAI models should appear when picker provider matches"
+    );
+}
+
+#[test]
 fn slash_effort_updates_active_thread_owner_effort() {
     let (mut model, mut daemon_rx) = make_model();
     seed_active_weles_thread(&mut model);

@@ -93,6 +93,10 @@ impl ThreadIdentityMetadata {
         self.source.as_deref() == Some("subagent") || self.parent_task_id.is_some()
     }
 
+    pub(super) fn skips_auto_thread_title(&self) -> bool {
+        self.task_id.is_some() || self.is_spawned_subagent()
+    }
+
     fn normalized(mut self) -> Self {
         if self.goal_run_id.is_none() {
             self.goal_run_id = self.goal_id.clone();
@@ -664,6 +668,33 @@ mod tests {
         assert!(
             meta.is_spawned_subagent(),
             "identity must match AgentTask: parent_task_id still means spawned"
+        );
+    }
+
+    #[test]
+    fn task_owned_identity_skips_auto_thread_title() {
+        let subagent = identity("subagent", None, Some("thread-parent"));
+        assert!(subagent.skips_auto_thread_title());
+
+        let goal_worker = identity("goal_run", None, Some("thread-1"));
+        assert!(
+            goal_worker.skips_auto_thread_title(),
+            "goal worker threads are task-owned and should keep task titles"
+        );
+
+        let conversation = ThreadIdentityMetadata {
+            thread_id: "thread-user".to_string(),
+            goal_run_id: None,
+            goal_id: None,
+            task_id: None,
+            parent_task_id: None,
+            parent_thread_id: None,
+            source: None,
+            reserved_at: None,
+        };
+        assert!(
+            !conversation.skips_auto_thread_title(),
+            "normal operator threads should still get auto titles"
         );
     }
 }

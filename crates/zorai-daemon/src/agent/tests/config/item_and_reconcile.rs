@@ -1,5 +1,8 @@
 use super::*;
-use zorai_shared::providers::{PROVIDER_ID_GROQ, PROVIDER_ID_OLLAMA, PROVIDER_ID_OPENAI};
+use zorai_shared::providers::{
+    PROVIDER_ID_ANTHROPIC, PROVIDER_ID_GROQ, PROVIDER_ID_OLLAMA, PROVIDER_ID_OPENAI,
+    PROVIDER_ID_OPENROUTER,
+};
 
 #[tokio::test]
 async fn set_provider_model_json_updates_provider_and_model_atomically() {
@@ -528,6 +531,132 @@ async fn prepare_agent_provider_model_json_accepts_user_subagent_id_or_display_n
             .find(|entry| entry.id == "subagent-1777065727944")
             .map(|entry| entry.model.as_str()),
         Some("gpt-5.4")
+    );
+}
+
+#[tokio::test]
+async fn prepare_agent_provider_model_json_accepts_openrouter_fetched_models() {
+    let root = tempdir().unwrap();
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+
+    let mut config = engine.get_config().await;
+    config.api_key = "sk-test".to_string();
+    config.sub_agents.push(test_user_sub_agent(
+        "subagent-openrouter",
+        "OpenRouterSub",
+    ));
+    config.providers.insert(
+        PROVIDER_ID_OPENROUTER.to_string(),
+        ProviderConfig {
+            base_url: "https://openrouter.ai/api/v1".to_string(),
+            model: "meta/muse-spark-1.2-contributor".to_string(),
+            api_key: "openrouter-key".to_string(),
+            assistant_id: String::new(),
+            auth_source: AuthSource::ApiKey,
+            api_transport: ApiTransport::ChatCompletions,
+            reasoning_effort: String::new(),
+            context_window_tokens: 128_000,
+            response_schema: None,
+            stop_sequences: None,
+            temperature: None,
+            top_p: None,
+            top_k: None,
+            metadata: None,
+            service_tier: None,
+            container: None,
+            inference_geo: None,
+            cache_control: None,
+            max_tokens: None,
+            anthropic_tool_choice: None,
+            output_effort: None,
+            openrouter_provider_order: Vec::new(),
+            openrouter_provider_ignore: Vec::new(),
+            openrouter_allow_fallbacks: None,
+            openrouter_response_cache_enabled: false,
+            huggingface_provider: None,
+        },
+    );
+    engine.set_config(config).await;
+
+    let prepared = engine
+        .prepare_agent_provider_model_json(
+            "subagent-openrouter",
+            PROVIDER_ID_OPENROUTER,
+            "meta/muse-spark-1.3-contributor",
+        )
+        .await
+        .expect("openrouter fetched model should be accepted for subagent");
+    assert_eq!(
+        prepared
+            .sub_agents
+            .iter()
+            .find(|entry| entry.id == "subagent-openrouter")
+            .map(|entry| entry.model.as_str()),
+        Some("meta/muse-spark-1.3-contributor")
+    );
+}
+
+#[tokio::test]
+async fn prepare_agent_provider_model_json_accepts_custom_subagent_models() {
+    let root = tempdir().unwrap();
+    let manager = SessionManager::new_test(root.path()).await;
+    let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+
+    let mut config = engine.get_config().await;
+    config.api_key = "sk-test".to_string();
+    config.sub_agents.push(test_user_sub_agent(
+        "subagent-custom",
+        "CustomSub",
+    ));
+    config.providers.insert(
+        PROVIDER_ID_ANTHROPIC.to_string(),
+        ProviderConfig {
+            base_url: "https://api.anthropic.com".to_string(),
+            model: "claude-sonnet-4-6".to_string(),
+            api_key: "anthropic-key".to_string(),
+            assistant_id: String::new(),
+            auth_source: AuthSource::ApiKey,
+            api_transport: ApiTransport::ChatCompletions,
+            reasoning_effort: String::new(),
+            context_window_tokens: 200_000,
+            response_schema: None,
+            stop_sequences: None,
+            temperature: None,
+            top_p: None,
+            top_k: None,
+            metadata: None,
+            service_tier: None,
+            container: None,
+            inference_geo: None,
+            cache_control: None,
+            max_tokens: None,
+            anthropic_tool_choice: None,
+            output_effort: None,
+            openrouter_provider_order: Vec::new(),
+            openrouter_provider_ignore: Vec::new(),
+            openrouter_allow_fallbacks: None,
+            openrouter_response_cache_enabled: false,
+            huggingface_provider: None,
+        },
+    );
+    engine.set_config(config).await;
+
+    let prepared = engine
+        .prepare_agent_provider_model_json(
+            "subagent-custom",
+            PROVIDER_ID_ANTHROPIC,
+            "claude-custom-preview-2026",
+        )
+        .await
+        .expect("explicit subagent custom model should be accepted");
+    assert_eq!(
+        prepared
+            .sub_agents
+            .iter()
+            .find(|entry| entry.id == "subagent-custom")
+            .map(|entry| entry.model.as_str()),
+        Some("claude-custom-preview-2026")
     );
 }
 

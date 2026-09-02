@@ -134,7 +134,11 @@ impl TuiModel {
                 || lowercase.contains("protected mutation")
                 || lowercase.contains("reserved built-in")
                 || lowercase.contains("weles")
+                || lowercase.contains("invalid target agent provider/model selection")
         };
+        if message.contains("Invalid target agent provider/model selection") {
+            self.pending_new_thread_execution_profile = None;
+        }
         let busy = self.assistant_busy();
         if busy {
             self.chat.reduce(chat::ChatAction::ForceStopStreaming);

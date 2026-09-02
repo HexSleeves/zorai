@@ -89,8 +89,19 @@ pub(super) fn spawn_auto_thread_title_worker(
 }
 
 impl AgentEngine {
+    async fn thread_identity_skips_auto_title(&self, thread_id: &str) -> bool {
+        self.thread_identity_metadata
+            .read()
+            .await
+            .get(thread_id)
+            .is_some_and(ThreadIdentityMetadata::skips_auto_thread_title)
+    }
+
     pub(super) async fn queue_auto_thread_title_if_enabled(&self, thread_id: &str, content: &str) {
         if !thread_eligible_for_auto_title(thread_id) {
+            return;
+        }
+        if self.thread_identity_skips_auto_title(thread_id).await {
             return;
         }
         let first_user_message = content.trim();
@@ -230,6 +241,9 @@ impl AgentEngine {
         placeholder_title: &str,
         title: &str,
     ) -> bool {
+        if self.thread_identity_skips_auto_title(thread_id).await {
+            return false;
+        }
         let updated_at = now_millis();
         {
             let mut threads = self.threads.write().await;
@@ -281,6 +295,44 @@ mod tests {
         assert!(!thread_eligible_for_auto_title("dm:svarog:weles"));
         assert!(!thread_eligible_for_auto_title("playground:abc"));
         assert!(!thread_eligible_for_auto_title("handoff:abc"));
+    }
+
+    #[tokio::test]
+    async fn apply_generated_thread_title_skips_task_owned_threads() {
+        let root = tempdir().expect("temp dir");
+        let manager = SessionManager::new_test(root.path()).await;
+        let engine = AgentEngine::new_test(manager, AgentConfig::default(), root.path()).await;
+        let (thread_id, _) = engine
+            .get_or_create_thread_with_target(None, "DeepSeekorrr", None)
+            .await;
+        let placeholder = placeholder_thread_title("DeepSeekorrr");
+        engine
+            .set_thread_identity_metadata(
+                &thread_id,
+                ThreadIdentityMetadata {
+                    thread_id: thread_id.clone(),
+                    goal_run_id: None,
+                    goal_id: None,
+                    task_id: Some("task-subagent".to_string()),
+                    parent_task_id: Some("task-parent".to_string()),
+                    parent_thread_id: Some("thread-parent".to_string()),
+                    source: Some("subagent".to_string()),
+                    reserved_at: Some(now_millis()),
+                },
+            )
+            .await;
+
+        assert!(
+            !engine
+                .apply_generated_thread_title(
+                    &thread_id,
+                    &placeholder,
+                    "Greeting from DeepSeekorrr"
+                )
+                .await
+        );
+        let threads = engine.threads.read().await;
+        assert_eq!(threads.get(&thread_id).unwrap().title, placeholder);
     }
 
     #[tokio::test]

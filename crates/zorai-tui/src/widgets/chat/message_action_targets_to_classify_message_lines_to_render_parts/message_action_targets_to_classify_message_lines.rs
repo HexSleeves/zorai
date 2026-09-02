@@ -1,6 +1,6 @@
 use super::render_streaming_markdown_to_message_block_style::*;
 use crate::state::chat::{
-    AgentMessage, ChatHitTarget, ChatState, MessageRole, RetryPhase, TranscriptMode,
+    AgentMessage, ChatHitTarget, ChatState, MessageRole, TranscriptMode,
 };
 use crate::theme::ThemeTokens;
 use crate::widgets::message::wrap_text;
@@ -212,27 +212,26 @@ pub(crate) fn retry_action_line(
     current_tick: u64,
     retry_wait_start_selected: bool,
 ) -> Line<'static> {
-    match status.phase {
-        RetryPhase::Retrying => Line::from(vec![Span::styled("[Stop]", theme.accent_primary)]),
-        RetryPhase::Waiting => {
-            let yes_label = format!("[Yes {}s]", retry_wait_remaining_secs(status, current_tick));
-            let yes_style = if retry_wait_start_selected {
-                theme.accent_primary
-            } else {
-                theme.fg_dim
-            };
-            let no_style = if retry_wait_start_selected {
-                theme.fg_dim
-            } else {
-                theme.accent_primary
-            };
-            Line::from(vec![
-                Span::styled(yes_label, yes_style),
-                Span::raw(" "),
-                Span::styled("[No]", no_style),
-            ])
-        }
+    if crate::state::chat::retry_status_shows_prompt_actions(status) {
+        let yes_label = format!("[Yes {}s]", retry_wait_remaining_secs(status, current_tick));
+        let yes_style = if retry_wait_start_selected {
+            theme.accent_primary
+        } else {
+            theme.fg_dim
+        };
+        let no_style = if retry_wait_start_selected {
+            theme.fg_dim
+        } else {
+            theme.accent_primary
+        };
+        return Line::from(vec![
+            Span::styled(yes_label, yes_style),
+            Span::raw(" "),
+            Span::styled("[No]", no_style),
+        ]);
     }
+
+    Line::from(vec![Span::styled("[Stop]", theme.accent_primary)])
 }
 
 pub(crate) fn classify_message_lines(

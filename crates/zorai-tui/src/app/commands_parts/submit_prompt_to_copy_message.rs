@@ -229,6 +229,20 @@ impl TuiModel {
                         ..Default::default()
                     }));
             }
+            if let Some(profile) = self.pending_new_thread_execution_profile.take() {
+                if let Some(thread) = self.chat.active_thread_mut() {
+                    thread.profile_provider = Some(profile.provider_id.clone());
+                    thread.profile_model = Some(profile.model.clone());
+                    thread.runtime_provider = Some(profile.provider_id.clone());
+                    thread.runtime_model = Some(profile.model.clone());
+                }
+                push_active_thread_execution_profile_to_daemon(
+                    self,
+                    &profile.provider_id,
+                    &profile.model,
+                    profile.reasoning_effort.as_deref(),
+                );
+            }
         }
 
         let optimistic_thread_id = thread_id
