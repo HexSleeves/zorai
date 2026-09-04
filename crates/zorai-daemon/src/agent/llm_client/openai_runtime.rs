@@ -71,24 +71,29 @@ pub(crate) async fn run_openai_chat_completions(
     tools: &[ToolDefinition],
     copilot_initiator: CopilotInitiator,
     force_connection_close: bool,
+    opencode_session_id: Option<&str>,
     tx: &mpsc::Sender<Result<CompletionChunk>>,
 ) -> Result<()> {
     let url = build_chat_completion_url(&config.base_url);
     let body =
         build_openai_chat_completions_body(provider, config, system_prompt, messages, tools)?;
 
-    let req = apply_dashscope_coding_plan_sdk_headers(
-        build_openai_auth_request(
-            client,
-            &url,
+    let req = apply_opencode_go_headers(
+        apply_dashscope_coding_plan_sdk_headers(
+            build_openai_auth_request(
+                client,
+                &url,
+                provider,
+                config,
+                copilot_initiator,
+                force_connection_close,
+            ),
             provider,
-            config,
-            copilot_initiator,
-            force_connection_close,
+            &config.base_url,
+            ApiType::OpenAI,
         ),
         provider,
-        &config.base_url,
-        ApiType::OpenAI,
+        opencode_session_id,
     );
 
     let response = req.body(body.to_string()).send().await?;
@@ -666,6 +671,7 @@ pub(crate) async fn run_openai_responses(
     upstream_thread_id: Option<&str>,
     copilot_initiator: CopilotInitiator,
     force_connection_close: bool,
+    opencode_session_id: Option<&str>,
     tx: &mpsc::Sender<Result<CompletionChunk>>,
 ) -> Result<()> {
     let codex_auth = resolve_openai_codex_request_auth(client, provider, config).await?;
@@ -709,13 +715,17 @@ pub(crate) async fn run_openai_responses(
         };
         req
     } else {
-        build_openai_auth_request(
-            client,
-            &url,
+        apply_opencode_go_headers(
+            build_openai_auth_request(
+                client,
+                &url,
+                provider,
+                config,
+                copilot_initiator,
+                force_connection_close,
+            ),
             provider,
-            config,
-            copilot_initiator,
-            force_connection_close,
+            opencode_session_id,
         )
     };
     let response = req.body(body.to_string()).send().await?;

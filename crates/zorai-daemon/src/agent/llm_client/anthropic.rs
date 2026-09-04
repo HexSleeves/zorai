@@ -256,6 +256,7 @@ pub(crate) async fn run_anthropic(
     messages: &[ApiMessage],
     tools: &[ToolDefinition],
     force_connection_close: bool,
+    opencode_session_id: Option<&str>,
     tx: &mpsc::Sender<Result<CompletionChunk>>,
 ) -> Result<()> {
     let client = if force_connection_close || provider_requires_fresh_anthropic_connection(provider)
@@ -264,7 +265,7 @@ pub(crate) async fn run_anthropic(
     } else {
         client.clone()
     };
-    let request = build_anthropic_request(
+    let mut request = build_anthropic_request(
         &client,
         provider,
         config,
@@ -273,6 +274,7 @@ pub(crate) async fn run_anthropic(
         tools,
         force_connection_close,
     )?;
+    insert_opencode_go_headers(request.headers_mut(), provider, opencode_session_id);
     let request_fingerprint = anthropic_request_fingerprint(&request);
     tracing::info!(
         provider = %provider,

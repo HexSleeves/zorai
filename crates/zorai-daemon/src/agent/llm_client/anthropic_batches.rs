@@ -379,6 +379,7 @@ fn build_anthropic_api_request(
         &config.base_url,
         ApiType::Anthropic,
     );
+    request = apply_opencode_go_headers(request, provider, None);
     if let Some(body) = body {
         request = request.body(body.to_string());
     }
