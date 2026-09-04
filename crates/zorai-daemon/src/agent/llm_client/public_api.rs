@@ -153,6 +153,7 @@ pub(crate) struct CompletionRequestOptions {
     pub working_dir: Option<String>,
     pub claude_permission_mode: Option<String>,
     pub retry_now: Option<Arc<tokio::sync::Notify>>,
+    pub opencode_session_id: Option<String>,
 }
 
 /// Send a completion request. Returns a stream of `CompletionChunk`.
@@ -255,6 +256,7 @@ pub(crate) fn send_completion_request_with_options(
                     &messages,
                     &tools,
                     options.force_connection_close,
+                    options.opencode_session_id.as_deref(),
                     &tx,
                 )
                 .await
@@ -301,6 +303,7 @@ pub(crate) fn send_completion_request_with_options(
                             &tools,
                             options.copilot_initiator,
                             options.force_connection_close,
+                            options.opencode_session_id.as_deref(),
                             &tx,
                         )
                         .await
@@ -317,6 +320,7 @@ pub(crate) fn send_completion_request_with_options(
                             upstream_thread_id.as_deref(),
                             options.copilot_initiator,
                             options.force_connection_close,
+                            options.opencode_session_id.as_deref(),
                             &tx,
                         )
                         .await

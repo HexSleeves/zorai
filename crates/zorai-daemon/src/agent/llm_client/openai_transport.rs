@@ -3,14 +3,16 @@ use super::*;
 use zorai_shared::providers::{
     PROVIDER_ID_ALIBABA_CODING_PLAN, PROVIDER_ID_ALIBABA_TOKEN_PLAN, PROVIDER_ID_GITHUB_COPILOT,
     PROVIDER_ID_HUGGINGFACE, PROVIDER_ID_KIMI_CODING_PLAN, PROVIDER_ID_MINIMAX,
-    PROVIDER_ID_MINIMAX_CODING_PLAN, PROVIDER_ID_OPENAI, PROVIDER_ID_OPENCODE_ZEN,
-    PROVIDER_ID_OPENROUTER, PROVIDER_ID_QWEN, PROVIDER_ID_QWEN_DEEPINFRA, PROVIDER_ID_Z_AI,
-    PROVIDER_ID_Z_AI_CODING_PLAN,
+    PROVIDER_ID_MINIMAX_CODING_PLAN, PROVIDER_ID_OPENAI, PROVIDER_ID_OPENCODE_GO,
+    PROVIDER_ID_OPENCODE_ZEN, PROVIDER_ID_OPENROUTER, PROVIDER_ID_QWEN,
+    PROVIDER_ID_QWEN_DEEPINFRA, PROVIDER_ID_Z_AI, PROVIDER_ID_Z_AI_CODING_PLAN,
 };
 
 const OPENROUTER_ATTRIBUTION_URL: &str = "https://zorai.app";
 const OPENROUTER_ATTRIBUTION_TITLE: &str = "Zorai";
 const OPENROUTER_ATTRIBUTION_CATEGORIES: &str = "cli-agent,personal-agent";
+const OPENCODE_GO_CLIENT: &str = "zorai";
+const OPENCODE_GO_USER_AGENT: &str = "zorai-daemon";
 
 pub(crate) fn normalize_huggingface_provider_selector(value: &str) -> Option<String> {
     let value = value.trim().trim_start_matches(':').to_ascii_lowercase();
@@ -329,6 +331,54 @@ pub(crate) fn apply_openrouter_attribution_headers(
     req.header("HTTP-Referer", OPENROUTER_ATTRIBUTION_URL)
         .header("X-OpenRouter-Title", OPENROUTER_ATTRIBUTION_TITLE)
         .header("X-OpenRouter-Categories", OPENROUTER_ATTRIBUTION_CATEGORIES)
+}
+
+fn resolve_opencode_go_session_id(session_id: Option<&str>) -> String {
+    session_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string())
+}
+
+/// OpenCode Go requires a stable `x-opencode-session` for prompt-cache routing
+/// and a specific client identity (no broad User-Agent).
+pub(crate) fn apply_opencode_go_headers(
+    req: reqwest::RequestBuilder,
+    provider: &str,
+    session_id: Option<&str>,
+) -> reqwest::RequestBuilder {
+    if provider != PROVIDER_ID_OPENCODE_GO {
+        return req;
+    }
+
+    req.header("User-Agent", OPENCODE_GO_USER_AGENT)
+        .header("x-opencode-client", OPENCODE_GO_CLIENT)
+        .header(
+            "x-opencode-session",
+            resolve_opencode_go_session_id(session_id),
+        )
+}
+
+pub(crate) fn insert_opencode_go_headers(
+    headers: &mut reqwest::header::HeaderMap,
+    provider: &str,
+    session_id: Option<&str>,
+) {
+    if provider != PROVIDER_ID_OPENCODE_GO {
+        return;
+    }
+
+    let session = resolve_opencode_go_session_id(session_id);
+    if let Ok(value) = reqwest::header::HeaderValue::from_str(OPENCODE_GO_USER_AGENT) {
+        headers.insert(reqwest::header::USER_AGENT, value);
+    }
+    if let Ok(value) = reqwest::header::HeaderValue::from_str(OPENCODE_GO_CLIENT) {
+        headers.insert("x-opencode-client", value);
+    }
+    if let Ok(value) = reqwest::header::HeaderValue::from_str(&session) {
+        headers.insert("x-opencode-session", value);
+    }
 }
 
 fn apply_openrouter_response_cache_headers(

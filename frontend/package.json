@@ -1,7 +1,7 @@
 {
   "name": "zorai",
   "private": true,
-  "version": "0.9.58",
+  "version": "0.9.59",
   "description": "Daemon-first agentic runtime with AI-native workflows",
   "homepage": "https://zorai.app",
   "author": {

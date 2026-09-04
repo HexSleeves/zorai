@@ -348,6 +348,7 @@ impl<'a> SendMessageRunner<'a> {
                 working_dir,
                 claude_permission_mode,
                 retry_now: Some(self.stream_retry_now.clone()),
+                opencode_session_id: Some(self.tid.clone()),
             },
         );
 

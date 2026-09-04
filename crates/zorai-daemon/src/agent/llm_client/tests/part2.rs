@@ -10,7 +10,7 @@ use std::sync::Mutex;
 use tempfile::tempdir;
 use zorai_shared::providers::{
     PROVIDER_ID_GITHUB_COPILOT, PROVIDER_ID_KIMI_CODING_PLAN, PROVIDER_ID_OPENAI,
-    PROVIDER_ID_OPENROUTER,
+    PROVIDER_ID_OPENCODE_GO, PROVIDER_ID_OPENROUTER,
 };
 
 #[test]
@@ -1149,6 +1149,93 @@ fn openrouter_requests_include_app_attribution_headers() {
             .get("x-openrouter-categories")
             .and_then(|value| value.to_str().ok()),
         Some("cli-agent,personal-agent")
+    );
+}
+
+#[test]
+fn opencode_go_requests_include_session_affinity_headers() {
+    let client = reqwest::Client::new();
+    let config = ProviderConfig {
+        base_url: "https://opencode.ai/zen/go/v1".to_string(),
+        model: "glm-5.1".to_string(),
+        api_key: "opencode-go-key".to_string(),
+        assistant_id: String::new(),
+        auth_source: AuthSource::ApiKey,
+        api_transport: ApiTransport::ChatCompletions,
+        reasoning_effort: String::new(),
+        context_window_tokens: 0,
+        response_schema: None,
+        stop_sequences: None,
+        temperature: None,
+        top_p: None,
+        top_k: None,
+        metadata: None,
+        service_tier: None,
+        container: None,
+        inference_geo: None,
+        cache_control: None,
+        max_tokens: None,
+        anthropic_tool_choice: None,
+        output_effort: None,
+        openrouter_provider_order: Vec::new(),
+        openrouter_provider_ignore: Vec::new(),
+        openrouter_allow_fallbacks: None,
+        openrouter_response_cache_enabled: false,
+        huggingface_provider: None,
+    };
+
+    let request = apply_opencode_go_headers(
+        apply_openai_auth_headers(
+            client.get("https://opencode.ai/zen/go/v1/chat/completions"),
+            PROVIDER_ID_OPENCODE_GO,
+            &config,
+            CopilotInitiator::Agent,
+        ),
+        PROVIDER_ID_OPENCODE_GO,
+        Some("thread-opencode-go-1"),
+    )
+    .build()
+    .expect("request should build");
+
+    assert_eq!(
+        request
+            .headers()
+            .get("user-agent")
+            .and_then(|value| value.to_str().ok()),
+        Some("zorai-daemon")
+    );
+    assert_eq!(
+        request
+            .headers()
+            .get("x-opencode-client")
+            .and_then(|value| value.to_str().ok()),
+        Some("zorai")
+    );
+    assert_eq!(
+        request
+            .headers()
+            .get("x-opencode-session")
+            .and_then(|value| value.to_str().ok()),
+        Some("thread-opencode-go-1")
+    );
+
+    let mut headers = reqwest::header::HeaderMap::new();
+    insert_opencode_go_headers(
+        &mut headers,
+        PROVIDER_ID_OPENCODE_GO,
+        Some("thread-opencode-go-anthropic"),
+    );
+    assert_eq!(
+        headers
+            .get("x-opencode-session")
+            .and_then(|value| value.to_str().ok()),
+        Some("thread-opencode-go-anthropic")
+    );
+    assert_eq!(
+        headers
+            .get("x-opencode-client")
+            .and_then(|value| value.to_str().ok()),
+        Some("zorai")
     );
 }
 

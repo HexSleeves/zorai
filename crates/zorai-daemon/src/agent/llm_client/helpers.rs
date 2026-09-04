@@ -271,6 +271,7 @@ async fn fetch_remote_models(
             req = def.auth_method.apply(req, api_key);
         }
         let req = apply_openrouter_attribution_headers(req, provider_id);
+        let req = apply_opencode_go_headers(req, provider_id, None);
         apply_dashscope_coding_plan_sdk_headers(req, provider_id, trimmed_base_url, def.api_type)
     };
 
@@ -538,8 +539,17 @@ pub async fn validate_provider_connection(
             } else {
                 req
             };
-            apply_dashscope_coding_plan_sdk_headers(req, provider_id, &resolved_base_url, api_type)
-                .json(&body)
+            apply_opencode_go_headers(
+                apply_dashscope_coding_plan_sdk_headers(
+                    req,
+                    provider_id,
+                    &resolved_base_url,
+                    api_type,
+                ),
+                provider_id,
+                None,
+            )
+            .json(&body)
         }
         ApiType::Anthropic => {
             let base = resolved_base_url.trim_end_matches('/');
@@ -564,8 +574,17 @@ pub async fn validate_provider_connection(
             } else {
                 req
             };
-            apply_dashscope_coding_plan_sdk_headers(req, provider_id, &resolved_base_url, api_type)
-                .json(&body)
+            apply_opencode_go_headers(
+                apply_dashscope_coding_plan_sdk_headers(
+                    req,
+                    provider_id,
+                    &resolved_base_url,
+                    api_type,
+                ),
+                provider_id,
+                None,
+            )
+            .json(&body)
         }
     };
 
