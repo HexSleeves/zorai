@@ -11,12 +11,12 @@ export function SearchOverlayHeader({
         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
             <div style={{ display: "grid", gap: 2 }}>
                 <span className="zorai-panel-title" style={{ color: "var(--mission)" }}>Live Search</span>
-                <span style={{ fontSize: 12, fontWeight: 700 }}>Buffer Recall</span>
+                <span style={{ fontSize: "var(--text-sm)", fontWeight: 700 }}>Buffer Recall</span>
             </div>
             {query ? (
                 <span
                     style={{
-                        fontSize: 10,
+                        fontSize: "var(--text-sm)",
                         color: "var(--text-secondary)",
                         minWidth: 40,
                         textAlign: "center",

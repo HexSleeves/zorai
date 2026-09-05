@@ -17,7 +17,7 @@ const openCanvasBtnStyle: React.CSSProperties = {
   border: "1px solid rgba(255,255,255,0.08)",
   color: "var(--agent)",
   cursor: "pointer",
-  fontSize: 11,
+  fontSize: "var(--text-sm)",
   fontWeight: 600,
   padding: "5px 10px",
   borderRadius: 10,

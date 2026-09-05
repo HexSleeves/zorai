@@ -29,12 +29,12 @@ export function SnippetResolverDialog({
                 <button onClick={onCancel} style={closeBtnStyle}>✕</button>
             </div>
             <div style={{ padding: "12px 16px" }}>
-                <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 8 }}>
+                <div style={{ fontSize: "var(--text-xs)", color: "var(--text-secondary)", marginBottom: 8 }}>
                     Template: <code style={{ color: "var(--text-primary)" }}>{snippet.content}</code>
                 </div>
                 {placeholders.map((placeholder, index) => (
                     <div key={placeholder} style={{ marginBottom: 8 }}>
-                        <label style={{ fontSize: 11, color: "var(--text-secondary)", display: "block", marginBottom: 2 }}>
+                        <label style={{ fontSize: "var(--text-xs)", color: "var(--text-secondary)", display: "block", marginBottom: 2 }}>
                             {`{{${placeholder}}}`}
                         </label>
                         <input

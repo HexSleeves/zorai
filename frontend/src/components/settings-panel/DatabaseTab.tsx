@@ -52,7 +52,7 @@ export function DatabaseTab() {
     return (
         <>
             <Section title="Database backend">
-                <div style={{ display: "grid", gap: 6, fontSize: 12 }}>
+                <div style={{ display: "grid", gap: 6, fontSize: "var(--text-sm)" }}>
                     <div><strong>Backend:</strong> {backend}</div>
                     <div><strong>Sync URL:</strong> {syncUrl}</div>
                     <div><strong>Auth token:</strong> {state?.hasToken ? "set" : "unset"}</div>
@@ -65,12 +65,12 @@ export function DatabaseTab() {
                     <button type="button" onClick={refresh} style={smallBtnStyle}>
                         Refresh
                     </button>
-                    {syncStatus && <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>{syncStatus}</span>}
+                    {syncStatus && <span style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>{syncStatus}</span>}
                 </div>
             </Section>
 
             <Section title="Configuration">
-                <div style={{ fontSize: 12, lineHeight: 1.7, color: "var(--text-secondary)" }}>
+                <div style={{ fontSize: "var(--text-sm)", lineHeight: 1.7, color: "var(--text-secondary)" }}>
                     <p>Store all daemon data in a libSQL/Turso backend to sync state across devices. Set in config.json:</p>
                     <p><code>db_backend</code>: local (default) | local-libsql | remote-replica</p>
                     <p><code>db_sync_url</code>: libSQL/Turso server URL (remote-replica)</p>

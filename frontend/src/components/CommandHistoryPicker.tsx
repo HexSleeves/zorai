@@ -113,7 +113,7 @@ export function CommandHistoryPicker({ style, className }: CommandHistoryPickerP
             border: "none",
             borderBottom: "1px solid var(--border)",
             color: "var(--text-primary)",
-            fontSize: 15,
+            fontSize: "var(--text-base)",
             fontFamily: "inherit",
             outline: "none",
           }}
@@ -125,7 +125,7 @@ export function CommandHistoryPicker({ style, className }: CommandHistoryPickerP
                 padding: 24,
                 textAlign: "center",
                 color: "var(--text-secondary)",
-                fontSize: 12,
+                fontSize: "var(--text-sm)",
               }}
             >
               {query ? "No matching commands" : "No command history yet"}
@@ -144,17 +144,17 @@ export function CommandHistoryPicker({ style, className }: CommandHistoryPickerP
                   background: selectedIndex === i ? "var(--zorai-bg-surface)" : "transparent",
                 }}
               >
-                <div style={{ fontSize: 13, fontFamily: "var(--font-mono)", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <div style={{ fontSize: "var(--text-base)", fontFamily: "var(--font-mono)", color: "var(--text-primary)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {entry.command}
                 </div>
-                <div style={{ fontSize: 11, color: "var(--text-secondary)", display: "flex", justifyContent: "space-between", gap: 12 }}>
+                <div style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", display: "flex", justifyContent: "space-between", gap: 12 }}>
                   <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{entry.cwd ?? "No cwd"}</span>
                   <span>
                     {entry.exitCode === null ? "running" : `exit ${entry.exitCode}`}
                     {entry.durationMs !== null ? ` · ${entry.durationMs < 1000 ? `${entry.durationMs}ms` : `${(entry.durationMs / 1000).toFixed(1)}s`}` : ""}
                   </span>
                 </div>
-                <div style={{ fontSize: 10, color: "var(--text-secondary)", opacity: 0.85, display: "flex", justifyContent: "space-between", gap: 12 }}>
+                <div style={{ fontSize: "var(--text-xs)", color: "var(--text-secondary)", opacity: 0.85, display: "flex", justifyContent: "space-between", gap: 12 }}>
                   <span>{entry.paneId ?? "No pane"}</span>
                   <span>{new Date(entry.timestamp).toLocaleString()}</span>
                 </div>

@@ -24,11 +24,11 @@ export function RuntimeModeBanner() {
         gap: 4,
       }}
     >
-      <strong style={{ fontSize: 13, letterSpacing: "0.04em", textTransform: "uppercase" }}>
+      <strong style={{ fontSize: "var(--text-sm)", letterSpacing: "0.04em", textTransform: "uppercase" }}>
         {runtimeMode.title}
       </strong>
-      <span style={{ fontSize: 14, fontWeight: 600 }}>{runtimeMode.summary}</span>
-      <span style={{ fontSize: 13, lineHeight: 1.45, color: "rgba(255, 232, 194, 0.92)" }}>
+      <span style={{ fontSize: "var(--text-base)", fontWeight: 600 }}>{runtimeMode.summary}</span>
+      <span style={{ fontSize: "var(--text-sm)", lineHeight: 1.45, color: "rgba(255, 232, 194, 0.92)" }}>
         {runtimeMode.detail}
       </span>
     </div>

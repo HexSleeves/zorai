@@ -149,13 +149,13 @@ export function ExecutionCanvas({ style, className }: ExecutionCanvasProps = {})
                 justifyContent: "center",
                 height: "100%",
                 color: "var(--text-secondary)",
-                fontSize: 14,
+                fontSize: "var(--text-base)",
               }}
             >
               <div style={{ textAlign: "center" }}>
-                <div style={{ fontSize: 40, marginBottom: 12, opacity: 0.4 }}>◈</div>
+                <div style={{ fontSize: "var(--text-2xl)", marginBottom: 12, opacity: 0.4 }}>◈</div>
                 <div style={{ fontWeight: 600 }}>No execution data yet</div>
-                <div style={{ fontSize: 12, marginTop: 6, opacity: 0.7 }}>
+                <div style={{ fontSize: "var(--text-sm)", marginTop: 6, opacity: 0.7 }}>
                   Run commands in the terminal to build the pipeline graph
                 </div>
               </div>
@@ -215,7 +215,7 @@ function MetricChip({ label, value }: { label: string; value: number }) {
         borderRadius: 0,
         border: "1px solid rgba(255,255,255,0.08)",
         background: "rgba(255,255,255,0.03)",
-        fontSize: 11,
+        fontSize: "var(--text-sm)",
         display: "flex",
         gap: 6,
         alignItems: "center",
@@ -232,7 +232,7 @@ const closeBtnStyle: React.CSSProperties = {
   border: "1px solid rgba(255,255,255,0.08)",
   color: "var(--text-secondary)",
   cursor: "pointer",
-  fontSize: 14,
+  fontSize: "var(--text-base)",
   padding: "6px 10px",
   borderRadius: 0,
   lineHeight: 1,

@@ -217,12 +217,12 @@ export function BehaviorTab({
                 <SettingRow label="MCP Servers">
                     <div style={{ display: "grid", gap: 8, width: "100%" }}>
                         {parsedMcp.error ? (
-                            <div style={{ fontSize: 11, color: "var(--danger)" }}>
+                            <div style={{ fontSize: "var(--text-sm)", color: "var(--danger)" }}>
                                 {parsedMcp.error}
                             </div>
                         ) : null}
                         {mcpRows.length === 0 ? (
-                            <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>No MCP servers configured yet.</div>
+                            <div style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>No MCP servers configured yet.</div>
                         ) : null}
 
                         <div style={{ display: "grid", gap: 8 }}>
@@ -269,14 +269,14 @@ export function BehaviorTab({
                             <button onClick={runMcpHealthCheck} style={smallBtnStyle}>Check MCP Health</button>
                             <button onClick={copyMcpConfig} style={smallBtnStyle}>Copy MCP Config</button>
                         </div>
-                        {mcpError ? <div style={{ fontSize: 11, color: "var(--danger)" }}>{mcpError}</div> : null}
+                        {mcpError ? <div style={{ fontSize: "var(--text-sm)", color: "var(--danger)" }}>{mcpError}</div> : null}
                         {lspHealth ? (
-                            <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+                            <div style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
                                 LSP: rust-analyzer={lspHealth.rustAnalyzer ? "ok" : "missing"}, typescript-language-server={lspHealth.typescriptLanguageServer ? "ok" : "missing"}, pyright-langserver={lspHealth.pyrightLangserver ? "ok" : "missing"}
                             </div>
                         ) : null}
                         {mcpHealth ? (
-                            <div style={{ fontSize: 11, color: "var(--text-secondary)", display: "grid", gap: 2 }}>
+                            <div style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", display: "grid", gap: 2 }}>
                                 {mcpHealth.map((row) => (
                                     <span key={`${row.name}:${row.command}`}>
                                         MCP {row.name}: {row.command || "(missing command)"} - {row.exists ? "ok" : (row.error || "missing")}

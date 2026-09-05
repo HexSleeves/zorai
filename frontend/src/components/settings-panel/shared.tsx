@@ -1,7 +1,9 @@
 import { useState, useMemo, useRef, useEffect, useCallback, type CSSProperties, type ReactNode } from "react";
 import { getBridge } from "@/lib/bridge";
-import { BUILTIN_THEMES } from "../../lib/themes";
+import { themesForAppearance } from "../../lib/themes";
 import type { ZoraiSettings } from "../../lib/types";
+import { normalizeNightMode, resolveAppearance, systemPrefersDark } from "../../lib/uiInterfacePrefs";
+import { useSettingsStore } from "../../lib/settingsStore";
 import type { AgentProviderId, AuthSource, ModelDefinition } from "../../lib/agentStore";
 import { getProviderDefinition, getProviderModels } from "../../lib/agentStore";
 import { buildModelSelectorMetadata } from "./modelSelectorMetadata";
@@ -13,11 +15,12 @@ import { buildModelFetchKey, shouldFetchRemoteModels } from "./modelSelectorFetc
 
 export type SettingsUpdater = <K extends keyof ZoraiSettings>(key: K, value: ZoraiSettings[K]) => void;
 
+
 export function Section({ title, children }: { title: string; children: ReactNode }) {
     return (
         <div style={{ marginBottom: 20 }}>
             <div style={{
-                fontSize: 12, fontWeight: 600, color: "var(--accent)",
+                fontSize: "var(--text-sm)", fontWeight: 600, color: "var(--accent)",
                 marginBottom: 8, textTransform: "uppercase", letterSpacing: "0.04em",
             }}>{title}</div>
             {children}
@@ -29,7 +32,7 @@ export function SettingRow({ label, children }: { label: string; children: React
     return (
         <div style={{
             display: "flex", alignItems: "center", justifyContent: "space-between",
-            padding: "6px 0", fontSize: 12, gap: 12,
+            padding: "6px 0", fontSize: "var(--text-sm)", gap: 12,
         }}>
             <span style={{ color: "var(--text-secondary)", flexShrink: 0 }}>{label}</span>
             {children}
@@ -49,16 +52,19 @@ export function FontSelector({ value, fonts, onChange }: {
                 ))}
                 {!fonts.includes(value) ? <option value={value}>{value}</option> : null}
             </select>
-            <span style={{ fontFamily: value, fontSize: 12 }}>Abc</span>
+            <span style={{ fontFamily: value, fontSize: "var(--text-sm)" }}>Abc</span>
         </div>
     );
 }
 
 export function ThemePicker({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+    const nightMode = useSettingsStore((state) => state.settings.nightMode);
+    const appearance = resolveAppearance(normalizeNightMode(nightMode), systemPrefersDark());
+    const themes = themesForAppearance(appearance);
     return (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8, marginTop: 4 }}>
-            {BUILTIN_THEMES.map((theme) => (
-                <button key={theme.name} onClick={() => onChange(theme.name)}
+            {themes.map((theme) => (
+                <button key={theme.name} type="button" onClick={() => onChange(theme.name)}
                     style={{
                         padding: 8, borderRadius: 0, cursor: "pointer",
                         border: value === theme.name ? "2px solid var(--accent)" : "2px solid var(--border)",
@@ -73,7 +79,7 @@ export function ThemePicker({ value, onChange }: { value: string; onChange: (val
                         ))}
                     </div>
                     <span style={{
-                        fontSize: 9, color: theme.colors.foreground, whiteSpace: "nowrap",
+                        fontSize: "var(--text-xs)", color: theme.colors.foreground, whiteSpace: "nowrap",
                         overflow: "hidden", textOverflow: "ellipsis",
                     }}>{theme.name}</span>
                 </button>
@@ -95,7 +101,7 @@ export function ColorInput({ value, onChange, placeholder }: {
                 }} />
             <input type="text" value={value} onChange={(event) => onChange(event.target.value)}
                 placeholder={placeholder}
-                style={{ ...inputStyle, width: 100, fontFamily: "var(--font-mono)", fontSize: 11 }} />
+                style={{ ...inputStyle, width: 100, fontFamily: "var(--font-mono)", fontSize: "var(--text-sm)" }} />
         </div>
     );
 }
@@ -109,7 +115,7 @@ export function SliderInput({ value, min, max, step, onChange }: {
             <input type="range" min={min} max={max} step={step} value={value}
                 onChange={(event) => onChange(parseFloat(event.target.value))}
                 style={{ width: 120, accentColor: "var(--accent)" }} />
-            <span style={{ fontSize: 11, color: "var(--text-secondary)", minWidth: 32, textAlign: "right" }}>
+            <span style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", minWidth: 32, textAlign: "right" }}>
                 {Number.isInteger(step) ? value : value.toFixed(step < 0.1 ? 2 : 1)}
             </span>
         </div>
@@ -169,7 +175,7 @@ export function PasswordInput({ value, onChange, placeholder }: {
                     border: "1px solid rgba(255,255,255,0.08)",
                     color: "var(--text-muted)",
                     cursor: "pointer",
-                    fontSize: 11,
+                    fontSize: "var(--text-sm)",
                     padding: "4px 8px",
                     borderRadius: 0,
                     lineHeight: 1,
@@ -222,24 +228,24 @@ export function Toggle({ value, onChange }: { value: boolean; onChange: (value: 
 
 export const inputStyle: CSSProperties = {
     background: "var(--zorai-bg-surface)", border: "1px solid var(--border)",
-    borderRadius: 0, color: "var(--text-primary)", fontSize: 12,
+    borderRadius: 0, color: "var(--text-primary)", fontSize: "var(--text-sm)",
     padding: "3px 8px", fontFamily: "inherit", outline: "none", width: 200,
 };
 
 export const headerBtnStyle: CSSProperties = {
     background: "none", border: "none", color: "var(--text-secondary)",
-    cursor: "pointer", fontSize: 12, padding: "2px 6px",
+    cursor: "pointer", fontSize: "var(--text-sm)", padding: "2px 6px",
 };
 
 export const addBtnStyle: CSSProperties = {
     background: "var(--zorai-bg-surface)", border: "1px solid var(--border)",
-    color: "var(--text-primary)", cursor: "pointer", fontSize: 11,
+    color: "var(--text-primary)", cursor: "pointer", fontSize: "var(--text-sm)",
     padding: "4px 10px", borderRadius: 0
 };
 
 export const kbdStyle: CSSProperties = {
     background: "var(--zorai-bg-surface)", padding: "2px 6px", borderRadius: 0,
-    fontSize: 10, fontFamily: "var(--font-mono)",
+    fontSize: "var(--text-xs)", fontFamily: "var(--font-mono)",
 };
 
 export const rebindBtnStyle: CSSProperties = {
@@ -248,7 +254,7 @@ export const rebindBtnStyle: CSSProperties = {
     borderRadius: 0,
     color: "var(--text-primary)",
     cursor: "pointer",
-    fontSize: 11,
+    fontSize: "var(--text-sm)",
     padding: "4px 8px",
 };
 
@@ -258,7 +264,7 @@ export const smallBtnStyle: CSSProperties = {
     borderRadius: 0,
     color: "var(--text-primary)",
     cursor: "pointer",
-    fontSize: 11,
+    fontSize: "var(--text-sm)",
     padding: "4px 8px",
 };
 
@@ -538,7 +544,7 @@ export function ModelSelector({ providerId, value, customName, onChange, disable
                     {fetchError && (
                         <div style={{
                             padding: "6px 10px",
-                            fontSize: 11,
+                            fontSize: "var(--text-sm)",
                             color: "var(--color-red, #f44)",
                             borderBottom: "1px solid var(--border)",
                         }}>
@@ -581,8 +587,8 @@ export function ModelSelector({ providerId, value, customName, onChange, disable
                                 }}
                             >
                                 <div style={{ minWidth: 0 }}>
-                                    <div style={{ fontSize: 12 }}>{model.name}</div>
-                                    <div style={{ fontSize: 10, color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
+                                    <div style={{ fontSize: "var(--text-sm)" }}>{model.name}</div>
+                                    <div style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", fontFamily: "var(--font-mono)" }}>
                                         {model.id}
                                     </div>
                                     <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 4 }}>
@@ -604,12 +610,12 @@ export function ModelSelector({ providerId, value, customName, onChange, disable
                                             </span>
                                         ))}
                                     </div>
-                                    <div style={{ fontSize: 10, color: "var(--text-secondary)", marginTop: 4 }}>
+                                    <div style={{ fontSize: "var(--text-xs)", color: "var(--text-secondary)", marginTop: 4 }}>
                                         {metadata.pricingSummary}
                                     </div>
                                 </div>
                                 {model.contextWindow > 0 && (
-                                    <div style={{ fontSize: 10, color: "var(--text-secondary)" }}>
+                                    <div style={{ fontSize: "var(--text-xs)", color: "var(--text-secondary)" }}>
                                         {formatContextWindow(model.contextWindow)} ctx
                                     </div>
                                 )}

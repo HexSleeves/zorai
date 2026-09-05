@@ -1064,7 +1064,7 @@
 .acp-md pre code {
   font-size: inherit;
   overflow-wrap: anywhere;
-  color: var(--neutral-400);
+  color: var(--text-muted);
 }
 
 .acp-md :not(pre) > code {

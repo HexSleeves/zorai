@@ -21,7 +21,7 @@ export function TimeTravelContent({
 
     if (snapshots.length === 0) {
         return (
-            <div style={{ padding: "16px 0", textAlign: "center", color: "var(--text-secondary)", fontSize: 12 }}>
+            <div style={{ padding: "16px 0", textAlign: "center", color: "var(--text-secondary)", fontSize: "var(--text-sm)" }}>
                 No snapshots recorded yet. Snapshots are created before managed command execution.
             </div>
         );
@@ -73,8 +73,8 @@ export function TimeTravelContent({
             {selected ? (
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", gap: 12 }}>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                        <div style={{ fontSize: 12, fontWeight: 600 }}>{selected.label}</div>
-                        <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
+                        <div style={{ fontSize: "var(--text-sm)", fontWeight: 600 }}>{selected.label}</div>
+                        <div style={{ fontSize: "var(--text-xs)", color: "var(--text-secondary)", marginTop: 2 }}>
                             {new Date(selected.created_at).toLocaleString()}
                             {selected.command ? (
                                 <span style={{ marginLeft: 8, fontFamily: "var(--font-mono)", opacity: 0.8 }}>
@@ -100,7 +100,7 @@ export function TimeTravelContent({
                     <div style={{ display: "flex", gap: 8 }}>
                         {confirmRestore ? (
                             <>
-                                <span style={{ fontSize: 11, color: "var(--warning)", alignSelf: "center" }}>
+                                <span style={{ fontSize: "var(--text-xs)", color: "var(--warning)", alignSelf: "center" }}>
                                     Overwrite workspace?
                                 </span>
                                 <button onClick={handleRestore} style={{ ...actionBtnStyle, background: "rgba(239, 68, 68, 0.18)", borderColor: "rgba(239, 68, 68, 0.4)", color: "#ef4444" }}>

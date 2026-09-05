@@ -276,7 +276,7 @@ export function TitleBar() {
                     padding: "var(--space-2)",
                     borderRadius: "var(--radius-lg)",
                     border: "1px solid var(--glass-border)",
-                    background: "rgba(15, 18, 32, 0.98)",
+                    background: "var(--bg-elevated)",
                     boxShadow: "0 18px 48px rgba(0, 0, 0, 0.35)",
                     display: "grid",
                     gap: 2,

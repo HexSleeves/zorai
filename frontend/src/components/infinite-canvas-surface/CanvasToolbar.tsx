@@ -37,7 +37,7 @@ export function CanvasToolbar({
             border: "1px solid var(--accent)",
             background: "var(--accent-soft)",
             color: "var(--accent)",
-            fontSize: 18,
+            fontSize: "var(--text-lg)",
             lineHeight: 1,
             cursor: "pointer",
           }}
@@ -102,7 +102,7 @@ const toolbarButtonStyle = {
   border: "1px solid var(--border)",
   background: "var(--bg-secondary)",
   color: "var(--text-secondary)",
-  fontSize: 12,
+  fontSize: "var(--text-sm)",
   padding: "0 10px",
   cursor: "pointer",
 } as const;

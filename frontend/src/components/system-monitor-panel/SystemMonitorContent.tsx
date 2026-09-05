@@ -68,12 +68,12 @@ export function SystemMonitorContent({
             <div style={{ display: "grid", gridTemplateRows: "auto 1fr", minHeight: 0 }}>
                 <div style={{ padding: "14px 16px", borderBottom: "1px solid rgba(255,255,255,0.08)", display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
                     <div>
-                        <div style={{ fontSize: 15, fontWeight: 700 }}>Process Table</div>
-                        <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4 }}>
+                        <div style={{ fontSize: "var(--text-base)", fontWeight: 700 }}>Process Table</div>
+                        <div style={{ fontSize: "var(--text-xs)", color: "var(--text-secondary)", marginTop: 4 }}>
                             Sorted by CPU usage from the native runtime snapshot.
                         </div>
                     </div>
-                    {error ? <span style={{ fontSize: 11, color: "var(--danger)" }}>{error}</span> : null}
+                    {error ? <span style={{ fontSize: "var(--text-xs)", color: "var(--danger)" }}>{error}</span> : null}
                 </div>
                 <div style={{ overflow: "auto" }}>
                     {loading && !snapshot ? (
@@ -81,7 +81,7 @@ export function SystemMonitorContent({
                     ) : filteredProcesses.length === 0 ? (
                         <EmptyState message="No process metrics available." />
                     ) : (
-                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--text-sm)" }}>
                             <thead>
                                 <tr style={{ position: "sticky", top: 0, background: "rgba(13, 23, 35, 0.98)", borderBottom: "1px solid rgba(255,255,255,0.08)", textAlign: "left", color: "var(--text-secondary)" }}>
                                     <th style={headerCellStyle}>PID</th>
@@ -99,7 +99,7 @@ export function SystemMonitorContent({
                                         <td style={bodyCellStyle}>
                                             <div style={{ display: "grid", gap: 4 }}>
                                                 <span style={{ fontWeight: 700 }}>{processEntry.name}</span>
-                                                <span style={{ fontSize: 10, color: "var(--text-muted)" }}>{processEntry.command.split(" ")[0]}</span>
+                                                <span style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>{processEntry.command.split(" ")[0]}</span>
                                             </div>
                                         </td>
                                         <td style={bodyCellStyle}>{processEntry.cpuPercent === null ? "n/a" : `${processEntry.cpuPercent.toFixed(1)}%`}</td>
@@ -127,21 +127,21 @@ function ResourceCard({ title, value, subtitle, detail, meterValue }: { title: s
             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
                 <div style={{ display: "grid", gap: 4 }}>
                     <span className="zorai-panel-title">{title}</span>
-                    <span style={{ fontSize: 20, fontWeight: 800 }}>{value}</span>
+                    <span style={{ fontSize: "var(--text-lg)", fontWeight: 800 }}>{value}</span>
                 </div>
                 <span className="zorai-chip">{subtitle}</span>
             </div>
             <div style={{ height: 8, borderRadius: 0, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
                 <div style={{ width: `${Math.max(0, Math.min(100, meterValue))}%`, height: "100%", background: "var(--bg-secondary)", borderRadius: 0 }} />
             </div>
-            <span style={{ fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.45 }}>{detail}</span>
+            <span style={{ fontSize: "var(--text-xs)", color: "var(--text-secondary)", lineHeight: 1.45 }}>{detail}</span>
         </div>
     );
 }
 
 function EmptyState({ message }: { message: string }) {
     return (
-        <div style={{ padding: 32, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)", fontSize: 12 }}>
+        <div style={{ padding: 32, display: "flex", alignItems: "center", justifyContent: "center", color: "var(--text-secondary)", fontSize: "var(--text-sm)" }}>
             {message}
         </div>
     );

@@ -42,7 +42,7 @@ export function SearchOverlayControls({
                     border: "1px solid var(--border)",
                     borderRadius: 4,
                     color: "var(--text-primary)",
-                    fontSize: 12,
+                    fontSize: "var(--text-sm)",
                     padding: "3px 8px",
                     width: 220,
                     fontFamily: "inherit",

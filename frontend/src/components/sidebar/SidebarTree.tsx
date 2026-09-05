@@ -375,7 +375,7 @@ export function SidebarTree({
                                       <span
                                         style={{
                                           color: "var(--text-muted)",
-                                          fontSize: "9px",
+                                          fontSize: "var(--text-xs)",
                                           whiteSpace: "nowrap",
                                           overflow: "hidden",
                                           textOverflow: "ellipsis",
@@ -390,7 +390,7 @@ export function SidebarTree({
                                     style={{
                                       color: "var(--text-muted)",
                                       opacity: 0.4,
-                                      fontSize: "8px",
+                                      fontSize: "var(--text-xs)",
                                       whiteSpace: "nowrap",
                                       flexShrink: 0,
                                     }}

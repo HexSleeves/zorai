@@ -108,6 +108,7 @@ fn known_models_openai_non_empty() {
         models.first().map(|model| model.id.as_str()),
         Some("gpt-5.5")
     );
+    assert!(models.iter().any(|m| m.id == "gpt-6-astra"));
     assert!(models.iter().any(|m| m.id == "gpt-5.6-terra"));
     assert!(models.iter().any(|m| m.id == "gpt-5.6-luna"));
     assert!(models.iter().any(|m| m.id == "gpt-5.5"));
@@ -115,6 +116,10 @@ fn known_models_openai_non_empty() {
     assert_eq!(
         known_context_window_for(PROVIDER_ID_OPENAI, "gpt-5.3-codex-spark"),
         Some(128_000)
+    );
+    assert_eq!(
+        known_context_window_for(PROVIDER_ID_OPENAI, "gpt-6-astra"),
+        Some(1_050_000)
     );
 }
 
@@ -129,6 +134,7 @@ fn known_models_openai_chatgpt_subscription_is_restricted() {
         models.first().map(|model| model.id.as_str()),
         Some("gpt-5.5")
     );
+    assert!(models.iter().any(|m| m.id == "gpt-6-astra"));
     assert!(models.iter().any(|m| m.id == "gpt-5.6-sol-pro"));
     assert!(models.iter().any(|m| m.id == "gpt-5.6-terra"));
     assert!(models.iter().any(|m| m.id == "gpt-5.6-luna"));

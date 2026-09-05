@@ -50,7 +50,7 @@ export function ConciergeSection() {
                     ))}
                 </select>
             </SettingRow>
-            <div style={{ fontSize: 11, color: "var(--text-secondary)", padding: "4px 0 8px", fontStyle: "italic" }}>
+            <div style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", padding: "4px 0 8px", fontStyle: "italic" }}>
                 {selectedLevel.desc}
             </div>
             <SettingRow label="Provider">
@@ -134,7 +134,7 @@ export function ConciergeSection() {
                 </SettingRow>
             )}
             {!config.provider && (
-                <div style={{ fontSize: 11, color: "var(--text-secondary)", padding: "2px 0 4px" }}>
+                <div style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", padding: "2px 0 4px" }}>
                     Model inherited from {PRIMARY_AGENT_NAME} when no provider is selected.
                 </div>
             )}

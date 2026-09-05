@@ -11,7 +11,7 @@ export const zoraiSettingsTabs = [
   { id: "features", title: "Features", description: "Feature tier, heartbeat, skills, audio, and media settings." },
   { id: "advanced", title: "Advanced", description: "Context compaction, retry, and safety settings." },
   { id: "plugins", title: "Plugins", description: "Installed plugin runtime and enabled extensions." },
-  { id: "interface", title: "Terminal interface", description: "Terminal shell presentation preferences." },
+  { id: "interface", title: "Interface", description: "UI appearance, typography, and terminal shell preferences." },
   { id: "about", title: "About", description: "Local runtime identity and shell status." },
 ] as const;
 

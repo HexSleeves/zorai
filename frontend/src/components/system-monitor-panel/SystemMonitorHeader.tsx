@@ -20,8 +20,8 @@ export function SystemMonitorHeader({
             <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: 16 }}>
                 <div style={{ display: "grid", gap: 6 }}>
                     <span className="zorai-panel-title" style={{ color: "var(--agent)" }}>Host Telemetry</span>
-                    <span style={{ fontSize: 22, fontWeight: 800 }}>System Monitor</span>
-                    <span style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.45 }}>
+                    <span style={{ fontSize: "var(--text-lg)", fontWeight: 800 }}>System Monitor</span>
+                    <span style={{ fontSize: "var(--text-xs)", color: "var(--text-secondary)", lineHeight: 1.45 }}>
                         Live CPU, memory, GPU, and process telemetry with adjustable refresh cadence and per-process inspection.
                     </span>
                 </div>
@@ -49,7 +49,7 @@ function MetricCard({ label, value }: { label: string; value: string }) {
     return (
         <div style={{ borderRadius: 0, padding: "10px 12px", border: "1px solid rgba(255,255,255,0.06)", background: "rgba(18, 33, 47, 0.8)", display: "grid", gap: 4 }}>
             <span className="zorai-panel-title">{label}</span>
-            <span style={{ fontSize: 15, fontWeight: 700, wordBreak: "break-word" }}>{value}</span>
+            <span style={{ fontSize: "var(--text-base)", fontWeight: 700, wordBreak: "break-word" }}>{value}</span>
         </div>
     );
 }

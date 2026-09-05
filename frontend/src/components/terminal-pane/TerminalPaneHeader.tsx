@@ -23,7 +23,7 @@ export function TerminalPaneHeader({
                 marginBottom: 8,
                 padding: "0 2px",
                 color: "var(--text-secondary)",
-                fontSize: 11,
+                fontSize: "var(--text-xs)",
             }}
         >
             <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, flex: 1 }}>
@@ -54,7 +54,7 @@ export function TerminalPaneHeader({
                         background: "var(--bg-secondary)",
                         color: "var(--text-primary)",
                         padding: "0 6px",
-                        fontSize: 11,
+                        fontSize: "var(--text-xs)",
                         fontFamily: "var(--font-mono)",
                     }}
                 />

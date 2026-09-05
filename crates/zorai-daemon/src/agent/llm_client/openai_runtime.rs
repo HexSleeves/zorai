@@ -205,6 +205,7 @@ pub(crate) fn build_openai_chat_completions_body(
             && (config.model.contains("gpt-4o")
                 || config.model.contains("gpt-4.1")
                 || config.model.contains("gpt-5")
+                || config.model.contains("gpt-6")
                 || config.model.starts_with("o"))
         {
             body["response_format"] = serde_json::json!({

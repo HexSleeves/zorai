@@ -24,7 +24,7 @@ export function LayoutContainer() {
         }}
       >
         <div style={{ textAlign: "center" }}>
-          <div style={{ fontSize: 32, marginBottom: "var(--space-3)", opacity: 0.5 }}>◈</div>
+          <div style={{ fontSize: "var(--text-2xl)", marginBottom: "var(--space-3)", opacity: 0.5 }}>◈</div>
           <div>No active surface</div>
           <div style={{ fontSize: "var(--text-sm)", marginTop: "var(--space-2)", color: "var(--text-muted)" }}>
             Create a new surface to begin

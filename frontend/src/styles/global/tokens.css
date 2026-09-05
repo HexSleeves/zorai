@@ -237,19 +237,20 @@
   --font-mono: "Cascadia Code", "JetBrains Mono", "Fira Code", "SF Mono",
                "Cousine", Consolas, "Liberation Mono", monospace;
   --font-display: var(--font-ui);
+  --ui-font-scale: 1;
   
-  --text-2xs: 10px;
-  --text-xs: 11px;
-  --text-sm: 12px;
-  --text-sm-plus: 13px;
-  --text-base: 14px;
-  --text-md: 15px;
-  --text-lg: 16px;
-  --text-xl: 18px;
-  --text-2xl: 20px;
-  --text-3xl: 22px;
-  --text-4xl: 26px;
-  --text-5xl: 32px;
+  --text-2xs: calc(10px * var(--ui-font-scale));
+  --text-xs: calc(11px * var(--ui-font-scale));
+  --text-sm: calc(12px * var(--ui-font-scale));
+  --text-sm-plus: calc(13px * var(--ui-font-scale));
+  --text-base: calc(14px * var(--ui-font-scale));
+  --text-md: calc(15px * var(--ui-font-scale));
+  --text-lg: calc(16px * var(--ui-font-scale));
+  --text-xl: calc(18px * var(--ui-font-scale));
+  --text-2xl: calc(20px * var(--ui-font-scale));
+  --text-3xl: calc(22px * var(--ui-font-scale));
+  --text-4xl: calc(26px * var(--ui-font-scale));
+  --text-5xl: calc(32px * var(--ui-font-scale));
   
   --font-light: 300;
   --font-regular: 400;
@@ -305,6 +306,7 @@
   --border: rgba(255, 255, 255, 0.10);
   --border-color: rgba(255, 255, 255, 0.12);
   --border-strong: rgba(255, 255, 255, 0.15);
+  --border-color-strong: var(--border-strong);
   --border-subtle: rgba(255, 255, 255, 0.06);
   --border-focus: rgba(94, 231, 223, 0.4);
   --glass-border: rgba(255, 255, 255, 0.10);
@@ -454,7 +456,7 @@
   --zorai-bg-active: var(--bg-secondary);
   --zorai-bg-surface: var(--bg-tertiary);
   --zorai-border: var(--border);
-  --zorai-border-strong: var(--border-color-strong);
+  --zorai-border-strong: var(--border-strong);
   --zorai-text: var(--text-primary);
   --zorai-muted: var(--text-muted);
   --zorai-accent: var(--accent);

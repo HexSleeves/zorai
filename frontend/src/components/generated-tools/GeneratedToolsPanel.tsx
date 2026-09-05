@@ -293,7 +293,7 @@ export function GeneratedToolsPanel({ enabled }: { enabled: boolean }) {
                             </div>
                         </div>
                         {tool.description ? (
-                            <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-secondary)" }}>
+                            <div style={{ marginTop: 8, fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
                                 {tool.description}
                             </div>
                         ) : null}
@@ -311,12 +311,12 @@ export function GeneratedToolsPanel({ enabled }: { enabled: boolean }) {
                                 border: "1px solid var(--border)",
                                 background: "rgba(0,0,0,0.18)",
                                 color: "var(--text-primary)",
-                                fontSize: 11,
+                                fontSize: "var(--text-sm)",
                                 fontFamily: "var(--font-mono)",
                             }}
                         />
                         {tool.parameters && tool.parameters.length > 0 ? (
-                            <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-secondary)" }}>
+                            <div style={{ marginTop: 8, fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
                                 Parameters: {tool.parameters.map((parameter) => parameter.name).join(", ")}
                             </div>
                         ) : null}
@@ -329,7 +329,7 @@ export function GeneratedToolsPanel({ enabled }: { enabled: boolean }) {
                             border: "1px solid rgba(255,255,255,0.06)",
                             color: "var(--text-secondary)",
                             background: "rgba(0,0,0,0.18)",
-                            fontSize: 11,
+                            fontSize: "var(--text-sm)",
                             lineHeight: 1.5,
                             whiteSpace: "pre-wrap",
                             wordBreak: "break-word",

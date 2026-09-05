@@ -73,12 +73,12 @@ export function TerminalContextMenu({
                             alignItems: "center",
                             borderRadius: 0,
                             padding: "8px 10px",
-                            fontSize: 9,
+                            fontSize: "var(--text-xs)",
                             cursor: item.disabled ? "not-allowed" : "pointer",
                         }}
                     >
                         <span>{item.label}</span>
-                        <span style={{ color: "#8f8fa8", fontSize: 9 }}>{item.shortcut ?? ""}</span>
+                        <span style={{ color: "#8f8fa8", fontSize: "var(--text-xs)" }}>{item.shortcut ?? ""}</span>
                     </button>
                 );
             })}

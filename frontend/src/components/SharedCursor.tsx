@@ -33,7 +33,7 @@ export function SharedCursor({ mode }: { mode: "idle" | "human" | "agent" | "app
                     boxShadow: "none",
                 }}
             />
-            <span style={{ fontSize: 11, color: palette.color, letterSpacing: "0.08em", textTransform: "uppercase" }}>
+            <span style={{ fontSize: "var(--text-sm)", color: palette.color, letterSpacing: "0.08em", textTransform: "uppercase" }}>
                 {palette.label} Cursor
             </span>
         </div>

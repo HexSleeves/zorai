@@ -25,7 +25,7 @@ export function GatewayHealth() {
 
   if (platforms.length === 0) {
     return (
-      <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "4px 0" }}>
+      <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", padding: "4px 0" }}>
         No gateway status events received yet. Start the daemon with a gateway token to see connection health.
       </div>
     );
@@ -55,23 +55,23 @@ export function GatewayHealth() {
             boxShadow: info.status === "connected" ? "0 0 8px var(--success)" : "none",
             flexShrink: 0,
           }} />
-          <span style={{ fontSize: 12, fontWeight: 600, textTransform: "capitalize", minWidth: 70 }}>
+          <span style={{ fontSize: "var(--text-sm)", fontWeight: 600, textTransform: "capitalize", minWidth: 70 }}>
             {platform}
           </span>
           <span style={{
-            fontSize: 11,
+            fontSize: "var(--text-sm)",
             color: statusColors[info.status] ?? "var(--text-muted)",
           }}>
             {statusLabels[info.status] ?? info.status}
           </span>
           {info.consecutiveFailures != null && info.consecutiveFailures > 0 ? (
-            <span style={{ fontSize: 10, color: "var(--danger)", marginLeft: 4 }}>
+            <span style={{ fontSize: "var(--text-sm)", color: "var(--danger)", marginLeft: 4 }}>
               ({info.consecutiveFailures} failures)
             </span>
           ) : null}
           {info.lastError ? (
             <span style={{
-              fontSize: 10, color: "var(--danger)", marginLeft: 4,
+              fontSize: "var(--text-sm)", color: "var(--danger)", marginLeft: 4,
               overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", maxWidth: 200,
             }}>
               {info.lastError}
@@ -139,7 +139,7 @@ export function GatewayConfigEditor() {
 
   if (loading) {
     return (
-      <div style={{ fontSize: 11, color: "var(--text-muted)", padding: "8px 0" }}>
+      <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", padding: "8px 0" }}>
         Loading gateway config from daemon...
       </div>
     );
@@ -148,7 +148,7 @@ export function GatewayConfigEditor() {
   return (
     <>
       <Section title="Daemon Gateway Tokens">
-        <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
+        <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
           Tokens are read from and saved to the daemon config (single source of truth).
           Changes are sent to the daemon via IPC.
         </div>

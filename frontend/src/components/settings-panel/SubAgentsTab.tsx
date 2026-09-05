@@ -159,7 +159,7 @@ export function SubAgentsTab() {
         <div>
             <Section title={showForm ? (editingId ? "Edit Sub-Agent" : "Add Sub-Agent") : "Sub-Agent Registry"}>
                 {showForm ? null : subAgents.length === 0 ? (
-                    <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 12 }}>
+                    <div style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", marginBottom: 12 }}>
                         No sub-agents configured. Add one to enable orchestration dispatch.
                     </div>
                 ) : null}
@@ -187,10 +187,10 @@ export function SubAgentsTab() {
                                                 background: sa.enabled ? "#4ade80" : "#6b7280",
                                                 flexShrink: 0,
                                             }} />
-                                            <span style={{ fontSize: 12, fontWeight: 600 }}>{sa.name}</span>
+                                            <span style={{ fontSize: "var(--text-sm)", fontWeight: 600 }}>{sa.name}</span>
                                             {capabilities.isProtected && (
                                                 <span style={{
-                                                    fontSize: 10,
+                                                    fontSize: "var(--text-xs)",
                                                     color: "#fbbf24",
                                                     background: "var(--zorai-accent-dim)",
                                                     padding: "1px 6px",
@@ -200,7 +200,7 @@ export function SubAgentsTab() {
                                                 </span>
                                             )}
                                             <span style={{
-                                                fontSize: 10,
+                                                fontSize: "var(--text-xs)",
                                                 color: "var(--text-secondary)",
                                                 background: "var(--zorai-bg-panel)",
                                                 padding: "1px 6px",
@@ -210,7 +210,7 @@ export function SubAgentsTab() {
                                             </span>
                                             {sa.reasoning_effort && (
                                                 <span style={{
-                                                    fontSize: 10,
+                                                    fontSize: "var(--text-xs)",
                                                     color: "var(--text-secondary)",
                                                     background: "var(--zorai-bg-panel)",
                                                     padding: "1px 6px",
@@ -221,7 +221,7 @@ export function SubAgentsTab() {
                                             )}
                                             {sa.role && (
                                                 <span style={{
-                                                    fontSize: 10,
+                                                    fontSize: "var(--text-xs)",
                                                     color: "var(--accent)",
                                                     background: "var(--zorai-accent-dim)",
                                                     padding: "1px 6px",
@@ -233,22 +233,22 @@ export function SubAgentsTab() {
                                         </div>
                                         <div style={{ display: "flex", gap: 4 }}>
                                             {capabilities.canToggle && (
-                                                <button onClick={() => handleToggle(sa)} style={{ ...smallBtnStyle, fontSize: 10 }}>
+                                                <button onClick={() => handleToggle(sa)} style={{ ...smallBtnStyle, fontSize: "var(--text-xs)" }}>
                                                     {sa.enabled ? "Disable" : "Enable"}
                                                 </button>
                                             )}
-                                            <button onClick={() => handleEdit(sa)} style={{ ...smallBtnStyle, fontSize: 10 }}>
+                                            <button onClick={() => handleEdit(sa)} style={{ ...smallBtnStyle, fontSize: "var(--text-xs)" }}>
                                                 Edit
                                             </button>
                                             {capabilities.canDelete && (
-                                                <button onClick={() => handleDelete(sa.id)} style={{ ...smallBtnStyle, fontSize: 10, color: "#ef4444" }}>
+                                                <button onClick={() => handleDelete(sa.id)} style={{ ...smallBtnStyle, fontSize: "var(--text-xs)", color: "#ef4444" }}>
                                                     Delete
                                                 </button>
                                             )}
                                         </div>
                                     </div>
                                     {capabilities.isProtected && capabilities.protectedReason && (
-                                        <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 8 }}>
+                                        <div style={{ fontSize: "var(--text-xs)", color: "var(--text-secondary)", marginTop: 8 }}>
                                             {capabilities.protectedReason}
                                         </div>
                                     )}
@@ -266,7 +266,7 @@ export function SubAgentsTab() {
                         padding: 14,
                     }}>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
-                            <div style={{ fontSize: 12, fontWeight: 600 }}>
+                            <div style={{ fontSize: "var(--text-sm)", fontWeight: 600 }}>
                                 {editingId ? "Edit Sub-Agent" : "Add Sub-Agent"}
                             </div>
                             <button
@@ -314,7 +314,7 @@ export function SubAgentsTab() {
                                     allowProviderAuthFetch={Boolean(providerAuthStates.find((p) => p.provider_id === form.provider)?.authenticated)}
                                 />
                             ) : (
-                                <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>Select a provider first</span>
+                                <span style={{ fontSize: "var(--text-xs)", color: "var(--text-secondary)" }}>Select a provider first</span>
                             )}
                         </SettingRow>
                         <SettingRow label="Context">
@@ -396,7 +396,7 @@ export function SubAgentsTab() {
                         <div style={{ marginTop: 6 }}>
                             <button
                                 onClick={() => setForm({ ...form, showAdvanced: !form.showAdvanced })}
-                                style={{ ...smallBtnStyle, fontSize: 10, marginBottom: 6 }}
+                                style={{ ...smallBtnStyle, fontSize: "var(--text-xs)", marginBottom: 6 }}
                             >
                                 {form.showAdvanced ? "Hide Advanced" : "Show Advanced"}
                             </button>

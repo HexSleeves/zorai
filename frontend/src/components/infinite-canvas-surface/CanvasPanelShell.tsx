@@ -238,7 +238,7 @@ export function CanvasPanelShell({
       >
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", width: "100%", gap: 12, overflow: "hidden", minWidth: 0 }}>
           <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", overflow: "hidden" }}>
-            <div style={{ display: "flex", flexDirection: "row", fontSize: "9px", width: "100%", height: "100%", gap: 2, overflow: "hidden" }}>
+            <div style={{ display: "flex", flexDirection: "row", fontSize: "var(--text-sm)", width: "100%", height: "100%", gap: 2, overflow: "hidden" }}>
               {panel.panelType === "browser" ? "🌐" : "🖥️"}
               <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flexShrink: 1, minWidth: 0 }}>
                 {panel.title}
@@ -248,7 +248,7 @@ export function CanvasPanelShell({
               <span
                 style={{
                   color: "var(--text-muted)",
-                  fontSize: "7px",
+                  fontSize: "var(--text-xs)",
                   whiteSpace: "nowrap",
                   overflow: "hidden",
                   textOverflow: "ellipsis",

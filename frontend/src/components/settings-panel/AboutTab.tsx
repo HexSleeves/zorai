@@ -56,9 +56,9 @@ export function AboutTab() {
     return (
         <>
             <Section title="About">
-                <div style={{ fontSize: 13, lineHeight: 1.6 }}>
+                <div style={{ fontSize: "var(--text-sm)", lineHeight: 1.6 }}>
                     <p style={{ fontWeight: 600, marginBottom: 8 }}>Zorai - Agent Orchestration Workspace</p>
-                    <p>Version 0.9.59</p>
+                    <p>Version 0.9.60</p>
                     <p style={{ marginTop: 8, color: "var(--text-secondary)" }}>
                         A thread-first agent orchestration workspace with durable goals, workspace boards,
                         approvals, tools, and daemon-backed runtime state.
@@ -71,7 +71,7 @@ export function AboutTab() {
 
             <Section title="About You">
                 <div style={{ display: "grid", gap: 10 }}>
-                    <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                    <div style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
                         Personalization profile used for onboarding, check-ins, and proactive suggestions.
                     </div>
 
@@ -82,17 +82,17 @@ export function AboutTab() {
                         display: "grid",
                         gap: 6,
                     }}>
-                        <div style={{ fontWeight: 700, fontSize: 13 }}>Profile Summary</div>
-                        <div style={{ fontSize: 12 }}>
+                        <div style={{ fontWeight: 700, fontSize: "var(--text-sm)" }}>Profile Summary</div>
+                        <div style={{ fontSize: "var(--text-sm)" }}>
                             <strong>Name:</strong> {renderProfileValue("name")}
                         </div>
-                        <div style={{ fontSize: 12 }}>
+                        <div style={{ fontSize: "var(--text-sm)" }}>
                             <strong>Role:</strong> {renderProfileValue("role")}
                         </div>
-                        <div style={{ fontSize: 12 }}>
+                        <div style={{ fontSize: "var(--text-sm)" }}>
                             <strong>Primary language:</strong> {renderProfileValue("primary_language")}
                         </div>
-                        <div style={{ fontSize: 12 }}>
+                        <div style={{ fontSize: "var(--text-sm)" }}>
                             <strong>Work style:</strong> {renderProfileValue("work_style")}
                         </div>
                     </div>
@@ -104,7 +104,7 @@ export function AboutTab() {
                         display: "grid",
                         gap: 6,
                     }}>
-                        <div style={{ fontWeight: 700, fontSize: 13 }}>Consent Controls</div>
+                        <div style={{ fontWeight: 700, fontSize: "var(--text-sm)" }}>Consent Controls</div>
                         <SettingRow label="Passive learning">
                             <Toggle
                                 value={getConsentValue("passive_learning", true)}
@@ -132,11 +132,11 @@ export function AboutTab() {
                         display: "grid",
                         gap: 6,
                     }}>
-                        <div style={{ fontWeight: 700, fontSize: 13 }}>Next Check-in</div>
-                        <div style={{ fontSize: 12 }}>
+                        <div style={{ fontWeight: 700, fontSize: "var(--text-sm)" }}>Next Check-in</div>
+                        <div style={{ fontSize: "var(--text-sm)" }}>
                             <strong>Next scheduled:</strong> {formatDateTime(nextScheduledCheckin?.scheduled_at)}
                         </div>
-                        <div style={{ fontSize: 12 }}>
+                        <div style={{ fontSize: "var(--text-sm)" }}>
                             <strong>Last check-in:</strong>{" "}
                             {lastCheckin
                                 ? `${lastCheckin.kind} (${lastCheckin.status}) at ${formatDateTime(lastCheckin.shown_at ?? lastCheckin.scheduled_at)}`

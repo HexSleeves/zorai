@@ -248,7 +248,7 @@ function RankingTable<T extends { provider: string; model: string }>({
 function TableShell({ children }: { children: React.ReactNode }) {
     return (
         <div style={{ overflow: "auto", border: "1px solid var(--glass-border)", borderRadius: "var(--radius-lg)" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--text-sm)" }}>
                 {children}
             </table>
         </div>

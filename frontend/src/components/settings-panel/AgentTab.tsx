@@ -298,11 +298,11 @@ export function AgentTab({
                     width: 8, height: 8, borderRadius: "50%",
                     background: providerAuthenticated ? "#4ade80" : "#6b7280",
                 }} />
-                <span style={{ fontSize: 12, fontWeight: 600 }}>
+                <span style={{ fontSize: "var(--text-sm)", fontWeight: 600 }}>
                     {PRIMARY_AGENT_NAME}: {allProviderOptions.find((p) => p.id === settings.active_provider)?.label || settings.active_provider}
                 </span>
                 <span style={{
-                    fontSize: 10,
+                    fontSize: "var(--text-sm)",
                     color: "var(--text-secondary)",
                     background: "var(--zorai-bg-panel)",
                     padding: "1px 6px",
@@ -315,7 +315,7 @@ export function AgentTab({
                         window.dispatchEvent(new CustomEvent("zorai-open-settings-tab", { detail: { tab: "auth" } }));
                         window.dispatchEvent(new CustomEvent("zorai-open-settings-tab", { detail: { tab: "auth" } }));
                     }}
-                    style={{ ...smallBtnStyle, fontSize: 10, marginLeft: "auto" }}
+                    style={{ ...smallBtnStyle, fontSize: "var(--text-sm)", marginLeft: "auto" }}
                 >
                     Manage Auth
                 </button>
@@ -535,7 +535,7 @@ export function AgentTab({
                 </SettingRow>
                 <SettingRow label="Index Status">
                     <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
-                        <span style={{ fontSize: 12, color: "var(--muted)" }}>
+                        <span style={{ fontSize: "var(--text-sm)", color: "var(--muted)" }}>
                             {semanticStatus?.error
                                 ? semanticStatus.error
                                 : `pending ${semanticStatus?.pending_for_model ?? 0} / indexed ${semanticStatus?.completed_for_model ?? 0} / deletes ${semanticStatus?.queued_deletions ?? 0}`}
@@ -571,7 +571,7 @@ export function AgentTab({
                             onChange={(value) => updateSetting("active_provider", value as AgentProviderId)} />
                     </SettingRow>
 
-                    <div style={{ marginTop: 6, marginBottom: 6, fontSize: 11, color: "var(--text-secondary)" }}>
+                    <div style={{ marginTop: 6, marginBottom: 6, fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
                         {allProviderOptions.find((provider) => provider.id === settings.active_provider)?.label}
                     </div>
 
@@ -595,7 +595,7 @@ export function AgentTab({
                         <SettingRow label="Base URL">
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                 <span style={{
-                                    fontSize: 11,
+                                    fontSize: "var(--text-sm)",
                                     fontFamily: "var(--font-mono)",
                                     color: "var(--text-muted)",
                                     background: "var(--zorai-bg-surface)",
@@ -672,7 +672,7 @@ export function AgentTab({
                                 background: "var(--zorai-bg-surface)",
                             }}
                         >
-                            <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+                            <span style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
                                 Selected model supports audio. Use it as the STT model too?
                             </span>
                             <div style={{ display: "flex", gap: 6 }}>
@@ -746,18 +746,18 @@ export function AgentTab({
                     {settings.active_provider === "openai"
                         && providerConfig.auth_source === "chatgpt_subscription"
                         && effectiveAuthSource !== "chatgpt_subscription" ? (
-                        <div style={{ marginTop: 2, marginBottom: 8, fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.4 }}>
+                        <div style={{ marginTop: 2, marginBottom: 8, fontSize: "var(--text-sm)", color: "var(--text-secondary)", lineHeight: 1.4 }}>
                             ChatGPT Subscription is unavailable for the current backend. Switch to daemon-backed execution to re-enable it.
                         </div>
                     ) : null}
-                    <div style={{ marginTop: 2, marginBottom: 8, fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.4 }}>
+                    <div style={{ marginTop: 2, marginBottom: 8, fontSize: "var(--text-sm)", color: "var(--text-secondary)", lineHeight: 1.4 }}>
                         Credentials are managed in the <strong>Auth</strong> tab. Keep provider selection, model, base URL, and transport here.
                     </div>
                     {settings.active_provider === "openai" && effectiveAuthSource === "chatgpt_subscription" ? (
                         <SettingRow label="ChatGPT Auth">
                             <div style={{ display: "grid", gap: 6, width: "100%" }}>
                                 <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }}>
-                                    <span style={{ fontSize: 11, color: subscriptionAuthStatus?.available ? "var(--success, #6ee7b7)" : "var(--text-secondary)" }}>
+                                    <span style={{ fontSize: "var(--text-sm)", color: subscriptionAuthStatus?.available ? "var(--success, #6ee7b7)" : "var(--text-secondary)" }}>
                                         {subscriptionAuthStatus?.available
                                             ? `Connected (${subscriptionAuthStatus.source || subscriptionAuthStatus.authMode || "zorai"})`
                                             : subscriptionAuthStatus?.error || "No ChatGPT subscription auth found"}
@@ -782,7 +782,7 @@ export function AgentTab({
                                                 event.preventDefault();
                                                 openSubscriptionAuthUrl(subscriptionAuthUi.authUrl!);
                                             }}
-                                            style={{ fontSize: 11, color: "var(--accent, #60a5fa)", wordBreak: "break-all", textAlign: "right" }}
+                                            style={{ fontSize: "var(--text-sm)", color: "var(--accent, #60a5fa)", wordBreak: "break-all", textAlign: "right" }}
                                         >
                                             {subscriptionAuthUi.authUrl}
                                         </a>
@@ -812,7 +812,7 @@ export function AgentTab({
                                     </div>
                                 ) : null}
                                 {subscriptionAuthUi.authUrl ? (
-                                    <div style={{ fontSize: 11, color: "var(--text-secondary)", textAlign: "right" }}>
+                                    <div style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", textAlign: "right" }}>
                                         Open the link above and complete ChatGPT authentication. This row updates automatically after the callback returns.
                                     </div>
                                 ) : null}
@@ -871,7 +871,7 @@ export function AgentTab({
                             />
                         ) : (
                             <span style={{
-                                fontSize: 11,
+                                fontSize: "var(--text-sm)",
                                 fontFamily: "var(--font-mono)",
                                 color: "var(--text-muted)",
                                 background: "var(--zorai-bg-surface)",
@@ -1098,7 +1098,7 @@ export function AgentTab({
                             })}
                     />
                 </SettingRow>
-                <div style={{ marginTop: 4, marginBottom: 8, fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.4 }}>
+                <div style={{ marginTop: 4, marginBottom: 8, fontSize: "var(--text-sm)", color: "var(--text-secondary)", lineHeight: 1.4 }}>
                     Local installed skills remain authoritative. Community discovery is advisory, non-blocking, and only used to surface install candidates with a short operator approval window.
                 </div>
             </Section>
@@ -1125,7 +1125,7 @@ export function AgentTab({
                     <NumberInput value={settings.max_context_messages} min={10} max={500}
                         onChange={(value) => updateSetting("max_context_messages", value)} />
                 </SettingRow>
-                <div style={{ marginTop: 4, marginBottom: 8, fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.4 }}>
+                <div style={{ marginTop: 4, marginBottom: 8, fontSize: "var(--text-sm)", color: "var(--text-secondary)", lineHeight: 1.4 }}>
                     Applies only to heuristic compaction. WELES and custom-model compaction trigger on token budget only.
                 </div>
                 <SettingRow label="TUI Thread History">

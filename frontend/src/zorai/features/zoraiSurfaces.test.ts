@@ -420,7 +420,7 @@ describe("Zorai feature surfaces", () => {
     expect(readFeature("./settings/MlflowPanel.tsx")).toContain("Send test trace");
     expect(readFeature("./settings/MlflowPanel.tsx")).toContain("zorai-switch");
     expect(readFeature("./settings/MlflowPanel.tsx")).not.toContain("settings-panel/MlflowTracingTab");
-    expect(tabSource).toContain('title: "Terminal interface"');
+    expect(tabSource).toContain('title: "Interface"');
     expect(panelSource).toContain("API Key");
     expect(panelSource).toContain("Logout");
     expect(panelSource).toContain("Svarog Provider");
@@ -448,13 +448,19 @@ describe("Zorai feature surfaces", () => {
     expect(panelSource).toContain("GitHub");
     expect(panelSource).toContain("Homepage");
     expect(panelSource).toContain("Web Search");
-    expect(panelSource).toContain("getSystemFonts");
-    expect(panelSource).toContain('updateSetting("fontFamily"');
-    expect(panelSource).toContain('updateSetting("fontSize"');
-    expect(panelSource).toContain('updateSetting("lineHeight"');
-    expect(panelSource).toContain("Terminal Font");
-    expect(panelSource).toContain("Font Size");
-    expect(panelSource).toContain("Line Height");
+    expect(panelSource).toContain("InterfacePanel");
+    expect(readFeature("./settings/InterfacePanel.tsx")).toContain("getSystemFonts");
+    expect(readFeature("./settings/InterfacePanel.tsx")).toContain('updateSetting("fontFamily"');
+    expect(readFeature("./settings/InterfacePanel.tsx")).toContain('updateSetting("fontSize"');
+    expect(readFeature("./settings/InterfacePanel.tsx")).toContain('updateSetting("lineHeight"');
+    expect(readFeature("./settings/InterfacePanel.tsx")).toContain('updateSetting("uiFontFamily"');
+    expect(readFeature("./settings/InterfacePanel.tsx")).toContain('updateSetting("uiFontScale"');
+    expect(readFeature("./settings/InterfacePanel.tsx")).toContain('updateSetting("nightMode"');
+    expect(readFeature("./settings/InterfacePanel.tsx")).toContain("Terminal Font");
+    expect(readFeature("./settings/InterfacePanel.tsx")).toContain("UI Font");
+    expect(readFeature("./settings/InterfacePanel.tsx")).toContain("Night Mode");
+    expect(readFeature("./settings/InterfacePanel.tsx")).toContain("Font Size");
+    expect(readFeature("./settings/InterfacePanel.tsx")).toContain("Line Height");
     expect(panelSource).toContain("SubAgentsTab");
     expect(readFeature("../../components/settings-panel/SubAgentsTab.tsx")).toContain("Edit Sub-Agent");
     expect(readFeature("../../components/settings-panel/SubAgentsTab.tsx")).toContain("Back");
@@ -902,6 +908,19 @@ describe("Zorai feature surfaces", () => {
     expect(commandSource).toContain("onAppCommand");
     expect(shellSource).toContain("settingsTab");
     expect(shellSource).toContain("toggleContext");
+  });
+
+  it("keeps a night-mode toggle above the cog settings control in the global rail", () => {
+    const shellSource = readFeature("../shell/ZoraiShell.tsx");
+    const iconSource = readFeature("../shell/ZoraiIcons.tsx");
+    const styleSource = readFeature("../styles/zorai.css");
+    expect(shellSource).toContain('icon="nightMode"');
+    expect(shellSource).toContain("toggleNightMode");
+    expect(shellSource).toContain("zorai-global-items-footer");
+    expect(iconSource).toContain('icon === "nightMode"');
+    expect(iconSource).toContain("M19.4 13a7.7 7.7 0 0 0 .1-2l2.1-1.6");
+    expect(styleSource).toContain(".zorai-global-items-footer");
+    expect(styleSource).not.toContain(".zorai-global-items .zorai-global-item:last-child");
   });
 
   it("consumes pending thread search focus when the live event is handled", () => {

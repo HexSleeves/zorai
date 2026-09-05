@@ -369,6 +369,10 @@ fn openai_curated_media_modalities_match_expectations() {
         provider.models.first().map(|model| model.id),
         Some("gpt-5.5")
     );
+    assert_eq!(
+        model_modalities(PROVIDER_ID_OPENAI, "gpt-6-astra"),
+        TEXT_IMAGE
+    );
     assert_eq!(model_modalities(PROVIDER_ID_OPENAI, "gpt-5.5"), MULTIMODAL);
     assert_eq!(
         model_modalities(PROVIDER_ID_OPENAI, "gpt-5.6-sol"),

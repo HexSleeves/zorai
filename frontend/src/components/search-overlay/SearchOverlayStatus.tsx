@@ -4,7 +4,7 @@ export function SearchOverlayStatus({ activePaneId }: { activePaneId: string | n
     return (
         <div
             style={{
-                fontSize: 10,
+                fontSize: "var(--text-sm)",
                 color: "var(--text-muted)",
                 paddingTop: 2,
                 letterSpacing: "0.02em",

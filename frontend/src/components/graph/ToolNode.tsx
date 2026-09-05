@@ -42,7 +42,7 @@ export const ToolNode = memo(function ToolNode({ data, selected }: NodeProps) {
         <div
           style={{
             fontFamily: "var(--font-mono, monospace)",
-            fontSize: 11,
+            fontSize: "var(--text-sm)",
             color: "var(--text-primary)",
             whiteSpace: "pre-wrap",
             wordBreak: "break-word",
@@ -62,7 +62,7 @@ export const ToolNode = memo(function ToolNode({ data, selected }: NodeProps) {
             alignItems: "center",
             gap: 8,
             marginTop: 8,
-            fontSize: 10,
+            fontSize: "var(--text-sm)",
           }}
         >
           <span style={{ color: statusColor, fontWeight: 600 }}>

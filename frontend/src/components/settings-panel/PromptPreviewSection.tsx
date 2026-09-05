@@ -34,7 +34,7 @@ function readonlyBlockStyle(minHeight: number): CSSProperties {
         border: "1px solid rgba(255,255,255,0.08)",
         background: "rgba(9, 16, 24, 0.72)",
         color: "var(--text-primary)",
-        fontSize: 12,
+        fontSize: "var(--text-sm)",
         lineHeight: 1.55,
         whiteSpace: "pre-wrap",
         wordBreak: "break-word",
@@ -86,7 +86,7 @@ export function PromptPreviewSection({
 
     return (
         <Section title="Prompt Preview">
-            <div style={{ marginBottom: 10, fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.45 }}>
+            <div style={{ marginBottom: 10, fontSize: "var(--text-sm)", color: "var(--text-secondary)", lineHeight: 1.45 }}>
                 Read-only preview of the daemon-assembled conversation prompt, including section breakdown and the final rendered prompt.
             </div>
 
@@ -116,12 +116,12 @@ export function PromptPreviewSection({
                 </button>
             </div>
 
-            {loading ? <div style={{ fontSize: 12, color: "var(--text-secondary)", marginBottom: 12 }}>Loading prompt preview...</div> : null}
-            {error ? <div style={{ fontSize: 12, color: "#fca5a5", marginBottom: 12 }}>{error}</div> : null}
+            {loading ? <div style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", marginBottom: 12 }}>Loading prompt preview...</div> : null}
+            {error ? <div style={{ fontSize: "var(--text-sm)", color: "#fca5a5", marginBottom: 12 }}>{error}</div> : null}
 
             {inspection ? (
                 <>
-                    <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 12, fontSize: 11, color: "var(--text-secondary)" }}>
+                    <div style={{ display: "flex", gap: 16, flexWrap: "wrap", marginBottom: 12, fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
                         <span><strong>Agent:</strong> {inspection.agent_name} ({inspection.agent_id})</span>
                         <span><strong>Provider:</strong> {inspection.provider_id}</span>
                         <span><strong>Model:</strong> {inspection.model}</span>
@@ -130,12 +130,12 @@ export function PromptPreviewSection({
                     <div style={{ display: "grid", gap: 12 }}>
                         {inspection.sections.map((section) => (
                             <div key={`${section.id}-${section.title}`}>
-                                <div style={{ marginBottom: 6, fontSize: 12, fontWeight: 600 }}>{section.title}</div>
+                                <div style={{ marginBottom: 6, fontSize: "var(--text-sm)", fontWeight: 600 }}>{section.title}</div>
                                 <pre style={readonlyBlockStyle(72)}>{section.content}</pre>
                             </div>
                         ))}
                         <div>
-                            <div style={{ marginBottom: 6, fontSize: 12, fontWeight: 600 }}>Final Prompt</div>
+                            <div style={{ marginBottom: 6, fontSize: "var(--text-sm)", fontWeight: 600 }}>Final Prompt</div>
                             <pre style={readonlyBlockStyle(180)}>{inspection.final_prompt}</pre>
                         </div>
                     </div>

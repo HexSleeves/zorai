@@ -236,6 +236,7 @@ pub(crate) fn openai_reasoning_supported(provider: &str, model: &str) -> bool {
             | PROVIDER_ID_Z_AI_CODING_PLAN
     ) || model.starts_with('o')
         || model.starts_with("gpt-5")
+        || model.starts_with("gpt-6")
 }
 
 pub(crate) fn dashscope_openai_uses_enable_thinking(provider: &str, model: &str) -> bool {

@@ -143,11 +143,11 @@ function WhatsAppConnector({ allowlistState }: { allowlistState: WhatsAppAllowli
                         background: statusColors[status],
                         boxShadow: status === "connected" ? `0 0 8px var(--success)` : "none",
                     }} />
-                    <span style={{ fontSize: 12, color: statusColors[status], fontWeight: 600 }}>
+                    <span style={{ fontSize: "var(--text-sm)", color: statusColors[status], fontWeight: 600 }}>
                         {statusLabels[status]}
                     </span>
                     {phoneInfo && status === "connected" ? (
-                        <span style={{ fontSize: 11, color: "var(--text-muted)" }}>({phoneInfo})</span>
+                        <span style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>({phoneInfo})</span>
                     ) : null}
                 </div>
                 <div style={{ display: "flex", gap: 6 }}>
@@ -179,7 +179,7 @@ function WhatsAppConnector({ allowlistState }: { allowlistState: WhatsAppAllowli
                 border: allowlistState.hasValidContacts
                     ? "1px solid rgba(255,255,255,0.06)"
                     : "1px solid rgba(243, 139, 168, 0.2)",
-                fontSize: 11,
+                fontSize: "var(--text-sm)",
                 color: allowlistState.hasValidContacts ? "var(--text-muted)" : "var(--danger)",
                 lineHeight: 1.4,
             }}>
@@ -195,7 +195,7 @@ function WhatsAppConnector({ allowlistState }: { allowlistState: WhatsAppAllowli
                     borderRadius: 0,
                     background: "rgba(250, 179, 135, 0.08)",
                     border: "1px solid rgba(250, 179, 135, 0.2)",
-                    fontSize: 11,
+                    fontSize: "var(--text-sm)",
                     color: "var(--warning)",
                     lineHeight: 1.4,
                 }}>
@@ -225,12 +225,12 @@ function WhatsAppConnector({ allowlistState }: { allowlistState: WhatsAppAllowli
                                     imageRendering: "pixelated",
                                 }}
                             />
-                            <div style={{ marginTop: 12, fontSize: 11, color: "var(--text-muted)", textAlign: "center", lineHeight: 1.5 }}>
+                            <div style={{ marginTop: 12, fontSize: "var(--text-sm)", color: "var(--text-muted)", textAlign: "center", lineHeight: 1.5 }}>
                                 Open WhatsApp on your phone → Settings → Linked Devices → Link a Device
                             </div>
                         </>
                     ) : (
-                        <div style={{ padding: 24, fontSize: 12, color: "var(--text-muted)" }}>
+                        <div style={{ padding: 24, fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
                             Generating QR code...
                         </div>
                     )}
@@ -241,7 +241,7 @@ function WhatsAppConnector({ allowlistState }: { allowlistState: WhatsAppAllowli
                 <div style={{
                     padding: "8px 10px", borderRadius: 0,
                     background: "rgba(166, 227, 161, 0.05)", border: "1px solid rgba(166, 227, 161, 0.15)",
-                    fontSize: 11, color: "var(--text-secondary)", lineHeight: 1.5,
+                    fontSize: "var(--text-sm)", color: "var(--text-secondary)", lineHeight: 1.5,
                 }}>
                     Session is active. Messages from allowed contacts will be forwarded to zorai.
                     The session persists across restarts — no need to re-scan.
@@ -252,7 +252,7 @@ function WhatsAppConnector({ allowlistState }: { allowlistState: WhatsAppAllowli
                 <div style={{
                     marginTop: 8, padding: "6px 10px", borderRadius: 0,
                     background: "rgba(243, 139, 168, 0.08)", border: "1px solid rgba(243, 139, 168, 0.2)",
-                    fontSize: 11, color: "var(--danger)", lineHeight: 1.4,
+                    fontSize: "var(--text-sm)", color: "var(--danger)", lineHeight: 1.4,
                 }}>
                     {error}
                 </div>
@@ -288,7 +288,7 @@ export function GatewayTab({
                         onChange={(value) => updateSetting("gateway_command_prefix", value)}
                         placeholder="!zorai" />
                 </SettingRow>
-                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, marginBottom: 12, lineHeight: 1.5 }}>
+                <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", marginTop: 4, marginBottom: 12, lineHeight: 1.5 }}>
                     The gateway bridges chat platforms to {ZORAI_APP_NAME}. The <code style={{ color: "var(--accent)" }}>zorai-gateway</code> binary
                     reads tokens from environment variables (<code>ZORAI_SLACK_TOKEN</code>, <code>ZORAI_TELEGRAM_TOKEN</code>, etc.)
                     or from the values configured below.
@@ -347,7 +347,7 @@ export function GatewayTab({
                         placeholder={"+1234567890, +19876543210\n+447700900123"}
                         rows={4} />
                 </SettingRow>
-                <div style={{ fontSize: 11, color: "var(--text-muted)", marginTop: 4, marginBottom: 12, lineHeight: 1.5 }}>
+                <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", marginTop: 4, marginBottom: 12, lineHeight: 1.5 }}>
                     Enter allowed WhatsApp numbers separated by commas or new lines. {whatsappAllowlistState.hasValidContacts
                         ? `${whatsappAllowlistState.contacts.length} valid contact${whatsappAllowlistState.contacts.length === 1 ? " is" : "s are"} ready for linking.`
                         : "Linking stays disabled until at least one valid contact is configured."}
@@ -357,10 +357,10 @@ export function GatewayTab({
                     marginTop: 12, padding: "8px 10px", borderRadius: 0,
                     background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)",
                 }}>
-                    <div style={{ fontSize: 11, color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>
+                    <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", marginBottom: 6, fontWeight: 600 }}>
                         Alternative: Business API
                     </div>
-                    <div style={{ fontSize: 10, color: "var(--text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
+                    <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", marginBottom: 8, lineHeight: 1.5 }}>
                         If you have a Meta Business account, you can use the Cloud API instead of QR linking.
                     </div>
                     <SettingRow label="API Token">

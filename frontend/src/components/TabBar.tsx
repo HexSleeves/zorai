@@ -33,7 +33,7 @@ export function TabBar() {
             gap: 6,
             padding: "0 12px",
             height: "100%",
-            fontSize: 12,
+            fontSize: "var(--text-sm)",
             cursor: "pointer",
             background:
               id === activePaneId
@@ -59,7 +59,7 @@ export function TabBar() {
             style={{
               cursor: "pointer",
               opacity: 0.5,
-              fontSize: 14,
+              fontSize: "var(--text-base)",
               lineHeight: 1,
             }}
             title="Close pane"
@@ -75,7 +75,7 @@ export function TabBar() {
           border: "none",
           color: "var(--text-secondary)",
           cursor: "pointer",
-          fontSize: 16,
+          fontSize: "var(--text-lg)",
           padding: "0 8px",
           height: "100%",
         }}
