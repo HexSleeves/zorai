@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { CONCIERGE_AGENT_NAME, PRIMARY_AGENT_NAME } from "../lib/agentNames";
 import { ZORAI_APP_DESCRIPTION, ZORAI_APP_NAME } from "../zorai/branding";
@@ -101,105 +101,74 @@ export function SetupOnboardingPanel() {
   if (!shouldShow) return null;
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 4100,
-        background: "rgba(3, 8, 16, 0.76)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 24,
-      }}
-    >
-      <div
-        style={{
-          width: "min(980px, 96vw)",
-          maxHeight: "90vh",
-          overflow: "auto",
-          border: "1px solid rgba(255,255,255,0.12)",
-          background: "linear-gradient(180deg, rgba(10, 17, 28, 0.98), rgba(10, 16, 24, 0.96))",
-          boxShadow: "0 24px 80px rgba(0,0,0,0.45)",
-          padding: 20,
-          display: "grid",
-          gap: 14,
-        }}
-      >
-        <div style={{ display: "grid", gap: 4 }}>
-          <div style={{ fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-secondary)" }}>
-            First-run setup
-          </div>
-          <h2 style={{ margin: 0, fontSize: 24 }}>{ZORAI_APP_NAME} Setup Assistant</h2>
-          <div style={{ fontSize: 13, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+    <div className="zorai-onboarding-backdrop">
+      <div className="zorai-onboarding-dialog">
+        <div className="zorai-onboarding-stack">
+          <div className="zorai-onboarding-kicker">First-run setup</div>
+          <h2>{ZORAI_APP_NAME} Setup Assistant</h2>
+          <div className="zorai-onboarding-copy">
             {report?.whatIsZorai ?? ZORAI_APP_DESCRIPTION}
           </div>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
-          <div style={{ border: "1px solid rgba(255,255,255,0.09)", padding: 12, display: "grid", gap: 4 }}>
-            <span style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-secondary)" }}>{PRIMARY_AGENT_NAME}</span>
-            <span style={{ fontSize: 14, fontWeight: 700 }}>Main agent runtime</span>
-            <span style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.45 }}>
+        <div className="zorai-onboarding-grid-2">
+          <div className="zorai-onboarding-card">
+            <span className="zorai-onboarding-card__label">{PRIMARY_AGENT_NAME}</span>
+            <span className="zorai-onboarding-card__title">Main agent runtime</span>
+            <span className="zorai-onboarding-card__body">
               {PRIMARY_AGENT_NAME} is your primary agent for chat, tasks, provider selection, and execution.
             </span>
           </div>
-          <div style={{ border: "1px solid rgba(255,255,255,0.09)", padding: 12, display: "grid", gap: 4 }}>
-            <span style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-secondary)" }}>{CONCIERGE_AGENT_NAME}</span>
-            <span style={{ fontSize: 14, fontWeight: 700 }}>Concierge and briefing agent</span>
-            <span style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.45 }}>
+          <div className="zorai-onboarding-card">
+            <span className="zorai-onboarding-card__label">{CONCIERGE_AGENT_NAME}</span>
+            <span className="zorai-onboarding-card__title">Concierge and briefing agent</span>
+            <span className="zorai-onboarding-card__body">
               {CONCIERGE_AGENT_NAME} handles welcomes, briefings, and guidance, and can inherit {PRIMARY_AGENT_NAME}'s provider defaults unless you override them.
             </span>
           </div>
         </div>
 
         {loading ? (
-          <div style={{ color: "var(--text-secondary)", fontSize: 13 }}>Checking dependencies...</div>
+          <div className="zorai-onboarding-copy">Checking dependencies...</div>
         ) : null}
 
         {error ? (
-          <div style={{ border: "1px solid rgba(255,0,0,0.35)", padding: 10, fontSize: 13, color: "#ffb4b4" }}>
+          <div className="zorai-onboarding-error">
             Setup check failed: {error}
           </div>
         ) : null}
 
         {report ? (
           <>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 10 }}>
+            <div className="zorai-onboarding-grid-3">
               <InfoCard label="Install Root" value={report.installRoot} />
               <InfoCard label="Daemon Path" value={report.daemonPath} />
               <InfoCard label="Data Directory" value={report.dataDir} />
             </div>
 
-            <div style={{ border: "1px solid rgba(255,255,255,0.1)", padding: 12, display: "grid", gap: 10 }}>
-              <div style={{ fontSize: 13, fontWeight: 700 }}>
+            <div className="zorai-onboarding-section">
+              <div className="zorai-onboarding-section__title">
                 Required runtime dependencies ({report.required.length})
               </div>
               {report.required.length === 0 ? (
-                <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                <div className="zorai-onboarding-copy--sm zorai-onboarding-copy">
                   No hard blockers for this runtime profile. Optional integrations are listed below.
                 </div>
               ) : null}
               {report.required.map((dep) => (
                 <div
                   key={dep.name}
-                  style={{
-                    border: "1px solid rgba(255,255,255,0.07)",
-                    padding: 10,
-                    display: "grid",
-                    gap: 6,
-                    background: dep.found ? "rgba(38, 94, 48, 0.24)" : "rgba(109, 57, 26, 0.26)",
-                  }}
+                  className={["zorai-onboarding-dep", dep.found ? "zorai-onboarding-dep--found" : ""].filter(Boolean).join(" ")}
                 >
-                  <div style={{ display: "flex", justifyContent: "space-between", gap: 10 }}>
-                    <span style={{ fontWeight: 700 }}>{dep.label}</span>
-                    <span style={{ color: dep.found ? "#8ff0a4" : "#ffd59e", fontSize: 12 }}>
+                  <div className="zorai-onboarding-dep__row">
+                    <span>{dep.label}</span>
+                    <span className="zorai-onboarding-dep__status">
                       {dep.found ? "installed" : "missing"}
                     </span>
                   </div>
-                  {dep.path ? <code style={{ fontSize: 12 }}>{dep.path}</code> : null}
+                  {dep.path ? <code>{dep.path}</code> : null}
                   {!dep.found && dep.installHints.length > 0 ? (
-                    <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+                    <div className="zorai-onboarding-copy--sm zorai-onboarding-copy">
                       Install: <code>{dep.installHints[0]}</code>
                     </div>
                   ) : null}
@@ -208,26 +177,26 @@ export function SetupOnboardingPanel() {
             </div>
 
             {report.optional.length > 0 ? (
-              <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+              <div className="zorai-onboarding-copy--sm zorai-onboarding-copy">
                 Optional tools: {report.optional.map((dep) => dep.name).join(", ")}
               </div>
             ) : null}
           </>
         ) : null}
 
-        <div style={{ display: "flex", justifyContent: "flex-end", gap: 10, flexWrap: "wrap" }}>
-          <button type="button" onClick={() => void refresh()} style={actionButtonStyle}>
+        <div className="zorai-onboarding-actions">
+          <button type="button" className="zorai-onboarding-button" onClick={() => void refresh()}>
             Re-check
           </button>
           <button
             type="button"
+            className="zorai-onboarding-button"
             onClick={() => void openGuide()}
-            style={actionButtonStyle}
             disabled={!report?.gettingStartedPath}
           >
             Open Getting Started
           </button>
-          <button type="button" onClick={dismiss} style={actionButtonStyle}>
+          <button type="button" className="zorai-onboarding-button zorai-onboarding-button--primary" onClick={dismiss}>
             Dismiss
           </button>
         </div>
@@ -238,18 +207,9 @@ export function SetupOnboardingPanel() {
 
 function InfoCard({ label, value }: { label: string; value: string }) {
   return (
-    <div style={{ border: "1px solid rgba(255,255,255,0.09)", padding: 10, display: "grid", gap: 4 }}>
-      <span style={{ fontSize: 11, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-secondary)" }}>{label}</span>
-      <code style={{ fontSize: 12 }}>{value}</code>
+    <div className="zorai-onboarding-card zorai-onboarding-card--compact">
+      <span className="zorai-onboarding-card__label">{label}</span>
+      <code>{value}</code>
     </div>
   );
 }
-
-const actionButtonStyle: CSSProperties = {
-  border: "1px solid rgba(255,255,255,0.2)",
-  background: "rgba(255,255,255,0.06)",
-  color: "var(--text-primary)",
-  padding: "8px 12px",
-  cursor: "pointer",
-  fontSize: 12,
-};

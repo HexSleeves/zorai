@@ -406,7 +406,7 @@ export function UsageView({
                     <option value="30d">30 days</option>
                     <option value="all">All</option>
                 </select>
-                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: "var(--text-secondary)" }}>
+                <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
                     <input type="checkbox" checked={compactMode} onChange={(event) => setCompactMode(event.target.checked)} />
                     Compact
                 </label>
@@ -438,7 +438,7 @@ export function UsageView({
                                 <div style={{ fontSize: "var(--text-sm)", fontWeight: 700 }}>{row.provider}/{row.model}</div>
                                 <div style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>{row.requests} req</div>
                             </div>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, fontSize: 12, color: "var(--text-secondary)" }}>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
                                 <span>tok {row.totalTokens.toLocaleString()}</span>
                                 <span>in {row.promptTokens.toLocaleString()}</span>
                                 <span>out {row.completionTokens.toLocaleString()}</span>
@@ -463,7 +463,7 @@ export function UsageView({
                                 <div style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)" }}>{new Date(row.updatedAt).toLocaleString()}</div>
                             </div>
                             <div style={{ fontSize: "var(--text-xs)", color: "var(--text-muted)", marginBottom: 6 }}>{row.providerModels || "unknown model"}</div>
-                            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, fontSize: 12, color: "var(--text-secondary)" }}>
+                            <div style={{ display: "flex", flexWrap: "wrap", gap: 10, fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
                                 <span>req {row.requests}</span>
                                 <span>tok {row.totalTokens.toLocaleString()}</span>
                                 <span>in {row.promptTokens.toLocaleString()}</span>
@@ -507,11 +507,11 @@ function UsageBarGraph({ title, color, rows }: { title: string; color: string; r
             <div style={{ display: "grid", gap: "var(--space-2)" }}>
                 {rows.map((row) => (
                     <div key={row.label} style={{ display: "grid", gridTemplateColumns: "72px 1fr auto", alignItems: "center", gap: 8 }}>
-                        <span style={{ fontSize: 12, color: "var(--text-muted)" }}>{row.label}</span>
+                        <span style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>{row.label}</span>
                         <div style={{ height: 12, borderRadius: 999, background: "rgba(255,255,255,0.08)", overflow: "hidden" }}>
                             <div style={{ height: "100%", width: `${Math.max(2, (row.value / maxValue) * 100)}%`, background: color, borderRadius: 999 }} />
                         </div>
-                        <span style={{ fontSize: 12, color: "var(--text-secondary)", minWidth: 70, textAlign: "right" }}>{row.formatted}</span>
+                        <span style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", minWidth: 70, textAlign: "right" }}>{row.formatted}</span>
                     </div>
                 ))}
             </div>
@@ -522,7 +522,7 @@ function UsageBarGraph({ title, color, rows }: { title: string; color: string; r
 function UsageProviderTable({ rows }: { rows: Array<{ key: string; provider: string; model: string; requests: number; promptTokens: number; completionTokens: number; totalTokens: number; reasoningTokens: number; audioTokens: number; videoTokens: number; cost: number; avgTps: number; }> }) {
     return (
         <div style={{ overflow: "auto", border: "1px solid var(--glass-border)", borderRadius: "var(--radius-lg)" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--text-sm)" }}>
                 <thead><tr style={{ position: "sticky", top: 0, background: "var(--bg-tertiary)", zIndex: 1 }}><Th>Provider / Model</Th><Th>Req</Th><Th>Prompt</Th><Th>Completion</Th><Th>Total</Th><Th>Reasoning</Th><Th>Audio</Th><Th>Video</Th><Th>Cost</Th><Th>Avg TPS</Th></tr></thead>
                 <tbody>{rows.map((row) => (<tr key={row.key} style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}><Td>{row.provider}/{row.model}</Td><Td>{row.requests}</Td><Td>{row.promptTokens.toLocaleString()}</Td><Td>{row.completionTokens.toLocaleString()}</Td><Td>{row.totalTokens.toLocaleString()}</Td><Td>{row.reasoningTokens.toLocaleString()}</Td><Td>{row.audioTokens.toLocaleString()}</Td><Td>{row.videoTokens.toLocaleString()}</Td><Td>${row.cost.toFixed(6)}</Td><Td>{row.avgTps.toFixed(1)}</Td></tr>))}</tbody>
             </table>
@@ -533,7 +533,7 @@ function UsageProviderTable({ rows }: { rows: Array<{ key: string; provider: str
 function UsageSessionTable({ rows }: { rows: Array<{ threadId: string; title: string; providerModels: string; requests: number; promptTokens: number; completionTokens: number; totalTokens: number; reasoningTokens: number; audioTokens: number; videoTokens: number; cost: number; avgTps: number; maxTps: number; minTps: number; updatedAt: number; }> }) {
     return (
         <div style={{ overflow: "auto", border: "1px solid var(--glass-border)", borderRadius: "var(--radius-lg)" }}>
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "var(--text-sm)" }}>
                 <thead><tr style={{ position: "sticky", top: 0, background: "var(--bg-tertiary)", zIndex: 1 }}><Th>Session</Th><Th>Providers</Th><Th>Req</Th><Th>Prompt</Th><Th>Completion</Th><Th>Total</Th><Th>Reasoning</Th><Th>Cost</Th><Th>Avg</Th><Th>Max</Th><Th>Min</Th><Th>Updated</Th></tr></thead>
                 <tbody>{rows.map((row) => (<tr key={row.threadId} style={{ borderTop: "1px solid rgba(255,255,255,0.08)" }}><Td>{row.title}</Td><Td>{row.providerModels || "unknown"}</Td><Td>{row.requests}</Td><Td>{row.promptTokens.toLocaleString()}</Td><Td>{row.completionTokens.toLocaleString()}</Td><Td>{row.totalTokens.toLocaleString()}</Td><Td>{row.reasoningTokens.toLocaleString()}</Td><Td>${row.cost.toFixed(6)}</Td><Td>{row.avgTps.toFixed(1)}</Td><Td>{row.maxTps.toFixed(1)}</Td><Td>{row.minTps.toFixed(1)}</Td><Td>{new Date(row.updatedAt).toLocaleDateString()}</Td></tr>))}</tbody>
             </table>

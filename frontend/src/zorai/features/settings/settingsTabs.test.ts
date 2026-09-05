@@ -36,7 +36,7 @@ describe("Zorai settings tabs", () => {
       "Features",
       "Advanced",
       "Plugins",
-      "Terminal interface",
+      "Interface",
       "About",
     ]);
   });

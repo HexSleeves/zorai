@@ -56,13 +56,13 @@ function MiniMeter({ label, value, suffix }: { label: string; value: number; suf
     const color = value > 90 ? "var(--danger)" : value > 70 ? "var(--warning)" : "var(--success)";
     return (
         <span style={{ display: "flex", alignItems: "center", gap: 3, fontSize: "var(--text-xs)" }}>
-            <span style={{ color: "var(--text-muted)", fontSize: 10 }}>{label}</span>
+            <span style={{ color: "var(--text-muted)", fontSize: "var(--text-xs)" }}>{label}</span>
             <span
                 style={{
                     color,
                     fontWeight: 600,
                     fontVariantNumeric: "tabular-nums",
-                    fontSize: 11,
+                    fontSize: "var(--text-xs)",
                 }}
             >
                 {suffix || `${value.toFixed(0)}%`}

@@ -8,6 +8,7 @@ pub(super) fn known_models_for_provider_auth(
     let models: &[(&str, &str, u32)] = match provider {
         PROVIDER_ID_OPENAI if auth_source == "chatgpt_subscription" => &[
             ("gpt-5.5", "GPT-5.5", 1_000_000),
+            ("gpt-6-astra", "GPT-6 Astra", 1_050_000),
             ("gpt-5.6-sol", "GPT-5.6 Sol", 1_000_000),
             ("gpt-5.6-sol-pro", "GPT-5.6 Sol Pro", 1_000_000),
             ("gpt-5.6-terra", "GPT-5.6 Terra", 1_000_000),
@@ -23,6 +24,7 @@ pub(super) fn known_models_for_provider_auth(
         ],
         PROVIDER_ID_OPENAI => &[
             ("gpt-5.5", "GPT-5.5", 1_000_000),
+            ("gpt-6-astra", "GPT-6 Astra", 1_050_000),
             ("gpt-5.6-sol", "GPT-5.6 Sol", 1_000_000),
             ("gpt-5.6-terra", "GPT-5.6 Terra", 1_000_000),
             ("gpt-5.6-luna", "GPT-5.6 Luna", 1_000_000),

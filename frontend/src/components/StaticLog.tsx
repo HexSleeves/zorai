@@ -46,7 +46,7 @@ export const StaticLog = memo(function StaticLog({
                     padding: 16,
                     overflow: "auto",
                     maxHeight,
-                    fontSize: 12,
+                    fontSize: "var(--text-sm)",
                     whiteSpace: "pre-wrap",
                     wordBreak: "break-word",
                     fontFamily: "var(--font-mono)",
@@ -66,7 +66,7 @@ const viewToggleBtn: React.CSSProperties = {
     color: "var(--text-secondary)",
     borderRadius: 8,
     padding: "4px 10px",
-    fontSize: 11,
+    fontSize: "var(--text-sm)",
     cursor: "pointer",
     fontFamily: "inherit",
 };

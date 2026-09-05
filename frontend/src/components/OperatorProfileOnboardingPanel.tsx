@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAgentStore } from "../lib/agentStore";
 import { normalizeOperatorProfileInputKind } from "../lib/agentStore/operatorProfile";
 
@@ -68,94 +68,67 @@ export function OperatorProfileOnboardingPanel() {
   };
 
   return (
-    <div
-      style={{
-        position: "fixed",
-        inset: 0,
-        zIndex: 4300,
-        background: "rgba(3, 8, 16, 0.74)",
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        padding: 20,
-      }}
-    >
-      <div
-        style={{
-          width: "min(760px, 96vw)",
-          border: "1px solid rgba(255,255,255,0.14)",
-          background: "linear-gradient(180deg, rgba(10, 17, 28, 0.98), rgba(10, 16, 24, 0.96))",
-          boxShadow: "0 24px 80px rgba(0,0,0,0.45)",
-          padding: 18,
-          display: "grid",
-          gap: 14,
-        }}
-      >
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "start" }}>
-          <div style={{ display: "grid", gap: 4 }}>
-            <span style={{ fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: "var(--text-secondary)" }}>
-              About You
-            </span>
-            <h2 style={{ margin: 0, fontSize: 22 }}>Operator Profile Onboarding</h2>
-            <span style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+    <div className="zorai-onboarding-backdrop zorai-onboarding-backdrop--profile">
+      <div className="zorai-onboarding-dialog zorai-onboarding-dialog--profile">
+        <div className="zorai-onboarding-header-row">
+          <div className="zorai-onboarding-stack">
+            <span className="zorai-onboarding-kicker">About You</span>
+            <h2>Operator Profile Onboarding</h2>
+            <span className="zorai-onboarding-copy--sm zorai-onboarding-copy">
               {operatorProfile.sessionKind ?? "first_run_onboarding"}
             </span>
           </div>
           <button
             type="button"
+            className="zorai-onboarding-button"
             onClick={() => setPanelOpen(false)}
-            style={secondaryButtonStyle}
           >
             Hide
           </button>
         </div>
 
-        <div style={{ display: "grid", gap: 6 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: "var(--text-secondary)" }}>
+        <div className="zorai-onboarding-progress">
+          <div className="zorai-onboarding-progress__meta">
             <span>Progress</span>
             <span>{answered} answered • {remaining} remaining</span>
           </div>
-          <div style={{ height: 8, background: "rgba(255,255,255,0.12)", overflow: "hidden" }}>
+          <div className="zorai-onboarding-progress__track">
             <div
-              style={{
-                width: `${completionPct}%`,
-                height: "100%",
-                background: "var(--accent)",
-                transition: "width 140ms ease",
-              }}
+              className="zorai-onboarding-progress__bar"
+              style={{ width: `${completionPct}%` }}
             />
           </div>
         </div>
 
         {!question ? (
-          <div style={{ fontSize: 13, color: "var(--text-secondary)", padding: "4px 0" }}>
+          <div className="zorai-onboarding-copy">
             {operatorProfile.loading ? "Loading your next question..." : "No pending profile question."}
           </div>
         ) : (
-          <div style={{ display: "grid", gap: 10 }}>
-            <div style={{ fontSize: 16, lineHeight: 1.45 }}>{question.prompt}</div>
-            <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+          <div className="zorai-onboarding-question">
+            <div className="zorai-onboarding-question__prompt">{question.prompt}</div>
+            <div className="zorai-onboarding-copy--sm zorai-onboarding-copy">
               Field: <code>{question.field_key}</code> • {question.optional ? "optional" : "recommended"}
             </div>
             {operatorProfile.loading ? (
-              <div style={{ fontSize: 12, color: "var(--text-secondary)" }}>
+              <div className="zorai-onboarding-copy--sm zorai-onboarding-copy">
                 Saving answer...
               </div>
             ) : null}
 
             {inputKind === "bool" ? (
-              <div style={{ display: "flex", gap: 8 }}>
+              <div className="zorai-onboarding-bool-row">
                 <button
                   type="button"
                   onClick={() => setBoolValue(true)}
-                  style={boolValue === true ? selectedButtonStyle : secondaryButtonStyle}
+                  className={["zorai-onboarding-button", boolValue === true ? "zorai-onboarding-button--selected" : ""].filter(Boolean).join(" ")}
                 >
                   Yes
                 </button>
                 <button
                   type="button"
                   onClick={() => setBoolValue(false)}
-                  style={boolValue === false ? selectedButtonStyle : secondaryButtonStyle}
+                  className={["zorai-onboarding-button", boolValue === false ? "zorai-onboarding-button--selected" : ""].filter(Boolean).join(" ")}
                 >
                   No
                 </button>
@@ -166,7 +139,7 @@ export function OperatorProfileOnboardingPanel() {
               <select
                 value={selectValue}
                 onChange={(event) => setSelectValue(event.target.value)}
-                style={inputStyle}
+                className="zorai-onboarding-input"
               >
                 {selectOptions.length > 0 ? (
                   selectOptions.map((option) => (
@@ -184,24 +157,24 @@ export function OperatorProfileOnboardingPanel() {
                 onChange={(event) => setTextValue(event.target.value)}
                 placeholder="Type your answer…"
                 rows={4}
-                style={{ ...inputStyle, resize: "vertical", width: "100%" }}
+                className="zorai-onboarding-textarea"
               />
             ) : null}
           </div>
         )}
 
         {operatorProfile.error ? (
-          <div style={{ border: "1px solid rgba(255,0,0,0.3)", color: "#ffb4b4", padding: 8, fontSize: 12 }}>
+          <div className="zorai-onboarding-error">
             {operatorProfile.error}
           </div>
         ) : null}
 
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <div className="zorai-onboarding-actions zorai-onboarding-actions--split">
+          <div className="zorai-onboarding-actions__group">
             <button
               type="button"
               onClick={() => void skipQuestion("skipped_from_onboarding_panel")}
-              style={secondaryButtonStyle}
+              className="zorai-onboarding-button"
               disabled={!question || operatorProfile.loading}
             >
               Skip
@@ -209,18 +182,18 @@ export function OperatorProfileOnboardingPanel() {
             <button
               type="button"
               onClick={() => void deferQuestion(Date.now() + 24 * 60 * 60 * 1000)}
-              style={secondaryButtonStyle}
+              className="zorai-onboarding-button"
               disabled={!question || operatorProfile.loading}
             >
               Defer 24h
             </button>
           </div>
 
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <div className="zorai-onboarding-actions__group">
             <button
               type="button"
               onClick={() => void fetchNextQuestion()}
-              style={secondaryButtonStyle}
+              className="zorai-onboarding-button"
               disabled={operatorProfile.loading || !operatorProfile.sessionId}
             >
               Refresh
@@ -228,7 +201,7 @@ export function OperatorProfileOnboardingPanel() {
             <button
               type="button"
               onClick={() => void submitValue()}
-              style={primaryButtonStyle}
+              className="zorai-onboarding-button zorai-onboarding-button--primary"
               disabled={!canSubmit || operatorProfile.loading}
             >
               {operatorProfile.loading ? "Submitting" : "Submit"}
@@ -239,35 +212,3 @@ export function OperatorProfileOnboardingPanel() {
     </div>
   );
 }
-
-const inputStyle: CSSProperties = {
-  background: "rgba(255,255,255,0.04)",
-  border: "1px solid rgba(255,255,255,0.15)",
-  color: "var(--text-primary)",
-  fontFamily: "inherit",
-  fontSize: 13,
-  padding: "8px 10px",
-};
-
-const primaryButtonStyle: CSSProperties = {
-  border: "1px solid rgba(97, 197, 255, 0.42)",
-  background: "rgba(97, 197, 255, 0.18)",
-  color: "var(--text-primary)",
-  padding: "8px 12px",
-  fontSize: 12,
-  cursor: "pointer",
-};
-
-const secondaryButtonStyle: CSSProperties = {
-  border: "1px solid rgba(255,255,255,0.2)",
-  background: "rgba(255,255,255,0.05)",
-  color: "var(--text-primary)",
-  padding: "8px 12px",
-  fontSize: 12,
-  cursor: "pointer",
-};
-
-const selectedButtonStyle: CSSProperties = {
-  ...primaryButtonStyle,
-  fontWeight: 700,
-};

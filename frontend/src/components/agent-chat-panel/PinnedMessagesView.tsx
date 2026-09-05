@@ -60,14 +60,14 @@ export function PinnedMessagesView({
               <button
                 type="button"
                 onClick={() => onJumpToMessage(message.id)}
-                style={{ border: "1px solid var(--glass-border)", background: "transparent", color: "var(--text-primary)", borderRadius: "var(--radius-sm)", padding: "6px 10px", fontSize: 12, cursor: "pointer" }}
+                style={{ border: "1px solid var(--glass-border)", background: "transparent", color: "var(--text-primary)", borderRadius: "var(--radius-sm)", padding: "6px 10px", fontSize: "var(--text-sm)", cursor: "pointer" }}
               >
                 Jump to message
               </button>
               <button
                 type="button"
                 onClick={() => { void onUnpinMessage(message.id); }}
-                style={{ border: "1px solid color-mix(in srgb, var(--warning) 50%, var(--border))", background: "transparent", color: "var(--warning)", borderRadius: "var(--radius-sm)", padding: "6px 10px", fontSize: 12, cursor: "pointer" }}
+                style={{ border: "1px solid color-mix(in srgb, var(--warning) 50%, var(--border))", background: "transparent", color: "var(--warning)", borderRadius: "var(--radius-sm)", padding: "6px 10px", fontSize: "var(--text-sm)", cursor: "pointer" }}
               >
                 Unpin
               </button>

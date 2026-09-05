@@ -23,7 +23,7 @@ export function CommandLogTable({
                     padding: 32,
                     textAlign: "center",
                     color: "var(--text-secondary)",
-                    fontSize: 12,
+                    fontSize: "var(--text-sm)",
                 }}
             >
                 No commands logged
@@ -36,7 +36,7 @@ export function CommandLogTable({
             style={{
                 width: "100%",
                 borderCollapse: "collapse",
-                fontSize: 12,
+                fontSize: "var(--text-sm)",
             }}
         >
             <thead>

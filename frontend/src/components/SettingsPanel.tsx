@@ -236,8 +236,8 @@ export function SettingsPanel({ style, className }: SettingsPanelProps = {}) {
           <div style={{ display: "flex", alignItems: "start", justifyContent: "space-between", gap: 16 }}>
             <div style={{ display: "grid", gap: 6 }}>
               <span className="zorai-panel-title" style={{ color: "var(--mission)" }}>Operator Configuration</span>
-              <span style={{ fontSize: 22, fontWeight: 800 }}>Mission Runtime Settings</span>
-              <span style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.45 }}>
+              <span style={{ fontSize: "var(--text-2xl)", fontWeight: 800 }}>Mission Runtime Settings</span>
+              <span style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", lineHeight: 1.45 }}>
                 Tune visual hierarchy, terminal execution, providers, bindings, and runtime ergonomics from one control plane.
               </span>
             </div>
@@ -260,7 +260,7 @@ export function SettingsPanel({ style, className }: SettingsPanelProps = {}) {
             <SettingsMetric label="Snapshots" value={String(snapshots.length)} />
           </div>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 6 }}>
-            <span style={{ fontSize: 12, color: "var(--text-secondary)", fontWeight: 600 }}>Experience Level</span>
+            <span style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", fontWeight: 600 }}>Experience Level</span>
             <select
               value={currentTier}
               onChange={(e) => void handleTierOverride(e.target.value)}
@@ -269,7 +269,7 @@ export function SettingsPanel({ style, className }: SettingsPanelProps = {}) {
                 border: "1px solid rgba(255,255,255,0.12)",
                 color: "var(--text-primary)",
                 padding: "4px 8px",
-                fontSize: 12,
+                fontSize: "var(--text-sm)",
                 borderRadius: 4,
                 fontFamily: "inherit",
               }}
@@ -280,7 +280,7 @@ export function SettingsPanel({ style, className }: SettingsPanelProps = {}) {
               <option value="power_user">Power User</option>
               <option value="expert">Expert</option>
             </select>
-            <span style={{ fontSize: 11, color: "var(--text-secondary)", opacity: 0.7 }}>
+            <span style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", opacity: 0.7 }}>
               Controls which features are visible
             </span>
           </div>
@@ -294,7 +294,7 @@ export function SettingsPanel({ style, className }: SettingsPanelProps = {}) {
             <button key={t.id} onClick={() => setTab(t.id)} style={{
               background: tab === t.id ? "rgba(97, 197, 255, 0.1)" : "none", border: "none", borderBottom: tab === t.id ? "2px solid var(--accent)" : "2px solid transparent",
               color: tab === t.id ? "var(--text-primary)" : "var(--text-secondary)",
-              padding: "12px 14px", fontSize: 12, cursor: "pointer", fontWeight: tab === t.id ? 700 : 500,
+              padding: "12px 14px", fontSize: "var(--text-sm)", cursor: "pointer", fontWeight: tab === t.id ? 700 : 500,
               fontFamily: "inherit", whiteSpace: "nowrap",
             }}>
               {t.label}
@@ -367,7 +367,7 @@ function SettingsMetric({ label, value }: { label: string; value: string }) {
   return (
     <div style={{ borderRadius: 0, padding: "10px 12px", border: "1px solid rgba(255,255,255,0.06)", background: "rgba(18, 33, 47, 0.8)", display: "grid", gap: 4 }}>
       <span className="zorai-panel-title">{label}</span>
-      <span style={{ fontSize: 15, fontWeight: 700 }}>{value}</span>
+      <span style={{ fontSize: "var(--text-base)", fontWeight: 700 }}>{value}</span>
     </div>
   );
 }

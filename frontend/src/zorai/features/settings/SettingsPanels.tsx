@@ -29,14 +29,13 @@ import { getBridge } from "@/lib/bridge";
 import { filterFetchedModelsForAudio, filterFetchedModelsForEmbeddings, filterFetchedModelsForImageGeneration } from "@/lib/providerModels";
 import { usePluginStore } from "@/lib/pluginStore";
 import { useSettingsStore } from "@/lib/settingsStore";
-import { BUILTIN_THEMES } from "@/lib/themes";
 import { getWorkspaceSettings, setWorkspaceRepoMonitor } from "@/lib/workspaceBoard";
 import { ZORAI_APP_NAME } from "@/zorai/branding";
 import { applyRarogContextWindow } from "../threads/threadRuntimeActions";
 import { canonicalThreadAgentId } from "../threads/threadFilterModel";
 import { embeddingSettingsPatchForModelSelection } from "./embeddingSettings";
+import { InterfacePanel } from "./InterfacePanel";
 import { duckDuckGoSafeSearchOptions, searchProviderOptions } from "./searchProviders";
-import { buildTerminalFontOptions } from "./terminalFontOptions";
 import { MlflowPanel } from "./MlflowPanel";
 import type { ZoraiSettingsTabId } from "./settingsTabs";
 import {
@@ -348,60 +347,6 @@ function AuthPanel() {
             </div>
           );
         })}
-      </Panel>
-    </SettingsGrid>
-  );
-}
-
-function InterfacePanel() {
-  const settings = useSettingsStore((state) => state.settings);
-  const updateSetting = useSettingsStore((state) => state.updateSetting);
-  const [systemFonts, setSystemFonts] = useState<string[]>([]);
-
-  useEffect(() => {
-    let active = true;
-    const getSystemFonts = getBridge()?.getSystemFonts;
-    if (!getSystemFonts) return () => { active = false; };
-
-    void getSystemFonts()
-      .then((fonts) => {
-        if (active && Array.isArray(fonts)) setSystemFonts(fonts);
-      })
-      .catch(() => {
-        if (active) setSystemFonts([]);
-      });
-
-    return () => { active = false; };
-  }, []);
-
-  const fontOptions = useMemo(
-    () => buildTerminalFontOptions(systemFonts, settings.fontFamily),
-    [settings.fontFamily, systemFonts],
-  );
-
-  return (
-    <SettingsGrid>
-      <Panel section="Terminal interface" title="Shell presentation">
-        <SettingRow label="Theme" description="Terminal palette used by embedded runtime tools.">
-          <select className="zorai-input" value={settings.themeName} onChange={(event) => updateSetting("themeName", event.target.value)}>
-            {BUILTIN_THEMES.map((theme) => <option key={theme.name} value={theme.name}>{theme.name}</option>)}
-          </select>
-        </SettingRow>
-        <SettingRow label="Terminal Font" description="Font used by standard and infinite-canvas terminals.">
-          <select
-            className="zorai-input"
-            value={settings.fontFamily}
-            onChange={(event) => updateSetting("fontFamily", event.target.value)}
-            style={{ fontFamily: settings.fontFamily }}
-          >
-            {fontOptions.map((font) => <option key={font} value={font} style={{ fontFamily: font }}>{font}</option>)}
-          </select>
-        </SettingRow>
-        <NumberRow label="Font Size" description="Terminal text size in pixels." value={settings.fontSize} onChange={(value) => updateSetting("fontSize", value)} min={8} max={28} />
-        <DecimalNumberRow label="Line Height" description="Terminal row-height multiplier." value={settings.lineHeight} onChange={(value) => updateSetting("lineHeight", value)} min={0.8} max={2} step={0.1} />
-        <Metric label="Terminal focus" value="tab:focus" />
-        <Metric label="Threads" value="ctrl+t" />
-        <Metric label="Goals" value="ctrl+g" />
       </Panel>
     </SettingsGrid>
   );
@@ -1165,14 +1110,6 @@ function NumberRow({ label, description, value, onChange, min, max }: { label: s
   return (
     <SettingRow label={label} description={description}>
       <input className="zorai-input" type="number" min={min} max={max} value={value} onChange={(event) => onChange(Number(event.target.value))} />
-    </SettingRow>
-  );
-}
-
-function DecimalNumberRow({ label, description, value, onChange, min, max, step }: { label: string; description: string; value: number; onChange: (value: number) => void; min: number; max: number; step: number }) {
-  return (
-    <SettingRow label={label} description={description}>
-      <input className="zorai-input" type="number" min={min} max={max} step={step} value={value} onChange={(event) => onChange(Number(event.target.value))} />
     </SettingRow>
   );
 }

@@ -60,7 +60,7 @@ export function BrowserChrome({
                         color: "var(--text-primary)",
                         padding: "0 8px",
                         fontFamily: "var(--font-mono)",
-                        fontSize: 12,
+                        fontSize: "var(--text-xs)",
                     }}
                 />
                 <button onClick={() => navigate(address)} style={navBtnStyle} title="Go">Go</button>
@@ -81,7 +81,7 @@ export function BrowserChrome({
                     padding: "0 10px",
                     borderBottom: "1px solid var(--border)",
                     color: "var(--text-muted)",
-                    fontSize: 11,
+                    fontSize: "var(--text-xs)",
                 }}
             >
                 {pageTitle || "Browser"}

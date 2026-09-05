@@ -28,6 +28,12 @@ import { contextPanelLabels, getDefaultZoraiView, normalizeZoraiToolNavigation, 
 import { ZoraiContextPanel } from "./ZoraiContextPanel";
 import { ZoraiBrandMark, ZoraiHamburgerIcon, ZoraiNavIcon } from "./ZoraiIcons";
 import { ZORAI_NAVIGATE_EVENT, type ZoraiNavigateDetail, type ZoraiReturnTarget } from "./zoraiNavigationEvents";
+import { useSettingsStore } from "@/lib/settingsStore";
+import {
+  normalizeNightMode,
+  resolveAppearance,
+  systemPrefersDark,
+} from "@/lib/uiInterfacePrefs";
 
 type GoalOpenRequest = {
   id: string;
@@ -38,6 +44,32 @@ export function ZoraiShell() {
   const [activeView, setActiveView] = useState<ZoraiViewId>(getDefaultZoraiView);
   const [activeTool, setActiveTool] = useState<ZoraiToolId>(getDefaultZoraiTool);
   const [activeSettingsTab, setActiveSettingsTab] = useState<ZoraiSettingsTabId>(getDefaultZoraiSettingsTab);
+  const nightMode = useSettingsStore((state) => state.settings.nightMode);
+  const updateSetting = useSettingsStore((state) => state.updateSetting);
+  const [systemPrefersDarkScheme, setSystemPrefersDarkScheme] = useState(systemPrefersDark);
+  const primaryNavItems = useMemo(
+    () => zoraiNavItems.filter((item) => item.id !== "settings"),
+    [],
+  );
+  const settingsNavItem = useMemo(
+    () => zoraiNavItems.find((item) => item.id === "settings") ?? zoraiNavItems[zoraiNavItems.length - 1],
+    [],
+  );
+  const nightModeEnabled = resolveAppearance(normalizeNightMode(nightMode), systemPrefersDarkScheme) === "dark";
+  const toggleNightMode = useCallback(() => {
+    updateSetting("nightMode", nightModeEnabled ? "off" : "on");
+  }, [nightModeEnabled, updateSetting]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") {
+      return;
+    }
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const sync = () => setSystemPrefersDarkScheme(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
   const [activeDatabaseTable, setActiveDatabaseTable] = useState<string | null>(null);
   const [railOpen, setRailOpen] = useState(true);
   const [contextOpen, setContextOpen] = useState(false);
@@ -152,7 +184,7 @@ export function ZoraiShell() {
             <ZoraiBrandMark />
           </div>
           <div className="zorai-global-items">
-            {zoraiNavItems.map((item) => (
+            {primaryNavItems.map((item) => (
               <button
                 type="button"
                 key={item.id}
@@ -167,6 +199,33 @@ export function ZoraiShell() {
                 <ZoraiNavIcon icon={item.icon} />
               </button>
             ))}
+            <div className="zorai-global-items-footer">
+              <button
+                type="button"
+                className={[
+                  "zorai-global-item",
+                  nightModeEnabled ? "zorai-global-item--active" : "",
+                ].filter(Boolean).join(" ")}
+                onClick={toggleNightMode}
+                title={nightModeEnabled ? "Turn night mode off" : "Turn night mode on"}
+                aria-label={nightModeEnabled ? "Turn night mode off" : "Turn night mode on"}
+                aria-pressed={nightModeEnabled}
+              >
+                <ZoraiNavIcon icon="nightMode" />
+              </button>
+              <button
+                type="button"
+                className={[
+                  "zorai-global-item",
+                  settingsNavItem.id === activeView ? "zorai-global-item--active" : "",
+                ].filter(Boolean).join(" ")}
+                onClick={() => selectView(settingsNavItem.id)}
+                title={settingsNavItem.label}
+                aria-label={settingsNavItem.label}
+              >
+                <ZoraiNavIcon icon={settingsNavItem.icon} />
+              </button>
+            </div>
           </div>
         </nav>
 

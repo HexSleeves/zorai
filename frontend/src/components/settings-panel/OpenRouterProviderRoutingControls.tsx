@@ -98,7 +98,7 @@ export function OpenRouterProviderRoutingControls<T extends OpenRouterRoutingCon
         <>
             <SettingRow label="OR Providers">
                 <div style={{ display: "grid", gap: 6, width: "100%" }}>
-                    <div style={{ display: "flex", justifyContent: "flex-end", fontSize: 11, color: "var(--text-secondary)" }}>
+                    <div style={{ display: "flex", justifyContent: "flex-end", fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
                         {loading ? "Loading model providers..." : error || `${providers.length} endpoint providers`}
                     </div>
                     {providers.length > 0 ? (
@@ -108,7 +108,7 @@ export function OpenRouterProviderRoutingControls<T extends OpenRouterRoutingCon
                                 const isExcluded = excluded.includes(provider.slug);
                                 return (
                                     <div key={provider.slug} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-                                        <span style={{ fontSize: 11, fontFamily: "var(--font-mono)", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                                        <span style={{ fontSize: "var(--text-sm)", fontFamily: "var(--font-mono)", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                             {provider.slug}
                                         </span>
                                         <div style={{ display: "flex", gap: 4, flexShrink: 0 }}>

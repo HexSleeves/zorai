@@ -98,7 +98,7 @@ export function ConciergeToast() {
                             color: "var(--accent)",
                             borderRadius: 4,
                             padding: "4px 10px",
-                            fontSize: 11,
+                            fontSize: "var(--text-sm)",
                             cursor: "pointer",
                             fontFamily: "inherit",
                         }}
@@ -115,7 +115,7 @@ export function ConciergeToast() {
                             color: "var(--accent)",
                             borderRadius: 4,
                             padding: "4px 10px",
-                            fontSize: 11,
+                            fontSize: "var(--text-sm)",
                             cursor: "pointer",
                             fontFamily: "inherit",
                         }}

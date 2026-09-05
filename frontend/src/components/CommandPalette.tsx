@@ -3,7 +3,8 @@ import { getBridge } from "@/lib/bridge";
 import { useWorkspaceStore } from "../lib/workspaceStore";
 import { useSettingsStore } from "../lib/settingsStore";
 import { useKeybindStore } from "../lib/keybindStore";
-import { BUILTIN_THEMES } from "../lib/themes";
+import { themesForAppearance } from "../lib/themes";
+import { normalizeNightMode, resolveAppearance, systemPrefersDark } from "../lib/uiInterfacePrefs";
 import { handleZoraiAppCommand } from "../zorai/shell/zoraiAppCommands";
 import { navigateZorai } from "../zorai/shell/zoraiNavigationEvents";
 import { zoraiNavItems } from "../zorai/shell/navigation";
@@ -54,7 +55,9 @@ export function CommandPalette({ style, className }: CommandPaletteProps = {}) {
     { id: "time-travel", label: "Time Travel Snapshots", category: "View", shortcut: shortcutFor("toggleTimeTravel"), action: () => { handleZoraiAppCommand("toggle-time-travel"); } },
     { id: "verify-integrity", label: "Verify WORM Integrity", category: "Infrastructure", action: () => { getBridge()?.verifyIntegrity?.(); } },
     { id: "toggle-sandbox", label: "Toggle Sandbox", category: "Infrastructure", action: () => updateSetting("sandboxEnabled", !settings.sandboxEnabled) },
-    ...BUILTIN_THEMES.map((theme) => ({
+    ...themesForAppearance(
+      resolveAppearance(normalizeNightMode(settings.nightMode), systemPrefersDark()),
+    ).map((theme) => ({
       id: `theme-${theme.name}`,
       label: `Theme: ${theme.name}`,
       category: "Theme",

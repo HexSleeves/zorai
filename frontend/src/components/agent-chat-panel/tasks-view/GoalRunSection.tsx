@@ -286,17 +286,17 @@ export function GoalRunCard({
         {active && (
           <div style={{ display: "flex", gap: "var(--space-1)", flexShrink: 0 }}>
             {onPause && (
-              <button type="button" onClick={(event) => { event.stopPropagation(); onPause(); }} style={{ ...iconButtonStyle, fontSize: 11 }} disabled={busy}>
+              <button type="button" onClick={(event) => { event.stopPropagation(); onPause(); }} style={{ ...iconButtonStyle, fontSize: "var(--text-sm)" }} disabled={busy}>
                 Pause
               </button>
             )}
             {onResume && (
-              <button type="button" onClick={(event) => { event.stopPropagation(); onResume(); }} style={{ ...iconButtonStyle, fontSize: 11 }} disabled={busy}>
+              <button type="button" onClick={(event) => { event.stopPropagation(); onResume(); }} style={{ ...iconButtonStyle, fontSize: "var(--text-sm)" }} disabled={busy}>
                 Resume
               </button>
             )}
             {onCancel && (
-              <button type="button" onClick={(event) => { event.stopPropagation(); onCancel(); }} style={{ ...iconButtonStyle, fontSize: 11 }} disabled={busy}>
+              <button type="button" onClick={(event) => { event.stopPropagation(); onCancel(); }} style={{ ...iconButtonStyle, fontSize: "var(--text-sm)" }} disabled={busy}>
                 Cancel
               </button>
             )}
@@ -438,7 +438,7 @@ export function GoalRunDetail({
           <div style={detailLabelStyle}>Worker report</div>
           <div style={detailBodyStyle}>{goalRun.pending_review_report || "The worker asked for supervisor review."}</div>
           <div style={{ display: "flex", gap: "var(--space-2)", marginTop: "var(--space-2)", flexWrap: "wrap" }}>
-            <button type="button" onClick={() => onReview("accept")} style={{ ...iconButtonStyle, fontSize: 11 }} disabled={busy}>
+            <button type="button" onClick={() => onReview("accept")} style={{ ...iconButtonStyle, fontSize: "var(--text-sm)" }} disabled={busy}>
               Accept
             </button>
             <button
@@ -447,7 +447,7 @@ export function GoalRunDetail({
                 const reason = window.prompt("Why should the worker keep going?");
                 if (reason?.trim()) onReview("soft_reject", reason.trim());
               }}
-              style={{ ...iconButtonStyle, fontSize: 11 }}
+              style={{ ...iconButtonStyle, fontSize: "var(--text-sm)" }}
               disabled={busy}
             >
               Soft reject
@@ -458,7 +458,7 @@ export function GoalRunDetail({
                 const reason = window.prompt("Why is this goal rejected?");
                 if (reason?.trim()) onReview("hard_reject", reason.trim());
               }}
-              style={{ ...iconButtonStyle, fontSize: 11 }}
+              style={{ ...iconButtonStyle, fontSize: "var(--text-sm)" }}
               disabled={busy}
             >
               Hard reject

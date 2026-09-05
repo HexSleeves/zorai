@@ -156,7 +156,7 @@ export function OperatorModelControls({ enabled }: { enabled: boolean }) {
                 </button>
             </div>
             {statusText ? (
-                <div style={{ marginTop: 8, fontSize: 11, color: "var(--text-secondary)" }}>
+                <div style={{ marginTop: 8, fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
                     {statusText}
                 </div>
             ) : null}
@@ -169,7 +169,7 @@ export function OperatorModelControls({ enabled }: { enabled: boolean }) {
                 border: "1px solid rgba(255,255,255,0.06)",
                 color: "var(--text-secondary)",
                 background: "rgba(0,0,0,0.18)",
-                fontSize: 11,
+                fontSize: "var(--text-sm)",
                 lineHeight: 1.5,
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",

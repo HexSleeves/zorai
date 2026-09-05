@@ -5,7 +5,7 @@ export const actionBtnStyle: CSSProperties = {
     border: "1px solid rgba(255,255,255,0.08)",
     color: "var(--text-secondary)",
     cursor: "pointer",
-    fontSize: 13,
+    fontSize: "var(--text-sm)",
     padding: "7px 10px",
     borderRadius: 0,
 };

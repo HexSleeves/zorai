@@ -197,7 +197,7 @@ export function ProviderAuthTab() {
                     />
                 </div>
                 {providerAuthStates.length === 0 && (
-                    <div style={{ fontSize: 12, color: "var(--text-secondary)", padding: "8px 0" }}>
+                    <div style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", padding: "8px 0" }}>
                         Loading providers from daemon...
                     </div>
                 )}
@@ -245,10 +245,10 @@ export function ProviderAuthTab() {
                                             background: rowState.authenticated ? "#4ade80" : "#6b7280",
                                             flexShrink: 0,
                                         }} />
-                                        <span style={{ fontSize: 12, fontWeight: 600 }}>{state.provider_name}</span>
+                                        <span style={{ fontSize: "var(--text-sm)", fontWeight: 600 }}>{state.provider_name}</span>
                                         {rowState.authenticated && (
                                             <span style={{
-                                                fontSize: 10,
+                                                fontSize: "var(--text-sm)",
                                                 color: "var(--text-secondary)",
                                                 background: "var(--zorai-bg-panel)",
                                                 padding: "1px 6px",
@@ -267,14 +267,14 @@ export function ProviderAuthTab() {
                                                             setLoginTarget(isOpenAIApiKeyExpanded ? null : state.provider_id);
                                                             setLoginKey("");
                                                         }}
-                                                        style={{ ...smallBtnStyle, fontSize: 10 }}
+                                                        style={{ ...smallBtnStyle, fontSize: "var(--text-sm)" }}
                                                     >
                                                         {isOpenAIApiKeyExpanded ? "Cancel" : authButtonLabel}
                                                     </button>
                                                 ) : rowState.showApiKeyLogout ? (
                                                     <button
                                                         onClick={() => handleLogout(state.provider_id)}
-                                                        style={{ ...smallBtnStyle, fontSize: 10, color: "#ef4444" }}
+                                                        style={{ ...smallBtnStyle, fontSize: "var(--text-sm)", color: "#ef4444" }}
                                                     >
                                                         Logout
                                                     </button>
@@ -283,7 +283,7 @@ export function ProviderAuthTab() {
                                                     <button
                                                         onClick={handleChatgptLogin}
                                                         disabled={chatgptAuthBusy}
-                                                        style={{ ...smallBtnStyle, fontSize: 10, color: "var(--accent)" }}
+                                                        style={{ ...smallBtnStyle, fontSize: "var(--text-sm)", color: "var(--accent)" }}
                                                     >
                                                         {chatgptAuthBusy ? "..." : "ChatGPT Login"}
                                                     </button>
@@ -291,7 +291,7 @@ export function ProviderAuthTab() {
                                                 {canUseChatgptSubscription && rowState.showChatgptLogout ? (
                                                     <button
                                                         onClick={handleChatgptLogout}
-                                                        style={{ ...smallBtnStyle, fontSize: 10, color: "#ef4444" }}
+                                                        style={{ ...smallBtnStyle, fontSize: "var(--text-sm)", color: "#ef4444" }}
                                                     >
                                                         Logout
                                                     </button>
@@ -299,7 +299,7 @@ export function ProviderAuthTab() {
                                                 <button
                                                     onClick={() => handleTest(state.provider_id)}
                                                     disabled={validating === state.provider_id}
-                                                    style={{ ...smallBtnStyle, fontSize: 10 }}
+                                                    style={{ ...smallBtnStyle, fontSize: "var(--text-sm)" }}
                                                 >
                                                     {validating === state.provider_id ? "Testing..." : "Test"}
                                                 </button>
@@ -312,7 +312,7 @@ export function ProviderAuthTab() {
                                                             setLoginTarget(isExpanded ? null : state.provider_id);
                                                             setLoginKey("");
                                                         }}
-                                                        style={{ ...smallBtnStyle, fontSize: 10 }}
+                                                        style={{ ...smallBtnStyle, fontSize: "var(--text-sm)" }}
                                                     >
                                                         {isExpanded ? "Cancel" : authButtonLabel}
                                                     </button>
@@ -320,7 +320,7 @@ export function ProviderAuthTab() {
                                                 <button
                                                     onClick={() => handleTest(state.provider_id)}
                                                     disabled={validating === state.provider_id}
-                                                    style={{ ...smallBtnStyle, fontSize: 10 }}
+                                                    style={{ ...smallBtnStyle, fontSize: "var(--text-sm)" }}
                                                 >
                                                     {validating === state.provider_id ? "Testing..." : "Test"}
                                                 </button>
@@ -330,7 +330,7 @@ export function ProviderAuthTab() {
                                 </div>
                                 {vr && (
                                     <div style={{
-                                        fontSize: 10,
+                                        fontSize: "var(--text-sm)",
                                         marginTop: 4,
                                         color: vr.valid ? "#4ade80" : "#ef4444",
                                     }}>
@@ -338,12 +338,12 @@ export function ProviderAuthTab() {
                                     </div>
                                 )}
                                 {isOpenAI && !authCapability.chatgptSubscriptionAvailable && (
-                                    <div style={{ fontSize: 10, marginTop: 4, color: "var(--text-secondary)" }}>
+                                    <div style={{ fontSize: "var(--text-sm)", marginTop: 4, color: "var(--text-secondary)" }}>
                                         ChatGPT Subscription is unavailable for the current backend. Switch to daemon-backed execution to enable it.
                                     </div>
                                 )}
                                 {isOpenAI && chatgptAuthUi.authUrl && (
-                                    <div style={{ fontSize: 10, marginTop: 4, color: "var(--accent)" }}>
+                                    <div style={{ fontSize: "var(--text-sm)", marginTop: 4, color: "var(--accent)" }}>
                                         <span>Auth URL: </span>
                                         <a
                                             href={chatgptAuthUi.authUrl}

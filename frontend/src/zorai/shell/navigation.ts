@@ -26,7 +26,8 @@ export type ZoraiNavIconId =
   | "database"
   | "tools"
   | "activity"
-  | "settings";
+  | "settings"
+  | "nightMode";
 
 export const zoraiNavItems: ZoraiNavItem[] = [
   {

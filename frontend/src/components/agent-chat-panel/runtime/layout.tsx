@@ -134,7 +134,7 @@ export function AgentChatPanelHeader() {
             <span
               key={`${participant.agentId}:active`}
               title={participant.instruction}
-              style={{ fontSize: 11, border: "1px solid var(--accent)", color: "var(--accent)", borderRadius: 999, padding: "2px 8px", background: "rgba(94, 231, 223, 0.12)" }}
+              style={{ fontSize: "var(--text-sm)", border: "1px solid var(--accent)", color: "var(--accent)", borderRadius: 999, padding: "2px 8px", background: "rgba(94, 231, 223, 0.12)" }}
             >
               {participant.agentName}
             </span>
@@ -143,7 +143,7 @@ export function AgentChatPanelHeader() {
             <span
               key={`${participant.agentId}:inactive`}
               title={participant.instruction}
-              style={{ fontSize: 11, border: "1px solid var(--glass-border)", color: "var(--text-muted)", borderRadius: 999, padding: "2px 8px" }}
+              style={{ fontSize: "var(--text-sm)", border: "1px solid var(--glass-border)", color: "var(--text-muted)", borderRadius: 999, padding: "2px 8px" }}
             >
               {participant.agentName} · inactive
             </span>

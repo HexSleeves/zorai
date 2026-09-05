@@ -62,7 +62,7 @@ export function MlflowTracingTab({
   return (
     <div style={{ maxWidth: 850 }}>
       <Section title="MLflow tracing">
-        <p style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5 }}>
+        <p style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", lineHeight: 1.5 }}>
           Export one OpenTelemetry trace per Zorai turn. Tracing is daemon-owned, bounded, and fail-open: an unavailable MLflow server never blocks a conversation.
         </p>
         <SettingRow label="Enabled">
@@ -72,7 +72,7 @@ export function MlflowTracingTab({
           <TextInput value={config.tracking_uri} disabled={overridden("tracking_uri")}
             onChange={(tracking_uri) => updateConfig({ tracking_uri })} />
         </SettingRow>
-        {nonLoopbackHttp ? <div style={{ color: "var(--warning, #f9e2af)", fontSize: 11 }}>Plain HTTP outside loopback can expose traced content. Prefer HTTPS.</div> : null}
+        {nonLoopbackHttp ? <div style={{ color: "var(--warning, #f9e2af)", fontSize: "var(--text-sm)" }}>Plain HTTP outside loopback can expose traced content. Prefer HTTPS.</div> : null}
         <SettingRow label={`Experiment${overridden("experiment_name") ? " (ENV)" : ""}`}>
           <TextInput value={config.experiment_name} disabled={overridden("experiment_name")}
             onChange={(experiment_name) => updateConfig({ experiment_name })} />
@@ -85,7 +85,7 @@ export function MlflowTracingTab({
           <SelectInput value={config.capture_mode} options={["metadata", "guarded", "full"]}
             onChange={(capture_mode) => updateConfig({ capture_mode: capture_mode as MlflowCaptureMode })} />
         </SettingRow>
-        <div style={{ fontSize: 11, color: "var(--text-secondary)", marginBottom: 8 }}>
+        <div style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", marginBottom: 8 }}>
           Guarded exports scrubbed dialogue, omits reasoning, and summarizes/caps tools. Full still removes credentials and binary bodies.
         </div>
       </Section>
@@ -111,10 +111,10 @@ export function MlflowTracingTab({
           <button disabled={busy !== null} onClick={() => void runAction("trace")}>Send test trace</button>
           {status.experiment_id ? <button onClick={() => window.open(`${config.tracking_uri}/#/experiments/${status.experiment_id}`, "_blank", "noopener,noreferrer")}>Open experiment</button> : null}
         </div>
-        {result ? <div style={{ fontSize: 11, color: result.ok ? "var(--success, #a6e3a1)" : "var(--error, #f38ba8)", marginBottom: 8 }}>
+        {result ? <div style={{ fontSize: "var(--text-sm)", color: result.ok ? "var(--success, #a6e3a1)" : "var(--error, #f38ba8)", marginBottom: 8 }}>
           {result.ok ? `Connected to MLflow ${result.connection?.server_version ?? ""}` : result.error}
         </div> : null}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(120px, 1fr))", gap: 8, fontSize: 11 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(120px, 1fr))", gap: 8, fontSize: "var(--text-sm)" }}>
           <Metric label="State" value={status.state} />
           <Metric label="Server" value={status.server_version ?? "—"} />
           <Metric label="Experiment" value={status.experiment_id ?? "—"} />
@@ -122,7 +122,7 @@ export function MlflowTracingTab({
           <Metric label="Exported" value={String(status.traces_exported)} />
           <Metric label="Dropped" value={String(status.traces_dropped)} />
         </div>
-        {status.last_error ? <div style={{ marginTop: 8, color: "var(--error, #f38ba8)", fontSize: 11 }}>{status.last_error}</div> : null}
+        {status.last_error ? <div style={{ marginTop: 8, color: "var(--error, #f38ba8)", fontSize: "var(--text-sm)" }}>{status.last_error}</div> : null}
       </Section>
 
       <Section title="Encrypted custom headers">
@@ -165,5 +165,5 @@ export function MlflowTracingTab({
 }
 
 function Metric({ label, value }: { label: string; value: string }) {
-  return <div style={{ border: "1px solid var(--border)", padding: 8 }}><div style={{ color: "var(--text-secondary)" }}>{label}</div><strong>{value}</strong></div>;
+  return <div style={{ border: "1px solid var(--border)", padding: "8px 10px" }}><div style={{ color: "var(--text-secondary)" }}>{label}</div><strong>{value}</strong></div>;
 }

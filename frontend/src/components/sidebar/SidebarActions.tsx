@@ -47,7 +47,7 @@ export function SidebarActions({
                             borderColor: item.accent ? "rgba(59, 130, 246, 0.2)" : "var(--glass-border)",
                             color: item.accent ? "var(--agent)" : "var(--text-muted)",
                             cursor: "pointer",
-                            fontSize: 9,
+                            fontSize: "var(--text-xs)",
                             fontWeight: 600,
                             padding: "4px 2px",
                             borderRadius: "var(--radius-sm)",

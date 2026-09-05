@@ -69,7 +69,7 @@ export const DataFlowEdge = memo(function DataFlowEdge({
           >
             <span
               style={{
-                fontSize: 9,
+                fontSize: "var(--text-sm)",
                 fontWeight: 700,
                 color,
                 background: "var(--zorai-bg)",

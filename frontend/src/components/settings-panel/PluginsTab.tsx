@@ -50,7 +50,7 @@ function AuthStatusBadge({ hasAuth, authStatus = "not_configured" }: {
         background: AUTH_DOT_COLORS[authStatus],
         flexShrink: 0,
       }} />
-      <span style={{ fontSize: 12, color: AUTH_DOT_COLORS[authStatus] }}>
+      <span style={{ fontSize: "var(--text-sm)", color: AUTH_DOT_COLORS[authStatus] }}>
         {AUTH_LABELS[authStatus]}
       </span>
     </span>
@@ -167,12 +167,12 @@ function PluginSettingsForm({ pluginName, schema, values }: {
               </div>
             </SettingRow>
             {field.description && field.type !== "string" && field.type !== "secret" ? (
-              <div style={{ fontSize: 12, color: "var(--text-muted)", paddingLeft: 0, paddingBottom: 4 }}>
+              <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", paddingLeft: 0, paddingBottom: 4 }}>
                 {field.description}
               </div>
             ) : null}
             {validationErrors[field.key] ? (
-              <div style={{ fontSize: 12, color: "var(--danger)", paddingBottom: 4 }}>
+              <div style={{ fontSize: "var(--text-sm)", color: "var(--danger)", paddingBottom: 4 }}>
                 {validationErrors[field.key]}
               </div>
             ) : null}
@@ -242,14 +242,14 @@ function PluginCard({ plugin }: { plugin: PluginInfoItem }) {
       <div style={cardRowStyle} onClick={handleRowClick}>
         <div style={{ display: "flex", alignItems: "center" }}>
           <span style={{
-            fontSize: 14,
+            fontSize: "var(--text-base)",
             fontWeight: 600,
             color: "var(--text-primary)",
             opacity: plugin.enabled ? 1 : 0.6,
           }}>
             {plugin.name}
           </span>
-          <span style={{ fontSize: 12, color: "var(--text-muted)", marginLeft: 8 }}>
+          <span style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", marginLeft: 8 }}>
             {plugin.version}
           </span>
           <AuthStatusBadge hasAuth={plugin.has_auth} authStatus={authStatus} />
@@ -262,7 +262,7 @@ function PluginCard({ plugin }: { plugin: PluginInfoItem }) {
         <div style={{ paddingBottom: 12, paddingLeft: 0 }}>
           {/* Description */}
           {plugin.description ? (
-            <div style={{ fontSize: 12, color: "var(--text-secondary)", lineHeight: 1.5, paddingTop: 8 }}>
+            <div style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", lineHeight: 1.5, paddingTop: 8 }}>
               {plugin.description}
             </div>
           ) : null}
@@ -293,7 +293,7 @@ function PluginCard({ plugin }: { plugin: PluginInfoItem }) {
               </button>
               {isSelected && testResult ? (
                 <div style={{
-                  fontSize: 12,
+                  fontSize: "var(--text-sm)",
                   color: testResult.success ? "var(--success)" : "var(--danger)",
                   paddingTop: 4,
                 }}>
@@ -319,7 +319,7 @@ function PluginCard({ plugin }: { plugin: PluginInfoItem }) {
           ) : null}
 
           {/* Metadata footer */}
-          <div style={{ fontSize: 12, color: "var(--text-muted)", paddingTop: 12 }}>
+          <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)", paddingTop: 12 }}>
             {plugin.install_source} &middot; installed {plugin.installed_at}
           </div>
         </div>
@@ -357,10 +357,10 @@ export function PluginsTab() {
         minHeight: 200,
         gap: 8,
       }}>
-        <div style={{ fontSize: 14, fontWeight: 600, color: "var(--text-primary)" }}>
+        <div style={{ fontSize: "var(--text-base)", fontWeight: 600, color: "var(--text-primary)" }}>
           No plugins installed
         </div>
-        <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+        <div style={{ fontSize: "var(--text-sm)", color: "var(--text-muted)" }}>
           Run <code style={{ fontFamily: "var(--font-mono)" }}>zorai plugin add &lt;name&gt;</code> to install a plugin, then configure it here.
         </div>
       </div>

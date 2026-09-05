@@ -42,7 +42,7 @@ export function NotificationList({
             padding: 32,
             textAlign: "center",
             color: "var(--text-secondary)",
-            fontSize: 12,
+            fontSize: "var(--text-sm)",
           }}
         >
           No notifications
@@ -84,21 +84,21 @@ export function NotificationList({
                       }}
                     />
                   ) : null}
-                  <span style={{ fontSize: 12, fontWeight: notification.isRead ? 500 : 700 }}>
+                  <span style={{ fontSize: "var(--text-sm)", fontWeight: notification.isRead ? 500 : 700 }}>
                     {notification.title}
                   </span>
-                  <span style={{ marginLeft: "auto", fontSize: 10, color: "var(--text-secondary)" }}>
+                  <span style={{ marginLeft: "auto", fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
                     {formatTime(notification.updatedAt ?? notification.timestamp)}
                   </span>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 10, color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, fontSize: "var(--text-sm)", color: "var(--text-secondary)", textTransform: "uppercase", letterSpacing: "0.06em" }}>
                   <span>{notification.source}</span>
                   {notification.subtitle ? <span>{notification.subtitle}</span> : null}
                   {notification.severity ? <span>{notification.severity}</span> : null}
                 </div>
                 <div
                   style={{
-                    fontSize: 11,
+                    fontSize: "var(--text-sm)",
                     color: "var(--text-secondary)",
                     whiteSpace: "pre-wrap",
                     wordBreak: "break-word",
@@ -177,7 +177,7 @@ function ActionButton({
         border: `1px solid ${palette.border}`,
         background: palette.background,
         color: palette.color,
-        fontSize: 11,
+        fontSize: "var(--text-sm)",
         fontWeight: 700,
         padding: "5px 10px",
         cursor: "pointer",

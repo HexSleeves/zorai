@@ -57,13 +57,13 @@ export function KeyboardTab() {
                     style={{ ...inputStyle, width: "100%" }}
                 />
                 <div style={{ marginTop: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                    <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+                    <span style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
                         {recordingAction ? "Press a new shortcut or Esc to cancel" : "Click Rebind to capture a shortcut"}
                     </span>
                     <button onClick={resetBindings} style={addBtnStyle}>Reset bindings</button>
                 </div>
                 {warning ? (
-                    <div style={{ marginTop: 8, fontSize: 11, color: "var(--warning)" }}>
+                    <div style={{ marginTop: 8, fontSize: "var(--text-sm)", color: "var(--warning)" }}>
                         {warning}
                     </div>
                 ) : null}
@@ -73,7 +73,7 @@ export function KeyboardTab() {
                     key={binding.action}
                     style={{
                         display: "flex", justifyContent: "space-between", alignItems: "center", padding: "5px 0",
-                        fontSize: 12, borderBottom: "1px solid rgba(255,255,255,0.03)",
+                        fontSize: "var(--text-sm)", borderBottom: "1px solid rgba(255,255,255,0.03)",
                     }}
                 >
                     <span style={{ color: "var(--text-secondary)" }}>{binding.description}</span>

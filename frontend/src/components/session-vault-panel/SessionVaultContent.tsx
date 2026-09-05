@@ -75,8 +75,8 @@ export function SessionVaultContent({
             <div style={{ padding: "12px 14px", borderBottom: "1px solid rgba(255,255,255,0.08)", background: "rgba(255,255,255,0.02)", display: "grid", gap: 12 }}>
                 <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" }}>
                     <div>
-                        <div style={{ fontSize: 13, fontWeight: 700 }}>Time Travel Timeline</div>
-                        <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 2 }}>
+                        <div style={{ fontSize: "var(--text-sm)", fontWeight: 700 }}>Time Travel Timeline</div>
+                        <div style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", marginTop: 2 }}>
                             {timelineMode === "memory"
                                 ? "Review memory provenance, with emphasis on uncertain facts that may need operator confirmation later."
                                 : "Rewind recent commands and transcript checkpoints for the current scope."}
@@ -91,9 +91,9 @@ export function SessionVaultContent({
 
                 <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 2 }}>
                     {timelineMode === "memory" ? (
-                        <div style={{ color: "var(--text-secondary)", fontSize: 12 }}>Memory Provenance</div>
+                        <div style={{ color: "var(--text-secondary)", fontSize: "var(--text-sm)" }}>Memory Provenance</div>
                     ) : timeline.length === 0 ? (
-                        <div style={{ color: "var(--text-secondary)", fontSize: 12 }}>No timeline events in this scope.</div>
+                        <div style={{ color: "var(--text-secondary)", fontSize: "var(--text-sm)" }}>No timeline events in this scope.</div>
                     ) : timeline.map((entry) => {
                         if (isTranscriptEntry(entry)) {
                             const isSelected = selected?.id === entry.id;
@@ -150,7 +150,7 @@ export function SessionVaultContent({
                             padding: 32,
                             textAlign: "center",
                             color: "var(--text-secondary)",
-                            fontSize: 12,
+                            fontSize: "var(--text-sm)",
                         }}
                     >
                         No transcripts captured yet
@@ -158,7 +158,7 @@ export function SessionVaultContent({
                 ) : timelineMode === "timeline" ? (
                     <div style={{ padding: 18, display: "grid", gap: 10 }}>
                         {timeline.length === 0 ? (
-                            <div style={{ color: "var(--text-secondary)", fontSize: 12, textAlign: "center", padding: 24 }}>
+                            <div style={{ color: "var(--text-secondary)", fontSize: "var(--text-sm)", textAlign: "center", padding: 24 }}>
                                 No timeline events for the current filters.
                             </div>
                         ) : timeline.map((entry) => {
@@ -169,12 +169,12 @@ export function SessionVaultContent({
                                         <div style={{ flex: 1 }}>
                                             <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
                                                 <div>
-                                                    <div style={{ fontSize: 12, fontWeight: 700 }}>Checkpoint · {entry.reason}</div>
-                                                    <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4 }}>{entry.filename}</div>
+                                                    <div style={{ fontSize: "var(--text-sm)", fontWeight: 700 }}>Checkpoint · {entry.reason}</div>
+                                                    <div style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", marginTop: 4 }}>{entry.filename}</div>
                                                 </div>
                                                 <button type="button" style={miniActionBtnStyle} onClick={() => setSelectedId(entry.id)}>Inspect</button>
                                             </div>
-                                            <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 8, whiteSpace: "pre-wrap" }}>{entry.preview}</div>
+                                            <div style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", marginTop: 8, whiteSpace: "pre-wrap" }}>{entry.preview}</div>
                                         </div>
                                     </div>
                                 );
@@ -186,15 +186,15 @@ export function SessionVaultContent({
                                     <div style={{ flex: 1 }}>
                                         <div style={{ display: "flex", justifyContent: "space-between", gap: 10, alignItems: "center" }}>
                                             <div>
-                                                <div style={{ fontSize: 12, fontWeight: 700 }}>Command</div>
-                                                <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 4 }}>{entry.command}</div>
+                                                <div style={{ fontSize: "var(--text-sm)", fontWeight: 700 }}>Command</div>
+                                                <div style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", marginTop: 4 }}>{entry.command}</div>
                                             </div>
                                             <div style={{ display: "flex", gap: 6 }}>
                                                 <button type="button" style={miniActionBtnStyle} onClick={() => void runTimelineCommand(entry.command, false)}>Type</button>
                                                 <button type="button" style={miniActionBtnStyle} onClick={() => void runTimelineCommand(entry.command, true)}>Run</button>
                                             </div>
                                         </div>
-                                        <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 8 }}>
+                                        <div style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", marginTop: 8 }}>
                                             {new Date(entry.timestamp).toLocaleString()} · {entry.cwd ?? "no cwd"}
                                             {entry.durationMs !== null ? ` · ${entry.durationMs}ms` : ""}
                                         </div>
@@ -224,12 +224,12 @@ export function SessionVaultContent({
                                 >
                                     <div style={{ display: "flex", justifyContent: "space-between", gap: 8, marginBottom: 4 }}>
                                         <span style={{ fontWeight: 600, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{tx.filename}</span>
-                                        <span style={{ color: "var(--text-secondary)", fontSize: 11 }}>{formatBytes(tx.sizeBytes)}</span>
+                                        <span style={{ color: "var(--text-secondary)", fontSize: "var(--text-sm)" }}>{formatBytes(tx.sizeBytes)}</span>
                                     </div>
-                                    <div style={{ color: "var(--text-secondary)", fontSize: 12 }}>
+                                    <div style={{ color: "var(--text-secondary)", fontSize: "var(--text-sm)" }}>
                                         {tx.reason}{tx.cwd ? ` · ${tx.cwd}` : ""}
                                     </div>
-                                    <div style={{ marginTop: 6, fontSize: 11, color: "var(--text-secondary)", opacity: 0.9, maxHeight: 64, overflow: "hidden", whiteSpace: "pre-wrap" }}>
+                                    <div style={{ marginTop: 6, fontSize: "var(--text-sm)", color: "var(--text-secondary)", opacity: 0.9, maxHeight: 64, overflow: "hidden", whiteSpace: "pre-wrap" }}>
                                         {tx.preview}
                                     </div>
                                 </button>
@@ -240,11 +240,11 @@ export function SessionVaultContent({
                                 <>
                                     <div style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "12px 16px", borderBottom: "1px solid rgba(255,255,255,0.08)" }}>
                                         <div>
-                                            <div style={{ fontSize: 14, fontWeight: 600 }}>{selected.filename}</div>
-                                            <div style={{ fontSize: 12, color: "var(--text-secondary)", marginTop: 3 }}>
+                                            <div style={{ fontSize: "var(--text-base)", fontWeight: 600 }}>{selected.filename}</div>
+                                            <div style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", marginTop: 3 }}>
                                                 {new Date(selected.capturedAt).toLocaleString()} · {selected.reason} · {formatBytes(selected.sizeBytes)}
                                             </div>
-                                            <div style={{ fontSize: 11, color: "var(--text-secondary)", marginTop: 3 }}>
+                                            <div style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)", marginTop: 3 }}>
                                                 {(selected.workspaceId && workspaceLabels.get(selected.workspaceId)) || "No workspace"}
                                                 {selected.surfaceId ? ` / ${surfaceLabels.get(selected.surfaceId) ?? selected.surfaceId}` : ""}
                                                 {selected.paneId ? ` / ${selected.paneId}` : ""}
@@ -287,7 +287,7 @@ export function SessionVaultContent({
                         }}
                     />
                     {scrubTarget ? (
-                        <div style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+                        <div style={{ fontSize: "var(--text-sm)", color: "var(--text-secondary)" }}>
                             Scrub target: {isTranscriptEntry(scrubTarget) ? `${scrubTarget.reason} checkpoint` : scrubTarget.command}
                         </div>
                     ) : null}

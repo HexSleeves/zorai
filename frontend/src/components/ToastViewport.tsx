@@ -47,10 +47,10 @@ export function ToastViewport() {
               WebkitBackdropFilter: "blur(12px)",
             }}
           >
-            <span style={{ color: colors.text, fontSize: 13, lineHeight: 1.4, flexShrink: 0 }} aria-hidden="true">
+            <span style={{ color: colors.text, fontSize: "var(--text-sm)", lineHeight: 1.4, flexShrink: 0 }} aria-hidden="true">
               {colors.icon}
             </span>
-            <span style={{ fontSize: 12, color: "var(--text-primary, #dbe4f2)", lineHeight: 1.45, minWidth: 0, overflowWrap: "anywhere" }}>
+            <span style={{ fontSize: "var(--text-sm)", color: "var(--text-primary, #dbe4f2)", lineHeight: 1.45, minWidth: 0, overflowWrap: "anywhere" }}>
               {toast.message}
             </span>
             <button
@@ -63,7 +63,7 @@ export function ToastViewport() {
                 border: "none",
                 color: "var(--text-muted, #8a97ab)",
                 cursor: "pointer",
-                fontSize: 14,
+                fontSize: "var(--text-base)",
                 lineHeight: 1,
                 padding: 2,
               }}

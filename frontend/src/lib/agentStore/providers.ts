@@ -25,6 +25,7 @@ const M_TI: Modality[] = ["text", "image"];
 const M_TA: Modality[] = ["text", "audio"];
 const OPENAI_API_MODELS: ModelDefinition[] = [
   { id: "gpt-5.5", name: "GPT-5.5", contextWindow: 1_000_000, modalities: M_MULTI },
+  { id: "gpt-6-astra", name: "GPT-6 Astra", contextWindow: 1_050_000, modalities: M_TI },
   { id: "gpt-5.6-sol", name: "GPT-5.6 Sol", contextWindow: 1_000_000, modalities: M_TI },
   { id: "gpt-5.6-terra", name: "GPT-5.6 Terra", contextWindow: 1_000_000, modalities: M_TI },
   { id: "gpt-5.6-luna", name: "GPT-5.6 Luna", contextWindow: 1_000_000, modalities: M_TI },
@@ -49,6 +50,7 @@ const OPENAI_API_MODELS: ModelDefinition[] = [
 
 const OPENAI_CHATGPT_SUBSCRIPTION_MODELS: ModelDefinition[] = [
   { id: "gpt-5.5", name: "GPT-5.5", contextWindow: 1_000_000, modalities: M_TI },
+  { id: "gpt-6-astra", name: "GPT-6 Astra", contextWindow: 1_050_000, modalities: M_TI },
   { id: "gpt-5.6-sol", name: "GPT-5.6 Sol", contextWindow: 1_000_000, modalities: M_TI },
   { id: "gpt-5.6-sol-pro", name: "GPT-5.6 Sol Pro", contextWindow: 1_000_000, modalities: M_TI },
   { id: "gpt-5.6-terra", name: "GPT-5.6 Terra", contextWindow: 1_000_000, modalities: M_TI },

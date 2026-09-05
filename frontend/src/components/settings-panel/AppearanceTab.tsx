@@ -73,7 +73,7 @@ export function AppearanceTab({
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                         <Toggle value={settings.gpuAcceleration}
                             onChange={(value) => updateSetting("gpuAcceleration", value)} />
-                        <span style={{ fontSize: 11, opacity: 0.5 }}>(requires restart)</span>
+                        <span style={{ fontSize: "var(--text-sm)", opacity: 0.5 }}>(requires restart)</span>
                     </div>
                 </SettingRow>
             </Section>

@@ -4,8 +4,8 @@
   display: grid;
   grid-template-columns: 68px minmax(240px, 284px) minmax(0, 1fr) auto;
   background:
-    radial-gradient(1400px 700px at 85% -20%, rgba(109, 143, 245, 0.06), transparent 60%),
-    radial-gradient(1200px 800px at -10% 110%, rgba(125, 219, 200, 0.05), transparent 55%),
+    radial-gradient(1400px 700px at 85% -20%, color-mix(in srgb, var(--zorai-accent-secondary) 10%, transparent), transparent 60%),
+    radial-gradient(1200px 800px at -10% 110%, color-mix(in srgb, var(--zorai-accent) 8%, transparent), transparent 55%),
     var(--bg-tertiary);
   color: var(--zorai-text);
   overflow: hidden;
@@ -113,9 +113,7 @@
 
 .zorai-global-rail {
   border-right: 1px solid var(--zorai-border);
-  background: rgba(5, 7, 11, 0.85);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: var(--bg-deep);
   padding: 12px 10px;
   display: flex;
   flex-direction: column;
@@ -141,7 +139,7 @@
 
 .zorai-brand {
   background: transparent;
-  color: #06100e;
+  color: var(--zorai-text);
 }
 
 .zorai-global-items,
@@ -158,14 +156,19 @@
   gap: 8px;
 }
 
-.zorai-global-items .zorai-global-item:last-child {
+.zorai-global-items-footer {
   margin-top: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
 }
 
 .zorai-global-item {
   border: 1px solid transparent;
   background: transparent;
-  color: var(--zorai-muted);
+  color: var(--text-secondary);
   cursor: pointer;
   position: relative;
 }
@@ -197,7 +200,7 @@
 
 .zorai-brand-mark span {
   font-weight: 900;
-  color: #05070b;
+  color: var(--text-on-accent);
 }
 
 .zorai-nav-icon {
@@ -212,7 +215,7 @@
 }
 
 .zorai-global-item--active {
-  color: #06100e;
+  color: var(--text-on-accent);
   background: var(--zorai-accent);
   border-color: transparent;
   box-shadow:
@@ -357,7 +360,7 @@
 .zorai-primary-button {
   background: var(--zorai-accent);
   border-color: transparent;
-  color: var(--zorai-bg-panel);
+  color: var(--text-on-accent);
   padding: 4px 10px;
 }
 
@@ -552,9 +555,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: rgba(7, 10, 17, 0.72);
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
+  background: var(--bg-deep);
 }
 
 .zorai-topbar h1 {
@@ -1757,7 +1758,7 @@
 
 .zorai-composer-icon-button--send {
   background: linear-gradient(135deg, var(--zorai-accent) 0%, var(--zorai-accent) 150%);
-  color: var(--zorai-bg-panel);
+  color: var(--text-on-accent);
   border-radius: 999px;
 }
 
@@ -2375,7 +2376,7 @@
 .zorai-approval-button--primary {
   border-color: var(--zorai-accent);
   background: var(--zorai-accent);
-  color: #06100e;
+  color: var(--text-on-accent);
 }
 
 .zorai-empty-main {
@@ -2534,7 +2535,7 @@
 
 .zorai-thread-filter-tab--active {
   color: var(--zorai-accent);
-  background: rgba(113, 220, 202, 0.08);
+  background: var(--accent-soft);
 }
 
 
@@ -3600,7 +3601,7 @@ button.zorai-composer-context-chip { cursor: pointer; }
 .zorai-shell--code .zorai-global-item--active {
   border-color: var(--zorai-border-strong);
   background: var(--zorai-accent);
-  color: var(--bg-void);
+  color: var(--text-on-accent);
   box-shadow: none;
 }
 

@@ -13,10 +13,10 @@ export function TimeTravelHeader({
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
             <div style={{ display: "grid", gap: 2 }}>
                 <span className="zorai-panel-title" style={{ color: "var(--timeline)" }}>Time Travel</span>
-                <span style={{ fontSize: 13, fontWeight: 700 }}>Filesystem Checkpoints</span>
+                <span style={{ fontSize: "var(--text-base)", fontWeight: 700 }}>Filesystem Checkpoints</span>
             </div>
             <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                <span style={{ fontSize: 11, color: "var(--text-secondary)" }}>
+                <span style={{ fontSize: "var(--text-xs)", color: "var(--text-secondary)" }}>
                     {snapshotCount} snapshot{snapshotCount !== 1 ? "s" : ""}
                 </span>
                 <button onClick={onRefresh} style={actionBtnStyle} title="Refresh snapshots">

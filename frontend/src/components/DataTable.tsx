@@ -149,7 +149,7 @@ const thStyle: React.CSSProperties = {
   borderBottom: "1px solid var(--glass-border)",
   color: "var(--text-secondary)",
   fontWeight: 600,
-  fontSize: 11,
+  fontSize: "var(--text-sm)",
   whiteSpace: "nowrap",
   position: "sticky",
   top: 0,

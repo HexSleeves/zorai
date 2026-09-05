@@ -71,7 +71,7 @@ export function SnippetListView({
                                 background: ownerFilter === value ? "var(--zorai-bg-surface)" : "transparent",
                                 color: ownerFilter === value ? "var(--text-primary)" : "var(--text-secondary)",
                                 padding: "4px 8px",
-                                fontSize: 10,
+                                fontSize: "var(--text-xs)",
                             }}
                         >
                             {label}
@@ -82,7 +82,7 @@ export function SnippetListView({
 
             <div style={{ flex: 1, overflow: "auto", maxHeight: 380 }}>
                 {filtered.length === 0 ? (
-                    <div style={{ padding: 20, textAlign: "center", color: "var(--text-secondary)", fontSize: 12 }}>
+                    <div style={{ padding: 20, textAlign: "center", color: "var(--text-secondary)", fontSize: "var(--text-sm)" }}>
                         No snippets found.
                     </div>
                 ) : null}
@@ -117,13 +117,13 @@ export function SnippetListView({
                         </button>
 
                         <div style={{ flex: 1, minWidth: 0 }}>
-                            <div style={{ fontSize: 12, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            <div style={{ fontSize: "var(--text-sm)", fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                                 {snippet.name}
                             </div>
-                            <div style={{ fontSize: 10, color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-mono)" }}>
+                            <div style={{ fontSize: "var(--text-xs)", color: "var(--text-secondary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontFamily: "var(--font-mono)" }}>
                                 {snippet.content}
                             </div>
-                            <div style={{ fontSize: 9, color: "var(--text-secondary)", opacity: 0.7, marginTop: 1 }}>
+                            <div style={{ fontSize: "var(--text-xs)", color: "var(--text-secondary)", opacity: 0.7, marginTop: 1 }}>
                                 {snippet.category} · {snippet.owner}{snippet.useCount > 0 && ` · used ${snippet.useCount}×`}
                             </div>
                         </div>
@@ -134,7 +134,7 @@ export function SnippetListView({
                                     event.stopPropagation();
                                     onEdit(snippet);
                                 }}
-                                style={{ ...closeBtnStyle, fontSize: 10 }}
+                                style={{ ...closeBtnStyle, fontSize: "var(--text-xs)" }}
                                 title="Edit"
                             >
                                 ✎
@@ -144,7 +144,7 @@ export function SnippetListView({
                                     event.stopPropagation();
                                     onDelete(snippet);
                                 }}
-                                style={{ ...closeBtnStyle, color: "var(--danger)", fontSize: 10 }}
+                                style={{ ...closeBtnStyle, color: "var(--danger)", fontSize: "var(--text-xs)" }}
                                 title="Delete"
                             >
                                 ✕

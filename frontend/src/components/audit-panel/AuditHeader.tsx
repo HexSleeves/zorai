@@ -72,7 +72,7 @@ export function AuditHeader({ onClose }: { onClose: () => void }) {
       >
         <span
           style={{
-            fontSize: 15,
+            fontSize: "var(--text-base)",
             fontWeight: "var(--font-bold)",
             color: "var(--text-primary)",
             lineHeight: "var(--leading-tight)",
@@ -98,7 +98,7 @@ export function AuditHeader({ onClose }: { onClose: () => void }) {
               background: "none",
               border: "none",
               color: "var(--text-secondary)",
-              fontSize: 18,
+              fontSize: "var(--text-lg)",
               cursor: "pointer",
               padding: "2px 4px",
               lineHeight: 1,
@@ -116,7 +116,7 @@ export function AuditHeader({ onClose }: { onClose: () => void }) {
             padding: "var(--space-2) var(--space-3)",
             background: "var(--bg-tertiary)",
             borderRadius: 4,
-            fontSize: "var(--text-xs)",
+            fontSize: "var(--text-sm)",
             color: "var(--text-secondary)",
             display: "flex",
             flexWrap: "wrap",

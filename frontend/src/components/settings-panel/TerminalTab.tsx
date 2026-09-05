@@ -95,8 +95,8 @@ export function TerminalTab({
                     <div key={profile.id} style={{ display: "grid", gap: 8, padding: "10px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
                         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
                             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                                <strong style={{ fontSize: 12 }}>{profile.name || "Unnamed profile"}</strong>
-                                {profile.isDefault ? <span style={{ fontSize: 10, color: "var(--accent)" }}>DEFAULT</span> : null}
+                                <strong style={{ fontSize: "var(--text-sm)" }}>{profile.name || "Unnamed profile"}</strong>
+                                {profile.isDefault ? <span style={{ fontSize: "var(--text-xs)", color: "var(--accent)" }}>DEFAULT</span> : null}
                             </div>
                             <div style={{ display: "flex", gap: 8 }}>
                                 {!profile.isDefault ? <button onClick={() => setDefaultProfile(profile.id)} style={smallBtnStyle}>Set Default</button> : null}

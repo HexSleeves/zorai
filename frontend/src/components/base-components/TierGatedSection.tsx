@@ -34,7 +34,7 @@ export function TierGatedSection({
                     border: "none",
                     cursor: "pointer",
                     color: "inherit",
-                    fontSize: "0.85rem",
+                    fontSize: "var(--text-sm)",
                     width: "100%",
                     textAlign: "left",
                 }}
@@ -43,7 +43,7 @@ export function TierGatedSection({
                     {"\u25B6"}
                 </span>
                 <span>{label}</span>
-                <span style={{ fontSize: "0.75rem", opacity: 0.6, marginLeft: "auto" }}>
+                <span style={{ fontSize: "var(--text-sm)", opacity: 0.6, marginLeft: "auto" }}>
                     {requiredTier.replace("_", " ")}
                 </span>
             </button>
